@@ -1,0 +1,45 @@
+ALL-STAR PERSISTENCE CONTRACTS (PRESERVED)
+==========================================
+
+Parent application localStorage keys
+- allStarStandaloneModels.v1
+- allStarResearchItems.v1
+- allStarResearchMetrics.v1
+- allStarResearchResultCache.v3
+- allStarOrgBuilder.v1
+- allStarRepAliases.v1
+- allStarRunSettings.v2
+- allStarPdfOptions.v1
+
+Parent application IndexedDB
+- allStarImportedDataCache.v1, schema version 4
+  - meta (keyPath: id)
+  - sourceData (keyPath: id)
+  - books (keyPath: id)
+  - misc (keyPath: id)
+- allStarResearchRenderedResults.v1, schema version 1
+  - renderMeta (keyPath: itemId)
+  - renderChunks (keyPath: id)
+- allStarResearchMetricsDb.v1, schema version 1
+  - researchMetrics (keyPath: id; current record id: current)
+
+Qualtrics generator localStorage keys
+- coachingEmailGeneratorHireDateSettings.v1
+- coachingEmailGeneratorCoachAliasOverrides
+- coachingEmailGeneratorReportAudience.v1
+- coachingEmailGeneratorReportWeightOrder
+- coachingEmailGeneratorOtherRuleIds
+- coachingEmailGeneratorUrgencyCoverage.v1
+- coachingImpactWorkspaceSettings.v1
+- coachingEmailGeneratorEmailIntroHtml
+- coachingEmailGeneratorSavedEmailIntroHtml
+- coachingEmailGeneratorSavedEmailIntroAt
+
+Qualtrics generator IndexedDB
+- coachingEmailGeneratorDB, schema version 1
+  - rules (keyPath: id)
+  - problemHistory (keyPath: id)
+  - settings (keyPath: key)
+
+Compatibility policy
+These names, versions, key paths, and stored object structures are deliberately unchanged. The modular Qualtrics carrier uses srcdoc so its saved data remains on the same parent-document storage origin used by the previous embedded generator.

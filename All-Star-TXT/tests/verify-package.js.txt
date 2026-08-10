@@ -1,0 +1,24 @@
+#!/usr/bin/env node
+'use strict';
+const fs=require('node:fs');
+const path=require('node:path');
+const root=path.resolve(__dirname,'..');
+const read=p=>fs.readFileSync(path.join(root,p),'utf8');
+const files=['allstar.html','css/allstar.css','js/core.js','js/persistence.js','js/models.js','js/imports.js','js/calculations.js','js/research.js','js/organizations.js','js/list-tester.js','js/reports.js','js/qualtrics-bridge.js','js/app.js','qualtrics/generator.html','qualtrics/generator-source.js','tests/regression-tests.js','build/build-portable.js','dist/All-Star-Portable.html','README.txt','PERSISTENCE-CONTRACTS.txt','REFACTOR-MANIFEST.json','SIZE-REPORT.txt','VALIDATION.txt'];
+let failed=false;
+function check(name,pass,detail=''){ console.log((pass?'PASS':'FAIL')+' '+name+(detail?' — '+detail:'')); if(!pass) failed=true; }
+for(const file of files) check('exists: '+file,fs.existsSync(path.join(root,file)));
+const html=read('allstar.html'), generator=read('qualtrics/generator.html'), portable=read('dist/All-Star-Portable.html');
+check('modular HTML has no embedded legacy generator',!html.includes('qualtricsGeneratorSource'));
+check('modular source has no runtime patch engine',!files.filter(f=>f.startsWith('js/')).some(f=>read(f).includes('patchQualtricsGeneratorSource')));
+check('generator is permanently patched',['ruleDisplayColumnEnabled','allstar-clear-data','exportUrgencyPdfBtn','simpleQualtricsExecutiveMatrixHtml'].every(x=>generator.includes(x)));
+check('Display Column implementation retained',read('js/calculations.js').includes('function displayColumnValue')&&generator.includes('ruleDisplayColumnEnabled'));
+check('manual tests are not a normal script dependency',!html.includes('src="tests/regression-tests.js"'));
+check('portable has no first-party file dependency',!/<(?:link[^>]+href|script[^>]+src)="(?:css|js|qualtrics)\//i.test(portable));
+check('portable contains final generator',['allstar-clear-data','simpleQualtricsExecutiveMatrixHtml'].every(x=>portable.includes(x)));
+const contracts=['allStarStandaloneModels.v1','allStarResearchItems.v1','allStarImportedDataCache.v1','allStarResearchRenderedResults.v1','allStarResearchMetricsDb.v1','allStarOrgBuilder.v1','allStarRepAliases.v1','allStarRunSettings.v2','allStarPdfOptions.v1','coachingEmailGeneratorDB'];
+const code=files.filter(f=>f.startsWith('js/')||f==='qualtrics/generator.html').map(read).join('\n');
+for(const contract of contracts) check('persistence contract: '+contract,code.includes(contract));
+try{ new Function(files.filter(f=>f.startsWith('js/')).map(read).join('\n')); check('combined application JavaScript parses',true); }catch(error){ check('combined application JavaScript parses',false,error.message); }
+try{ new Function(read('tests/regression-tests.js')); check('regression JavaScript parses',true); }catch(error){ check('regression JavaScript parses',false,error.message); }
+if(failed) process.exit(1);

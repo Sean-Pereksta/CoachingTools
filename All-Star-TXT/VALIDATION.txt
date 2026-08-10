@@ -1,0 +1,25 @@
+ALL-STAR VALIDATION SUMMARY
+===========================
+
+Passed automated package checks
+- Every required modular, Qualtrics, test, build, documentation, and portable file exists.
+- Every application module parses individually.
+- The ordered application JavaScript parses as one combined program.
+- The extracted regression suite parses and is not loaded during normal startup.
+- The final Qualtrics generator's 481,961-byte inline application script parses.
+- The modular source contains no encoded legacy generator or runtime patch engine.
+- The final generator contains Display Column, clear-data, urgency PDF, Coach Profile, Overall Coaching Profile, Coaching Topic Impact, and simplified executive-report markers.
+- Required localStorage keys, IndexedDB names, schema versions, and store names remain present.
+- The generated portable file has no required first-party CSS or JavaScript file dependency.
+
+Passed browser-like runtime smoke checks
+- All 11 classic scripts load in their documented order with no startup exception.
+- Previously saved model, Research item, organization, representative alias, and PDF settings load through their existing keys.
+- Display Column, Research, List Tester, reporting, Qualtrics bridge, and manual-test loader entry points are present.
+- No regression suite runs automatically during production startup.
+- The lazy Qualtrics carrier mounts the permanently patched generator through srcdoc and contains no patch engine.
+- The portable HTML starts from its inlined first-party code with no browser-like runtime error.
+- Fixture-free initial-workflow, Research architecture, run-index reuse, final-run performance, and import-cache persistence regression suites passed in the browser-like harness.
+
+Validation boundary
+The package contains the original spreadsheet/PDF/browser regression functions for real-browser testing with work files. A browser-like automated harness cannot fully validate native download dialogs, visual PDF pagination, enterprise file:// policy, or every real Retail/Referral/QA/Checklist/Coaching workbook layout. Use tests/regression-tests.js and the checklist in README.txt for final acceptance with representative work data.
