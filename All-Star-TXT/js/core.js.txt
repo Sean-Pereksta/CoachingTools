@@ -94,7 +94,7 @@ const state = {
   activeTeam: '',
   repAliases: new Map(),
   quarantinedRepAliases: [],
-  versions: { data:0, retail:0, referral:0, roster:0, aliases:0, teams:0, mappings:0, research:0 },
+  // One authoritative version registry. Every cache signature and selective invalidation reads these dimensions.\n  versions: {data:0,retail:0,referral:0,roster:0,aliases:0,teams:0,mappings:0,models:0,metrics:0,researchDefinitions:0,research:0},
   // Versioned Control-roster index: rebuilt only when roster/alias/team/mapping versions change.
   rosterIndex: { version:0, signature:'', rows:[], byRosterId:new Map(), bySourceRepKey:new Map(), byRepKey:new Map(), byTeamKey:new Map(), repsByTeamKey:new Map(), teamSummaries:new Map(), conflicts:[] },
   repSuggestionCache: new Map(),
@@ -142,7 +142,7 @@ const state = {
   researchRenderAllToken: null,
   researchConversationViewers: new Map(),
   researchDuplicateRepCache: new Map(),
-  versions: {data:0,roster:0,aliases:0,teams:0,mappings:0,models:0,metrics:0,researchDefinitions:0},
+
   perfCounters: {baseIndexBuilds:0,lazyIndexBuilds:0,filterCompiles:0,filterCacheHits:0,criterionInputCacheHits:0,researchResultCacheHits:0,selectiveInvalidations:0,teamTotalsIndexBuilds:0,teamTotalsIndexBuildsBySource:{},trueTeamValueLookups:0,runIndexCacheHits:0,runIndexCacheMisses:0,sourceRowCacheHits:0,sourceRowCacheMisses:0,entryRowCacheHits:0,entryRowCacheMisses:0},
   compiledFilterCache: new Map(),
   criterionInputCache: new Map(),
