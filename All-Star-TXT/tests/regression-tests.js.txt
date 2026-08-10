@@ -318,6 +318,24 @@ window.runResearchArchitectureV4RegressionTests=function(){
   check('Every typed measure declares sources, grains, missing behavior, and chart compatibility',RESEARCH_TYPED_MEASURES.every(m=>m.id&&m.sources?.length&&m.grains?.length&&m.missingBehavior&&m.chartTypes?.length));
   console.table(results); if(results.some(r=>!r.pass)) throw new Error('Research architecture regression tests failed.'); return results;
 };
+window.runWorkflowModernizationRegressionTests=function(){
+  const results=[], check=(name,pass,detail='')=>results.push({name,pass:!!pass,detail});
+  const requiredVersions=['data','retail','referral','roster','aliases','teams','mappings','models','metrics','researchDefinitions','research'];
+  check('Authoritative version registry includes every invalidation dimension',requiredVersions.every(k=>Object.prototype.hasOwnProperty.call(state.versions,k)),JSON.stringify(state.versions));
+  check('Shared diagnostics distinguish blockers from warnings',allStarDiagnosticStatus([allStarDiagnostic({severity:'warning'}),allStarDiagnostic({severity:'error',blocking:true})])==='needs_attention');
+  check('Warnings do not block a report run',allStarDiagnosticStatus([allStarDiagnostic({severity:'warning'})])==='ready_with_warnings');
+  check('Report schema is explicitly versioned',ALLSTAR_REPORT_SCHEMA_VERSION===1);
+  const last30=workflowPresetDates('lastDays',30), start=parseDateOnly(last30.startDate), end=parseDateOnly(last30.endDate);
+  check('Dynamic Last X Days dates remain a 30-day inclusive window',Math.round((end-start)/86400000)===29,last30.startDate+' to '+last30.endDate);
+  const all=workflowPresetDates('all',30); check('All available dates preset intentionally clears both dates',all.startDate===''&&all.endDate==='');
+  const p1={rows:[{entry:{name:'Alpha'},overallRank:3,overallScore:80,eligible:true}]}, p2={rows:[{entry:{name:'Alpha'},overallRank:1,overallScore:90,eligible:true},{entry:{name:'Beta'},overallRank:2,overallScore:85,eligible:true}]};
+  const movement=comparePack(p1,p2,'team');
+  check('Comparison calculates rank and score movement',movement.find(r=>r.name==='Alpha')?.rankChange===2&&movement.find(r=>r.name==='Alpha')?.scoreChange===10);
+  check('Comparison preserves new entities',movement.some(r=>r.name==='Beta'));
+  const missing=runPreflight(null,{});
+  check('Preflight blocks a missing model',missing.counts.blocking>0&&missing.status==='needs_attention');
+  console.table(results); if(results.some(r=>!r.pass)) throw new Error('Workflow modernization regression tests failed.'); return results;
+};
 const allStarRegressionTests=[
   ['researchSourceFieldRefRegressionCases',()=>researchSourceFieldRefRegressionCases()],
   ['runTeamTotalsRegressionTests',()=>runTeamTotalsRegressionTests()],
@@ -328,6 +346,7 @@ const allStarRegressionTests=[
   ['runFinalRunPerformanceRegressionTests',()=>window.runFinalRunPerformanceRegressionTests()],
   ['runImportCachePersistenceRegressionTests',()=>window.runImportCachePersistenceRegressionTests()],
   ['runInitialWorkflowRegressionTests',()=>window.runInitialWorkflowRegressionTests()],
+  ['runWorkflowModernizationRegressionTests',()=>window.runWorkflowModernizationRegressionTests()],
   ['runResearchArchitectureV4RegressionTests',()=>window.runResearchArchitectureV4RegressionTests()]
 ];
 window.allStarRegressionTestNames=allStarRegressionTests.map(([name])=>name);
