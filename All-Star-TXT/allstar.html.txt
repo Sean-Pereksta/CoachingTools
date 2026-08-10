@@ -81,6 +81,7 @@
   <div class="modal">
     <div class="modalHead"><div class="modalTitle">Import Data</div><button class="dark" data-close="importModal">Close</button></div>
     <div class="modalBody">
+      <div class="panel workflowSourceHealthPanel"><div id="sourceHealthOverview"><div class="hint">Source health will appear when Import opens.</div></div></div>
       <div class="panel">
         <div class="panelTitle">Troubleshoot / Categorize Imports</div>
         <div class="row">
@@ -414,7 +415,17 @@
         <div class="field"><label><input id="hideNoScoreReps" type="checkbox"> Hide representatives with no score</label><select id="hideNoScoreThreshold" class="hidden"><option value="all">All categories</option><option value="1">1 category</option><option value="2">2 categories</option><option value="3">3 categories</option><option value="4">4 categories</option><option value="5">5 categories</option></select></div>
         <div class="field"><label><input id="rankRepresentativesWithinTeam" type="checkbox"> Rank representatives within each team</label><span class="hint">Team pages recalculate criterion ranks and scores inside each team, allowing multiple #1 representatives. Total Representatives always keeps the overall ranking across every selected team.</span></div>
       </div>
-      <div id="runReadiness" class="runReadiness"><div id="runReadinessTitle" class="runReadinessTitle">Selected model preparation will start after this window opens.</div><div id="runReadinessDetail">Required source count: 0 · Ready sources: 0 · Preparing sources: 0</div><div id="runReadinessMeta" class="runReadinessMeta"><span class="badge">Global rebuild avoided</span></div></div>
+      <details class="workflowPanel">
+        <summary><strong>Presets &amp; report history</strong></summary>
+        <div class="workflowPresetGrid">
+          <div class="field"><label>Run preset</label><select id="runPresetSelect"><option value="">Choose preset…</option></select></div>
+          <div class="field"><label>Preset date behavior</label><select id="runPresetDateMode"><option value="fixed">Fixed dates</option><option value="currentWeek">Current week</option><option value="previousWeek">Previous week</option><option value="lastDays">Last X days</option><option value="currentMonth">Current month</option><option value="previousMonth">Previous month</option><option value="all">All available dates</option></select></div>
+          <div id="runPresetLastDaysWrap" class="field hidden"><label>Days</label><input id="runPresetLastDays" type="number" min="1" max="365" value="30"></div>
+          <div class="field"><label>Optional report note</label><input id="runReportNote" placeholder="Model change, coaching launch, roster update…"></div>
+        </div>
+        <div class="runWorkflowActions"><button id="applyRunPresetBtn" class="dark" type="button">Apply Preset</button><button id="saveRunPresetBtn" class="green" type="button">Save Current as Preset</button><button id="deleteRunPresetBtn" class="gray" type="button">Delete Preset</button><button id="recentRunsBtn" class="dark" type="button">Recent Runs</button></div>
+      </details>
+      <div id="runReadiness" class="runReadiness"><div id="runReadinessTitle" class="runReadinessTitle">Selected model preparation will start after this window opens.</div><div id="runReadinessDetail">Required source count: 0 · Ready sources: 0 · Preparing sources: 0</div><div id="runReadinessMeta" class="runReadinessMeta"><span class="badge">Global rebuild avoided</span></div><div class="runWorkflowActions"><button id="runCheckModelBtn" class="smallBtn dark" type="button">Check Model</button><button id="runViewPreflightBtn" class="smallBtn" type="button">View Details</button></div><div id="runPreflightDetails" class="runPreflightDetails hidden"></div></div>
       <div id="singleRunSelectionPanel">
       <div class="runTeamPanel">
         <div class="runPanelTitle"><span>Teams to Include</span><span id="teamCountBadge" class="teamCount">0 selected</span></div>
@@ -444,6 +455,17 @@
       </div>
     </div>
     <div class="modalFoot"><button id="executeRunBtn" class="green">Run Single Report</button></div>
+  </div>
+</div>
+
+<div id="recentRunsModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Recent All-Star Runs</div><button class="dark" data-close="recentRunsModal">Close</button></div>
+    <div class="modalBody">
+      <div class="recentRunsToolbar"><span class="hint">Saved report snapshots reopen without recalculation. Select exactly two compatible runs to compare.</span><button id="compareRecentRunsBtn" class="green" type="button">Compare Selected</button></div>
+      <div id="recentRunsList" class="recentRunsList"></div>
+      <div id="recentRunComparison" class="recentRunComparison"></div>
+    </div>
   </div>
 </div>
 
@@ -685,6 +707,7 @@
 <script src="js/reports.js"></script>
 <script src="js/research.js"></script>
 <script src="js/organizations.js"></script>
+<script src="js/workflow.js"></script>
 <script src="js/list-tester.js"></script>
 <script src="js/qualtrics-bridge.js"></script>
 <script src="js/app.js"></script>
