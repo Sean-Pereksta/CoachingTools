@@ -30,6 +30,7 @@ Qualtrics generator localStorage keys
 - coachingEmailGeneratorReportWeightOrder
 - coachingEmailGeneratorOtherRuleIds
 - coachingEmailGeneratorUrgencyCoverage.v1
+- coachingEmailGeneratorOrganizationSummary.v1
 - coachingImpactWorkspaceSettings.v1
 - coachingEmailGeneratorEmailIntroHtml
 - coachingEmailGeneratorSavedEmailIntroHtml
@@ -43,3 +44,10 @@ Qualtrics generator IndexedDB
 
 Compatibility policy
 These names, versions, key paths, and stored object structures are deliberately unchanged. The modular Qualtrics carrier uses srcdoc so its saved data remains on the same parent-document storage origin used by the previous embedded generator.
+
+Rule-schema additions are normalized on load without changing the IndexedDB version:
+- displayColumn.format defaults to Auto and displayColumn.precision defaults to 1.
+- statRule.displayFormat defaults to Auto and statRule.displayPrecision defaults to 1.
+- correctiveContext defaults to disabled, with the former-corrective Follow-Up scan also disabled.
+
+Older saved rules therefore retain their prior matching and presentation behavior until a user explicitly enables the new options.

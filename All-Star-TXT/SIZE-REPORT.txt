@@ -8,18 +8,19 @@ Modular source
 - allstar.html: 77,111 bytes (75.3 KiB)
 - css/allstar.css: 59,391 bytes (58.0 KiB)
 - all 11 application JavaScript modules: 1,197,903 bytes (1.142 MiB)
-- qualtrics/generator.html: 565,942 bytes (552.7 KiB)
-- tests and build utilities: 51,535 bytes (50.3 KiB)
-- total canonical maintainable application source: 1,951,882 bytes (1.861 MiB)
+- qualtrics/generator.html: 596,270 bytes (582.3 KiB)
+- qualtrics/insights.js: 9,330 bytes (9.1 KiB)
+- tests and build utilities: 55,136 bytes (53.8 KiB)
+- total canonical maintainable application source: 1,995,141 bytes (1.903 MiB)
 
 Generated artifacts
-- qualtrics/generator-source.js: 575,243 bytes (561.8 KiB)
+- qualtrics/generator-source.js: 615,470 bytes (601.0 KiB)
   This is a generated file:// compatibility carrier, not a second maintained source.
-- dist/All-Star-Portable.html: 1,955,972 bytes (1.865 MiB)
+- dist/All-Star-Portable.html: 1,996,200 bytes (1.904 MiB)
 
 Change
 - Modular allstar.html is 96.26% smaller than the original main file.
-- Canonical maintainable source is 5.25% smaller than the original single file.
-- Portable single-file build is 5.05% smaller than the original single file.
+- Canonical maintainable source is 3.15% smaller than the original single file.
+- Portable single-file build is 3.10% smaller than the original single file.
 
 No aggressively minified build was created. The readable portable build is the deployment artifact so dynamic properties, generated markup, persistence, postMessage behavior, and exports remain conservative.

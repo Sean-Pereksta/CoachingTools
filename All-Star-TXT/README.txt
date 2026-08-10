@@ -14,7 +14,7 @@ From this folder, run:
 
   node build/build-portable.js
 
-Node is required only to build the portable file. It is not required to run allstar.html or the generated portable application. The build also refreshes qualtrics/generator-source.js from the canonical qualtrics/generator.html.
+Node is required only to build the portable file. It is not required to run allstar.html or the generated portable application. The build also refreshes qualtrics/generator-source.js from the canonical qualtrics/generator.html and bundles qualtrics/insights.js into the generated carrier and portable file.
 
 SINGLE-FILE VERSION
 Take dist/All-Star-Portable.html when you want one file for another computer. It is generated output; do not edit it directly.
@@ -53,6 +53,7 @@ SOURCE LAYOUT
 - js/qualtrics-bridge.js: parent/iframe messages and lazy generator loading
 - js/app.js: event wiring and startup
 - qualtrics/generator.html: final, permanently patched generator
+- qualtrics/insights.js: reusable display formatting, corrective classification, severity/breadth, concentration, evidence, and trend logic
 - tests/regression-tests.js: manually loaded browser regression suites
 - tests/verify-package.js: static package/build verification
 - build/build-portable.js: dependency-free portable builder
