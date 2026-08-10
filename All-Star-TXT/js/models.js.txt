@@ -738,7 +738,7 @@ function dataIndexSignature(){
 }
 
 function bumpVersion(key){
-  state.versions=state.versions||{data:0,retail:0,referral:0,roster:0,aliases:0,teams:0,mappings:0,research:0};
+  state.versions=state.versions||{data:0,retail:0,referral:0,roster:0,aliases:0,teams:0,mappings:0,models:0,metrics:0,researchDefinitions:0,research:0};
   if(key && Object.prototype.hasOwnProperty.call(state.versions,key)) state.versions[key]++;
   if(key!=='data') state.versions.data++;
 }
