@@ -6,9 +6,10 @@ Passed automated package checks
 - Every application module parses individually.
 - The ordered application JavaScript parses as one combined program.
 - The extracted regression suite parses and is not loaded during normal startup.
-- The final Qualtrics generator's 481,961-byte inline application script parses.
+- The final Qualtrics generator's 505,946-byte inline application script parses.
+- The standalone Qualtrics insights module parses and its focused formatting, corrective-context, urgency, and organization-summary tests pass.
 - The modular source contains no encoded legacy generator or runtime patch engine.
-- The final generator contains Display Column, clear-data, urgency PDF, Coach Profile, Overall Coaching Profile, Coaching Topic Impact, and simplified executive-report markers.
+- The final generator contains Display Column, Corrective Context, Follow-Up, Organization Opportunity Summary, clear-data, urgency PDF, Coach Profile, Overall Coaching Profile, Coaching Topic Impact, and simplified executive-report markers.
 - Required localStorage keys, IndexedDB names, schema versions, and store names remain present.
 - The generated portable file has no required first-party CSS or JavaScript file dependency.
 

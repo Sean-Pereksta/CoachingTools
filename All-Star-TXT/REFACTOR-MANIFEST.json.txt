@@ -4,8 +4,13 @@
   "originalSha256": "11517d830560263e274b98c2428be6161732048da55d79386746eb932ecb0c72",
   "originalGeneratorBytes": 319011,
   "originalGeneratorSha256": "ef45579b7b40f942290b1a4ac379ea52ddb8504a716be5d12e2411069ba4f19d",
-  "finalGeneratorBytes": 565942,
-  "finalGeneratorSha256": "a5604510aff94602c95fe3323e57ab88c05175f8f29ca13ad4f1fb27eb1d0a81",
+  "finalGeneratorBytes": 596270,
+  "finalGeneratorSha256": "14d77e463d5d0fc8db8c91f313e98b72034e1fba0260d2aa0b3c29b8aaf929ee",
+  "qualtricsInsightModule": {
+    "file": "qualtrics/insights.js",
+    "bytes": 9330,
+    "sha256": "064131b17b773934be0a225be8da23abd829449d5047968c32ce03831cecd115"
+  },
   "classicScriptExecutionOrder": [
     "js/core.js",
     "js/persistence.js",
@@ -80,6 +85,7 @@
     "Removed the encoded Qualtrics generator and patchQualtricsGeneratorSource runtime engine after materializing the exact final generator.",
     "Moved regression suites out of production startup and exposed an on-demand loader.",
     "Replaced the startup roster regression execution with manual debug loading.",
-    "Added a lazy, generated Qualtrics source carrier to preserve srcdoc storage compatibility under file://."
+    "Added a lazy, generated Qualtrics source carrier to preserve srcdoc storage compatibility under file://.",
+    "Extracted reusable Qualtrics formatting, corrective-context, urgency, and organization-summary logic into qualtrics/insights.js."
   ]
 }

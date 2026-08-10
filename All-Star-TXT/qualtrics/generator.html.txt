@@ -6,6 +6,7 @@
 <title>Coaching Email Generator — Qualtrics Rule Reports</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="insights.js" onerror="this.onerror=null;this.src='qualtrics/insights.js'"></script>
 <style>
 :root{
   --bg:#f8fafc;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#e5e7eb;--soft:#f1f5f9;
@@ -62,6 +63,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
 .ccPhraseBuilder{border:1px solid #bfdbfe;border-radius:14px;background:linear-gradient(135deg,#eff6ff,#fff);padding:12px;display:grid;gap:10px}.ccPhraseEntry{min-width:min(520px,100%);flex:1}.ccPhraseOptions{display:grid;grid-template-columns:minmax(210px,1fr) repeat(3,minmax(150px,.7fr));gap:10px;align-items:end}.ccPhraseError{border:1px solid #fecaca;border-radius:10px;background:#fff1f2;color:#991b1b;padding:8px 10px;font-size:12px;font-weight:900}.ccPhraseBuilder .chips{max-height:none}.ccPhraseBuilder input[aria-invalid="true"]{border-color:#dc2626;box-shadow:0 0 0 3px rgba(220,38,38,.10)}@media(max-width:900px){.ccPhraseOptions{grid-template-columns:1fr}}
 
 .impactRuleGrid{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}.impactPhraseBox{border:1px solid #bfdbfe;border-radius:14px;background:#eff6ff;padding:11px;margin:10px 0}.impactSessionControls{margin-top:9px;align-items:end}.impactViewControls{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.impactViewControls>label{min-width:230px;flex:1}.impactScopeGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));align-items:end}.impactScopeGrid select[multiple]{min-height:88px;text-transform:none}.impactSnapshotGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:9px}.impactMetric{border:1px solid #dbe2ea;border-radius:13px;padding:10px;background:#fff}.impactMetric .k{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:1000}.impactMetric .v{font-size:22px;font-weight:1000;margin-top:3px}.impactMetric .d{font-size:11px;color:#64748b;font-weight:800;margin-top:3px}.impactBars{display:grid;gap:10px}.impactBar{display:flex;min-height:42px;border:1px solid #cbd5e1;border-radius:13px;overflow:hidden;background:#f1f5f9}.impactBar button{border:0;border-right:1px solid rgba(255,255,255,.45);min-width:84px;padding:7px;color:#fff;font-size:11px;font-weight:1000;line-height:1.2}.impactBar button:last-child{border-right:0}.impactBar .positive{background:#16a34a}.impactBar .neutral{background:#d97706}.impactBar .negative{background:#dc2626}.impactBar .exact{background:#2563eb}.impactBar .other{background:#7c3aed}.impactBar .none{background:#94a3b8;color:#0f172a}.impactNotMeasured{font-size:11px;color:#64748b;font-weight:900;margin-top:5px}.impactNarrative{border:1px solid #bfdbfe;border-left:5px solid #2563eb;border-radius:13px;background:#eff6ff;padding:11px;color:#1e3a8a;line-height:1.5}.impactNarrative.positive{border-left-color:#16a34a;background:#f0fdf4;color:#166534}.impactNarrative.negative{border-left-color:#dc2626;background:#fef2f2;color:#991b1b}.impactNarrative.neutral{border-left-color:#d97706;background:#fffbeb;color:#92400e}.impactFiveAreas{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px}.impactArea{border:1px solid #dbe2ea;border-top:4px solid #2563eb;border-radius:13px;padding:10px;background:#fff}.impactArea h4{margin:0 0 5px}.impactArea strong{font-size:21px}.impactSection{border:1px solid #dbe2ea;border-radius:16px;background:#fff;padding:13px;box-shadow:0 8px 24px rgba(15,23,42,.05);display:grid;gap:10px}.impactSection h2,.impactSection h3{margin:0}.impactBadge{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:1000;border:1px solid #cbd5e1;background:#f8fafc}.impactBadge.positive{color:#166534;background:#dcfce7;border-color:#86efac}.impactBadge.neutral{color:#92400e;background:#fef3c7;border-color:#fcd34d}.impactBadge.negative{color:#991b1b;background:#fee2e2;border-color:#fca5a5}.impactBadge.not_measurable{color:#475569;background:#e2e8f0;border-color:#cbd5e1}.impactBadge.exact{color:#1e40af;background:#dbeafe;border-color:#93c5fd}.impactBadge.other{color:#6b21a8;background:#f3e8ff;border-color:#d8b4fe}.impactBadge.none{color:#475569;background:#f1f5f9}.impactActionCritical{border-left:5px solid #dc2626}.impactActionHigh{border-left:5px solid #ea580c}.impactActionModerate{border-left:5px solid #d97706}.impactPositiveCard{border-left:5px solid #16a34a}.impactMethod{border:1px solid #cbd5e1;border-radius:12px;padding:9px;background:#f8fafc}.impactMethod summary{cursor:pointer;font-weight:1000}.impactCompare th[data-impact-sort]{cursor:pointer}.impactDiag{border:1px solid #fbbf24;border-left:5px solid #d97706;border-radius:12px;background:#fffbeb;padding:10px}.impactEmpty{color:#64748b;font-weight:800;padding:14px;text-align:center}.impactRepDetail{font-size:11px;color:#475569;line-height:1.4;margin-top:4px}.impactReportShell{display:grid;gap:12px;margin-bottom:14px}.impactTableWrap{overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid #dbe2ea;border-radius:12px}.impactTableWrap table{min-width:1050px}.impactTableWrap th{position:sticky;top:0}.impactInlineStat{font-size:11px;color:#475569;font-weight:800}.impactChange{font-weight:1000}.impactChange.positive{color:#166534}.impactChange.neutral{color:#92400e}.impactChange.negative{color:#991b1b}@media(max-width:700px){.impactSnapshotGrid,.impactFiveAreas{grid-template-columns:repeat(2,minmax(0,1fr))}.impactBar{overflow-x:auto}.impactBar button{min-width:120px}.impactViewControls,.impactScopeGrid{display:grid;grid-template-columns:1fr}.impactViewControls>label{min-width:0}.impactMetric .v{font-size:18px}}
+.correctiveContextBox{border:1px solid #fed7aa;border-left:5px solid #f97316;border-radius:14px;background:#fff7ed;padding:12px}.correctiveContextGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end}.orgSummaryControls{display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:12px;align-items:end}.orgSummaryControls select{min-height:120px;text-transform:none}.orgExecutiveGrid,.orgSummaryGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}.orgExecutiveCard,.orgSummaryBlock{border:1px solid #dbe2ea;border-radius:14px;background:#fff;padding:12px}.orgSummaryBlock{border-top:5px solid #2563eb}.orgSummaryBlock h3{margin:0 0 8px}.orgOpportunityRow{padding:7px 0;border-top:1px solid #e5e7eb;font-size:12px}.orgOpportunityRow:first-of-type{border-top:0}.orgMetaLine{font-size:12px;color:#475569;line-height:1.5}.repSignal{font-weight:1000}.repSignal.critical{color:#991b1b;background:#fee2e2;border-radius:5px;padding:1px 3px}.repSignal.elevated{color:#9a3412;background:#ffedd5;border-radius:5px;padding:1px 3px}.repSignal.standard{color:#854d0e;background:#fef9c3;border-radius:5px;padding:1px 3px}.repSignal.improving{color:#166534;background:#dcfce7;border-radius:5px;padding:1px 3px}.followUpCompact{margin-top:9px;border:1px solid #fed7aa;border-left:4px solid #f97316;border-radius:9px;background:#fff7ed;padding:8px 10px;font-size:11px;line-height:1.45}@media(max-width:700px){.orgSummaryControls{grid-template-columns:1fr}.correctiveContextGrid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -72,6 +74,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
     <button class="tabBtn" data-tab="rules">2. Build Rules</button>
     <button class="tabBtn" data-tab="reportfiles">3. Add Report Files</button>
     <button class="tabBtn" data-tab="report">4. Action Report</button>
+    <button class="tabBtn" data-tab="orgsummary">Organization Opportunities</button>
     <button class="tabBtn" data-tab="coachprofiles">Coach Profiles</button>
     <button class="tabBtn" data-tab="overallcoaching">Overall Coaching Profile</button>
     <button class="tabBtn" data-tab="topicimpact">Coaching Topic Impact</button>
@@ -130,6 +133,8 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
                 <label>Dashboard criteria logic<select id="ruleCriteriaLogic"><option value="and">AND — all dashboard criteria must match</option><option value="or">OR — any dashboard criterion can match</option></select></label>
                 <label id="ruleDisplayColumnToggleField" class="inlineCheck"><input id="ruleDisplayColumnEnabled" type="checkbox"> Use report-file display column beside representative names</label>
                 <label id="ruleDisplayColumnField" class="hidden">Display column<select id="ruleDisplayColumn"><option value="">Select a report-file column</option></select></label>
+                <label id="ruleDisplayFormatField" class="hidden">Display format<select id="ruleDisplayFormat"><option value="auto">Auto</option><option value="percentage">Percentage</option><option value="number">Number</option><option value="count">Count</option><option value="currency">Currency</option><option value="duration">Duration</option></select></label>
+                <label id="ruleDisplayPrecisionField" class="hidden">Display decimals<input id="ruleDisplayPrecision" type="number" min="0" max="4" step="1" value="1"></label>
               </div>
               <div id="ruleDisplayColumnHelp" class="sub">Display column is off by default. When enabled for a report-file rule, the selected imported Excel value replaces the associated KPI shown beside each representative name. Coached trend and the not-coached KPI average still use the associated KPI.</div>
               <div class="note" id="ruleMatchNote"><strong>File matching:</strong> any uploaded report filename containing the base filename above will use this complete rule set, including its formatted coach instructions.</div>
@@ -194,6 +199,8 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
                 <div class="ruleConfigGrid">
                   <label>Stat<select id="statRuleMetric"><option value="cashAppointmentRate">Cash Appointment Rate</option><option value="wiperRate">Wiper Rate</option><option value="callQuality">Call Quality</option><option value="custom">Custom weekly-stat header</option></select></label>
                   <label id="statRuleCustomLabelField" class="hidden">Custom stat label<input id="statRuleCustomHeader" placeholder="Name shown in the report"></label>
+                  <label id="statRuleDisplayFormatField" class="hidden">Custom stat display<select id="statRuleDisplayFormat"><option value="auto">Auto</option><option value="percentage">Percentage</option><option value="number">Number</option><option value="count">Count</option><option value="currency">Currency</option><option value="duration">Duration</option></select></label>
+                  <label id="statRuleDisplayPrecisionField" class="hidden">Custom stat decimals<input id="statRuleDisplayPrecision" type="number" min="0" max="4" step="1" value="1"></label>
                   <label id="statRuleCustomSourceField" class="hidden">Custom stat source<select id="statRuleCustomSourceMode"><option value="column">Use one selected weekly-stat column</option><option value="ratio">Calculate first selected column ÷ second selected column</option></select></label>
                   <label id="statRuleCustomValueField" class="hidden">Value column<select id="statRuleCustomValueHeader"><option value="">Select weekly-stat value column</option></select></label>
                   <label id="statRuleCustomNumeratorField" class="hidden">First column / numerator<select id="statRuleCustomNumeratorHeader"><option value="">Select first weekly-stat column</option></select></label>
@@ -304,6 +311,24 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
               <div class="chips" id="coachingLinkChips"></div>
               <div class="row"><label style="flex:1;text-transform:none;letter-spacing:0;color:var(--muted)">Description contains phrase<input id="coachPhraseInput" placeholder="insurance cash, save the sale, discounted without filing"></label><button class="btn" id="addCoachPhraseBtn">Add Phrase</button></div>
               <div class="chips" id="coachPhraseChips"></div>
+            </div>
+          </details>
+
+          <details class="ruleSection" id="correctiveContextSection">
+            <summary><span class="sectionCopy">Corrective context<small>Add current-evidence-based corrective signals to this normal rule without creating a separate corrective rule.</small></span><span class="pill sectionState" id="correctiveContextSectionState">Off</span></summary>
+            <div class="ruleSectionContent">
+              <div class="correctiveContextBox"><strong>Compact output only:</strong> this adds at most two short signals beside a representative name and changes the name highlight. Historical corrective history never raises concern by itself; the representative must also have current performance evidence.</div>
+              <div class="correctiveContextGrid">
+                <label class="inlineCheck wide"><input id="correctiveContextEnabled" type="checkbox"> Use Corrective Context on this rule</label>
+                <label>Corrective lookback weeks<input id="correctiveContextLookbackWeeks" type="number" min="1" max="260" value="52"></label>
+                <label>Recent/current window weeks<input id="correctiveContextRecentWeeks" type="number" min="1" max="52" value="8"></label>
+                <label>Checklist field/scope<select id="correctiveContextScope"><option value="all">All corrective/checklist text</option><option value="incident">Incident field</option><option value="corrective">Corrective field</option><option value="coachingTypeMulti">Coaching type</option><option value="incidentOrCorrective">Incident or corrective</option></select></label>
+                <label>Corrective phrase<input id="correctiveContextPhrase" placeholder="Optional — blank matches any corrective"></label>
+                <label>Phrase match<select id="correctiveContextMatch"><option value="contains">Contains</option><option value="equals">Equals</option></select></label>
+                <label>Persistent after low weeks<input id="correctiveContextPersistentWeeks" type="number" min="2" max="52" value="3"></label>
+                <label class="inlineCheck"><input id="correctiveWatchlistEnabled" type="checkbox"> Add former-corrective follow-up when KPI evidence stays low outside the normal rule</label>
+              </div>
+              <div class="row"><button class="btn primary" id="saveCorrectiveContextBtn" type="button">Save Corrective Context</button><span class="sub">The Follow-Up scan only adds people when the rule has an assigned KPI with enough below-goal history.</span></div>
             </div>
           </details>
 
@@ -455,6 +480,15 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
       <div id="emailIntroEditor" class="emailIntroEditor" contenteditable="true" data-placeholder="Paste or type the opening message for the emails here..." style="margin-top:10px"></div>
     </div>
     <div id="reportBody" style="display:grid;gap:14px"><div class="empty">Add report files and/or select Other Type rules, then click Generate Report.</div></div>
+  </section>
+
+  <section class="view" id="view-orgsummary">
+    <div class="stepBanner"><strong>Organization Opportunity Summary</strong><span class="sub">A separate leadership view showing where opportunities are most severe, widespread, concentrated, improving, or declining. It does not change the coach email.</span></div>
+    <div class="card orgSummaryControls">
+      <label>Select one or more saved organizations<select id="orgSummarySelect" multiple size="6"></select></label>
+      <div class="row"><button class="btn blue" id="selectAllOrgSummaryBtn" type="button">Select All</button><button class="btn" id="clearOrgSummaryBtn" type="button">Clear</button><button class="btn primary" id="generateOrgSummaryBtn" type="button">Build Summary</button></div>
+    </div>
+    <div id="orgSummaryBody"><div class="empty">Generate an Action Report, select organizations, then build the separate leadership summary.</div></div>
   </section>
 
   <section class="view" id="view-coachprofiles">
@@ -681,9 +715,9 @@ function num(v){
   return pct ? n/100 : n;
 }
 function hasPercentSign(v){ return /%/.test(String(v ?? '')); }
-function isPercentHeader(h){ const raw=String(h ?? ''); const k=headerKey(raw); return raw.includes('%') || /(pct|percent|percentage|rate|ratio|usage|conversion|scheduled|save.*sale|cash.*sched|attach)/i.test(raw) || /(pct|percent|percentage|rate|ratio|usage|conversion|scheduled|savethesale|cashscheduled|attach)/.test(k); }
+function isPercentHeader(h){ const raw=String(h ?? ''); const k=headerKey(raw); return raw.includes('%') || /(pct|percent|percentage|rate|ratio|usage|conversion|scheduled|save.*sale|cash.*sched|attach|accuracy|quality|penetration|adoption|utilization|success)/i.test(raw) || /(pct|percent|percentage|rate|ratio|usage|conversion|scheduled|savethesale|cashscheduled|attach|accuracy|quality|penetration|adoption|utilization|success)/.test(k); }
 function numberForComparison(v, header='', forcePct=false){ const n=num(v); if(!isFinite(n)) return NaN; const pctContext = forcePct || isPercentHeader(header) || hasPercentSign(v); return pctContext ? (Math.abs(n)>1.5 ? n/100 : n) : n; }
-function formatValueForHeader(header, value){ const raw=String(value ?? '').trim(); if(!raw) return ''; const forcePct=isPercentHeader(header) || hasPercentSign(raw); const n=numberForComparison(raw, header, forcePct); if(isFinite(n) && forcePct) return fmtPct(n, Math.abs(n)<.1?1:0); return raw; }
+function formatValueForHeader(header, value){ const raw=String(value ?? '').trim(); if(!raw) return ''; return QualtricsInsights.formatDisplayValue(header,value,{format:'auto',precision:1})||raw; }
 function fmtPct(frac, digits=0){ if(!isFinite(frac)) return '—'; return (frac*100).toFixed(digits)+'%'; }
 function fmtNum(n,d=1){ if(!isFinite(n)) return '—'; return Number(n).toFixed(d); }
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
@@ -1071,15 +1105,19 @@ function normalizeRule(rule){
   rule.coachLookbackWeeks = Number(rule.coachLookbackWeeks) || 2;
   rule.criteriaLogic = rule.criteriaLogic || 'and';
   rule.countRule = Object.assign({nameHeader:'',minCount:1,label:'Rows found'}, rule.countRule || {});
-  rule.displayColumn = Object.assign({enabled:false,header:''}, rule.displayColumn || {});
+  rule.displayColumn = Object.assign({enabled:false,header:'',format:'auto',precision:1}, rule.displayColumn || {});
   rule.displayColumn.enabled = !!rule.displayColumn.enabled;
   rule.displayColumn.header = String(rule.displayColumn.header||'');
+  rule.displayColumn.format = QualtricsInsights.normalizeFormatConfig(rule.displayColumn,1).format;
+  rule.displayColumn.precision = QualtricsInsights.normalizeFormatConfig(rule.displayColumn,1).precision;
   rule.headers = Array.isArray(rule.headers) ? rule.headers : [];
   rule.criteria = Array.isArray(rule.criteria) ? rule.criteria : [];
   rule.coaching = Object.assign({mode:'none',typeValue:'',descriptionPhrases:[],checklistIncident:'',emailCategory:''}, rule.coaching || {});
   rule.coaching.emailCategory = friendlyCategoryLabel(rule.coaching.emailCategory);
   rule.coaching.descriptionPhrases = Array.isArray(rule.coaching.descriptionPhrases) ? rule.coaching.descriptionPhrases : [];
-  rule.statRule = Object.assign({metric:'cashAppointmentRate',customHeader:'',customSourceMode:'column',customValueHeader:'',customNumeratorHeader:'',customDenominatorHeader:'',cashSourceMode:'consumerRatio',cashRateHeader:'',cashNumeratorHeader:'',cashDenominatorHeader:'',dateMode:'relative',lookbackWeeks:10,startDate:'',endDate:'',goalRaw:'45%',minimumMode:'percent',minWeeks:3,minPctRaw:'75%',emailCategory:''}, rule.statRule || {});
+  rule.statRule = Object.assign({metric:'cashAppointmentRate',customHeader:'',customSourceMode:'column',customValueHeader:'',customNumeratorHeader:'',customDenominatorHeader:'',cashSourceMode:'consumerRatio',cashRateHeader:'',cashNumeratorHeader:'',cashDenominatorHeader:'',dateMode:'relative',lookbackWeeks:10,startDate:'',endDate:'',goalRaw:'45%',minimumMode:'percent',minWeeks:3,minPctRaw:'75%',emailCategory:'',displayFormat:'auto',displayPrecision:1}, rule.statRule || {});
+  const statDisplay=QualtricsInsights.normalizeFormatConfig({format:rule.statRule.displayFormat,precision:rule.statRule.displayPrecision},1);
+  rule.statRule.displayFormat=statDisplay.format; rule.statRule.displayPrecision=statDisplay.precision;
   if(!rule.statRule.cashSourceMode || rule.statRule.cashSourceMode==='auto') rule.statRule.cashSourceMode='consumerRatio';
   rule.statRule.emailCategory = friendlyCategoryLabel(rule.statRule.emailCategory);
   rule.statCount = Object.assign({source:'qa',nameHeader:'',conditionHeader:'',operator:'equals',value:'',minCount:1,label:'Matching rows',dateMode:'all',lookbackWeeks:52,startDate:'',endDate:'',emailCategory:''}, rule.statCount || {});
@@ -1088,6 +1126,12 @@ function normalizeRule(rule){
   rule.coachingCorrective.buildUp = Object.assign({enabled:false,weeks:10,metric:'cashAppointmentRate',customHeader:'',customSourceMode:'column',customValueHeader:'',customNumeratorHeader:'',customDenominatorHeader:'',cashSourceMode:'consumerRatio',cashRateHeader:'',cashNumeratorHeader:'',cashDenominatorHeader:'',goalRaw:'45%',minPctRaw:'75%',excludeTrendAboveRaw:''}, rule.coachingCorrective.buildUp || {});
   if(!rule.coachingCorrective.buildUp.cashSourceMode || rule.coachingCorrective.buildUp.cashSourceMode==='auto') rule.coachingCorrective.buildUp.cashSourceMode='consumerRatio';
   rule.coachingCorrective.emailCategory = friendlyCategoryLabel(rule.coachingCorrective.emailCategory);
+  rule.correctiveContext = Object.assign({enabled:false,lookbackWeeks:52,recentWeeks:8,scope:'all',phrase:'',match:'contains',persistentWeeks:3,watchlistEnabled:false},rule.correctiveContext||{});
+  rule.correctiveContext.enabled=!!rule.correctiveContext.enabled;
+  rule.correctiveContext.lookbackWeeks=Math.max(1,Number(rule.correctiveContext.lookbackWeeks)||52);
+  rule.correctiveContext.recentWeeks=Math.max(1,Number(rule.correctiveContext.recentWeeks)||8);
+  rule.correctiveContext.persistentWeeks=Math.max(2,Number(rule.correctiveContext.persistentWeeks)||3);
+  rule.correctiveContext.watchlistEnabled=!!rule.correctiveContext.watchlistEnabled;
   rule.stats = Array.isArray(rule.stats) ? rule.stats : [];
   rule.guidance = Object.assign({enabled:true,title:'How to understand this report',html:''}, rule.guidance || {});
   if(rule.guidance.enabled == null) rule.guidance.enabled = true;
@@ -1114,12 +1158,16 @@ function updateRuleTypeVisibility(){
   const displayColumnAllowed = type === 'multiHeader' || type === 'headerCount';
   if(els.ruleDisplayColumnToggleField) els.ruleDisplayColumnToggleField.classList.toggle('hidden', !displayColumnAllowed);
   if(els.ruleDisplayColumnField) els.ruleDisplayColumnField.classList.toggle('hidden', !displayColumnAllowed || !els.ruleDisplayColumnEnabled?.checked);
+  if(els.ruleDisplayFormatField) els.ruleDisplayFormatField.classList.toggle('hidden', !displayColumnAllowed || !els.ruleDisplayColumnEnabled?.checked);
+  if(els.ruleDisplayPrecisionField) els.ruleDisplayPrecisionField.classList.toggle('hidden', !displayColumnAllowed || !els.ruleDisplayColumnEnabled?.checked || ['count','duration'].includes(els.ruleDisplayFormat?.value));
   if(els.ruleDisplayColumnHelp) els.ruleDisplayColumnHelp.classList.toggle('hidden', !displayColumnAllowed);
   if(els.coachingConnectionSection) els.coachingConnectionSection.classList.toggle('hidden', type === 'coachingCorrective');
+  if(els.correctiveContextSection) els.correctiveContextSection.classList.toggle('hidden', type === 'coachingCorrective');
   if(els.performanceSection) els.performanceSection.classList.toggle('hidden', type === 'statRule' || type === 'coachingCorrective');
   updateStatRuleFieldVisibility();
   updateStatCountFieldVisibility();
   updateCoachingCorrectiveFieldVisibility();
+  renderCorrectiveContextState();
 }
 function getCountNameFromRow(row, rule){
   const h = rule?.countRule?.nameHeader || rule?.agentHeader || '';
@@ -1153,13 +1201,16 @@ async function saveRuleObj(rule, options={}){
   return rule;
 }
 function statRuleFormSnapshot(){
-  return { metric:els.statRuleMetric?.value || 'cashAppointmentRate', customHeader:(els.statRuleCustomHeader?.value||'').trim(), customSourceMode:els.statRuleCustomSourceMode?.value || 'column', customValueHeader:els.statRuleCustomValueHeader?.value || '', customNumeratorHeader:els.statRuleCustomNumeratorHeader?.value || '', customDenominatorHeader:els.statRuleCustomDenominatorHeader?.value || '', cashSourceMode:els.statRuleCashSourceMode?.value || 'consumerRatio', cashRateHeader:els.statRuleCashRateHeader?.value || '', cashNumeratorHeader:els.statRuleCashNumeratorHeader?.value || '', cashDenominatorHeader:els.statRuleCashDenominatorHeader?.value || '', dateMode:els.statRuleDateMode?.value || 'relative', lookbackWeeks:Math.max(1,Number(els.statRuleLookbackWeeks?.value)||10), startDate:els.statRuleStartDate?.value || '', endDate:els.statRuleEndDate?.value || '', goalRaw:(els.statRuleGoal?.value||'').trim(), minimumMode:els.statRuleMinimumMode?.value || 'percent', minWeeks:Math.max(1,Number(els.statRuleMinWeeks?.value)||1), minPctRaw:(els.statRuleMinPct?.value||'75%').trim(), emailCategory:friendlyCategoryLabel((els.statRuleEmailCategory?.value||'').trim()) };
+  return { metric:els.statRuleMetric?.value || 'cashAppointmentRate', customHeader:(els.statRuleCustomHeader?.value||'').trim(), customSourceMode:els.statRuleCustomSourceMode?.value || 'column', customValueHeader:els.statRuleCustomValueHeader?.value || '', customNumeratorHeader:els.statRuleCustomNumeratorHeader?.value || '', customDenominatorHeader:els.statRuleCustomDenominatorHeader?.value || '', cashSourceMode:els.statRuleCashSourceMode?.value || 'consumerRatio', cashRateHeader:els.statRuleCashRateHeader?.value || '', cashNumeratorHeader:els.statRuleCashNumeratorHeader?.value || '', cashDenominatorHeader:els.statRuleCashDenominatorHeader?.value || '', dateMode:els.statRuleDateMode?.value || 'relative', lookbackWeeks:Math.max(1,Number(els.statRuleLookbackWeeks?.value)||10), startDate:els.statRuleStartDate?.value || '', endDate:els.statRuleEndDate?.value || '', goalRaw:(els.statRuleGoal?.value||'').trim(), minimumMode:els.statRuleMinimumMode?.value || 'percent', minWeeks:Math.max(1,Number(els.statRuleMinWeeks?.value)||1), minPctRaw:(els.statRuleMinPct?.value||'75%').trim(), emailCategory:friendlyCategoryLabel((els.statRuleEmailCategory?.value||'').trim()), displayFormat:els.statRuleDisplayFormat?.value||'auto', displayPrecision:Math.max(0,Math.min(4,Number(els.statRuleDisplayPrecision?.value)||0)) };
 }
 function statCountFormSnapshot(){
   return { source:els.statCountSource?.value || 'qa', nameHeader:els.statCountNameHeader?.value || '', conditionHeader:els.statCountConditionHeader?.value || '', operator:els.statCountOperator?.value || 'equals', value:(els.statCountValue?.value||'').trim(), minCount:Math.max(0,Number(els.statCountMin?.value)||0), label:(els.statCountLabel?.value||'Matching rows').trim() || 'Matching rows', dateMode:els.statCountDateMode?.value || 'all', lookbackWeeks:Math.max(1,Number(els.statCountLookbackWeeks?.value)||52), startDate:els.statCountStartDate?.value || '', endDate:els.statCountEndDate?.value || '', emailCategory:friendlyCategoryLabel((els.statCountEmailCategory?.value||'').trim()) };
 }
 function coachingCorrectiveFormSnapshot(){
   return { coachingTopic:(els.ccCoachingTopic?.value||'').trim(), coachingMatch:els.ccCoachingMatch?.value || 'equals', minCoachingCount:Math.max(0,Number(els.ccMinCoachingCount?.value)||0), coachingLookbackWeeks:Math.max(1,Number(els.ccCoachingLookbackWeeks?.value)||52), checklistField:els.ccChecklistField?.value || 'incident', checklistPhrase:(els.ccChecklistPhrase?.value||'').trim(), checklistMatch:els.ccChecklistMatch?.value || 'contains', checklistLookbackWeeks:Math.max(1,Number(els.ccChecklistLookbackWeeks?.value)||52), requireChecklist:!!els.ccRequireChecklist?.checked, emailCategory:friendlyCategoryLabel((els.ccEmailCategory?.value||'').trim()), buildUp:{ enabled:!!els.ccBuildUpEnabled?.checked, weeks:Math.max(1,Number(els.ccBuildUpWeeks?.value)||10), metric:els.ccBuildUpMetric?.value || 'cashAppointmentRate', customHeader:(els.ccBuildUpCustomHeader?.value||'').trim(), customSourceMode:els.ccBuildUpCustomSourceMode?.value || 'column', customValueHeader:els.ccBuildUpCustomValueHeader?.value || '', customNumeratorHeader:els.ccBuildUpCustomNumeratorHeader?.value || '', customDenominatorHeader:els.ccBuildUpCustomDenominatorHeader?.value || '', cashSourceMode:els.ccBuildUpCashSourceMode?.value || 'consumerRatio', cashRateHeader:els.ccBuildUpCashRateHeader?.value || '', cashNumeratorHeader:els.ccBuildUpCashNumeratorHeader?.value || '', cashDenominatorHeader:els.ccBuildUpCashDenominatorHeader?.value || '', goalRaw:(els.ccBuildUpGoal?.value||'').trim(), minPctRaw:(els.ccBuildUpMinPct?.value||'75%').trim(), excludeTrendAboveRaw:(els.ccBuildUpExcludeTrend?.value||'').trim() } };
+}
+function correctiveContextFormSnapshot(){
+  return {enabled:!!els.correctiveContextEnabled?.checked,lookbackWeeks:Math.max(1,Number(els.correctiveContextLookbackWeeks?.value)||52),recentWeeks:Math.max(1,Number(els.correctiveContextRecentWeeks?.value)||8),scope:els.correctiveContextScope?.value||'all',phrase:(els.correctiveContextPhrase?.value||'').trim(),match:els.correctiveContextMatch?.value||'contains',persistentWeeks:Math.max(2,Number(els.correctiveContextPersistentWeeks?.value)||3),watchlistEnabled:!!els.correctiveWatchlistEnabled?.checked};
 }
 function readRuleForm(){
   let rule = currentRule() || newRule();
@@ -1170,12 +1221,13 @@ function readRuleForm(){
   rule.coachLookbackWeeks = Number(els.ruleCoachLookback.value) || 2;
   rule.criteriaLogic = (els.ruleCriteriaLogic?.value || rule.criteriaLogic || 'and');
   rule.countRule = { nameHeader:els.countNameHeader?.value || rule.countRule?.nameHeader || '', minCount:Math.max(0, Number(els.countMin?.value ?? rule.countRule?.minCount ?? 1) || 0), label:(els.countLabel?.value || rule.countRule?.label || 'Rows found').trim() || 'Rows found' };
-  rule.displayColumn = { enabled:!!els.ruleDisplayColumnEnabled?.checked, header:els.ruleDisplayColumn?.value || '' };
+  rule.displayColumn = { enabled:!!els.ruleDisplayColumnEnabled?.checked, header:els.ruleDisplayColumn?.value || '',format:els.ruleDisplayFormat?.value||'auto',precision:Math.max(0,Math.min(4,Number(els.ruleDisplayPrecision?.value)||0)) };
   rule.headers = state.currentHeaders.slice();
   rule.coaching = { mode:els.coachMatchMode.value, typeValue:els.coachTypeValue.value.trim(), checklistIncident:els.checklistIncidentValue.value.trim(), emailCategory:friendlyCategoryLabel(els.emailCategoryLabel.value.trim()), descriptionPhrases:(rule.coaching?.descriptionPhrases||[]) };
   rule.statRule = statRuleFormSnapshot();
   rule.statCount = statCountFormSnapshot();
   rule.coachingCorrective = coachingCorrectiveFormSnapshot();
+  rule.correctiveContext = correctiveContextFormSnapshot();
   rule.guidance = { enabled:!!els.ruleGuidanceEnabled?.checked, title:(els.ruleGuidanceTitle?.value || 'How to understand this report').trim() || 'How to understand this report', html:sanitizeRichHtml(els.ruleGuidanceEditor?.innerHTML || '') };
   rule.criteria = rule.criteria || [];
   rule.stats = rule.stats || [];
@@ -1197,6 +1249,8 @@ function fillRuleForm(rule){
   if(els.countMin) els.countMin.value = Number(rule?.countRule?.minCount ?? 1);
   if(els.countLabel) els.countLabel.value = rule?.countRule?.label || 'Rows found';
   if(els.ruleDisplayColumnEnabled) els.ruleDisplayColumnEnabled.checked = !!rule?.displayColumn?.enabled;
+  if(els.ruleDisplayFormat) els.ruleDisplayFormat.value=rule?.displayColumn?.format||'auto';
+  if(els.ruleDisplayPrecision) els.ruleDisplayPrecision.value=Number(rule?.displayColumn?.precision??1);
   state.currentHeaders = (rule?.headers || []).slice();
   renderHeaderOptions();
   if(els.ruleDisplayColumn) els.ruleDisplayColumn.value = rule?.displayColumn?.header || '';
@@ -1207,6 +1261,8 @@ function fillRuleForm(rule){
   els.emailCategoryLabel.value = rule?.coaching?.emailCategory || '';
   if(els.statRuleMetric) els.statRuleMetric.value=rule?.statRule?.metric || 'cashAppointmentRate';
   if(els.statRuleCustomHeader) els.statRuleCustomHeader.value=rule?.statRule?.customHeader || '';
+  if(els.statRuleDisplayFormat) els.statRuleDisplayFormat.value=rule?.statRule?.displayFormat||'auto';
+  if(els.statRuleDisplayPrecision) els.statRuleDisplayPrecision.value=Number(rule?.statRule?.displayPrecision??1);
   if(els.statRuleCustomSourceMode) els.statRuleCustomSourceMode.value=rule?.statRule?.customSourceMode || 'column';
   if(els.statRuleCashSourceMode) els.statRuleCashSourceMode.value=rule?.statRule?.cashSourceMode || 'consumerRatio';
   if(els.statRuleCashRateHeader) els.statRuleCashRateHeader.value=rule?.statRule?.cashRateHeader || '';
@@ -1256,6 +1312,16 @@ function fillRuleForm(rule){
   if(els.ccBuildUpGoal) els.ccBuildUpGoal.value=cc.buildUp?.goalRaw || '';
   if(els.ccBuildUpMinPct) els.ccBuildUpMinPct.value=cc.buildUp?.minPctRaw || '75%';
   if(els.ccBuildUpExcludeTrend) els.ccBuildUpExcludeTrend.value=cc.buildUp?.excludeTrendAboveRaw || '';
+  const context=rule?.correctiveContext||{};
+  if(els.correctiveContextEnabled) els.correctiveContextEnabled.checked=!!context.enabled;
+  if(els.correctiveContextLookbackWeeks) els.correctiveContextLookbackWeeks.value=Number(context.lookbackWeeks||52);
+  if(els.correctiveContextRecentWeeks) els.correctiveContextRecentWeeks.value=Number(context.recentWeeks||8);
+  if(els.correctiveContextScope) els.correctiveContextScope.value=context.scope||'all';
+  if(els.correctiveContextPhrase) els.correctiveContextPhrase.value=context.phrase||'';
+  if(els.correctiveContextMatch) els.correctiveContextMatch.value=context.match||'contains';
+  if(els.correctiveContextPersistentWeeks) els.correctiveContextPersistentWeeks.value=Number(context.persistentWeeks||3);
+  if(els.correctiveWatchlistEnabled) els.correctiveWatchlistEnabled.checked=!!context.watchlistEnabled;
+  renderCorrectiveContextState();
   if(els.ruleGuidanceEnabled) els.ruleGuidanceEnabled.checked = rule?.guidance?.enabled !== false;
   if(els.ruleGuidanceTitle) els.ruleGuidanceTitle.value = rule?.guidance?.title || 'How to understand this report';
   if(els.ruleGuidanceEditor) els.ruleGuidanceEditor.innerHTML = rule?.guidance?.html || '';
@@ -1495,6 +1561,8 @@ function updateMetricSourceVisibility(prefix,metricId,cashModeId,customModeId){
   els[`${prefix}CustomValueField`]?.classList.toggle('hidden',!custom||customMode==='ratio');
   els[`${prefix}CustomNumeratorField`]?.classList.toggle('hidden',!custom||customMode!=='ratio');
   els[`${prefix}CustomDenominatorField`]?.classList.toggle('hidden',!custom||customMode!=='ratio');
+  els[`${prefix}DisplayFormatField`]?.classList.toggle('hidden',!custom);
+  els[`${prefix}DisplayPrecisionField`]?.classList.toggle('hidden',!custom||['count','duration'].includes(els[`${prefix}DisplayFormat`]?.value));
 }
 function updateStatRuleFieldVisibility(){
   if(!els.statRuleDateMode) return;
@@ -1510,6 +1578,13 @@ function updateStatRuleFieldVisibility(){
 function updateCoachingCorrectiveFieldVisibility(){
   if(els.ccBuildUpFields) els.ccBuildUpFields.classList.toggle('hidden',!els.ccBuildUpEnabled?.checked);
   updateMetricSourceVisibility('ccBuildUp','ccBuildUpMetric','ccBuildUpCashSourceMode','ccBuildUpCustomSourceMode');
+}
+function renderCorrectiveContextState(){
+  if(!els.correctiveContextSectionState) return;
+  const enabled=!!els.correctiveContextEnabled?.checked;
+  const watch=enabled&&!!els.correctiveWatchlistEnabled?.checked;
+  els.correctiveContextSectionState.textContent=enabled?(watch?'On + Follow-Up':'On'):'Off';
+  els.correctiveContextSectionState.className='pill sectionState '+(enabled?'warn':'');
 }
 function renderStatRuleChips(){
   if(!els.statRuleChips) return;
@@ -1868,7 +1943,7 @@ function clearConnectedSource(source){
 }
 async function importAllStarCoreFiles(payload={}){
   const files=payload.files||{}, token=uid(); state.allStarCoreImportToken=token;
-  state.organizations=(payload.organizations||[]).map(normalizeBridgeOrganization); setHireDateSourceCatalog(payload.lookupSources||[]); renderReportAudienceControls();
+  state.organizations=(payload.organizations||[]).map(normalizeBridgeOrganization); setHireDateSourceCatalog(payload.lookupSources||[]); renderReportAudienceControls(); populateOrgSummarySelect();
   try{
     allStarBridgeNotify('qualtrics-key-files-progress',{message:'Connecting 90-day KPI data…'});
     if((files.qa?.rows||[]).length) await loadQA(allStarRowsFile(files.qa,'All-Star QA','90-day KPI'),{deferDerived:true,yieldEvery:1500}); else clearConnectedSource('qa');
@@ -2094,7 +2169,11 @@ function trendAroundCoaching(repK,config,coachingDate,reportDate){
   const beforeAvg=averageSeries(before), afterAvg=averageSeries(after);
   return {available:before.length>0&&after.length>0&&isFinite(beforeAvg)&&isFinite(afterAvg),beforeAvg,afterAvg,delta:afterAvg-beforeAvg,beforeCount:before.length,afterCount:after.length,coachingDate,coachingWeek};
 }
-function formatMetricValue(label,value){ return isFinite(value) ? (isPercentHeader(label)?fmtPct(value,1):fmtNum(value,2)) : 'N/A'; }
+function formatMetricValue(label,value,formatConfig){
+  if(!isFinite(value)) return 'N/A';
+  if(formatConfig) return QualtricsInsights.formatDisplayValue(label,value,formatConfig)||'N/A';
+  return isPercentHeader(label)?fmtPct(value,1):fmtNum(value,2);
+}
 function trendPlainText(trend,label){
   if(!trend?.available) return 'Insufficient valued weeks';
   const sign=trend.delta>0?'+':'';
@@ -2163,6 +2242,63 @@ function checklistTextForScope(row,scope){ if(scope==='incident') return row.inc
 function checklistRowsForCorrective(repK,config,reportDate){
   const from=addDays(reportDate,-7*Math.max(1,Number(config?.checklistLookbackWeeks||52)));
   return rowsForRep('checklistByRep',repK).filter(r=>r.date>=from&&r.date<=reportDate&&textMatch(checklistTextForScope(r,config?.checklistField),config?.checklistPhrase,config?.checklistMatch));
+}
+function correctiveContextConfigForRule(rule){
+  if(isCoachingCorrectiveRule(rule)){
+    const c=rule.coachingCorrective||{};
+    return {enabled:true,lookbackWeeks:Number(c.checklistLookbackWeeks||52),recentWeeks:Math.min(8,Number(c.checklistLookbackWeeks||52)),scope:c.checklistField||'all',phrase:c.checklistPhrase||'',match:c.checklistMatch||'contains',persistentWeeks:3,watchlistEnabled:false};
+  }
+  return Object.assign({enabled:false,lookbackWeeks:52,recentWeeks:8,scope:'all',phrase:'',match:'contains',persistentWeeks:3,watchlistEnabled:false},rule?.correctiveContext||{});
+}
+function isCorrectiveEvidenceRow(row){
+  if(String(row?.corrective||'').trim()) return true;
+  return /\b(corrective|verbal|written|final|warning|disciplin|performance action|action plan)\b/i.test(String(row?.searchText||[row?.incident,row?.desc].join(' | ')));
+}
+function correctiveContextRowsForRep(repK,rule,reportDate){
+  const config=correctiveContextConfigForRule(rule); if(!config.enabled) return [];
+  const from=addDays(reportDate,-7*Math.max(1,Number(config.lookbackWeeks)||52)), phrase=String(config.phrase||'').trim();
+  return rowsForRep('checklistByRep',repK).filter(function(row){
+    if(!(row.date>=from&&row.date<=reportDate)) return false;
+    if(phrase) return textMatch(checklistTextForScope(row,config.scope),phrase,config.match);
+    return isCorrectiveEvidenceRow(row);
+  }).sort(function(a,b){ return b.date-a.date; });
+}
+function correctiveContextForRecord(record,rule,reportDate){
+  const config=correctiveContextConfigForRule(rule), currentPoor=!!record&&(!!record.alarm||!!record.directStatCheck?.meets||!!record.statCountMetrics||!!record.dashboardValues?.length||isCoachingCorrectiveRule(rule));
+  const history=config.enabled?correctiveContextRowsForRep(record.repKey,rule,reportDate):[];
+  const recentFrom=addDays(reportDate,-7*Math.max(1,Number(config.recentWeeks)||8));
+  const recent=history.filter(function(row){ return row.date>=recentFrom; });
+  const connected=urgencyConnectedStats([record]), worsening=isFinite(connected.worseningPct)&&connected.worseningPct>=.5, improving=isFinite(connected.improvingPct)&&connected.improvingPct>=.5&&!worsening;
+  const checks=urgencyChecksForRecord(record), lowWeeks=Math.max.apply(null,[0].concat(checks.map(function(check){ return Number(check.lowWeeks)||0; })));
+  const persistent=lowWeeks>=Math.max(2,Number(config.persistentWeeks)||3)||(Number(record.history?.dateCount)||0)>=2;
+  const severity=record.periodKpi?.available?(Number(record.periodKpi.individualNeed)||0):(record.alarm ? 0.78 : (currentPoor ? 0.52 : 0));
+  const classified=QualtricsInsights.classifyCorrective({historyCount:history.length,recentCount:recent.length,currentPoor,severity,persistent,worsening,improving,repeatNeed:(Number(record.history?.dateCount)||0)>=2,hasRecentCoaching:!!record.coached?.isCoached});
+  return Object.assign(classified,{enabled:config.enabled,historyCount:history.length,recentCount:recent.length,latest:history[0]||null,severity,currentPoor,persistent,worsening,improving});
+}
+function formerCorrectiveWatchlist(reportDate,rules,existing){
+  const out=[];
+  for(const rule of rules||[]){
+    const config=correctiveContextConfigForRule(rule); if(!config.enabled||!config.watchlistEnabled) continue;
+    const kpiConfigs=urgencyKpiConfigsForRule(rule); if(!kpiConfigs.length) continue;
+    for(const base of knownRepUniverse().values()){
+      if(existing.has(base.repKey+'::'+rule.id)) continue;
+      const history=correctiveContextRowsForRep(base.repKey,rule,reportDate); if(!history.length) continue;
+      let best=null;
+      for(const raw of kpiConfigs){
+        const check=evaluateStatRuleForRep(base.repKey,Object.assign({},raw,{dateMode:'relative',lookbackWeeks:Math.max(Number(raw.lookbackWeeks)||0,Number(config.persistentWeeks)||3),minimumMode:'weeks',minWeeks:Number(config.persistentWeeks)||3}),reportDate);
+        if(check.valuedWeeks>=Math.max(2,Number(config.persistentWeeks)||3)&&check.lowWeeks>=Math.max(2,Number(config.persistentWeeks)||3)&&isFinite(check.avg)&&isFinite(check.goal)&&check.avg<check.goal){
+          const gap=urgencyClamp((check.goal-check.avg)/Math.max(Math.abs(check.goal),isPercentHeader(check.label)?.01:1),0,1);
+          if(!best||gap>best.gap) best={check,gap};
+        }
+      }
+      if(!best) continue;
+      const recentFrom=addDays(reportDate,-7*Math.max(1,Number(config.recentWeeks)||8)), recentCount=history.filter(function(row){ return row.date>=recentFrom; }).length, map=state.teamMap.get(base.repKey)||{};
+      const classification=QualtricsInsights.classifyCorrective({historyCount:history.length,recentCount,currentPoor:true,severity:Math.max(.55,best.gap),persistent:true,worsening:best.check.trend?.available&&best.check.trend.delta<0,improving:false,repeatNeed:true,hasRecentCoaching:false});
+      out.push({repKey:base.repKey,repName:base.repName,coach:map.coach||base.coach||'Unassigned',team:map.team||base.team||'Unassigned',ruleId:rule.id,ruleTitle:rule.title,metric:best.check.label,value:best.check.avg,goal:best.check.goal,lowWeeks:best.check.lowWeeks,valuedWeeks:best.check.valuedWeeks,state:classification.state,tags:classification.tags,score:Math.round((Math.max(.55,best.gap)*80)+(recentCount?15:5)),latestCorrective:history[0]?.date||null});
+    }
+  }
+  const seen=new Set();
+  return out.sort(function(a,b){ return b.score-a.score||String(a.repName).localeCompare(String(b.repName)); }).filter(function(item){ const key=item.repKey+'::'+item.ruleId; if(seen.has(key)) return false; seen.add(key); return true; });
 }
 function coachingSummaryFromRows(repK,matched,reportDate,lookbackWeeks){
   const from=addDays(reportDate,-7*Math.max(1,Number(lookbackWeeks||2))); const allRows=rowsForRep('coachingByRep',repK).filter(c=>c.date<=reportDate); const rows=matched.slice().sort((a,b)=>b.date-a.date).map(c=>Object.assign({},c,{matchInfo:{matches:true,reason:'selected coaching topic'}})); const recentMatched=rows.filter(c=>c.date>=from&&c.date<=reportDate); const latestMatch=rows[0]||null;
@@ -3056,28 +3192,15 @@ function urgencyScoreForRows(rows,eligibleCount,reportWeight){
   const coaching=urgencyCoachingCoverage(rows), connected=urgencyConnectedStats(rows);
   const recurring=affected?Array.from(repHistory.values()).reduce(function(sum,count){ return sum+(count>=2?urgencyClamp(count/3,0,1):0); },0)/affected:0;
 
-  // Need and team impact are the primary urgency drivers. A rule affecting a larger
-  // share of an otherwise similar team must rank above a rule affecting only a few people.
-  const coreBase=(need*.60)+(impact*.40);
-  const context=[];
-  if(recurring>0) context.push({key:'recurring',label:'Recurring',value:recurring,weight:.18});
-  if(coaching.available) context.push({key:'uncoached',label:'Without matching coaching',value:1-coaching.pct,weight:.32});
-  if(connected.available&&isFinite(connected.gap)) context.push({key:'statGap',label:'Connected-stat severity',value:Math.sqrt(urgencyClamp(connected.gap,0,1)),weight:.25});
-  if(connected.available&&isFinite(connected.trendSeverity)) context.push({key:'trendDirection',label:'Trend direction',value:connected.trendSeverity,weight:.25});
-  const contextWeight=context.reduce(function(sum,x){ return sum+x.weight; },0);
-  const contextBase=contextWeight?context.reduce(function(sum,x){ return sum+x.value*x.weight; },0)/contextWeight:NaN;
-  const contextShare=contextWeight ? .15 : 0;
-  const coreShare=1-contextShare;
-  const baseRatio=affected?(coreBase*coreShare+(contextWeight?contextBase*contextShare:0)):0;
-  const components=[
-    {key:'need',label:'Need',value:need,weight:coreShare*.60},
-    {key:'impact',label:'Team impact',value:impact,weight:coreShare*.40}
-  ];
-  if(contextWeight) context.forEach(function(item){ components.push(Object.assign({},item,{weight:(item.weight/contextWeight)*contextShare})); });
-  const base=baseRatio*100;
   const factor=state.reportSettings.weightsEnabled?Math.max(0,Number(reportWeight)||0):1;
-  const score=urgencyClamp(Math.round(base*factor),0,100);
-  return {score:score,label:urgencyScoreLabel(score),base:base,weightFactor:factor,need:need,needScore:Math.round(need*100),impact:impact,breadth:breadth,recurring:recurring,affected:affected,eligible:denominator,coaching:coaching,connected:connected,components:components};
+  const corrective=affected?Math.max.apply(null,[0].concat(rows.map(function(record){ return record.correctiveContext?.level==='critical'?1:(record.correctiveContext?.level==='elevated'?0.7:0); }))):0;
+  const scored=QualtricsInsights.scoreOpportunity({severity:need,breadth:impact,affected,recurring,uncoached:coaching.available?1-coaching.pct:NaN,trendSeverity:connected.available?connected.trendSeverity:NaN,corrective,weightFactor:factor});
+  const components=[{key:'severity',label:'Severity',value:need,weight:.72},{key:'breadth',label:'Breadth',value:impact,weight:.18}];
+  if(recurring>0) components.push({key:'recurring',label:'Recurring',value:recurring,weight:.025});
+  if(coaching.available) components.push({key:'uncoached',label:'Without matching coaching',value:1-coaching.pct,weight:.03});
+  if(connected.available&&isFinite(connected.trendSeverity)) components.push({key:'trendDirection',label:'Trend direction',value:connected.trendSeverity,weight:.025});
+  if(corrective) components.push({key:'corrective',label:'Corrective context',value:corrective,weight:.02});
+  return {score:scored.score,label:urgencyScoreLabel(scored.score),base:scored.base,weightFactor:factor,need:need,needScore:Math.round(need*100),severity:scored.severity,impact:impact,breadth:scored.breadth,pattern:scored.pattern,recurring:recurring,affected:affected,eligible:denominator,coaching:coaching,connected:connected,components:components};
 }
 function urgencyComponentText(score){
   const parts=(score.components||[]).map(function(x){ return x.label+' '+urgencyPct(x.value,0)+' ('+Math.round((Number(x.weight)||0)*100)+'%)'; });
@@ -3200,7 +3323,7 @@ function clearAllStarQualtricsData(){
   [els.qaInput,els.coachingInput,els.checklistInput,els.weeklyStatsInput,els.dashboardInput].forEach(function(input){ if(input) input.value=''; });
   saveReportSettings();
   rebuildDerivedMaps();
-  renderDashboardFileList(); renderOtherRulePicker(); renderStatCountSelectors(currentRule()); renderStatCountRuleChips();
+  renderDashboardFileList(); renderOtherRulePicker(); renderStatCountSelectors(currentRule()); renderStatCountRuleChips(); populateOrgSummarySelect();
   updateStatRuleFieldVisibility(); updateCoachingCorrectiveFieldVisibility(); renderStatRuleChips(); renderCoachingCorrectiveRuleChips();
   if(els.reportBody) els.reportBody.innerHTML='<div class="empty">Qualtrics-side source data cleared. Saved rules and settings were kept.</div>';
   markRulePreviewStale('Qualtrics-side data cleared. Refresh connected sources or load new files when ready.');
@@ -4196,21 +4319,23 @@ function simpleQualtricsLatestTopicCoachingDate(rows){
   return dates.length?simpleQualtricsDisplayDate(new Date(Math.max.apply(null,dates.map(function(date){ return date.getTime(); })))):'N/A';
 }
 function simpleQualtricsPersonMetricText(rows){
-  const metrics=new Map();
+  const metrics=new Map(), formats=new Map();
   (rows||[]).forEach(function(record){
     simpleQualtricsRecordAssociatedChecks(record).forEach(function(entry){
       const snapshot=simpleQualtricsSixWeekMetric(record,entry);
       if(!snapshot.currentAvailable) return;
       if(!metrics.has(entry.label)) metrics.set(entry.label,[]);
       metrics.get(entry.label).push(snapshot.currentAverage);
+      const rule=state.rules.find(function(item){ return item.id===record.ruleId; });
+      if(rule?.statRule?.metric==='custom'&&metricLabel(rule.statRule.metric,rule.statRule.customHeader)===entry.label) formats.set(entry.label,{format:rule.statRule.displayFormat||'auto',precision:Number(rule.statRule.displayPrecision??1)});
     });
   });
   const values=[...metrics.entries()].map(function(entry){
-    return {label:entry[0],average:simpleQualtricsAverage(entry[1])};
+    return {label:entry[0],average:simpleQualtricsAverage(entry[1]),format:formats.get(entry[0])};
   }).filter(function(item){ return isFinite(item.average); });
   if(!values.length) return 'N/A';
-  if(values.length===1) return formatMetricValue(values[0].label,values[0].average);
-  return values.map(function(item){ return item.label+': '+formatMetricValue(item.label,item.average); }).join('; ');
+  if(values.length===1) return formatMetricValue(values[0].label,values[0].average,values[0].format);
+  return values.map(function(item){ return item.label+': '+formatMetricValue(item.label,item.average,item.format); }).join('; ');
 }
 function simpleQualtricsPersonDisplayColumnText(rows){
   rows=rows||[];
@@ -4227,7 +4352,7 @@ function simpleQualtricsPersonDisplayColumnText(rows){
     }
     if(value) break;
   }
-  return {enabled:true,text:value||'N/A'};
+  return {enabled:true,text:value?(QualtricsInsights.formatDisplayValue(header,value,{format:config.format||'auto',precision:Number(config.precision??1)})||value):'N/A'};
 }
 function simpleQualtricsPersonNameDetailText(rows){
   const display=simpleQualtricsPersonDisplayColumnText(rows);
@@ -4245,11 +4370,74 @@ function simpleQualtricsAnnotatedNames(source,coachedKeys,showCoachingDate){
     const details=[];
     if(showCoachingDate) details.push(simpleQualtricsLatestTopicCoachingDate(person.rows));
     details.push(simpleQualtricsPersonNameDetailText(person.rows));
-    return person.name+' ('+details.join(', ')+')';
+    const order={critical:4,elevated:3,standard:2,improving:1,plain:0};
+    const context=person.rows.map(function(row){ return row.correctiveContext; }).filter(Boolean).sort(function(a,b){ return (order[b.state]||0)-(order[a.state]||0); })[0]||{state:'standard',tags:[]};
+    const tags=[...new Set(person.rows.flatMap(function(row){ return row.correctiveContext?.tags||[]; }))].slice(0,2);
+    const tagText=tags.length?' · '+tags.join(' · '):'';
+    return {name:person.name,state:context.state||'standard',text:person.name+' ('+details.join(', ')+tagText+')'};
   });
 }
 function simpleQualtricsNamesHtml(names){
-  return names.length?'<div style="white-space:normal;overflow-wrap:anywhere;word-break:normal;line-height:1.45">'+names.map(function(name){ return '<div style="margin-bottom:4px">'+esc(name)+'</div>'; }).join('')+'</div>':'<span style="color:#94a3b8">—</span>';
+  return names.length?'<div style="white-space:normal;overflow-wrap:anywhere;word-break:normal;line-height:1.45">'+names.map(function(item){ const value=typeof item==='string'?{text:item,state:'standard'}:item; const colors={critical:['#991b1b','#fee2e2'],elevated:['#9a3412','#ffedd5'],standard:['#854d0e','#fef9c3'],improving:['#166534','#dcfce7'],plain:['#0f172a','transparent']}, style=colors[value.state]||colors.plain; return '<div style="margin-bottom:4px"><span style="font-weight:1000;color:'+style[0]+';background:'+style[1]+';border-radius:5px;padding:1px 3px">'+esc(value.text)+'</span></div>'; }).join('')+'</div>':'<span style="color:#94a3b8">—</span>';
+}
+function simpleQualtricsFollowUpHtml(rows){
+  const coachKeys=new Set((rows||[]).map(function(row){ return coachNameKey(row.coach||row.team||''); }));
+  const items=(state.report?.followUpWatchlist||[]).filter(function(item){ return coachKeys.has(coachNameKey(item.coach||item.team||'')); });
+  if(!items.length) return '';
+  const shown=items.slice(0,8), extra=items.length-shown.length;
+  return '<div class="followUpCompact" style="margin-top:9px;border:1px solid #fed7aa;border-left:4px solid #f97316;border-radius:9px;background:#fff7ed;padding:8px 10px;font-size:11px;line-height:1.45"><strong>Follow-Up:</strong> '+shown.map(function(item){ const value=formatMetricValue(item.metric,item.value), tags=(item.tags||[]).slice(0,2).join(' · '); return '<span style="white-space:nowrap"><strong style="color:'+(item.state==='critical'?'#991b1b':'#9a3412')+'">'+esc(item.repName)+'</strong> ('+esc(value+(tags?' · '+tags:''))+')</span>'; }).join(' • ')+(extra?' <span style="color:#64748b">+'+extra+' more</span>':'')+'</div>';
+}
+const ORG_SUMMARY_SETTINGS_KEY='coachingEmailGeneratorOrganizationSummary.v1';
+function orgSummarySavedSelection(){ try{ const value=JSON.parse(localStorage.getItem(ORG_SUMMARY_SETTINGS_KEY)||'[]'); return Array.isArray(value)?value.map(String):[]; }catch(_){ return []; } }
+function orgSummarySelectedIds(){ return els.orgSummarySelect?Array.from(els.orgSummarySelect.selectedOptions).map(function(option){ return option.value; }):[]; }
+function populateOrgSummarySelect(){
+  if(!els.orgSummarySelect) return;
+  const selected=new Set(orgSummarySelectedIds().length?orgSummarySelectedIds():orgSummarySavedSelection());
+  els.orgSummarySelect.innerHTML=(state.organizations||[]).map(function(org){ const value=String(org.id||org.name); return '<option value="'+esc(value)+'" '+(selected.has(value)?'selected':'')+'>'+esc(org.name)+' ('+(org.coachNames||[]).length+' teams)</option>'; }).join('');
+  if(!els.orgSummarySelect.options.length) els.orgSummarySelect.innerHTML='<option disabled>No saved organizations are connected</option>';
+}
+function orgSummaryRows(org){
+  const coachKeys=new Set((org.coachNames||[]).map(coachNameKey));
+  return (state.report?.allFlagged||state.report?.flagged||[]).filter(function(row){ return coachKeys.has(coachNameKey(row.coach||row.team||'')); });
+}
+function orgSummaryOpportunityRows(org,rows){
+  const eligible=Math.max(new Set((rows||[]).map(function(row){ return row.repKey; })).size,assignedRepSetForRows(rows).size), totalTeams=Math.max(1,(org.coachNames||[]).length);
+  return urgencySourceRowsForTeam(rows,eligible).filter(function(source){ return Number(source.urgency?.affected)>0; }).map(function(source){
+    const sourceRows=source.rows||[], affectedTeams=new Set(sourceRows.map(function(row){ return coachNameKey(row.coach||row.team||''); })).size, connected=source.urgency?.connected||{}, observations=(connected.summaries||[]).length, weeks=(connected.summaries||[]).reduce(function(sum,item){ return sum+(Number(item.periodLookbackWeeks)||0); },0), trend=QualtricsInsights.trendLabel({observations,improving:connected.improvingPct,worsening:connected.worseningPct});
+    const concentration=QualtricsInsights.concentration({affectedOrganizations:1,totalOrganizations:1,affectedTeams,totalTeams,affectedPeople:source.urgency.affected,totalPeople:eligible});
+    return {key:urgencyCatalogKey(source),name:source.dataSource||source.ruleTitle||'Opportunity',score:source.urgency.score,urgency:source.urgency,rows:sourceRows,affectedTeams,totalTeams,trend,confidence:QualtricsInsights.evidenceConfidence({people:source.urgency.affected,observations,weeks}),concentration,pattern:source.urgency.pattern||QualtricsInsights.opportunityPattern(source.urgency.severity,source.urgency.breadth,source.urgency.affected)};
+  }).sort(function(a,b){ return b.score-a.score||String(a.name).localeCompare(String(b.name)); });
+}
+function buildOrganizationOpportunityData(orgs){
+  const organizations=(orgs||[]).map(function(org){
+    const rows=orgSummaryRows(org), opportunities=orgSummaryOpportunityRows(org,rows), affectedTeams=new Set(rows.map(function(row){ return coachNameKey(row.coach||row.team||''); })).size, totalTeams=(org.coachNames||[]).length, top=opportunities[0]||null;
+    const trend=QualtricsInsights.trendLabel({observations:opportunities.length,improving:opportunities.filter(function(item){ return item.trend==='Improving'; }).length/Math.max(1,opportunities.length),worsening:opportunities.filter(function(item){ return item.trend==='Declining'; }).length/Math.max(1,opportunities.length)});
+    return {org,rows,opportunities,affectedTeams,totalTeams,overallScore:top?.score||0,overallNeed:top?.urgency?.label||'Low',trend};
+  });
+  const aggregate=new Map();
+  organizations.forEach(function(item){ item.opportunities.forEach(function(opportunity){ if(!aggregate.has(opportunity.key)) aggregate.set(opportunity.key,{key:opportunity.key,name:opportunity.name,items:[],orgs:new Set(),teams:new Set(),people:new Set()}); const target=aggregate.get(opportunity.key); target.items.push(opportunity); target.orgs.add(String(item.org.id||item.org.name)); opportunity.rows.forEach(function(row){ target.teams.add(coachNameKey(row.coach||row.team||'')); target.people.add(row.repKey); }); }); });
+  const totalTeams=organizations.reduce(function(sum,item){ return sum+item.totalTeams; },0), totalPeople=new Set(organizations.flatMap(function(item){ return item.rows.map(function(row){ return row.repKey; }); })).size;
+  const opportunities=[...aggregate.values()].map(function(item){
+    const score=Math.round(item.items.reduce(function(sum,entry){ return sum+entry.score; },0)/Math.max(1,item.items.length)), concentration=QualtricsInsights.concentration({affectedOrganizations:item.orgs.size,totalOrganizations:organizations.length,affectedTeams:item.teams.size,totalTeams,affectedPeople:item.people.size,totalPeople}), improving=item.items.filter(function(entry){ return entry.trend==='Improving'; }).length, declining=item.items.filter(function(entry){ return entry.trend==='Declining'; }).length;
+    if(concentration.key==='orgSpecific'){ const only=[...item.orgs][0], match=organizations.find(function(entry){ return String(entry.org.id||entry.org.name)===only; }); if(match) concentration.detail=match.org.name; }
+    return Object.assign(item,{score,concentration,trend:QualtricsInsights.trendLabel({observations:item.items.length,improving:improving/Math.max(1,item.items.length),worsening:declining/Math.max(1,item.items.length)})});
+  }).sort(function(a,b){ return b.score-a.score||b.orgs.size-a.orgs.size||String(a.name).localeCompare(String(b.name)); });
+  return {organizations,opportunities};
+}
+function organizationSummaryHtml(data){
+  const organizations=data.organizations||[], opportunities=data.opportunities||[], highest=opportunities[0], widespread=opportunities.slice().sort(function(a,b){ return b.orgs.size-a.orgs.size||b.score-a.score; })[0], improved=opportunities.filter(function(item){ return item.trend==='Improving'; })[0], highestOrg=organizations.slice().sort(function(a,b){ return b.overallScore-a.overallScore; })[0], improvingCount=organizations.filter(function(item){ return item.trend==='Improving'; }).length;
+  const executive='<div class="card"><h2 style="margin:0 0 8px">Across '+organizations.length+' Organization'+(organizations.length===1?'':'s')+'</h2><div class="orgExecutiveGrid">'+[['Highest Opportunity',highest?.name||'N/A'],['Most Widespread',widespread?(widespread.name+' · '+widespread.orgs.size+'/'+organizations.length+' orgs'):'N/A'],['Most Improved',improved?.name||'N/A'],['Highest-Need Org',highestOrg?.org?.name||'N/A'],['Organizations Improving',improvingCount+' of '+organizations.length]].map(function(item){ return '<div class="orgExecutiveCard"><div class="sub">'+esc(item[0])+'</div><strong>'+esc(item[1])+'</strong></div>'; }).join('')+'</div><h3 style="margin:14px 0 6px">Top Opportunities</h3>'+opportunities.slice(0,5).map(function(item,index){ return '<div class="orgOpportunityRow"><strong>'+(index+1)+'. '+esc(item.name)+'</strong> — '+esc(urgencyScoreLabel(item.score))+' · '+esc(item.concentration.label)+' · '+esc(item.concentration.detail)+'</div>'; }).join('')+'</div>';
+  const blocks='<div class="orgSummaryGrid">'+organizations.map(function(item){ const top=item.opportunities.slice(0,3), highestNeed=top[0]; return '<section class="orgSummaryBlock"><h3>'+esc(item.org.name)+'</h3><div class="orgMetaLine"><strong>Overall Need:</strong> '+esc(item.overallNeed.toUpperCase())+'<br><strong>Teams Most Affected:</strong> '+item.affectedTeams+' of '+item.totalTeams+'<br><strong>Trend:</strong> '+esc(item.trend)+'</div><div style="margin-top:8px"><strong>Top Opportunities:</strong> '+(top.length?top.map(function(opportunity){ return esc(opportunity.name); }).join(' · '):'None')+'</div>'+(highestNeed?'<div class="orgOpportunityRow"><strong>Highest Need:</strong> '+esc(highestNeed.name)+' — '+esc(highestNeed.pattern.label)+'<br><span style="color:#64748b">'+esc(highestNeed.concentration.label)+' · '+esc(highestNeed.confidence)+'</span></div>':'<div class="orgOpportunityRow" style="color:#64748b">No current opportunity rows.</div>')+'</section>'; }).join('')+'</div>';
+  return executive+blocks;
+}
+function renderOrganizationSummary(){
+  if(!state.report){ toast('Generate an Action Report first.'); return; }
+  const ids=orgSummarySelectedIds(); if(!ids.length){ toast('Select at least one organization.'); return; }
+  try{ localStorage.setItem(ORG_SUMMARY_SETTINGS_KEY,JSON.stringify(ids)); }catch(_){}
+  const selected=(state.organizations||[]).filter(function(org){ return ids.includes(String(org.id||org.name)); });
+  if(!selected.length){ toast('The selected organizations are no longer available.'); return; }
+  const data=buildOrganizationOpportunityData(selected); state.organizationOpportunitySummary=data;
+  els.orgSummaryBody.innerHTML=organizationSummaryHtml(data); setStatus('Built a separate Organization Opportunity Summary for '+selected.length+' organization(s).');
 }
 function simpleQualtricsRateMeta(coverage){
   if(!coverage?.available||!isFinite(coverage.pct)) return {text:'N/A',color:'#475569',background:'#e2e8f0'};
@@ -4523,11 +4711,11 @@ renderReport=function(){
   if(!root) return;
   if(!report){ root.innerHTML='<div class="empty">Generate a report to view the executive summary.</div>'; return; }
   const rows=report.flagged||[], groups=simpleQualtricsCoachGroups(rows);
-  root.innerHTML='<div class="card"><h2 style="margin-bottom:10px">Executive Summary — '+esc(report.reportDate)+'</h2>'+simpleQualtricsOverallStripHtml(rows)+simpleQualtricsExecutiveMatrixHtml(rows)+'</div>'+groups.map(function(group){ return '<section class="card" style="margin-top:12px"><h2 style="margin:0">'+esc(group.coach)+'</h2>'+simpleQualtricsCoachOverviewHtml(group.rows)+simpleQualtricsRuleTableHtml(group.rows)+'</section>'; }).join('');
+  root.innerHTML='<div class="card"><h2 style="margin-bottom:10px">Executive Summary — '+esc(report.reportDate)+'</h2>'+simpleQualtricsOverallStripHtml(rows)+simpleQualtricsExecutiveMatrixHtml(rows)+'</div>'+groups.map(function(group){ return '<section class="card" style="margin-top:12px"><h2 style="margin:0">'+esc(group.coach)+'</h2>'+simpleQualtricsCoachOverviewHtml(group.rows)+simpleQualtricsRuleTableHtml(group.rows)+simpleQualtricsFollowUpHtml(group.rows)+'</section>'; }).join('');
 };
 makeEmailHtml=function(title,rows,isExec){
   rows=rows||[];
-  const content=isExec?simpleQualtricsOverallStripHtml(rows)+simpleQualtricsExecutiveMatrixHtml(rows)+simpleQualtricsExecutiveCoachTableHtml(rows):simpleQualtricsCoachOverviewHtml(rows)+simpleQualtricsRuleTableHtml(rows);
+  const content=isExec?simpleQualtricsOverallStripHtml(rows)+simpleQualtricsExecutiveMatrixHtml(rows)+simpleQualtricsExecutiveCoachTableHtml(rows):simpleQualtricsCoachOverviewHtml(rows)+simpleQualtricsRuleTableHtml(rows)+simpleQualtricsFollowUpHtml(rows);
   return '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:Segoe UI,Arial,sans-serif;color:#0f172a;line-height:1.35}table{max-width:100%}@media(max-width:700px){table{font-size:10px}td,th{padding:5px!important}}@media print{tr{break-inside:avoid;page-break-inside:avoid}}</style></head><body style="margin:0;padding:18px;background:#f8fafc"><div style="max-width:1120px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;padding:18px"><h1 style="margin:0 0 4px;color:#0f172a">'+esc(title)+'</h1><div style="color:#64748b;font-weight:700;margin-bottom:12px">Report date: '+esc(state.report?.reportDate||'')+'</div>'+content+'</div></body></html>';
 };
 const simpleQualtricsGenerateReportBefore=generateReport;
@@ -4653,12 +4841,17 @@ async function generateReport(){
       const legacyWeight=1-individualWeight-teamWeight;
       score=(rec.periodKpi.individualNeed*individualWeight+rec.periodKpi.teamNeed*teamWeight+(legacyScore/100)*legacyWeight)*100;
     }
+    rec.correctiveContext=correctiveContextForRecord(rec,rule,reportDate);
+    score+=Number(rec.correctiveContext?.scoreBoost)||0;
+    if(rec.correctiveContext?.state==='critical') rec.alarm=true;
     rec.concernScore=Math.max(0,Math.min(100,Math.round(score)));
     rec.concern = rec.concernScore>=70 ? 'High' : rec.concernScore>=45 ? 'Medium' : 'Lower';
     setProgress(70+(i+1)/Math.max(1,allFlagged.length)*20,'Checking coaching and history');
     if(i%25===0) await new Promise(r=>setTimeout(r,0));
   }
   const audienceFlagged=allFlagged.filter(r=>reportAudienceAllowsCoach(r.coach,audience));
+  const activeRules=[...new Map([...(state.dashboardFiles||[]).map(function(file){ return state.rules.find(function(rule){ return rule.id===file.ruleId; })||matchRuleForFile(file.fileName); }),...selectedCoreRules].filter(Boolean).map(function(rule){ return [rule.id,rule]; })).values()];
+  const followUpWatchlist=formerCorrectiveWatchlist(reportDate,activeRules,new Set(allFlagged.map(function(record){ return record.repKey+'::'+record.ruleId; })));
   const teamPopulationByCoach=reportTeamPopulationForRows(audienceFlagged,reportDate);
   const byCoachAll=new Map();
   for(const r of audienceFlagged){ if(!byCoachAll.has(r.coach)) byCoachAll.set(r.coach,[]); byCoachAll.get(r.coach).push(r); }
@@ -4673,7 +4866,7 @@ async function generateReport(){
   for(const r of flagged){ if(!byCoach.has(r.coach)) byCoach.set(r.coach,[]); byCoach.get(r.coach).push(r); }
   for(const arr of byCoach.values()) arr.sort((a,b)=>b.concernScore-a.concernScore || ((b.history?.dateCount||0)-(a.history?.dateCount||0)));
   const alarmSortedByCoach = new Map([...byCoach.entries()].sort((a,b)=>compareAlarmStats(summaryStats(a[1],reportDate,teamPopulationByCoach),summaryStats(b[1],reportDate,teamPopulationByCoach)) || String(a[0]).localeCompare(String(b[0]))));
-  const report={ reportDate:ymd(reportDate), generatedAt:new Date().toISOString(), unmatched, flagged, allFlagged:audienceFlagged, byCoach:alarmSortedByCoach, byCoachAll, teamPopulationByCoach, excludedCoaches, minPeople, urgencyCatalog:buildUrgencyCatalog(selectedCoreRules), audience:{...audience,label:reportAudienceLabel(audience)}, audienceExcludedRecords:allFlagged.length-audienceFlagged.length, hireDateFilter:normalizeHireDateSettings(hireCfg), hireDateExcludedRecords:hireDateExcluded.length, hireDateExcludedPeople:new Set(hireDateExcluded.map(r=>r.repKey)).size };
+  const report={ reportDate:ymd(reportDate), generatedAt:new Date().toISOString(), unmatched, flagged, allFlagged:audienceFlagged, byCoach:alarmSortedByCoach, byCoachAll, teamPopulationByCoach, followUpWatchlist:followUpWatchlist.filter(function(item){ return reportAudienceAllowsCoach(item.coach,audience); }), excludedCoaches, minPeople, urgencyCatalog:buildUrgencyCatalog(selectedCoreRules), audience:{...audience,label:reportAudienceLabel(audience)}, audienceExcludedRecords:allFlagged.length-audienceFlagged.length, hireDateFilter:normalizeHireDateSettings(hireCfg), hireDateExcludedRecords:hireDateExcluded.length, hireDateExcludedPeople:new Set(hireDateExcluded.map(r=>r.repKey)).size };
   state.report=report; setProgress(null); renderReport(); switchTab('report'); setStatus(`Generated ${report.audience.label}: ${flagged.length.toLocaleString()} representative-data-source record(s) identified for review.${report.audienceExcludedRecords?` Audience filter excluded ${report.audienceExcludedRecords.toLocaleString()} record(s).`:''}${hireCfg.filterEnabled?` Hire-date filter excluded ${report.hireDateExcludedPeople.toLocaleString()} representative(s).`:''} ${excludedCoaches.length ? excludedCoaches.length+' team(s) hidden by minimum people filter.' : ''}`);
 }
 function summaryStats(rows, reportDateOverride=null, teamPopulationOverride=null){
@@ -5039,6 +5232,8 @@ function bind(){
   ['countNameHeader','countMin','countLabel'].forEach(id=>{ if(els[id]) els[id].addEventListener(id==='countNameHeader'?'change':'input', autoSaveRuleEdit); });
   if(els.ruleDisplayColumnEnabled) els.ruleDisplayColumnEnabled.addEventListener('change',()=>{ updateRuleTypeVisibility(); autoSaveRuleEdit(); markRulePreviewStale('Display column setting saved. Generated reports will use the selected report-file value beside representative names.'); });
   if(els.ruleDisplayColumn) els.ruleDisplayColumn.addEventListener('change',()=>{ autoSaveRuleEdit(); markRulePreviewStale('Display column changed. Generate the report to use the selected value beside representative names.'); });
+  if(els.ruleDisplayFormat) els.ruleDisplayFormat.addEventListener('change',()=>{ updateRuleTypeVisibility(); autoSaveRuleEdit(); markRulePreviewStale('Display format changed. Generate the report to refresh representative details.'); });
+  if(els.ruleDisplayPrecision) els.ruleDisplayPrecision.addEventListener('input',()=>{ autoSaveRuleEdit(); markRulePreviewStale('Display precision changed. Generate the report to refresh representative details.'); });
   if(els.saveCountRuleBtn) els.saveCountRuleBtn.onclick=async()=>{ const r=readRuleForm(); await saveRuleObj(r); flashBtn(els.saveCountRuleBtn); toast('Count rule saved.'); };
   els.addCriteriaBtn.onclick=async()=>{ const r=readRuleForm(); if(!els.criteriaHeader.value){ toast('Select a header first.'); return; } r.criteria.push({header:els.criteriaHeader.value,operator:els.criteriaOperator.value,value:els.criteriaValue.value,value2:els.criteriaValue2.value}); await saveRuleObj(r); els.criteriaValue.value=''; els.criteriaValue2.value=''; flashBtn(els.addCriteriaBtn); toast('Rule added.'); };
   els.saveCoachingLinkBtn.onclick=async()=>{ const r=readRuleForm(); await saveRuleObj(r); flashBtn(els.saveCoachingLinkBtn); toast('Coaching/checklist link saved.'); };
@@ -5047,7 +5242,7 @@ function bind(){
   els.addCoachPhraseBtn.onclick=async()=>{ const p=els.coachPhraseInput.value.trim(); if(!p) return; const r=readRuleForm(); r.coaching.descriptionPhrases = r.coaching.descriptionPhrases || []; const parts=p.split(/[;,|]/).map(x=>x.trim()).filter(Boolean); for(const part of parts) if(!r.coaching.descriptionPhrases.includes(part)) r.coaching.descriptionPhrases.push(part); els.coachPhraseInput.value=''; await saveRuleObj(r); flashBtn(els.addCoachPhraseBtn); toast(`${parts.length} description phrase${parts.length===1?'':'s'} added and saved.`); };
   els.addStatAttachBtn.onclick=async()=>{ const r=readRuleForm(); if(!els.statThreshold.value){ toast('Add a low threshold.'); return; } r.stats.push({metric:els.statMetric.value, customHeader:els.statCustomHeader.value.trim(), thresholdRaw:els.statThreshold.value.trim(), weeks:Number(els.statWeeks.value)||10, alarmPctRaw:els.statAlarmPct.value.trim() || '75%'}); await saveRuleObj(r); flashBtn(els.addStatAttachBtn); toast('Performance check attached.'); };
   ['statRuleDateMode','statRuleMinimumMode'].forEach(id=>{ if(els[id]) els[id].addEventListener('change',()=>{ updateStatRuleFieldVisibility(); renderStatRuleChips(); autoSaveRuleEdit(); setStatus('Stat Rule edited. Save or Refresh Preview to run the representative calculation.'); }); });
-  ['statRuleMetric','statRuleCustomHeader','statRuleCustomSourceMode','statRuleCustomValueHeader','statRuleCustomNumeratorHeader','statRuleCustomDenominatorHeader','statRuleCashSourceMode','statRuleCashRateHeader','statRuleCashNumeratorHeader','statRuleCashDenominatorHeader','statRuleLookbackWeeks','statRuleStartDate','statRuleEndDate','statRuleGoal','statRuleMinWeeks','statRuleMinPct','statRuleEmailCategory'].forEach(id=>{ if(els[id]) els[id].addEventListener(els[id].tagName==='SELECT'?'change':'input',()=>{ updateStatRuleFieldVisibility(); renderStatRuleChips(); autoSaveRuleEdit(); setStatus('Stat Rule edited. Save or Refresh Preview to run the representative calculation.'); }); });
+  ['statRuleMetric','statRuleCustomHeader','statRuleCustomSourceMode','statRuleCustomValueHeader','statRuleCustomNumeratorHeader','statRuleCustomDenominatorHeader','statRuleCashSourceMode','statRuleCashRateHeader','statRuleCashNumeratorHeader','statRuleCashDenominatorHeader','statRuleLookbackWeeks','statRuleStartDate','statRuleEndDate','statRuleGoal','statRuleMinWeeks','statRuleMinPct','statRuleEmailCategory','statRuleDisplayFormat','statRuleDisplayPrecision'].forEach(id=>{ if(els[id]) els[id].addEventListener(els[id].tagName==='SELECT'?'change':'input',()=>{ updateStatRuleFieldVisibility(); renderStatRuleChips(); autoSaveRuleEdit(); setStatus('Stat Rule edited. Save or Refresh Preview to run the representative calculation.'); }); });
   if(els.saveStatRuleBtn) els.saveStatRuleBtn.onclick=async()=>{ const r=readRuleForm(); if(!r.statRule.goalRaw){ toast('Set the stat goal first.'); return; } const error=metricSourceValidation(r.statRule,'Stat Rule'); if(error){ toast(error); return; } await saveRuleObj(r,{preview:true}); flashBtn(els.saveStatRuleBtn); const source=r.statRule.metric==='cashAppointmentRate'?cashSourceDescription(r.statRule):r.statRule.metric==='custom'?customSourceDescription(r.statRule):metricLabel(r.statRule.metric,r.statRule.customHeader); toast(`Stat Rule saved and preview recalculated using ${source}.`); };
   if(els.statCountSource) els.statCountSource.addEventListener('change',()=>{ const source=els.statCountSource.value; if(els.statCountNameHeader) els.statCountNameHeader.value=''; if(els.statCountConditionHeader) els.statCountConditionHeader.value=''; renderStatCountSelectors({statCount:{...statCountFormSnapshot(),source,nameHeader:'',conditionHeader:''}}); updateStatCountFieldVisibility(); renderStatCountRuleChips(); autoSaveRuleEdit(); markRulePreviewStale('Stat Count source changed. Click Refresh Preview to recalculate representatives.'); });
   ['statCountNameHeader','statCountConditionHeader','statCountOperator','statCountDateMode'].forEach(id=>{ if(els[id]) els[id].addEventListener('change',()=>{ updateStatCountFieldVisibility(); renderStatCountRuleChips(); autoSaveRuleEdit(); markRulePreviewStale('Stat Count edited. Click Refresh Preview to recalculate representatives.'); }); });
@@ -5056,6 +5251,8 @@ function bind(){
   if(els.ccBuildUpEnabled) els.ccBuildUpEnabled.addEventListener('change',()=>{ updateCoachingCorrectiveFieldVisibility(); renderCoachingCorrectiveRuleChips(); autoSaveRuleEdit(); setStatus('Coaching → Corrective edited. Save or Refresh Preview to run the representative calculation.'); });
   ['ccCoachingTopic','ccCoachingMatch','ccMinCoachingCount','ccCoachingLookbackWeeks','ccChecklistField','ccChecklistPhrase','ccChecklistMatch','ccChecklistLookbackWeeks','ccRequireChecklist','ccEmailCategory','ccBuildUpWeeks','ccBuildUpMetric','ccBuildUpCustomHeader','ccBuildUpCustomSourceMode','ccBuildUpCustomValueHeader','ccBuildUpCustomNumeratorHeader','ccBuildUpCustomDenominatorHeader','ccBuildUpCashSourceMode','ccBuildUpCashRateHeader','ccBuildUpCashNumeratorHeader','ccBuildUpCashDenominatorHeader','ccBuildUpGoal','ccBuildUpMinPct','ccBuildUpExcludeTrend'].forEach(id=>{ if(els[id]) els[id].addEventListener((els[id].tagName==='SELECT'||els[id].type==='checkbox')?'change':'input',()=>{ updateCoachingCorrectiveFieldVisibility(); renderCoachingCorrectiveRuleChips(); autoSaveRuleEdit(); setStatus('Coaching → Corrective edited. Save or Refresh Preview to run the representative calculation.'); }); });
   if(els.saveCoachingCorrectiveRuleBtn) els.saveCoachingCorrectiveRuleBtn.onclick=async()=>{ const r=readRuleForm(); if(!r.coachingCorrective.coachingTopic){ toast('Choose or type a Documented Coaching topic.'); return; } const b=r.coachingCorrective.buildUp; const error=b.enabled?metricSourceValidation(b,'Build Up'):''; if(error){ toast(error); return; } await saveRuleObj(r,{preview:true}); flashBtn(els.saveCoachingCorrectiveRuleBtn); toast('Documented Coaching → Corrective rule saved and preview recalculated.'); };
+  ['correctiveContextEnabled','correctiveContextLookbackWeeks','correctiveContextRecentWeeks','correctiveContextScope','correctiveContextPhrase','correctiveContextMatch','correctiveContextPersistentWeeks','correctiveWatchlistEnabled'].forEach(id=>{ const field=els[id]; if(!field) return; field.addEventListener((field.tagName==='SELECT'||field.type==='checkbox')?'change':'input',()=>{ renderCorrectiveContextState(); autoSaveRuleEdit(); markRulePreviewStale('Corrective Context changed. Generate the report to recalculate signals and Follow-Up.'); }); });
+  if(els.saveCorrectiveContextBtn) els.saveCorrectiveContextBtn.onclick=async()=>{ const r=readRuleForm(); await saveRuleObj(r,{preview:false}); renderCorrectiveContextState(); flashBtn(els.saveCorrectiveContextBtn); toast('Corrective Context saved.'); };
   els.exportRulesBtn.onclick=()=>downloadBlob(new Blob([JSON.stringify(state.rules,null,2)],{type:'application/json'}),`coaching_email_rules_${ymd(new Date())}.json`);
   els.importRulesInput.onchange=async e=>{ const f=e.target.files[0]; if(!f) return; const data=JSON.parse(await f.text()); const arr=(Array.isArray(data)?data:data.rules||[]).map(normalizeRule); for(const r of arr){ await put(STORES.rules,r); } state.rules=(await getAll(STORES.rules)).map(normalizeRule); state.currentRuleId=state.rules[0]?.id||null; renderRules(); if(state.currentRuleId) fillRuleForm(state.rules[0]); toast(`Imported ${arr.length} rule set(s).`); };
   els.qaInput.onchange=e=>loadQA(e.target.files[0]); els.coachingInput.onchange=e=>loadCoaching(e.target.files[0]); els.checklistInput.onchange=e=>loadChecklist(e.target.files[0]); els.weeklyStatsInput.onchange=e=>loadWeeklyStats(e.target.files[0]);
@@ -5078,6 +5275,9 @@ function bind(){
   els.dashboardDrop.addEventListener('drop',e=>addDashboardFiles(e.dataTransfer.files));
   els.clearDashboardFilesBtn.onclick=()=>{ for(const f of state.dashboardFiles) delete state.reportSettings.items[reportItemKeyForFile(f)]; state.dashboardFiles=[]; saveReportSettings(); renderDashboardFileList(); renderUploadReadiness(); markRulePreviewStale('Report files cleared. Click Refresh Preview after adding new files.'); };
   els.generateReportBtn.onclick=generateReport; els.saveHistoryBtn.onclick=saveProblemHistory; els.exportEmailsBtn.onclick=exportEmails; if(els.exportUrgencyPdfBtn) els.exportUrgencyPdfBtn.onclick=exportUrgencyEmailPdf; els.exportProblemRepsBtn.onclick=exportProblemReps; els.importProblemRepsInput.onchange=e=>importProblemReps(e.target.files[0]); if(els.urgencyCoverageGreen) els.urgencyCoverageGreen.addEventListener('change',saveUrgencyCoverageControls); if(els.urgencyCoverageYellow) els.urgencyCoverageYellow.addEventListener('change',saveUrgencyCoverageControls);
+  if(els.selectAllOrgSummaryBtn) els.selectAllOrgSummaryBtn.onclick=()=>{ Array.from(els.orgSummarySelect.options).forEach(option=>option.selected=!option.disabled); };
+  if(els.clearOrgSummaryBtn) els.clearOrgSummaryBtn.onclick=()=>{ Array.from(els.orgSummarySelect.options).forEach(option=>option.selected=false); };
+  if(els.generateOrgSummaryBtn) els.generateOrgSummaryBtn.onclick=renderOrganizationSummary;
   if(els.emailIntroEditor) els.emailIntroEditor.addEventListener('input', ()=>{ saveEmailIntro(); if(state.report) renderReport(); });
   if(els.saveEmailIntroBtn) els.saveEmailIntroBtn.onclick=saveEmailIntroTemplate;
   if(els.loadEmailIntroBtn) els.loadEmailIntroBtn.onclick=loadSavedEmailIntro;
@@ -5087,7 +5287,7 @@ async function init(){
   bind(); loadCoachAliasOverrides(); loadHireDateSettings(); loadEmailIntro(); loadOtherRuleSelection(); loadReportSettings(); loadReportAudienceSettings(); loadUrgencyCoverageControls(); els.reportDate.value=ymd(new Date());
   switchTab('keyfiles');
   rebuildCoachAliasIndex();
-  renderHireDateControls(); renderCoreChips(); renderDashboardFileList(); renderUploadReadiness(); renderOtherRulePicker(); renderStatCountSelectors(currentRule()); updateStatCountFieldVisibility(); renderReportAudienceControls(); markRulePreviewStale('Select a saved rule, then use Refresh Preview when ready.');
+  renderHireDateControls(); renderCoreChips(); renderDashboardFileList(); renderUploadReadiness(); renderOtherRulePicker(); renderStatCountSelectors(currentRule()); updateStatCountFieldVisibility(); renderReportAudienceControls(); populateOrgSummarySelect(); markRulePreviewStale('Select a saved rule, then use Refresh Preview when ready.');
   state.db=await openDB(); state.rules=(await getAll(STORES.rules)).map(normalizeRule); state.history=await getAll(STORES.history);
   if(state.rules.length) state.currentRuleId=state.rules[0].id;
   renderRules(); renderOtherRulePicker(); if(state.currentRuleId) fillRuleForm(state.rules[0]); else fillRuleForm(null);
