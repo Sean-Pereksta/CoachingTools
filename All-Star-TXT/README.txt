@@ -22,6 +22,14 @@ Take dist/All-Star-Portable.html when you want one file for another computer. It
 QUALTRICS SOURCE
 qualtrics/generator.html is the only maintained Qualtrics source. generator-source.js is generated from it and is loaded only when the Qualtrics workspace opens. This carrier avoids fetch() restrictions and preserves the original srcdoc storage origin for existing saved rules/settings when running from file://. If the carrier is unavailable, the app falls back to opening generator.html directly.
 
+WORKFLOW MODERNIZATION
+- Import now includes cached Source Health metadata.
+- Run uses shared Preflight diagnostics; only blocking errors stop execution.
+- Model Health reuses the same validation logic used by Run Preflight.
+- Named presets support fixed and dynamic date behavior.
+- The 15 most recent report snapshots are stored in IndexedDB with schema version 1, optional notes, reopen, re-export, delete, and two-run comparison.
+- Existing report calculation traces remain the source for Explain This Number auditing.
+
 MANUAL REGRESSION TESTS
 Open allstar.html?debug=1, then run this in the browser console when the app is ready:
 
@@ -48,6 +56,7 @@ SOURCE LAYOUT
 - js/calculations.js: scoring, filters, QA calculations, Display Column
 - js/research.js: complete Research and Metrics workspaces
 - js/organizations.js: organizations and run coverage
+- js/workflow.js: source health, shared diagnostics, Run Preflight, Model Health, presets, saved reports, notes, and comparison
 - js/list-tester.js: List Tester and detailed exports
 - js/reports.js: report runs, rankings, team tools, PDF/export
 - js/qualtrics-bridge.js: parent/iframe messages and lazy generator loading

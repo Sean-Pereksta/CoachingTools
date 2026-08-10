@@ -35,7 +35,7 @@ html=html.replace(/<script src="(js\/[^"]+)"><\/script>/g,(match,relative)=>{
 });
 if(/(?:href="css\/|src="js\/)/.test(html)) throw new Error('Portable build still contains a first-party CSS/JS dependency.');
 if(html.includes('patchQualtricsGeneratorSource')||html.includes('qualtricsGeneratorSource')) throw new Error('Portable build contains obsolete Qualtrics patch architecture.');
-for(const marker of ['ruleDisplayColumnEnabled','correctiveContextEnabled','Organization Opportunity Summary','QualtricsInsights','allstar-clear-data','simpleQualtricsExecutiveMatrixHtml','displayColumnValue']){
+for(const marker of ['ALLSTAR_REPORT_SCHEMA_VERSION','runPreflight','allStarSavedReports.v1','ruleDisplayColumnEnabled','correctiveContextEnabled','Organization Opportunity Summary','QualtricsInsights','allstar-clear-data','simpleQualtricsExecutiveMatrixHtml','displayColumnValue']){
   if(!html.includes(marker)) throw new Error('Portable build is missing required marker: '+marker);
 }
 fs.mkdirSync(distDir,{recursive:true});
