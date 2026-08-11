@@ -483,8 +483,82 @@ function rawDisplayCellValue(v){
   if(typeof v==='number'||typeof v==='boolean') return v;
   const text=String(v??'').trim(); return text===''?null:text;
 }
+function lookupIdentityKeys(value){
+  const raw=String(value??'').trim(); if(!raw) return [];
+  return [...new Set([normalizeIdentityName(raw),fullNameIdentityKey(raw),coachNameKey(raw),normalizeResearchText(raw)].filter(Boolean))];
+}
+function lookupTargetValue(c,entry){
+  if(c.lookupMatchEntity==='custom') return c.lookupCustomValue||'';
+  if(c.lookupMatchEntity==='representative') return entry.kind==='rep'?(entry.name||entry.key||''):(entry.representative||'');
+  if(c.lookupMatchEntity==='coach') return entry.kind==='team'?(entry.name||entry.team||entry.key||''):(entry.team||state.repTeams.get(entry.key)||'');
+  return entry.team||entry.name||entry.key||'';
+}
+function lookupDisplayIndex(c,source,matchCol,opts){
+  opts._lookupDisplayCache=opts._lookupDisplayCache||new Map();
+  const version=state.sourceMeta?.[source]?.sourceVersion||state.versions?.data||0, key=[c.id||c.name,source,matchCol,version].join('\u001f');
+  if(opts._lookupDisplayCache.has(key)) return opts._lookupDisplayCache.get(key);
+  const byKey=new Map(), rows=getRowsRaw(source)||[];
+  rows.forEach((row,i)=>lookupIdentityKeys(row?.[matchCol]).forEach(k=>{ if(!byKey.has(k)) byKey.set(k,[]); byKey.get(k).push({row,i}); }));
+  const out={rows,byKey}; opts._lookupDisplayCache.set(key,out); return out;
+}
+function lookupRowsForDisplay(c,entry,source,matchCol,opts){
+  const target=lookupTargetValue(c,entry), targetKeys=lookupIdentityKeys(target); if(!targetKeys.length) return [];
+  const idx=lookupDisplayIndex(c,source,matchCol,opts), found=new Map();
+  targetKeys.forEach(k=>(idx.byKey.get(k)||[]).forEach(x=>found.set(x.i,x)));
+  if(!found.size){
+    const targetText=normalizeResearchText(target);
+    if(targetText.length>=4) idx.byKey.forEach((list,key)=>{ if(key.length>=4&&(key.includes(targetText)||targetText.includes(key))) list.forEach(x=>found.set(x.i,x)); });
+  }
+  return [...found.values()].sort((a,b)=>a.i-b.i).map(x=>x.row);
+}
+function lookupRecordDate(c,source,row,index){
+  if(c.lookupDateColumn){ const actual=resolveColumn(source,c.lookupDateColumn)||c.lookupDateColumn, d=parseDateOnly(row?.[actual])||parseWeekLabel(row?.[actual]); if(d) return d.getTime(); }
+  const detected=rowDateMillisForSource(source,row); return Number.isFinite(detected)?detected:index;
+}
+function compareLookupValues(a,b){
+  const an=toNum(a.value), bn=toNum(b.value); if(Number.isFinite(an)&&Number.isFinite(bn)) return an-bn;
+  const ad=parseDateOnly(a.value), bd=parseDateOnly(b.value); if(ad&&bd) return ad-bd;
+  return String(a.value).localeCompare(String(b.value),undefined,{numeric:true,sensitivity:'base'});
+}
+function selectLookupDisplayValue(c,source,rows,col){
+  const candidates=(rows||[]).map((row,i)=>({row,i,value:rawDisplayCellValue(row?.[col]),date:lookupRecordDate(c,source,row,i)})).filter(x=>x.value!==null);
+  if(c.displayCalculation==='count') return (rows||[]).length;
+  if(!candidates.length) return null;
+  if(c.lookupSelection==='first') return candidates[0].value;
+  if(c.lookupSelection==='last') return candidates[candidates.length-1].value;
+  if(c.lookupSelection==='latest') return candidates.slice().sort((a,b)=>b.date-a.date||b.i-a.i)[0].value;
+  if(c.lookupSelection==='earliest') return candidates.slice().sort((a,b)=>a.date-b.date||a.i-b.i)[0].value;
+  if(c.lookupSelection==='mostCommon'){
+    const counts=new Map(); candidates.forEach((x,i)=>{ const k=normalizeResearchText(x.value), prior=counts.get(k)||{count:0,first:i,value:x.value}; prior.count++; counts.set(k,prior); });
+    return [...counts.values()].sort((a,b)=>b.count-a.count||a.first-b.first)[0].value;
+  }
+  if(c.lookupSelection==='highest') return candidates.slice().sort(compareLookupValues).at(-1).value;
+  if(c.lookupSelection==='lowest') return candidates.slice().sort(compareLookupValues)[0].value;
+  if(c.lookupSelection==='joinUnique'){ const seen=new Set(), values=[]; candidates.forEach(x=>{ const k=normalizeResearchText(x.value); if(!seen.has(k)){seen.add(k);values.push(x.value);} }); return values.join(', '); }
+  return candidates[0].value;
+}
+function calculateDisplayValue(c,value){
+  if(value===null || value===undefined || c.displayCalculation==='raw' || c.displayCalculation==='count') return value;
+  const date=parseDateOnly(value)||parseWeekLabel(value); if(!date) return null;
+  const days=Math.max(0,(Date.now()-date.getTime())/86400000);
+  if(c.displayCalculation==='daysSince') return Math.floor(days);
+  if(c.displayCalculation==='monthsSince') return Math.floor(days/30.4375);
+  if(c.displayCalculation==='yearsSince') return Math.round(days/365.25*10)/10;
+  return value;
+}
 function displayColumnValue(c, entry, opts={}){
   const source=c.source||'retail_sv2', col=resolveColumn(source,c.column)||c.column;
+  const modern=Number(c.lookupVersion)>=2 || c.lookupMatchColumn || c.lookupReturnColumn || c.audience==='coach';
+  const returnCol=resolveColumn(source,c.lookupReturnColumn||c.column)||c.lookupReturnColumn||c.column;
+  if(modern){
+    const matchCol=resolveColumn(source,c.lookupMatchColumn)||c.lookupMatchColumn;
+    if(!matchCol || (c.displayCalculation!=='count'&&!returnCol)) return null;
+    opts._lookupDisplayCache=opts._lookupDisplayCache||new Map();
+    const displayOpts={...opts,start:null,end:null,dateColumn:''};
+    let rows=lookupRowsForDisplay(c,entry,source,matchCol,displayOpts);
+    if((c.filters||[]).length) rows=applyFilters(rows,c.filters,source,displayOpts);
+    return calculateDisplayValue(c,selectLookupDisplayValue(c,source,rows,returnCol));
+  }
   if(!col) return null;
   if(entry.kind==='team'){
     if(!TEAM_TOTAL_SOURCE_KEYS.includes(source)) return null;

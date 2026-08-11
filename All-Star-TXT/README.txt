@@ -24,8 +24,13 @@ qualtrics/generator.html is the only maintained Qualtrics source. generator-sour
 
 WORKFLOW MODERNIZATION
 - Import now includes cached Source Health metadata.
+- Workbook imports inspect only a small worksheet prefix while detecting headers, materialize only the selected/required tabs, and build normalized row objects once.
+- Package Imported Data now writes All_Star_Data_Package.json. Loading that JSON validates the versioned package and hydrates normalized rows directly; legacy .xlsx/.xls packages remain supported.
 - Run uses shared Preflight diagnostics; only blocking errors stop execution.
 - Model Health reuses the same validation logic used by Run Preflight.
+- Display fields can target Representatives, Teams, or Coaches; match an explicit entity column in any source; select among duplicate records; derive count or date-tenure values; and apply ordered text/badge color rules without affecting points or rank.
+- Coach display values are rendered on the coach's Team row. The Model Builder labels the explicit coach match column as "Coach Name Expected In".
+- Research filter and metric caches are keyed by dataset/model/mapping/roster versions and reuse indexed row positions, with cache/scanning diagnostics in the performance panel.
 - Named presets support fixed and dynamic date behavior.
 - The 15 most recent report snapshots are stored in IndexedDB with schema version 1, optional notes, reopen, re-export, delete, and two-run comparison.
 - Existing report calculation traces remain the source for Explain This Number auditing.

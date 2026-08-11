@@ -68,6 +68,7 @@ function missingPointsForCriterion(c){ return Number(c.missingPoints)||0; }
 function criterionAllowsZero(c){ return !!c.zeroCanWin; }
 function isScorableValue(c,v){ return Number.isFinite(v) && (v!==0 || criterionAllowsZero(c)); }
 function criterionHasUsableValue(c,v){ return c?.calcType==='displayColumn' ? rawDisplayCellValue(v)!==null : isScorableValue(c,v); }
+function criterionAppliesToKind(c,kind){ return c?.audience==='both'||c?.audience===kind||(kind==='team'&&c?.audience==='coach'); }
 function rowSortScore(row){ return Number(row.overallScore)||0; }
 function rowZeroBottom(row,kind){ return kind==='rep' && rowSortScore(row)===0 && !row.zeroCanWinOverall; }
 function compareScoredRows(a,b,kind){
@@ -133,7 +134,7 @@ function applyNoScoreForRank(rows,c,weight){
   });
 }
 async function computeEntriesAsync(model, entries, kind, opts, progress={}){
-  const criteria=(opts?._criterionPlan ? (kind==='team'?opts._criterionPlan.teamCriteria:opts._criterionPlan.repCriteria).map(p=>p.criterion) : (model.criteria||[]).filter(c=>c.audience==='both'||c.audience===kind));
+  const criteria=(opts?._criterionPlan ? (kind==='team'?opts._criterionPlan.teamCriteria:opts._criterionPlan.repCriteria).map(p=>p.criterion) : (model.criteria||[]).filter(c=>criterionAppliesToKind(c,kind)));
   const rows=entries.map(entry=>({entry, values:{}, ranks:{}, scoreParts:{}, missingScores:{}, overallScore:0, eligible:true, autofails:[], minimumFails:[], zeroCanWinOverall:false}));
   const start=Number(progress.start)||0, end=Number(progress.end)||100, span=end-start;
   const totalValueOps=Math.max(1,criteria.length*Math.max(1,rows.length));
@@ -190,7 +191,7 @@ async function computeEntriesAsync(model, entries, kind, opts, progress={}){
   return {criteria, rows};
 }
 function computeEntries(model, entries, kind, opts){
-  const criteria=(model.criteria||[]).filter(c=>c.audience==='both'||c.audience===kind);
+  const criteria=(model.criteria||[]).filter(c=>criterionAppliesToKind(c,kind));
   const rows=entries.map(entry=>({entry, values:{}, ranks:{}, scoreParts:{}, missingScores:{}, overallScore:0, eligible:true, autofails:[], minimumFails:[], zeroCanWinOverall:false}));
   criteria.forEach(c=> rows.forEach(r=>{r.values[c.id]=criterionValue(c,r.entry,opts);}));
   const applicableCriteria=criteria.filter(c=>c.scoreType!=='display');
@@ -449,8 +450,46 @@ function repTeamPages(repPack,teamPack,model,runOpts={}){
   }).join('');
 }
 
+function displayMissingText(c){
+  if(c.displayMissingMode==='na') return 'N/A';
+  if(c.displayMissingMode==='notFound') return 'Not Found';
+  if(c.displayMissingMode==='zero') return '0';
+  if(c.displayMissingMode==='custom') return c.displayMissingText||'';
+  return '';
+}
+function displayRuleMatches(rule,value){
+  const blank=rawDisplayCellValue(value)===null;
+  if(rule.op==='blank') return blank;
+  if(rule.op==='notBlank') return !blank;
+  if(blank) return false;
+  if(rule.op==='contains') return normalizeResearchText(value).includes(normalizeResearchText(rule.value));
+  if(rule.op==='equals'){ const a=toNum(value), b=toNum(rule.value); return Number.isFinite(a)&&Number.isFinite(b)?a===b:normalizeResearchText(value)===normalizeResearchText(rule.value); }
+  if(rule.op==='dateWithin'||rule.op==='dateOlder'){ const d=parseDateOnly(value)||parseWeekLabel(value); if(!d) return false; const days=Math.floor(Math.abs(Date.now()-d.getTime())/86400000), n=Math.max(0,Number(rule.value)||0); return rule.op==='dateWithin'?days<=n:days>n; }
+  const n=toNum(value), a=toNum(rule.value), b=toNum(rule.value2); if(!Number.isFinite(n)||!Number.isFinite(a)) return false;
+  if(rule.op==='greater') return n>a; if(rule.op==='greaterEqual') return n>=a; if(rule.op==='less') return n<a; if(rule.op==='lessEqual') return n<=a; if(rule.op==='between') return Number.isFinite(b)&&n>=Math.min(a,b)&&n<=Math.max(a,b);
+  return false;
+}
+function formatLookupDisplayValue(c,value){
+  if(rawDisplayCellValue(value)===null) return displayMissingText(c);
+  if(c.displayValueType==='percent'){ const n=toNum(value); return Number.isFinite(n)?`${(Math.abs(n)<=1?n*100:n).toLocaleString(undefined,{maximumFractionDigits:2})}%`:String(value); }
+  if(c.displayValueType==='number'){ const n=toNum(value); return Number.isFinite(n)?n.toLocaleString(undefined,{maximumFractionDigits:2}):String(value); }
+  if(c.displayValueType==='date'){ const d=parseDateOnly(value)||parseWeekLabel(value); return d?d.toLocaleDateString():String(value); }
+  return String(value);
+}
+function displayRuleComparableValue(c,value){
+  if(c.displayValueType!=='percent') return value;
+  const n=toNum(value); return Number.isFinite(n)&&Math.abs(n)<=1?n*100:value;
+}
+function matchingLookupDisplayRule(c,value){ return (c.displayRules||[]).find(r=>displayRuleMatches(r,displayRuleComparableValue(c,value))); }
+function lookupDisplayHtml(c,value){
+  const rule=matchingLookupDisplayRule(c,value), text=rule?.display||formatLookupDisplayValue(c,value);
+  if(!text && !rule) return '—';
+  const color=rule?.color&&rule.color!=='none'?` lookup-${rule.color}`:'', style=rule?.style==='badge'?' lookupDisplayBadge':' lookupDisplayValue';
+  return `<span class="${style.trim()}${color}">${esc(text)}</span>`;
+}
+function lookupDisplayCellClass(c,value){ const rule=matchingLookupDisplayRule(c,value); return rule?.style==='cell'&&rule.color&&rule.color!=='none'?`lookup-cell-${rule.color}`:''; }
 function valueDisplay(r,c){
-  if(c.calcType==='displayColumn'){ const value=rawDisplayCellValue(r.values?.[c.id]); return value===null?'—':esc(String(value)); }
+  if(c.calcType==='displayColumn') return lookupDisplayHtml(c,r.values?.[c.id]);
   return r.missingScores&&r.missingScores[c.id] ? '<span class="badge warn">No score</span>' : fmt(r.values[c.id],c.format);
 }
 function scoreDisplay(r,c){
@@ -466,7 +505,7 @@ function criterionReportHeaderHtml(c,kind){
   return `<th class="right">${esc(c.name)} Value${kind==='team'&&c.trueValueEnabled?'<br><span class="badge">True Team Value</span>':''}</th><th class="right">${esc(c.name)} Score</th>`;
 }
 function criterionReportCellsHtml(model,c,r,kind,runOpts={}){
-  if(c.calcType==='displayColumn') return `<td>${modelTraceCell(valueDisplay(r,c),createModelCellTrace(model,c,r,kind,'value',runOpts))}</td>`;
+  if(c.calcType==='displayColumn') return `<td class="${lookupDisplayCellClass(c,r.values?.[c.id])}">${modelTraceCell(valueDisplay(r,c),createModelCellTrace(model,c,r,kind,'value',runOpts))}</td>`;
   return `<td class="right">${modelTraceCell(valueDisplay(r,c),createModelCellTrace(model,c,r,kind,'value',runOpts))}</td><td class="right">${modelTraceCell(scoreDisplay(r,c),createModelCellTrace(model,c,r,kind,'score',runOpts))}</td>`;
 }
 function sectionTable(title, pack, kind, model, runOpts={}){
@@ -1351,7 +1390,7 @@ function validatePdfOptions(options,report){ if(!pdfHasAnyContent(options)) retu
 function pdfRank(row){ return Number.isFinite(row?.overallRank)?String(row.overallRank):'-'; }
 function pdfEligible(row){ return row?.eligible?'Eligible':'Ineligible'; }
 function pdfHasMeaningfulValue(v){ if(v===0||v==='0') return true; const t=String(v??'').trim(); return !!t&&!['-','—','n/a','na','none','no score','null','undefined'].includes(t.toLowerCase()); }
-function pdfCritColumns(report,kind){ return (report?.model?.criteria||[]).filter(c=>kind==='team'?(c.audience==='both'||c.audience==='team'):(c.audience==='both'||c.audience==='rep')).flatMap(c=>c.calcType==='displayColumn'?[{key:'d_'+c.id,label:c.name,get:r=>pdfText(valueDisplay(r,c),'—')}]:[{key:'v_'+c.id,label:c.name+' Value',get:r=>pdfText(valueDisplay(r,c),'No score')},{key:'s_'+c.id,label:c.name+' Score',get:r=>pdfText(scoreDisplay(r,c),'No score')}]); }
+function pdfCritColumns(report,kind){ return (report?.model?.criteria||[]).filter(c=>criterionAppliesToKind(c,kind)).flatMap(c=>c.calcType==='displayColumn'?[{key:'d_'+c.id,label:c.name,get:r=>pdfText(valueDisplay(r,c),'—')}]:[{key:'v_'+c.id,label:c.name+' Value',get:r=>pdfText(valueDisplay(r,c),'No score')},{key:'s_'+c.id,label:c.name+' Score',get:r=>pdfText(scoreDisplay(r,c),'No score')}]); }
 function buildPdfExportData(report,options){ const data=buildWinnerReportData(report); const repsByTeam=new Map(); data.teamRepRows.forEach(r=>{ const k=coachNameKey(r.entry?.team); if(!repsByTeam.has(k)) repsByTeam.set(k,[]); repsByTeam.get(k).push(r); }); data.repsByTeam=repsByTeam; return data; }
 function buildPdfContentPlan(report,options){ const data=buildPdfExportData(report,options), plan=[]; if(options.winners.winningCoach&&data.winningTeam) plan.push({type:'winner-coach',title:'Winning Coach',row:data.winningTeam}); if(options.winners.winningRepOverall&&data.overallWinner) plan.push({type:'winner-overall-rep',title:'Winning Representative Overall',row:data.overallWinner}); if(options.winners.winningRepPerTeam&&data.teamWinners.length) plan.push({type:'winner-team-reps',title:'Winning Representative by Team',items:data.teamWinners}); if(options.breakdowns.top50ForSelectedWinners){ if(options.winners.winningCoach&&!options.breakdowns.coaches) plan.push({type:'coach-top50',title:'Top 50 Coaches / Teams',rows:data.teamRows.filter(r=>r.eligible&&!rowZeroBottom(r,'team')).slice(0,50)}); if(options.winners.winningRepOverall&&!options.breakdowns.allReps) plan.push({type:'rep-top50',title:'Top 50 Representatives Overall',rows:data.repRows.filter(r=>r.eligible&&!rowZeroBottom(r,'rep')).slice(0,50)}); if(options.winners.winningRepPerTeam&&!options.breakdowns.eachTeam) data.teamWinners.forEach(t=>plan.push({type:'team-top50',title:`${t.team} — Top Representatives`,team:t,rows:(data.repsByTeam.get(coachNameKey(t.team))||[]).filter(r=>r.eligible&&!rowZeroBottom(r,'rep')).slice(0,50)})); }
  if(options.breakdowns.coaches) plan.push({type:'coach-ranking',title:'Complete Coach Rankings',rows:data.teamRows}); if(options.breakdowns.allReps) plan.push({type:'rep-ranking',title:'All Representatives',rows:data.repRows}); if(options.breakdowns.eachTeam) data.teamWinners.forEach(t=>plan.push({type:'team-breakdown',title:t.team,team:t,rows:data.repsByTeam.get(coachNameKey(t.team))||[]})); return plan; }

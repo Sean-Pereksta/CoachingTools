@@ -88,7 +88,7 @@ function compileRunCriterionPlan(model, opts={}){
     if(c.calcType==='custom' && c.expression) plan.compiledExpression=compileCachedExpression(source,c.expression,getHeaders(source),raw=>Function('row','toNum','return ('+raw+');'),{source,context:'Model criterion'});
     return plan;
   });
-  return {model,signature,criteria,teamCriteria:criteria.filter(p=>p.audience==='both'||p.audience==='team'),repCriteria:criteria.filter(p=>p.audience==='both'||p.audience==='rep'),requiredSources:requiredRunSourcesForModel(model,opts),createdAt:Date.now()};
+  return {model,signature,criteria,teamCriteria:criteria.filter(p=>p.audience==='both'||p.audience==='team'||p.audience==='coach'),repCriteria:criteria.filter(p=>p.audience==='both'||p.audience==='rep'),requiredSources:requiredRunSourcesForModel(model,opts),createdAt:Date.now()};
 }
 function runPerfSnapshot(){ const p=state.perfCounters||{}; return {teamTotalsIndexBuilds:p.teamTotalsIndexBuilds||0,trueTeamValueLookups:p.trueTeamValueLookups||0,runIndexCacheHits:p.runIndexCacheHits||0,runIndexCacheMisses:p.runIndexCacheMisses||0,sourceRowCacheHits:p.sourceRowCacheHits||0,sourceRowCacheMisses:p.sourceRowCacheMisses||0,entryRowCacheHits:p.entryRowCacheHits||0,entryRowCacheMisses:p.entryRowCacheMisses||0}; }
 function runPerfDelta(a){ const b=runPerfSnapshot(), out={}; Object.keys(b).forEach(k=>out[k]=b[k]-(a?.[k]||0)); out.teamTotalsIndexBuildsBySource={...(state.perfCounters.teamTotalsIndexBuildsBySource||{})}; return out; }
