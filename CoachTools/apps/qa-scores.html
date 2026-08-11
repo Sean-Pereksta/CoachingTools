@@ -1,0 +1,3932 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>QA Dashboard — Local (QA Only)</title>
+<meta name="coachtools-id" content="qa-scores" />
+<meta name="coachtools-name" content="QA Scores" />
+<meta name="coachtools-description" content="Review QA performance, reviewer alignment, and Call Quality coaching." />
+<meta name="coachtools-category" content="Quality" />
+<meta name="coachtools-icon" content="icons/qa-scores.png" />
+<meta name="coachtools-initials" content="QA" />
+<meta name="coachtools-keywords" content="qa, quality, monitor, reviewer, coaching" />
+<meta name="coachtools-data" content="qa, coaching" />
+<meta name="coachtools-order" content="60" />
+<meta name="coachtools-version" content="1.0" />
+
+<script src="../vendor/chart.umd.js"></script>
+<script src="../vendor/lz-string.min.js"></script>
+<script src="../vendor/xlsx.full.min.js"></script>
+<script src="../shared/coachtools-storage.js"></script>
+<script src="../shared/coachtools-shell.js"></script>
+
+<style>
+  :root{
+    --bg:#f6f7fb;
+    --card:#fff;
+    --ink:#0f172a;
+    --muted:#64748b;
+    --line:rgba(15,23,42,.12);
+    --accent:#2563eb;
+    --good:#16a34a;
+    --bad:#dc2626;
+    --warn:#f59e0b;
+    --shadow: 0 14px 30px rgba(2,6,23,.10);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif
+  }
+
+  header{
+    position:sticky;top:0;z-index:50;
+    background:#fff;border-bottom:1px solid var(--line);
+    padding:10px 12px;
+  }
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .row.tight{gap:8px}
+  .headerCustomRange{
+    display:none;
+    gap:8px;
+    align-items:center;
+    flex-wrap:wrap;
+  }
+  .headerCustomRange.show{display:flex}
+  .headerCustomRange label{font-size:12px}
+  .headerMain{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:12px;
+    align-items:start;
+  }
+  .headerLeft{min-width:0}
+  .headerRight{
+    min-width:260px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    align-items:flex-end;
+  }
+  @media (max-width:980px){
+    .headerMain{grid-template-columns:1fr}
+    .headerRight{align-items:flex-start;min-width:0}
+  }
+
+  h1{font-size:16px;margin:0;font-weight:950;letter-spacing:.2px}
+  label{font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center}
+  select,input,button{font-size:14px}
+  select,input{
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:7px 10px;
+    background:#fff;
+    outline:none;
+  }
+  input[type="text"]{min-width:220px}
+
+  .btn{
+    border:1px solid var(--line);
+    background:#fff;
+    padding:7px 10px;
+    border-radius:999px;
+    cursor:pointer;
+    font-weight:950;
+  }
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.tiny{padding:6px 10px;font-size:12px}
+  .btn.active{
+    border-color: rgba(37,99,235,.55);
+    box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+  }
+  .spacer{flex:1}
+  .wrap{padding:12px;max-width:1400px;margin:0 auto}
+
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:14px;
+    box-shadow:var(--shadow);
+  }
+  .notice{
+    border:1px dashed var(--line);
+    border-radius:12px;
+    padding:10px;
+    background:#fff;
+    color:#334155;
+    font-size:12px;
+  }
+
+  .summaryBox{padding:12px}
+  .tabBar{
+    display:flex;
+    gap:8px;
+    margin-bottom:12px;
+    flex-wrap:wrap;
+  }
+  .viewSection{display:none}
+  .viewSection.active{display:block}
+  .datasetPill{font-weight:900}
+  .weeklyTableWrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+  .weeklySummary{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+  .weeklyFilterBar{
+    display:flex;gap:8px;align-items:end;flex-wrap:wrap;
+    border:1px solid var(--line);border-radius:12px;padding:10px;background:#f8fafc;
+    margin:10px 0;
+  }
+  .weeklyFilterBar label{font-size:12px;font-weight:900;color:#334155;display:grid;gap:6px}
+  .weeklyFilterBar input,.weeklyFilterBar select{min-width:180px}
+  .weeklyCustomRange{display:none}
+  .weeklyCustomRange.show{display:flex;gap:8px;flex-wrap:wrap}
+  .exportAvgCustomRange{display:none}
+  .exportAvgCustomRange.show{display:flex;gap:8px;flex-wrap:wrap}
+  .clickableTh{cursor:pointer}
+  .weeklyRowBtn{
+    border:0;background:none;padding:0;margin:0;cursor:pointer;color:var(--accent);font-weight:800;
+  }
+  .summaryHead{
+    display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;
+    margin-bottom:10px
+  }
+  .summaryHead .sub{font-size:12px;color:var(--muted);font-weight:800}
+  .summaryTblWrap{overflow:auto;border:1px solid var(--line);border-radius:12px}
+  .summaryTbl{border-collapse:separate;border-spacing:0;width:100%;min-width:860px;background:#fff}
+  .summaryTbl thead th{
+    background:#0f172a;color:#e5e7eb;
+    text-align:left;padding:10px;font-size:12px;white-space:nowrap;
+    position:sticky;top:0;z-index:1;
+  }
+  .summaryTbl tbody td{
+    border-bottom:1px solid var(--line);
+    padding:10px;font-size:13px;white-space:nowrap;
+    vertical-align:top;
+  }
+  .summaryTbl tbody tr:hover td{background:#f8fafc}
+
+  .pill{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:6px 10px;border-radius:999px;border:1px solid var(--line);
+    background:#fff;font-size:12px;font-weight:900;color:#0f172a;
+  }
+  .pill.bad{border-color:rgba(220,38,38,.35);background:rgba(220,38,38,.08);color:#7f1d1d}
+  .pill.good{border-color:rgba(22,163,74,.35);background:rgba(22,163,74,.08);color:#065f46}
+  .pill.midgood{border-color:rgba(132,204,22,.4);background:rgba(132,204,22,.12);color:#3f6212}
+  .pill.warn{border-color:rgba(245,158,11,.45);background:rgba(245,158,11,.10);color:#7c2d12}
+  .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+
+  .stack{display:grid;gap:12px}
+
+  .compCategory{font-weight:950}
+  .diffGood{color:var(--good);font-weight:950}
+  .diffBad{color:var(--bad);font-weight:950}
+  .diffNeutral{color:#0f172a;font-weight:950}
+
+  .grid{
+    display:grid;
+    grid-template-columns: repeat(4, minmax(260px, 1fr));
+    gap:12px;
+    margin-top:12px;
+  }
+  @media (max-width:1200px){ .grid{grid-template-columns: repeat(3, minmax(260px, 1fr));} }
+  @media (max-width:950px){ .grid{grid-template-columns: repeat(2, minmax(260px, 1fr));} }
+  @media (max-width:620px){ .grid{grid-template-columns: 1fr;} }
+
+  .repCard{padding:12px;cursor:pointer;transition:transform .06s ease, box-shadow .12s ease}
+  .repCard:hover{transform:translateY(-1px);box-shadow:0 18px 40px rgba(2,6,23,.14)}
+  .repTop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+  .repName{font-weight:950;font-size:14px;line-height:1.15}
+  .repMeta{font-size:12px;color:var(--muted);margin-top:4px}
+  .sparkWrap{margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:8px;background:#fbfdff}
+  canvas.spark{width:100%;height:52px;display:block}
+  .repStats{margin-top:10px;display:grid;gap:6px}
+  .statLine{display:flex;justify-content:space-between;gap:10px;font-size:12px}
+  .statLine b{font-weight:950}
+  .trendUp{color:var(--good);font-weight:950}
+  .trendDn{color:var(--bad);font-weight:950}
+  .trendFlat{color:#0f172a;font-weight:950}
+  .miniRow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .mini{font-size:12px;font-weight:900;border:1px solid var(--line);border-radius:999px;padding:4px 8px;background:#fff}
+  .mini.bad{border-color:rgba(220,38,38,.35);background:rgba(220,38,38,.08);color:#7f1d1d}
+  .mini.good{border-color:rgba(22,163,74,.35);background:rgba(22,163,74,.08);color:#065f46}
+  .mini.warn{border-color:rgba(245,158,11,.45);background:rgba(245,158,11,.10);color:#7c2d12}
+
+  .coachFlag{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    font-size:12px;
+    font-weight:950;
+    padding:4px 8px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:#fff;
+  }
+  .coachFlag.good{
+    background:rgba(22,163,74,.08);
+    color:#166534;
+    border-color:rgba(22,163,74,.25);
+  }
+  .coachFlag.bad{
+    background:rgba(220,38,38,.08);
+    color:#991b1b;
+    border-color:rgba(220,38,38,.25);
+  }
+  .coachMark{font-size:14px;line-height:1}
+
+  .overlay{
+    position:fixed;inset:0;background:rgba(15,23,42,.55);
+    display:none;align-items:center;justify-content:center;padding:14px;z-index:9999
+  }
+  .overlay.show{display:flex}
+  .panel{
+    width:min(1100px, 96vw);
+    max-height:92vh;
+    background:#fff;border:1px solid rgba(226,232,240,.95);
+    border-radius:16px;
+    box-shadow:0 22px 60px rgba(2,6,23,.35);
+    overflow:hidden;
+    display:flex;flex-direction:column;
+  }
+  .panel.small{width:min(860px,96vw)}
+  .panel.medium{width:min(980px,96vw)}
+  .pHead{
+    padding:12px 14px;border-bottom:1px solid var(--line);
+    display:flex;gap:10px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;
+    background:linear-gradient(180deg, rgba(37,99,235,.08), rgba(37,99,235,0));
+  }
+  .pTitle{font-weight:950;margin:0;font-size:16px}
+  .pSub{margin-top:6px;color:#475569;font-weight:800;font-size:12px}
+  .pActions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+  .pBody{padding:12px 14px;overflow:auto;min-height:0;display:grid;gap:12px}
+
+  .box{border:1px solid var(--line);border-radius:14px;background:#fff;padding:12px}
+  .boxHead{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;font-weight:950;margin-bottom:10px}
+  .chartWrap{height:260px;border:1px solid var(--line);border-radius:12px;padding:10px;background:#fbfdff}
+  .tblWrap{overflow:auto;border:1px solid var(--line);border-radius:14px}
+  table{border-collapse:separate;border-spacing:0;width:100%;min-width:980px;background:#fff}
+  thead th{
+    position:sticky;top:0;z-index:2;
+    background:#0f172a;color:#e5e7eb;
+    text-align:left;padding:10px;font-size:12px;white-space:nowrap
+  }
+  tbody td{border-bottom:1px solid var(--line);padding:8px 10px;font-size:13px;white-space:nowrap}
+  tbody tr:hover td{background:#f8fafc}
+
+  .coList{display:grid;gap:8px}
+  .coItem{
+    border:1px solid var(--line);
+    border-radius:12px;
+    background:#fbfdff;
+    padding:10px 12px;
+  }
+  .coHeadRow{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+  .coHeadRow b{font-size:12px}
+  .coMeta{color:var(--muted);font-size:12px;font-weight:800;margin-top:2px}
+  .coDesc{
+    margin-top:8px;
+    white-space:pre-wrap;
+    font-size:12.5px;
+    line-height:1.35;
+    color:#0f172a;
+    border-top:1px dashed var(--line);
+    padding-top:8px;
+  }
+
+  .reviewerList{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  .reviewerChip{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:6px 10px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:#fff;
+    font-size:12px;
+    font-weight:900;
+  }
+  .reviewerChip button{
+    border:none;
+    background:transparent;
+    color:var(--bad);
+    font-weight:950;
+    cursor:pointer;
+    padding:0 2px;
+  }
+
+  .optionsGrid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(260px,1fr));
+    gap:12px;
+  }
+  @media (max-width:760px){ .optionsGrid{grid-template-columns:1fr} }
+
+  .unreadBadge{
+    border-color:rgba(220,38,38,.35)!important;
+    background:rgba(220,38,38,.08)!important;
+    color:#7f1d1d!important;
+  }
+
+  .inlineAction{
+    margin-left:8px;
+    vertical-align:middle;
+  }
+  .unreadRepList{
+    display:grid;
+    gap:10px;
+  }
+  .unreadRepItem{
+    border:1px solid var(--line);
+    border-radius:12px;
+    background:#fbfdff;
+    overflow:hidden;
+  }
+  .unreadRepBtn{
+    width:100%;
+    border:0;
+    background:transparent;
+    padding:10px 12px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    cursor:pointer;
+    font-weight:900;
+    text-align:left;
+  }
+  .unreadRepBtn:hover{background:#f1f5f9}
+  .unreadRepMeta{
+    color:var(--muted);
+    font-size:12px;
+    font-weight:800;
+  }
+  .unreadConvWrap{
+    border-top:1px dashed var(--line);
+    padding:10px 12px;
+    background:#fff;
+  }
+  .unreadConvList{
+    margin:0;
+    padding-left:18px;
+    display:grid;
+    gap:6px;
+  }
+  .unreadConvList li{
+    font-size:12px;
+  }
+
+
+  /* Modern red / white refresh */
+  :root{
+    --bg:#f7f7f8;
+    --card:#ffffff;
+    --ink:#111827;
+    --muted:#6b7280;
+    --line:rgba(17,24,39,.12);
+    --accent:#e10600;
+    --accent2:#ff3b30;
+    --accentSoft:#fff1f0;
+    --good:#16a34a;
+    --bad:#dc2626;
+    --warn:#d97706;
+    --black:#0b0f19;
+    --shadow:0 18px 44px rgba(17,24,39,.11);
+  }
+  body{
+    background:
+      radial-gradient(circle at top left, rgba(225,6,0,.10), transparent 34rem),
+      linear-gradient(180deg, #fff 0, var(--bg) 24rem);
+  }
+  header{
+    background:rgba(255,255,255,.94);
+    backdrop-filter:blur(12px);
+    border-bottom:1px solid rgba(225,6,0,.16);
+    box-shadow:0 10px 30px rgba(17,24,39,.08);
+    padding:12px;
+  }
+  .appHeader{max-width:1440px;margin:0 auto;display:grid;gap:12px}
+  .headerTop{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .brandBlock{display:grid;gap:3px;min-width:260px}
+  .brandBlock h1{font-size:24px;letter-spacing:-.03em;line-height:1;font-weight:1000;color:var(--black)}
+  .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.16em;font-weight:1000;color:var(--accent)}
+  .scopeLine{font-size:12px;font-weight:900;color:#374151;line-height:1.35}
+  .headerActions{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+  .filterGrid{display:grid;grid-template-columns:repeat(5,minmax(170px,1fr)) auto;gap:10px;align-items:end}
+  .controlField{display:grid;gap:5px;font-size:11px;font-weight:1000;color:#4b5563;text-transform:uppercase;letter-spacing:.04em;align-items:stretch}
+  .controlField select,.controlField input{min-width:0;width:100%;height:40px;border-radius:12px;border-color:rgba(17,24,39,.16);box-shadow:0 1px 0 rgba(17,24,39,.04);text-transform:none;letter-spacing:0;font-weight:800;color:#111827;background:#fff}
+  .controlField select:focus,.controlField input:focus{border-color:rgba(225,6,0,.62);box-shadow:0 0 0 4px rgba(225,6,0,.10)}
+  .headerRangeCard{grid-column:span 2;display:none;grid-template-columns:repeat(2,minmax(120px,1fr));gap:8px;align-items:end}
+  .headerRangeCard.show{display:grid}
+  .miniField input{height:40px}
+  .checkField{height:40px;border:1px solid rgba(17,24,39,.14);border-radius:12px;background:#fff;padding:0 12px;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:1000;color:#111827;white-space:nowrap;text-transform:none;letter-spacing:0;box-shadow:0 1px 0 rgba(17,24,39,.04)}
+  .checkField input{accent-color:var(--accent)}
+  .searchUtilityRow{display:grid;grid-template-columns:minmax(260px,420px) minmax(0,1fr);gap:12px;align-items:end}
+  .searchField input{height:42px}
+  .statusStrip{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+  .statusText{font-size:12px;font-weight:900;color:#374151;background:#fff;border-left:4px solid var(--accent);border-radius:10px;padding:8px 10px;box-shadow:0 1px 0 rgba(17,24,39,.04)}
+  .btn{border-radius:12px;border-color:rgba(17,24,39,.14);box-shadow:0 1px 0 rgba(17,24,39,.05);transition:transform .12s ease, box-shadow .12s ease, background .12s ease}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(17,24,39,.10)}
+  .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#fff}
+  .btn.active{border-color:rgba(225,6,0,.55);box-shadow:0 0 0 4px rgba(225,6,0,.10)}
+  .wrap{max-width:1440px;padding:16px}
+  .tabBar{background:#fff;border:1px solid rgba(17,24,39,.10);border-radius:16px;padding:6px;box-shadow:0 10px 30px rgba(17,24,39,.06);position:sticky;top:140px;z-index:20}
+  .viewTab{border-radius:12px;padding:9px 14px;color:#374151}
+  .viewTab.active{background:#111827;color:#fff;border-color:#111827;box-shadow:none}
+  .card{border-radius:18px;border-color:rgba(17,24,39,.10);box-shadow:var(--shadow)}
+  .summaryBox{padding:16px}
+  .summaryHead{border-bottom:1px solid rgba(17,24,39,.08);padding-bottom:12px}
+  .summaryHead .sub{color:#6b7280}
+  .summaryTblWrap,.weeklyTableWrap,.tblWrap{border-radius:16px;border-color:rgba(17,24,39,.10)}
+  .summaryTbl thead th, thead th{background:#0b0f19;color:#fff;font-weight:1000;letter-spacing:.03em;text-transform:uppercase}
+  .summaryTbl tbody td, tbody td{border-bottom:1px solid rgba(17,24,39,.08)}
+  .pill{border-radius:10px}
+
+  .comparisonTbl{min-width:760px}
+  .comparisonTbl tbody tr.statusGood td{background:rgba(22,163,74,.045)}
+  .comparisonTbl tbody tr.statusWarn td{background:rgba(217,119,6,.065)}
+  .comparisonTbl tbody tr.statusBad td{background:rgba(220,38,38,.065)}
+  .compareCategoryTitle{font-weight:1000;color:#111827}
+  .compareRule{font-size:11px;color:#6b7280;font-weight:800;margin-top:3px}
+  .compareBadge{display:inline-flex;align-items:center;justify-content:center;min-width:88px;border-radius:999px;padding:6px 10px;font-weight:1000;border:1px solid rgba(17,24,39,.12);background:#fff}
+  .compareBadge.statusGood{color:#065f46;background:rgba(22,163,74,.10);border-color:rgba(22,163,74,.25)}
+  .compareBadge.statusWarn{color:#7c2d12;background:rgba(217,119,6,.12);border-color:rgba(217,119,6,.30)}
+  .compareBadge.statusBad{color:#7f1d1d;background:rgba(220,38,38,.12);border-color:rgba(220,38,38,.30)}
+  .compareBadge.statusNeutral{color:#111827;background:#f9fafb}
+
+  .grid{grid-template-columns:repeat(3,minmax(300px,1fr));gap:14px}
+  @media (max-width:1200px){.grid{grid-template-columns:repeat(2,minmax(300px,1fr))}}
+  @media (max-width:720px){.grid{grid-template-columns:1fr}}
+  .repCard{padding:14px;border-top:5px solid var(--accent);overflow:hidden}
+  .repTop{align-items:center;border-bottom:1px solid rgba(17,24,39,.08);padding-bottom:10px}
+  .repName{font-size:16px;letter-spacing:-.01em}
+  .repMeta{font-weight:800;color:#6b7280}
+  .coachFlag{border-radius:10px;padding:6px 9px;box-shadow:0 1px 0 rgba(17,24,39,.04)}
+  .trendBanner{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:8px 10px;background:#111827;color:#fff;border-radius:12px;font-size:12px;font-weight:1000}
+  .trendBanner span{color:#d1d5db;text-transform:uppercase;letter-spacing:.08em;font-size:10px}
+  .trendBanner .trendUp{color:#86efac}.trendBanner .trendDn{color:#fecaca}.trendBanner .trendFlat{color:#fff}
+  .sparkWrap{background:linear-gradient(180deg,#fff,#fff7f7);border-radius:14px;border-color:rgba(225,6,0,.16)}
+  .repScoreBand{margin-top:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-radius:14px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;box-shadow:0 12px 22px rgba(225,6,0,.18)}
+  .repScoreBand .label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:1000;opacity:.88}
+  .repScoreBand .value{font-size:22px;font-weight:1000;letter-spacing:-.03em;line-height:1}
+  .repScoreBand .sub{font-size:12px;font-weight:900;opacity:.92;text-align:right}
+  .repDataRows{display:grid;gap:8px;margin-top:10px}
+  .repDataRow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 10px;border:1px solid rgba(17,24,39,.10);border-radius:12px;background:#fff;font-size:12px}
+  .repDataRow.split{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto}
+  .repDataRow .label,.repDataRow .label2{color:#6b7280;font-weight:900}
+  .repDataRow b{font-weight:1000;color:#111827}
+  .repDataRow.good{border-left:4px solid var(--good)}
+  .repDataRow.warn{border-left:4px solid var(--warn)}
+  .repDataRow.bad{border-left:4px solid var(--bad)}
+  .repBottomNote{font-size:11px;color:#6b7280;font-weight:800;margin-top:8px;line-height:1.35}
+  .reviewerTools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+  .reviewerChecklist{display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:8px;margin-top:10px}
+  .reviewerCheck{display:flex;align-items:center;gap:8px;border:1px solid rgba(17,24,39,.10);border-radius:12px;background:#fff;padding:8px 10px;font-size:12px;font-weight:900;color:#111827;text-transform:none;letter-spacing:0}
+  .reviewerCheck input{accent-color:var(--accent)}
+  .reviewerChip{border-radius:10px}
+  .rememberedBadge{font-size:12px;font-weight:900;color:#374151}
+  .statusStripHidden{display:none!important}
+
+  .focusSummaryGrid{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:10px;margin:10px 0 14px}
+  .focusMetric{border:1px solid rgba(17,24,39,.10);border-radius:14px;background:#fff;padding:12px;box-shadow:0 1px 0 rgba(17,24,39,.04)}
+  .focusMetric .label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:1000;color:#6b7280}
+  .focusMetric .value{font-size:24px;font-weight:1000;letter-spacing:-.03em;color:#111827;margin-top:4px}
+  .focusMetric .sub{font-size:12px;font-weight:850;color:#6b7280;margin-top:2px;line-height:1.35}
+  .focusTbl{min-width:1120px}
+  .focusTbl tbody tr{cursor:pointer}
+  .focusTbl tbody tr:hover td{background:#fff7f7}
+  .rankBadge{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:10px;background:#111827;color:#fff;font-weight:1000}
+  .ratingBadge{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:6px 10px;font-weight:1000;border:1px solid rgba(17,24,39,.12);white-space:nowrap;background:#fff}
+  .ratingBadge.high{color:#065f46;background:rgba(22,163,74,.10);border-color:rgba(22,163,74,.25)}
+  .ratingBadge.meet{color:#14532d;background:rgba(34,197,94,.08);border-color:rgba(34,197,94,.22)}
+  .ratingBadge.below{color:#7c2d12;background:rgba(217,119,6,.12);border-color:rgba(217,119,6,.30)}
+  .ratingBadge.concern{color:#7f1d1d;background:rgba(220,38,38,.11);border-color:rgba(220,38,38,.30)}
+  .ratingBadge.alarm{color:#fff;background:linear-gradient(135deg,#991b1b,#ef4444);border-color:transparent}
+  .impactCell{font-weight:1000}
+  .impactCell.good{color:#065f46}.impactCell.warn{color:#7c2d12}.impactCell.bad{color:#991b1b}
+  .factorList{display:flex;gap:6px;flex-wrap:wrap}
+  .factorPill{display:inline-flex;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:950;border:1px solid rgba(17,24,39,.10);background:#f9fafb;color:#374151}
+  .factorPill.bad{color:#991b1b;background:rgba(220,38,38,.08);border-color:rgba(220,38,38,.24)}
+  .factorPill.warn{color:#7c2d12;background:rgba(217,119,6,.10);border-color:rgba(217,119,6,.26)}
+  .factorPill.good{color:#065f46;background:rgba(22,163,74,.10);border-color:rgba(22,163,74,.24)}
+  .repDataRow.alert{border-left:4px solid var(--bad);background:rgba(220,38,38,.06)}
+  @media (max-width:920px){.focusSummaryGrid{grid-template-columns:repeat(2,minmax(160px,1fr))}}
+  @media (max-width:560px){.focusSummaryGrid{grid-template-columns:1fr}}
+  @media (max-width:1060px){
+    .filterGrid{grid-template-columns:repeat(2,minmax(180px,1fr))}
+    .headerRangeCard{grid-column:span 2}
+    .checkField{justify-content:flex-start}
+    .searchUtilityRow{grid-template-columns:1fr}
+    .statusStrip{justify-content:flex-start}
+    .tabBar{top:auto;position:relative}
+  }
+  @media (max-width:640px){
+    .filterGrid{grid-template-columns:1fr}
+    .headerRangeCard{grid-column:span 1;grid-template-columns:1fr}
+    .repDataRow.split{grid-template-columns:minmax(0,1fr) auto}
+    .reviewerChecklist{grid-template-columns:1fr}
+  }
+
+</style>
+</head>
+<body>
+
+<header>
+  <div class="appHeader">
+    <div class="headerTop">
+      <div class="brandBlock">
+        <div class="eyebrow">Local QA Review Dashboard</div>
+        <h1>QA Dashboard</h1>
+        <div id="scopePill" class="scopeLine">—</div>
+      </div>
+      <div class="headerActions">
+        <button class="btn primary" id="reviewersBtn">Reviewers: <span id="reviewersBtnCount">0</span></button>
+        <button class="btn" id="optionsBtn">Additional Options</button>
+      </div>
+    </div>
+
+    <div class="filterGrid">
+      <label class="controlField">Team / Coach
+        <select id="teamSel"></select>
+      </label>
+
+      <label class="controlField">Timeframe
+        <select id="tfSel">
+          <option value="all" selected>All</option>
+          <option value="last7">Last 7 days</option>
+          <option value="last30">Last 30 days</option>
+          <option value="last90">Last 90 days</option>
+          <option value="custom">Custom…</option>
+        </select>
+      </label>
+
+      <div id="headerCustomRange" class="headerCustomRange headerRangeCard">
+        <label class="controlField miniField">From
+          <input id="fromInp" type="date"/>
+        </label>
+        <label class="controlField miniField">To
+          <input id="toInp" type="date"/>
+        </label>
+      </div>
+
+      <label class="controlField">Date basis
+        <select id="dateModeSel">
+          <option value="interaction" selected>Interaction Date</option>
+          <option value="assigned">Assigned Date</option>
+        </select>
+      </label>
+
+      <label class="controlField">Sort representatives
+        <select id="sortSel">
+          <option value="count">Most evals</option>
+          <option value="avg">Avg score (high→low)</option>
+          <option value="zeros">Most 0s</option>
+          <option value="trend">Trend (negative→positive)</option>
+          <option value="coachings">Coachings (low→high)</option>
+          <option value="coachingsWeighted">Weighted coachings</option>
+          <option value="unreviewed">Most unreviewed</option>
+        </select>
+      </label>
+
+      <label class="checkField" title="Exclude evaluations with Score % = 0 from averages/charts">
+        <input id="excludeZero" type="checkbox"/>
+        <span>Exclude zero-score calls</span>
+      </label>
+    </div>
+
+    <div class="searchUtilityRow">
+      <label class="controlField searchField">Representative search
+        <input id="searchInp" type="text" placeholder="Search rep name…"/>
+      </label>
+      <div class="statusStrip statusStripHidden" aria-hidden="true">
+        <span id="qaReviewCountPill"></span>
+        <span id="qaSourcePill"></span>
+        <span id="sortPill"></span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="tabBar">
+    <button class="btn tiny viewTab active" data-tab="rep">Representative View</button>
+    <button class="btn tiny viewTab" data-tab="weekly">Weekly Monitor Tracking</button>
+    <button class="btn tiny viewTab" data-tab="focus">Focus Areas</button>
+    <button class="btn tiny viewTab" data-tab="exportAvg">Export Averages</button>
+  </div>
+
+  <section id="repView" class="viewSection active">
+  <div class="stack">
+    <div class="card summaryBox">
+      <div class="summaryHead">
+        <div>
+          <div style="font-weight:950">Overall Scores</div>
+          <div class="sub" id="summarySub">—</div>
+        </div>
+        <div class="row">
+          <span class="pill mono" id="teamTrendPill">Trend: —</span>
+        </div>
+      </div>
+
+      <div class="summaryTblWrap">
+        <table class="summaryTbl">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Value</th>
+              <th>Count</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="summaryTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card summaryBox">
+      <div class="summaryHead">
+        <div>
+          <div style="font-weight:950">Comparisons</div>
+          <div class="sub">Coach and QA values are shown side-by-side with a clear difference status: green = close, yellow = moderate gap, red = large gap.</div>
+        </div>
+      </div>
+
+      <div class="summaryTblWrap">
+        <table class="summaryTbl comparisonTbl">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Coach</th>
+              <th>QA</th>
+              <th>Difference</th>
+            </tr>
+          </thead>
+          <tbody id="compareTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="cards" class="grid"></div>
+  <div id="empty" class="notice" style="display:none;margin-top:12px"></div>
+  </section>
+
+  <section id="weeklyView" class="viewSection">
+    <div class="card summaryBox">
+      <div class="summaryHead">
+        <div>
+          <div style="font-weight:950">Weekly Monitor Tracking</div>
+          <div class="sub">Reviewer production with local period and reviewer filters (independent from header filters).</div>
+        </div>
+        <div class="row tight">
+          <button class="btn tiny weeklySortBtn active" data-weekly-sort="monitors">Most monitors</button>
+          <button class="btn tiny weeklySortBtn" data-weekly-sort="score">Avg score</button>
+          <button class="btn tiny weeklySortBtn" data-weekly-sort="duration">Avg duration</button>
+          <button class="btn tiny weeklySortBtn" data-weekly-sort="name">Name</button>
+        </div>
+      </div>
+      <div class="weeklyFilterBar">
+        <label>Period Type
+          <select id="weeklyPeriodType">
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <label>Period
+          <select id="weeklyPeriodSel"></select>
+        </label>
+        <div id="weeklyCustomRange" class="weeklyCustomRange">
+          <label>From
+            <input type="date" id="weeklyFromInp">
+          </label>
+          <label>To
+            <input type="date" id="weeklyToInp">
+          </label>
+        </div>
+        <label>Reviewer
+          <select id="weeklyReviewerSel">
+            <option value="__ALL__">All</option>
+          </select>
+        </label>
+      </div>
+      <div id="weeklySummaryStats" class="weeklySummary"></div>
+      <div class="weeklyTableWrap">
+        <table class="summaryTbl" style="min-width:980px">
+          <thead>
+            <tr>
+              <th>Reviewer</th>
+              <th># Monitors</th>
+              <th>Avg Length</th>
+              <th>Avg Score</th>
+              <th>First Monitor</th>
+              <th>Last Monitor</th>
+            </tr>
+          </thead>
+          <tbody id="weeklyTbody"></tbody>
+        </table>
+      </div>
+      <div id="weeklyEmpty" class="notice" style="display:none;margin-top:10px"></div>
+    </div>
+  </section>
+
+
+  <section id="focusView" class="viewSection">
+    <div class="card summaryBox">
+      <div class="summaryHead">
+        <div>
+          <div style="font-weight:950">Focus Areas</div>
+          <div class="sub">Coach teams ranked by low-score representatives, heavy negative trends, coaching reach, and improvement after coaching.</div>
+        </div>
+        <div class="row tight">
+          <span class="pill mono">Goal: 85%</span>
+          <span class="pill mono">Heavy negative trend: ≤ -10 pp</span>
+        </div>
+      </div>
+      <div id="focusSummaryStats" class="focusSummaryGrid"></div>
+      <div class="summaryTblWrap">
+        <table class="summaryTbl focusTbl">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Coach / Team</th>
+              <th>Rating</th>
+              <th>Focus Score</th>
+              <th>Avg Score</th>
+              <th>Representatives</th>
+              <th>Impact Reps</th>
+              <th>Below Goal</th>
+              <th>Reached by Coaching</th>
+              <th>Improving After Coaching</th>
+              <th>Above Goal</th>
+            </tr>
+          </thead>
+          <tbody id="focusTbody"></tbody>
+        </table>
+      </div>
+      <div id="focusEmpty" class="notice" style="display:none;margin-top:10px"></div>
+    </div>
+  </section>
+
+  <section id="exportAvgView" class="viewSection">
+    <div class="card summaryBox">
+      <div class="summaryHead">
+        <div>
+          <div style="font-weight:950">Export Monitor Averages</div>
+          <div class="sub">One row per representative for the selected timeframe and date basis.</div>
+        </div>
+        <div class="row tight">
+          <button class="btn tiny" id="exportAvgExcelBtn">Export to Excel</button>
+        </div>
+      </div>
+      <div class="weeklyFilterBar">
+        <label>Timeframe
+          <select id="exportAvgTfSel">
+            <option value="last7">Last 7 days</option>
+            <option value="last30">Last 30 days</option>
+            <option value="last90" selected>Last 90 days</option>
+            <option value="all">All</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <div id="exportAvgCustomRange" class="exportAvgCustomRange">
+          <label>From
+            <input type="date" id="exportAvgFromInp">
+          </label>
+          <label>To
+            <input type="date" id="exportAvgToInp">
+          </label>
+        </div>
+        <label>Date Basis
+          <select id="exportAvgDateModeSel">
+            <option value="interaction">Interaction Date</option>
+            <option value="assigned">Assigned Date</option>
+          </select>
+        </label>
+      </div>
+      <div id="exportAvgSummaryStats" class="weeklySummary"></div>
+      <div class="summaryTblWrap">
+        <table class="summaryTbl" style="min-width:760px">
+          <thead>
+            <tr>
+              <th class="clickableTh" data-export-sort="individual">Individual</th>
+              <th class="clickableTh" data-export-sort="avg">Average Score</th>
+              <th class="clickableTh" data-export-sort="monitors"># of Monitors</th>
+            </tr>
+          </thead>
+          <tbody id="exportAvgTbody"></tbody>
+        </table>
+      </div>
+      <div id="exportAvgEmpty" class="notice" style="display:none;margin-top:10px"></div>
+    </div>
+  </section>
+</div>
+
+<div id="overlay" class="overlay" aria-hidden="true">
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div class="pHead">
+      <div>
+        <div id="mTitle" class="pTitle">Rep — QA</div>
+        <div id="mSub" class="pSub">—</div>
+      </div>
+      <div class="pActions">
+        <button class="btn" id="mClose">Close ✕</button>
+      </div>
+    </div>
+    <div id="mBody" class="pBody"></div>
+  </div>
+</div>
+
+<div id="reviewerOverlay" class="overlay" aria-hidden="true">
+  <div class="panel small" role="dialog" aria-modal="true" aria-labelledby="rTitle">
+    <div class="pHead">
+      <div>
+        <div id="rTitle" class="pTitle">QA Reviewers Included</div>
+        <div id="rSub" class="pSub">—</div>
+      </div>
+      <div class="pActions">
+        <button class="btn tiny" id="loadRememberedReviewersBtn">Load saved reviewers</button>
+        <button class="btn tiny" id="showAllReviewersBtn">Show all</button>
+        <button class="btn tiny" id="resetReviewersBtn">Select all</button>
+        <button class="btn" id="reviewerClose">Close ✕</button>
+      </div>
+    </div>
+    <div class="pBody">
+      <div class="box">
+        <div class="boxHead">
+          <span>Remember reviewer set</span>
+          <span class="rememberedBadge" id="rememberedReviewerStatus">—</span>
+        </div>
+        <div class="notice">Check the reviewers you want included, then save the names. The saved set is stored as reviewer names and can be loaded against future QA data.</div>
+        <div class="reviewerTools">
+          <button class="btn primary tiny" id="saveRememberedReviewersBtn">Save selected reviewers</button>
+        </div>
+        <div id="reviewerChecklist" class="reviewerChecklist"></div>
+      </div>
+
+      <div class="box">
+        <div class="boxHead">
+          <span>Currently included reviewers</span>
+          <span class="pill mono" id="reviewerPopupCount">—</span>
+        </div>
+        <div id="reviewerList" class="reviewerList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="optionsOverlay" class="overlay" aria-hidden="true">
+  <div class="panel medium" role="dialog" aria-modal="true" aria-labelledby="oTitle">
+    <div class="pHead">
+      <div>
+        <div id="oTitle" class="pTitle">Additional Options</div>
+        <div class="pSub">Load docks, custom date range, and refresh tools.</div>
+      </div>
+      <div class="pActions">
+        <button class="btn" id="optionsClose">Close ✕</button>
+      </div>
+    </div>
+    <div class="pBody">
+      <div class="optionsGrid">
+        <div class="box">
+          <div class="boxHead">
+            <span>QA Dock</span>
+          </div>
+          <div class="row">
+            <label style="width:100%">QA dock key
+              <select id="qaKeySel" style="min-width:100%;width:100%"></select>
+            </label>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn primary" id="loadBtn">Load QA</button>
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="boxHead">
+            <span>Documented Coachings</span>
+          </div>
+          <div class="row">
+            <label style="width:100%">Doc coaching key
+              <select id="coKeySel" style="min-width:100%;width:100%"></select>
+            </label>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn" id="reloadCoBtn">Reload coachings</button>
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="boxHead">
+            <span>Custom Timeframe</span>
+          </div>
+          <div class="notice" style="margin-top:10px">
+            Custom dates are now controlled in the header beside the Timeframe selector.
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="boxHead">
+            <span>Uploaded QA File</span>
+          </div>
+          <div class="row">
+            <label style="width:100%">Import QA workbook (.xlsx, .xls, .csv)
+              <input id="qaUploadInp" type="file" accept=".xlsx,.xls,.csv" style="width:100%"/>
+            </label>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <label>Dataset source
+              <select id="qaSourceSel" style="min-width:220px">
+                <option value="local">Use Local Cache</option>
+                <option value="uploaded">Use Uploaded File</option>
+              </select>
+            </label>
+          </div>
+          <div class="notice" id="uploadNote" style="margin-top:10px">
+            Uploaded file: none
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="boxHead">
+            <span>Status / Actions</span>
+          </div>
+          <div class="row tight">
+            <span class="pill mono" id="statusPill">—</span>
+            <span class="pill mono" id="coStatusPill" title="Only Call Quality coachings are used in counts & details.">Coachings: —</span>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn" id="refreshBtn">Refresh</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="unreadOverlay" class="overlay" aria-hidden="true">
+  <div class="panel small" role="dialog" aria-modal="true" aria-labelledby="uTitle">
+    <div class="pHead">
+      <div>
+        <div id="uTitle" class="pTitle">Unreviewed Monitors by Representative</div>
+        <div id="uSub" class="pSub">—</div>
+      </div>
+      <div class="pActions">
+        <button class="btn" id="unreadClose">Close ✕</button>
+      </div>
+    </div>
+    <div class="pBody">
+      <div class="box">
+        <div class="boxHead">
+          <span>Representatives ranked by unreviewed monitors</span>
+          <span class="pill mono" id="unreadTotalPill">—</span>
+        </div>
+        <div id="unreadRepList" class="unreadRepList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div id="focusOverlay" class="overlay" aria-hidden="true">
+  <div class="panel medium" role="dialog" aria-modal="true" aria-labelledby="fTitle">
+    <div class="pHead">
+      <div>
+        <div id="fTitle" class="pTitle">Focus Team Details</div>
+        <div id="fSub" class="pSub">—</div>
+      </div>
+      <div class="pActions">
+        <button class="btn" id="focusClose">Close ✕</button>
+      </div>
+    </div>
+    <div id="focusBody" class="pBody"></div>
+  </div>
+</div>
+
+<div id="weeklyOverlay" class="overlay" aria-hidden="true">
+  <div class="panel medium" role="dialog" aria-modal="true" aria-labelledby="wTitle">
+    <div class="pHead">
+      <div>
+        <div id="wTitle" class="pTitle">Reviewer Details</div>
+        <div id="wSub" class="pSub">—</div>
+      </div>
+      <div class="pActions">
+        <button class="btn" id="weeklyClose">Close ✕</button>
+      </div>
+    </div>
+    <div id="weeklyBody" class="pBody"></div>
+  </div>
+</div>
+
+<script>
+const SETTINGS_KEY = 'qaOnlyDash.settings.v6';
+
+function loadSettings(){
+  try{ return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; }catch{ return {}; }
+}
+function saveSettings(partial){
+  const cur = loadSettings();
+  const next = {...cur, ...partial};
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+}
+
+function normHdr(s){
+  return String(s ?? "")
+    .trim().toLowerCase()
+    .replace(/\s+/g," ")
+    .replace(/[^a-z0-9% \-_]/g,"")
+    .replace(/[-_]/g,"")
+    .replace(/\s/g,"");
+}
+
+function loadDockObjByKey(key){
+  if(!key) return null;
+  const raw = localStorage.getItem(key);
+  if(!raw) return null;
+
+  try{
+    const json = LZString.decompressFromUTF16(raw);
+    if(json) return JSON.parse(json);
+  }catch{}
+
+  try{ return JSON.parse(raw); }catch{}
+  return null;
+}
+
+function aoaToRows(aoa){
+  if(!Array.isArray(aoa) || aoa.length<2) return [];
+  const header = (aoa[0]||[]).map(h=>String(h??"").trim());
+  const out=[];
+  for(let r=1;r<aoa.length;r++){
+    const row=aoa[r];
+    if(!row) continue;
+    const obj={};
+    let any=false;
+    for(let c=0;c<header.length;c++){
+      const k = header[c];
+      if(!k) continue;
+      const v = row[c];
+      if(v!==null && v!==undefined && String(v).trim()!=="") any=true;
+      obj[k]=v;
+    }
+    if(any) out.push(obj);
+  }
+  return out;
+}
+
+function extractRowArrays(root, sheetNameFallback){
+  const found=[];
+  const seen = new Set();
+
+  function pushArray(arr, sheetName){
+    if(!Array.isArray(arr) || !arr.length) return;
+    const id = sheetName + "|" + arr.length + "|" + (typeof arr[0]);
+    if(seen.has(id)) return;
+    seen.add(id);
+
+    if(arr[0] && typeof arr[0]==="object" && !Array.isArray(arr[0])){
+      found.push({ rows: arr, sheetName });
+      return;
+    }
+    if(Array.isArray(arr[0])){
+      const rows = aoaToRows(arr);
+      if(rows.length) found.push({ rows, sheetName });
+    }
+  }
+
+  function walk(node, sheetName){
+    if(node===null || node===undefined) return;
+    if(Array.isArray(node)){
+      pushArray(node, sheetName ?? sheetNameFallback ?? "");
+      return;
+    }
+    if(typeof node!=="object") return;
+
+    if(Array.isArray(node.rows)) pushArray(node.rows, sheetName ?? sheetNameFallback ?? "");
+    if(Array.isArray(node.data)) pushArray(node.data, sheetName ?? sheetNameFallback ?? "");
+    if(Array.isArray(node.table)) pushArray(node.table, sheetName ?? sheetNameFallback ?? "");
+
+    if(node.sheets && typeof node.sheets==="object" && !Array.isArray(node.sheets)){
+      for(const [sn, sv] of Object.entries(node.sheets)){
+        walk(sv, sn);
+      }
+    }
+    for(const [k,v] of Object.entries(node)){
+      if(k==="meta" || k==="sheets") continue;
+      walk(v, sheetName);
+    }
+  }
+  walk(root, sheetNameFallback);
+  return found;
+}
+
+function pickFieldFromRow(row, candidates){
+  const map = {};
+  for(const k of Object.keys(row||{})){
+    map[normHdr(k)] = k;
+  }
+  for(const cand of candidates){
+    const real = map[cand];
+    if(real!==undefined) return row[real];
+  }
+  return undefined;
+}
+
+function excelSerialToDate(serial){
+  const n = Number(serial);
+  if(!Number.isFinite(n)) return null;
+  const base = Date.UTC(1899,11,30);
+  const ms = Math.round(n * 86400000);
+  const d = new Date(base + ms);
+  return isNaN(d) ? null : d;
+}
+function parseAnyDate(v){
+  if(v instanceof Date && !isNaN(v)) return v;
+  if(v===null || v===undefined || v==="") return null;
+
+  const tryNum = (x)=>{
+    const n = (typeof x==="number") ? x : parseFloat(String(x).trim());
+    if(!Number.isFinite(n)) return null;
+    if(n > 20000 && n < 90000) return excelSerialToDate(n);
+    if(n > 1e12) { const d = new Date(n); return isNaN(d)?null:d; }
+    if(n > 1e9 && n < 1e12) { const d = new Date(n*1000); return isNaN(d)?null:d; }
+    return null;
+  };
+
+  const nDate = tryNum(v);
+  if(nDate) return nDate;
+
+  const s = String(v).trim();
+  if(!s) return null;
+
+  const nDate2 = tryNum(s);
+  if(nDate2) return nDate2;
+
+  const d1 = new Date(s);
+  if(!isNaN(d1)) return d1;
+
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?$/i);
+  if(m){
+    let mm = parseInt(m[1],10), dd = parseInt(m[2],10), yy = parseInt(m[3],10);
+    if(yy < 100) yy += 2000;
+    let hh = m[4] ? parseInt(m[4],10) : 0;
+    const mi = m[5] ? parseInt(m[5],10) : 0;
+    const ss = m[6] ? parseInt(m[6],10) : 0;
+    const ap = (m[7]||"").toUpperCase();
+    if(ap==="PM" && hh<12) hh += 12;
+    if(ap==="AM" && hh===12) hh = 0;
+    const d = new Date(yy, mm-1, dd, hh, mi, ss);
+    if(!isNaN(d)) return d;
+  }
+  return null;
+}
+
+function toNumRaw(v){
+  if(v===undefined||v===null||v==='') return NaN;
+  const n = parseFloat(String(v).replace(/,/g,'').replace(/%/g,'').trim());
+  return Number.isFinite(n) ? n : NaN;
+}
+function normPct(v){
+  const n = toNumRaw(v);
+  if(!Number.isFinite(n)) return NaN;
+  if(Math.abs(n) > 1.5) return n/100;
+  return n;
+}
+function fmtPct1(frac){ return Number.isFinite(frac) ? (frac*100).toFixed(1)+'%' : '—'; }
+function fmtPct2(frac){ return Number.isFinite(frac) ? (frac*100).toFixed(2)+'%' : '—'; }
+function fmtInt(n){ return Number.isFinite(n) ? Math.round(n).toLocaleString() : '—'; }
+function pad2(n){ return String(n).padStart(2,'0'); }
+
+function fmtDateTime(d){
+  if(!(d instanceof Date) || isNaN(d)) return '—';
+  const y = d.getFullYear();
+  const m = pad2(d.getMonth()+1);
+  const da= pad2(d.getDate());
+  let hh = d.getHours();
+  const am = hh>=12 ? 'PM' : 'AM';
+  hh = hh%12; if(hh===0) hh=12;
+  const mi = pad2(d.getMinutes());
+  return `${m}/${da}/${y} ${hh}:${mi} ${am}`;
+}
+function fmtDateOnly(d){
+  if(!(d instanceof Date) || isNaN(d)) return '—';
+  const y = d.getFullYear();
+  const m = pad2(d.getMonth()+1);
+  const da= pad2(d.getDate());
+  return `${m}/${da}/${y}`;
+}
+function isoWeekKey(d){
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7);
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+}
+
+function personKey(name){
+  let s = String(name||"").trim().toLowerCase();
+  s = s.replace(/\./g,"").replace(/\s+/g," ");
+  if(!s) return "";
+
+  if(s.includes(",")){
+    const parts = s.split(",");
+    const last = (parts[0]||"").trim();
+    const rest = (parts[1]||"").trim();
+    const first = (rest.split(/\s+/)[0]||"").trim();
+    if(first && last) s = `${first} ${last}`;
+    else s = s.replace(/,/g," ");
+  }
+  const toks = s.split(/\s+/).filter(Boolean);
+  if(toks.length>=2) return `${toks[0]} ${toks[toks.length-1]}`;
+  return toks[0] || "";
+}
+
+function displayNameFromRaw(raw){
+  const s = String(raw||"").trim();
+  if(!s) return "";
+  if(s.includes(",")){
+    const parts = s.split(",");
+    const last = (parts[0]||"").trim();
+    const rest = (parts[1]||"").trim();
+    const first = (rest.split(/\s+/)[0]||"").trim();
+    if(first && last) return `${first} ${last}`;
+  }
+  return s;
+}
+function lastNameOf(full){
+  const s = String(full||"").trim();
+  if(!s) return "";
+  if(s.includes(",")) return s.split(",")[0].trim().toLowerCase();
+  const toks = s.replace(/\./g,'').split(/\s+/).filter(Boolean);
+  return (toks[toks.length-1]||"").trim().toLowerCase();
+}
+
+function parseDurationToSeconds(v){
+  if(v===null || v===undefined || v==="") return NaN;
+
+  if(typeof v === "number" && Number.isFinite(v)){
+    if(v >= 0 && v < 2) return Math.max(0, Math.round(v * 86400));
+    if(v >= 2 && v < 86400*5) return Math.round(v);
+  }
+
+  const s = String(v).trim();
+  if(!s) return NaN;
+
+  const n = parseFloat(s);
+  if(Number.isFinite(n) && String(n) === String(parseFloat(s)) && !s.includes(":")){
+    if(n >= 0 && n < 2) return Math.max(0, Math.round(n * 86400));
+    if(n >= 2 && n < 86400*5) return Math.round(n);
+  }
+
+  const parts = s.split(":").map(x=>x.trim()).filter(Boolean);
+  if(parts.length >= 2 && parts.length <= 3 && parts.every(p=>/^\d+$/.test(p))){
+    let hh=0, mm=0, ss=0;
+    if(parts.length===2){
+      mm = parseInt(parts[0],10);
+      ss = parseInt(parts[1],10);
+    }else{
+      hh = parseInt(parts[0],10);
+      mm = parseInt(parts[1],10);
+      ss = parseInt(parts[2],10);
+    }
+    return hh*3600 + mm*60 + ss;
+  }
+
+  const n2 = parseFloat(s);
+  if(Number.isFinite(n2)) return Math.round(n2);
+  return NaN;
+}
+
+function fmtHMS(seconds){
+  if(!Number.isFinite(seconds)) return '—';
+  const sec = Math.max(0, Math.round(seconds));
+  const h = Math.floor(sec/3600);
+  const m = Math.floor((sec%3600)/60);
+  const s = sec%60;
+  return `${h}:${pad2(m)}:${pad2(s)}`;
+}
+
+function formatDurationMinutes(seconds){
+  if(!Number.isFinite(seconds)) return '—';
+  const sec = Math.max(0, Math.round(seconds));
+  const mm = Math.floor(sec/60);
+  const ss = sec%60;
+  return `${mm}:${pad2(ss)}`;
+}
+function getScoreColorClass(pct){
+  if(!Number.isFinite(pct)) return '';
+  if(pct >= 0.90) return 'good';
+  if(pct >= 0.85) return 'midgood';
+  if(pct >= 0.80) return 'warn';
+  return 'bad';
+}
+function getDurationColorClass(sec){
+  if(!Number.isFinite(sec)) return '';
+  const min = sec / 60;
+  if(min >= 7 && min <= 9) return 'good';
+  if((min >= 5 && min < 7) || (min > 9 && min <= 11)) return 'warn';
+  return 'bad';
+}
+function weekRangeFromIso(isoKey){
+  const m = String(isoKey||'').match(/^(\d{4})-W(\d{2})$/);
+  if(!m) return { start:null, end:null };
+  const year = Number(m[1]);
+  const week = Number(m[2]);
+  const jan4 = new Date(year, 0, 4);
+  const jan4Day = jan4.getDay() || 7;
+  const week1Monday = new Date(year, 0, 4 - (jan4Day - 1));
+  const start = new Date(week1Monday);
+  start.setDate(week1Monday.getDate() + (week-1) * 7);
+  start.setHours(0,0,0,0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23,59,59,999);
+  return { start, end };
+}
+function quarterRange(year, quarter){
+  const q = Number(quarter);
+  const startMonth = (q-1) * 3;
+  const start = new Date(Number(year), startMonth, 1, 0, 0, 0, 0);
+  const end = new Date(Number(year), startMonth + 3, 0, 23, 59, 59, 999);
+  return { start, end };
+}
+
+function findDockKeysBySuffix(suffix){
+  const hits=[];
+  const suf = String(suffix||"").toLowerCase();
+  for(let i=0;i<localStorage.length;i++){
+    const k = localStorage.key(i);
+    if(!k) continue;
+    const lk = k.toLowerCase();
+    if(lk.endsWith(suf) || lk.includes(suf)) hits.push(k);
+  }
+  hits.sort((a,b)=>{
+    const score = (s)=>{
+      let x=0;
+      const ls = s.toLowerCase();
+      if(ls.endsWith(suf)) x+=100;
+      if(ls.includes(".dock.qa")) x+=50;
+      if(ls.includes("myone")) x+=10;
+      x -= Math.min(20, ls.length/20);
+      return x;
+    };
+    return score(b)-score(a);
+  });
+  return hits;
+}
+
+function looksLikeQARow(obj){
+  if(!obj || typeof obj!=="object") return false;
+  const nk = Object.keys(obj).map(normHdr);
+  const hasAgent = nk.includes("agentname") || nk.includes("agent") || nk.includes("csr") || nk.includes("associate") || nk.includes("rep") || nk.includes("name");
+  const hasScore = nk.includes("score%") || nk.includes("scorepct") || nk.includes("score") || nk.includes("qa%") || nk.includes("qascore");
+  const hasStart = nk.includes("interactionstarttime") || nk.includes("interactionstart") || nk.includes("starttime") || nk.includes("interactiontime");
+  return hasAgent && hasScore && hasStart;
+}
+
+function normalizeReadFlag(v){
+  if(v===null || v===undefined || v==="") return null;
+  const s = String(v).trim().toLowerCase();
+  if(s==="1" || s==="true" || s==="yes" || s==="y") return 1;
+  if(s==="0" || s==="false" || s==="no" || s==="n") return 0;
+  const n = Number(s);
+  if(Number.isFinite(n)) return n > 0 ? 1 : 0;
+  return null;
+}
+
+function canonicalizeQA(dockObj){
+  if(!dockObj) return [];
+  const packs = extractRowArrays(dockObj,"");
+  const out=[];
+
+  for(const p of packs){
+    for(const r of p.rows){
+      if(!looksLikeQARow(r)) continue;
+
+      const agentRaw = pickFieldFromRow(r, ["agentname","agent","csr","associate","rep","name"]);
+      const scoreRaw = pickFieldFromRow(r, ["score%","scorepct","score","qascore","qa%"]);
+      const startRaw = pickFieldFromRow(r, ["interactionstarttime","interactionstart","starttime","interactiontime"]);
+      const assignedRaw = pickFieldFromRow(r, ["assigneddate","assigned date","assigneddatetime","assignedtime","assigned"]);
+
+      const evalIdRaw = pickFieldFromRow(r, ["genesysevaluationid","evaluationid","evalid","monitorid","qaid","id"]);
+      const evaluatorRaw = pickFieldFromRow(r, ["evaluator","evaluatorname","reviewer","qaevaluator","coach"]);
+      const teamRaw = pickFieldFromRow(r, ["team","sheet","department","group","supervisor","manager","site","location"]);
+
+      const convIdRaw = pickFieldFromRow(r, ["conversationid","conversationid","interactionid","interactionid","contactid","contactid"]);
+      const durRaw = pickFieldFromRow(r, ["interactionduration","interactionduration","duration","calllength","calllength","interactionlength","interactionlength"]);
+      const agentHasReadRaw = pickFieldFromRow(r, ["agenthasread","agent has read","agentreviewed","agent reviewed","hasread","read"]);
+
+      const start = parseAnyDate(startRaw);
+      const assignedDate = parseAnyDate(assignedRaw);
+      const score = normPct(scoreRaw);
+
+      const agentDisplay = displayNameFromRaw(agentRaw);
+      const agentK = personKey(agentDisplay);
+      if(!agentK || !(start instanceof Date) || isNaN(start) || !Number.isFinite(score)) continue;
+
+      const durSec = parseDurationToSeconds(durRaw);
+      const agentHasRead = normalizeReadFlag(agentHasReadRaw);
+
+      out.push({
+        agentKey: agentK,
+        agent: agentDisplay,
+        start,
+        assignedDate,
+        week: isoWeekKey(start),
+        score,
+        evaluator: String(evaluatorRaw ?? "").trim(),
+        evalId: String(evalIdRaw ?? "").trim(),
+        conversationId: String(convIdRaw ?? "").trim(),
+        durationSec: durSec,
+        durationText: fmtHMS(durSec),
+        team: String(teamRaw ?? "").trim(),
+        agentHasRead,
+        unreviewed: agentHasRead === 0 ? 1 : 0,
+        _sheetHint: p.sheetName || ""
+      });
+    }
+  }
+  return out;
+}
+
+function getActiveQaRows(){
+  if(qaDataSource === 'uploaded' && qaRowsUploaded.length) return qaRowsUploaded;
+  return qaRowsLocal;
+}
+
+function canonicalizeQARowsFromPlainRows(rows){
+  return canonicalizeQA({ sheets: { Uploaded: { rows: rows || [] } } });
+}
+
+async function parseUploadedQaWorkbook(file){
+  if(!file) return [];
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type:'array', cellDates:true });
+  const hits = [];
+  for(const sheetName of wb.SheetNames || []){
+    const ws = wb.Sheets[sheetName];
+    if(!ws) continue;
+    const jsonRows = XLSX.utils.sheet_to_json(ws, { defval:'', raw:false });
+    if(Array.isArray(jsonRows) && jsonRows.length && looksLikeQARow(jsonRows[0])){
+      hits.push(...jsonRows);
+      continue;
+    }
+    const aoa = XLSX.utils.sheet_to_json(ws, { header:1, blankrows:false, raw:false });
+    const rows = aoaToRows(aoa);
+    if(rows.length && looksLikeQARow(rows[0])) hits.push(...rows);
+  }
+  if(!hits.length && wb.SheetNames?.length){
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const fallback = XLSX.utils.sheet_to_json(ws, { defval:'', raw:false });
+    return canonicalizeQARowsFromPlainRows(fallback);
+  }
+  return canonicalizeQARowsFromPlainRows(hits);
+}
+
+function findCoachingKeys(){
+  const keys=[];
+  for(let i=0;i<localStorage.length;i++){
+    const k = localStorage.key(i);
+    if(!k) continue;
+    const lk = k.toLowerCase();
+    if(!lk.includes(".dock.")) continue;
+    const looks = lk.includes("coach") || lk.includes("coaching") || lk.includes("document") || lk.includes("myone2");
+    if(looks) keys.push(k);
+  }
+  keys.sort((a,b)=>{
+    const score = (s)=>{
+      const lk = s.toLowerCase();
+      let x=0;
+      if(lk.includes("documented")) x+=80;
+      if(lk.includes("document")) x+=40;
+      if(lk.includes("coaching")) x+=35;
+      if(lk.includes("coachings")) x+=35;
+      if(lk.includes("coach")) x+=20;
+      if(lk.includes("myone2")) x+=10;
+      if(lk.endsWith(".dock.coaching")) x+=15;
+      if(lk.endsWith(".dock.coachings")) x+=15;
+      x -= Math.min(20, lk.length/20);
+      return x;
+    };
+    return score(b)-score(a);
+  });
+  return keys;
+}
+
+function splitTypes(val){
+  const s = String(val ?? "").trim();
+  if(!s) return [];
+  return s.split(/[,;|]+/).map(x=>String(x).trim()).filter(Boolean);
+}
+
+function looksLikeCoachingRow(obj){
+  if(!obj || typeof obj!=="object") return false;
+  const nk = Object.keys(obj).map(normHdr);
+  const hasRep = nk.includes("associatename") || nk.includes("associate") || nk.includes("name") || nk.includes("rep");
+  const hasDate = nk.includes("date") || nk.includes("dt") || nk.includes("day");
+  const hasType = nk.includes("coachingtypemulti") || nk.includes("coachingtype") || nk.includes("type");
+  return hasRep && hasDate && hasType;
+}
+
+function isCallQualityType(t){
+  const s = String(t||"").trim();
+  if(!s) return false;
+  const low = s.toLowerCase();
+  if(low.includes("call quality")) return true;
+  if(s === "5") return true;
+  if(/^\s*5\s*[:\-]/.test(s)) return true;
+  return false;
+}
+
+function canonicalizeCoachings(dockObj){
+  if(!dockObj) return [];
+  const packs = extractRowArrays(dockObj,"");
+  const out=[];
+
+  for(const p of packs){
+    for(const r of p.rows){
+      if(!looksLikeCoachingRow(r)) continue;
+
+      const repRaw   = pickFieldFromRow(r, ["associatename","associate","name","rep"]);
+      const dateRaw  = pickFieldFromRow(r, ["date","dt","day"]);
+      const typeMulti  = pickFieldFromRow(r, ["coachingtypemulti"]);
+      const typeSingle = pickFieldFromRow(r, ["coachingtype","type"]);
+      const coachRaw = pickFieldFromRow(r, ["jobcoach","coach","sheet","team"]);
+      const descRaw  = pickFieldFromRow(r, ["description","desc","notes","note","details","summary","coachingnotes"]);
+
+      const repDisp = displayNameFromRaw(repRaw);
+      const repK = personKey(repDisp);
+      const d = parseAnyDate(dateRaw);
+      if(!repK || !d) continue;
+
+      const typesAll = Array.from(new Set([
+        ...splitTypes(typeMulti),
+        ...splitTypes(typeSingle)
+      ]));
+
+      const cqTypes = typesAll.filter(isCallQualityType);
+      if(!cqTypes.length) continue;
+
+      out.push({
+        repKey: repK,
+        rep: repDisp || repK,
+        date: d,
+        week: isoWeekKey(d),
+        coach: String(coachRaw ?? "").trim(),
+        types: cqTypes,
+        desc: String(descRaw ?? "").trim(),
+        _sheetHint: p.sheetName || ""
+      });
+    }
+  }
+  return out;
+}
+
+function groupBy(arr, keyFn){
+  const m = new Map();
+  for(const x of arr){
+    const k = keyFn(x);
+    const a = m.get(k) || [];
+    a.push(x);
+    m.set(k,a);
+  }
+  return m;
+}
+
+function avgScore(rows, excludeZero){
+  let sum=0, n=0;
+  for(const r of rows){
+    const s = r.score;
+    if(!Number.isFinite(s)) continue;
+    if(excludeZero && s===0) continue;
+    sum += s; n++;
+  }
+  return { avg: n? (sum/n) : NaN, n };
+}
+
+function avgDuration(rows, excludeZero){
+  let sum=0, n=0;
+  for(const r of rows){
+    if(excludeZero && r.score===0) continue;
+    const s = r.durationSec;
+    if(!Number.isFinite(s)) continue;
+    sum += s; n++;
+  }
+  return { avgSec: n ? (sum/n) : NaN, n };
+}
+
+function countUnreviewed(rows){
+  let n = 0;
+  for(const r of rows){
+    if(r.agentHasRead === 0) n++;
+  }
+  return n;
+}
+
+function splitHalfTrend(rows, excludeZero){
+  const sorted=[...rows]
+    .map(r=>({ row:r, d: rowDate(r) }))
+    .filter(x=>x.d)
+    .sort((a,b)=> a.d - b.d)
+    .map(x=>x.row);
+  const clean = excludeZero ? sorted.filter(r=>r.score!==0) : sorted;
+  if(clean.length < 2) return { d: NaN, a1: NaN, a2: NaN };
+  const mid = Math.floor(clean.length/2);
+  const first = clean.slice(0, mid);
+  const second = clean.slice(mid);
+  const a1 = avgScore(first, false).avg;
+  const a2 = avgScore(second, false).avg;
+  return { d: (Number.isFinite(a1)&&Number.isFinite(a2)) ? (a2-a1) : NaN, a1, a2 };
+}
+
+function sparkSeriesWeekly(rows, excludeZero){
+  const byWk = groupBy(rows, r=>rowWeek(r));
+  const weeks = Array.from(byWk.keys()).filter(Boolean).sort();
+  const vals = weeks.map(wk=>{
+    const a = avgScore(byWk.get(wk)||[], excludeZero).avg;
+    return Number.isFinite(a) ? a : null;
+  });
+  return { weeks, vals };
+}
+
+function drawSpark(canvas, values){
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0,0,w,h);
+
+  const vals = values.filter(v=>v!==null && Number.isFinite(v));
+  if(vals.length < 2){
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(6, h/2);
+    ctx.lineTo(w-6, h/2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const pad = 6;
+  const range = Math.max(0.00001, max-min);
+
+  ctx.globalAlpha = 0.35;
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, h-1);
+  ctx.lineTo(w, h-1);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+
+  const n = values.length;
+  let started=false;
+  for(let i=0;i<n;i++){
+    const v = values[i];
+    if(v===null || !Number.isFinite(v)){ started=false; continue; }
+    const x = pad + (i/(Math.max(1,n-1))) * (w - pad*2);
+    const y = pad + (1 - ((v-min)/range)) * (h - pad*2);
+    if(!started){ ctx.moveTo(x,y); started=true; }
+    else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+
+  ctx.fillStyle = '#0f172a';
+  for(let i=0;i<n;i++){
+    const v=values[i];
+    if(v===null || !Number.isFinite(v)) continue;
+    const x = pad + (i/(Math.max(1,n-1))) * (w - pad*2);
+    const y = pad + (1 - ((v-min)/range)) * (h - pad*2);
+    ctx.beginPath();
+    ctx.arc(x,y,2.4,0,Math.PI*2);
+    ctx.fill();
+  }
+}
+
+function isCoachEval(row){
+  const coachName = String(row.team||"").trim();
+  const evalName  = String(row.evaluator||"").trim();
+  if(!coachName || !evalName) return false;
+
+  const pkCoach = personKey(coachName);
+  const pkEval  = personKey(evalName);
+  if(pkCoach && pkEval && pkCoach === pkEval) return true;
+
+  const lnCoach = lastNameOf(coachName);
+  const lnEval  = lastNameOf(evalName);
+  return !!lnCoach && lnCoach === lnEval;
+}
+
+function uniqueSorted(arr){
+  return Array.from(new Set(arr.filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+}
+
+function compareStatusClass(num, type){
+  if(!Number.isFinite(num)) return 'statusNeutral';
+  if(type === 'count') return 'statusNeutral';
+  const abs = Math.abs(num);
+  if(type === 'duration'){
+    if(abs >= 120) return 'statusBad';
+    if(abs >= 60) return 'statusWarn';
+    return 'statusGood';
+  }
+  if(abs > 5) return 'statusBad';
+  if(abs >= 3) return 'statusWarn';
+  return 'statusGood';
+}
+function compareRuleText(type){
+  if(type === 'duration') return 'Green < 1 min • Yellow 1–2 min • Red ≥ 2 min';
+  if(type === 'pct') return 'Green < 3 pts • Yellow 3–5 pts • Red > 5 pts';
+  return 'Reference count';
+}
+function compareShortStatus(cls){
+  if(cls === 'statusBad') return 'Large gap';
+  if(cls === 'statusWarn') return 'Moderate gap';
+  if(cls === 'statusGood') return 'Close';
+  return 'Reference';
+}
+
+function extractTeamScopedReviewerCandidates(rows){
+  const team = el.teamSel.value;
+  const tf = el.tfSel.value;
+  const range = timeframeRange(tf);
+
+  const base = rows.filter(r=>{
+    if(team && team !== '__ALL__'){
+      if(String(r.team||'').trim() !== team) return false;
+    }
+    if(tf !== 'all' && !inRange(rowDate(r), range)) return false;
+    return true;
+  });
+
+  const teamRepKeys = new Set(base.map(r=>r.agentKey));
+  const coachName = team && team !== '__ALL__' ? String(team).trim() : '';
+
+  return uniqueSorted(
+    rows
+      .filter(r=>{
+        if(!teamRepKeys.has(r.agentKey)) return false;
+        if(tf !== 'all' && !inRange(rowDate(r), range)) return false;
+        if(isCoachEval(r)) return false;
+        const ev = String(r.evaluator||'').trim();
+        if(!ev) return false;
+        if(coachName && personKey(ev) === personKey(coachName)) return false;
+        return true;
+      })
+      .map(r=>String(r.evaluator||'').trim())
+  );
+}
+
+function savedReviewerNames(){
+  const s = loadSettings();
+  return Array.isArray(s.rememberedQaReviewerNames)
+    ? uniqueSorted(s.rememberedQaReviewerNames.map(x=>String(x||'').trim()).filter(Boolean))
+    : [];
+}
+
+function reviewerNameMatchesSaved(candidate, savedNames){
+  const exact = new Set(savedNames.map(n=>String(n).trim().toLowerCase()));
+  const normalized = new Set(savedNames.map(n=>personKey(n)).filter(Boolean));
+  const c = String(candidate||'').trim();
+  return exact.has(c.toLowerCase()) || normalized.has(personKey(c));
+}
+
+function loadReviewerState(){
+  const saved = loadSettings();
+  const candidates = canonicalQaReviewers;
+  const mode = saved.reviewerFilterMode || 'custom';
+  const remembered = savedReviewerNames();
+
+  if(mode === 'remembered' && remembered.length){
+    activeQaReviewers = candidates.filter(n => reviewerNameMatchesSaved(n, remembered));
+  }else if(mode === 'all'){
+    activeQaReviewers = [...candidates];
+  }else{
+    const savedByTeam = saved.activeQaReviewersByTeam || {};
+    const teamKey = getReviewerScopeKey();
+    const prior = Array.isArray(savedByTeam[teamKey]) ? savedByTeam[teamKey] : [];
+    activeQaReviewers = prior.length
+      ? prior.filter(n => candidates.includes(n))
+      : [...candidates];
+  }
+
+  if(!activeQaReviewers.length && candidates.length && mode !== 'remembered'){
+    activeQaReviewers = [...candidates];
+  }
+  persistReviewerState();
+}
+
+function persistReviewerState(){
+  const saved = loadSettings();
+  const map = saved.activeQaReviewersByTeam || {};
+  map[getReviewerScopeKey()] = [...activeQaReviewers];
+  saveSettings({ activeQaReviewersByTeam: map });
+}
+
+function getReviewerScopeKey(){
+  const team = el.teamSel?.value || '__ALL__';
+  const tf = el.tfSel?.value || 'all';
+  const dateMode = el.dateModeSel?.value || 'interaction';
+  const from = el.fromInp?.value || '';
+  const to = el.toInp?.value || '';
+  return `${team}|${tf}|${dateMode}|${from}|${to}`;
+}
+
+function isQaReviewer(row){
+  const ev = String(row.evaluator || '').trim();
+  return !isCoachEval(row) && !!ev && activeQaReviewers.includes(ev);
+}
+
+function splitRoleRows(rows){
+  const coachRows = [];
+  const qaRows = [];
+  for(const r of rows){
+    if(isCoachEval(r)) coachRows.push(r);
+    else if(isQaReviewer(r)) qaRows.push(r);
+  }
+  return { coachRows, qaRows };
+}
+
+const el = {
+  qaKeySel: document.getElementById('qaKeySel'),
+  loadBtn: document.getElementById('loadBtn'),
+
+  coKeySel: document.getElementById('coKeySel'),
+  reloadCoBtn: document.getElementById('reloadCoBtn'),
+
+  teamSel: document.getElementById('teamSel'),
+  tfSel: document.getElementById('tfSel'),
+  dateModeSel: document.getElementById('dateModeSel'),
+  headerCustomRange: document.getElementById('headerCustomRange'),
+  fromInp: document.getElementById('fromInp'),
+  toInp: document.getElementById('toInp'),
+  excludeZero: document.getElementById('excludeZero'),
+  searchInp: document.getElementById('searchInp'),
+  refreshBtn: document.getElementById('refreshBtn'),
+  reviewersBtn: document.getElementById('reviewersBtn'),
+  reviewersBtnCount: document.getElementById('reviewersBtnCount'),
+  optionsBtn: document.getElementById('optionsBtn'),
+  optionsOverlay: document.getElementById('optionsOverlay'),
+  optionsClose: document.getElementById('optionsClose'),
+
+  statusPill: document.getElementById('statusPill'),
+  coStatusPill: document.getElementById('coStatusPill'),
+  scopePill: document.getElementById('scopePill'),
+  qaReviewCountPill: document.getElementById('qaReviewCountPill'),
+  qaSourcePill: document.getElementById('qaSourcePill'),
+  qaUploadInp: document.getElementById('qaUploadInp'),
+  qaSourceSel: document.getElementById('qaSourceSel'),
+  uploadNote: document.getElementById('uploadNote'),
+
+  summarySub: document.getElementById('summarySub'),
+  summaryTbody: document.getElementById('summaryTbody'),
+  compareTbody: document.getElementById('compareTbody'),
+  teamTrendPill: document.getElementById('teamTrendPill'),
+
+  sortPill: document.getElementById('sortPill'),
+  sortSel: document.getElementById('sortSel'),
+
+  cards: document.getElementById('cards'),
+  empty: document.getElementById('empty'),
+  repView: document.getElementById('repView'),
+  weeklyView: document.getElementById('weeklyView'),
+  focusView: document.getElementById('focusView'),
+  exportAvgView: document.getElementById('exportAvgView'),
+  weeklyPeriodType: document.getElementById('weeklyPeriodType'),
+  weeklyPeriodSel: document.getElementById('weeklyPeriodSel'),
+  weeklyCustomRange: document.getElementById('weeklyCustomRange'),
+  weeklyFromInp: document.getElementById('weeklyFromInp'),
+  weeklyToInp: document.getElementById('weeklyToInp'),
+  weeklyReviewerSel: document.getElementById('weeklyReviewerSel'),
+  weeklySummaryStats: document.getElementById('weeklySummaryStats'),
+  weeklyTbody: document.getElementById('weeklyTbody'),
+  weeklyEmpty: document.getElementById('weeklyEmpty'),
+  focusSummaryStats: document.getElementById('focusSummaryStats'),
+  focusTbody: document.getElementById('focusTbody'),
+  focusEmpty: document.getElementById('focusEmpty'),
+  exportAvgTfSel: document.getElementById('exportAvgTfSel'),
+  exportAvgCustomRange: document.getElementById('exportAvgCustomRange'),
+  exportAvgFromInp: document.getElementById('exportAvgFromInp'),
+  exportAvgToInp: document.getElementById('exportAvgToInp'),
+  exportAvgDateModeSel: document.getElementById('exportAvgDateModeSel'),
+  exportAvgSummaryStats: document.getElementById('exportAvgSummaryStats'),
+  exportAvgTbody: document.getElementById('exportAvgTbody'),
+  exportAvgEmpty: document.getElementById('exportAvgEmpty'),
+  exportAvgExcelBtn: document.getElementById('exportAvgExcelBtn'),
+
+  overlay: document.getElementById('overlay'),
+  mClose: document.getElementById('mClose'),
+  mTitle: document.getElementById('mTitle'),
+  mSub: document.getElementById('mSub'),
+  mBody: document.getElementById('mBody'),
+
+  reviewerOverlay: document.getElementById('reviewerOverlay'),
+  reviewerClose: document.getElementById('reviewerClose'),
+  reviewerList: document.getElementById('reviewerList'),
+  reviewerPopupCount: document.getElementById('reviewerPopupCount'),
+  resetReviewersBtn: document.getElementById('resetReviewersBtn'),
+  saveRememberedReviewersBtn: document.getElementById('saveRememberedReviewersBtn'),
+  loadRememberedReviewersBtn: document.getElementById('loadRememberedReviewersBtn'),
+  showAllReviewersBtn: document.getElementById('showAllReviewersBtn'),
+  rememberedReviewerStatus: document.getElementById('rememberedReviewerStatus'),
+  reviewerChecklist: document.getElementById('reviewerChecklist'),
+  rSub: document.getElementById('rSub'),
+
+  unreadOverlay: document.getElementById('unreadOverlay'),
+  unreadClose: document.getElementById('unreadClose'),
+  unreadRepList: document.getElementById('unreadRepList'),
+  unreadTotalPill: document.getElementById('unreadTotalPill'),
+  uSub: document.getElementById('uSub'),
+
+  weeklyOverlay: document.getElementById('weeklyOverlay'),
+  weeklyClose: document.getElementById('weeklyClose'),
+  weeklyBody: document.getElementById('weeklyBody'),
+  wTitle: document.getElementById('wTitle'),
+  wSub: document.getElementById('wSub'),
+  focusOverlay: document.getElementById('focusOverlay'),
+  focusClose: document.getElementById('focusClose'),
+  focusBody: document.getElementById('focusBody'),
+  fTitle: document.getElementById('fTitle'),
+  fSub: document.getElementById('fSub')
+};
+
+let QA_KEY = null;
+let CO_KEY = null;
+
+let qaLoaded = false;
+let qaRowsLocal = [];
+let qaRowsUploaded = [];
+let qaDataSource = 'local';
+let uploadedQaFilename = '';
+
+let coLoaded = false;
+let coRowsAll = [];
+
+let chartMain = null;
+
+let activeQaReviewers = [];
+let canonicalQaReviewers = [];
+
+const DIFF_ALERT_PCTPTS = 5;
+const DIFF_ALERT_SECS = 120;
+
+let sortMode = "count";
+let weeklySortMode = "monitors";
+let weeklyPeriodType = "weekly";
+let weeklyPeriodValue = "";
+let weeklyReviewerValue = "__ALL__";
+let activeTab = "rep";
+let unreadRepExpanded = new Set();
+let weeklyDetailRows = [];
+let focusTeamRows = [];
+let exportAvgSortMode = "monitors";
+let exportAvgSortDir = "desc";
+
+function nowLocal(){ return new Date(); }
+function currentDateMode(){
+  return el.dateModeSel?.value === 'assigned' ? 'assigned' : 'interaction';
+}
+function rowDate(row){
+  const d = currentDateMode() === 'assigned' ? row?.assignedDate : row?.start;
+  return (d instanceof Date && !isNaN(d)) ? d : null;
+}
+function rowWeek(row){
+  const d = rowDate(row);
+  return d ? isoWeekKey(d) : '';
+}
+
+function timeframeRange(tf){
+  const now = nowLocal();
+  if(tf === 'last7')  return { from: new Date(now.getTime() - 7*86400000),  to: now };
+  if(tf === 'last30') return { from: new Date(now.getTime() - 30*86400000), to: now };
+  if(tf === 'last90') return { from: new Date(now.getTime() - 90*86400000), to: now };
+  if(tf === 'custom'){
+    const f = el.fromInp.value ? new Date(el.fromInp.value + "T00:00:00") : null;
+    const t = el.toInp.value ? new Date(el.toInp.value + "T23:59:59") : null;
+    return { from: f, to: t };
+  }
+  return { from:null, to:null };
+}
+function inRange(d, range){
+  if(!(d instanceof Date) || isNaN(d)) return false;
+  if(range.from && d < range.from) return false;
+  if(range.to && d > range.to) return false;
+  return true;
+}
+
+function exportAvgRange(){
+  const tf = el.exportAvgTfSel?.value || 'last90';
+  if(tf === 'custom'){
+    const from = el.exportAvgFromInp.value ? new Date(el.exportAvgFromInp.value + "T00:00:00") : null;
+    const to = el.exportAvgToInp.value ? new Date(el.exportAvgToInp.value + "T23:59:59") : null;
+    return { from, to };
+  }
+  return timeframeRange(tf);
+}
+
+function rowDateByMode(row, mode){
+  const d = mode === 'assigned' ? row?.assignedDate : row?.start;
+  return (d instanceof Date && !isNaN(d)) ? d : null;
+}
+
+function getExportAverageRows(){
+  const rows = getActiveQaRows();
+  const excludeZero = el.excludeZero.checked;
+  const range = exportAvgRange();
+  const dateMode = el.exportAvgDateModeSel?.value === 'assigned' ? 'assigned' : 'interaction';
+  const filtered = rows.filter(r=>{
+    const d = rowDateByMode(r, dateMode);
+    if(!d) return false;
+    if(!inRange(d, range)) return false;
+    return Number.isFinite(r.score);
+  });
+  const byPerson = groupBy(filtered, r=>r.agentKey || personKey(r.agent || ''));
+  const out = [];
+  for(const [agentKey, arr] of byPerson.entries()){
+    const scoreRows = excludeZero ? arr.filter(r=>r.score !== 0) : arr;
+    const scored = scoreRows.filter(r=>Number.isFinite(r.score));
+    if(!scored.length) continue;
+    const avg = avgScore(scored, false).avg;
+    const individual = arr.find(r=>String(r.agent||'').trim())?.agent || agentKey || 'Unknown';
+    out.push({ individual, avgScore: avg, monitorCount: scored.length });
+  }
+  return out;
+}
+
+function sortExportAverageRows(rows){
+  const dir = exportAvgSortDir === 'asc' ? 1 : -1;
+  return [...rows].sort((a,b)=>{
+    if(exportAvgSortMode === 'individual'){
+      return dir * a.individual.localeCompare(b.individual);
+    }
+    if(exportAvgSortMode === 'avg'){
+      const d = (a.avgScore||0) - (b.avgScore||0);
+      if(d) return dir * d;
+      return a.individual.localeCompare(b.individual);
+    }
+    const d = (a.monitorCount||0) - (b.monitorCount||0);
+    if(d) return dir * d;
+    return a.individual.localeCompare(b.individual);
+  });
+}
+
+function renderExportAverages(){
+  const tf = el.exportAvgTfSel?.value || 'last90';
+  el.exportAvgCustomRange.classList.toggle('show', tf === 'custom');
+  const rows = sortExportAverageRows(getExportAverageRows());
+  const totalMonitors = rows.reduce((n,r)=>n + (r.monitorCount||0),0);
+  const weighted = rows.reduce((n,r)=>n + ((r.avgScore||0) * (r.monitorCount||0)),0);
+  const overallAvg = totalMonitors ? (weighted / totalMonitors) : NaN;
+  const dateBasisLabel = (el.exportAvgDateModeSel?.value === 'assigned') ? 'Assigned Date' : 'Interaction Date';
+  const tfLabel = el.exportAvgTfSel.options[el.exportAvgTfSel.selectedIndex]?.textContent || 'Last 90 days';
+  el.exportAvgSummaryStats.innerHTML = `
+    <span class="pill mono">${tfLabel}</span>
+    <span class="pill mono">${dateBasisLabel}</span>
+    <span class="pill mono">Total Individuals: ${fmtInt(rows.length)}</span>
+    <span class="pill mono">Total Monitors: ${fmtInt(totalMonitors)}</span>
+    <span class="pill mono">Overall Average Score: ${fmtPct2(overallAvg)}</span>
+  `;
+  if(!rows.length){
+    el.exportAvgTbody.innerHTML = '';
+    el.exportAvgEmpty.style.display = '';
+    el.exportAvgEmpty.textContent = 'No monitor scores found for this timeframe.';
+    return;
+  }
+  el.exportAvgEmpty.style.display = 'none';
+  el.exportAvgTbody.innerHTML = rows.map(r=>`
+    <tr>
+      <td>${r.individual}</td>
+      <td class="mono">${fmtPct2(r.avgScore)}</td>
+      <td class="mono">${fmtInt(r.monitorCount)}</td>
+    </tr>
+  `).join('');
+}
+
+function exportAveragesToExcel(){
+  const rows = sortExportAverageRows(getExportAverageRows());
+  if(!rows.length) return;
+  const tf = el.exportAvgTfSel?.value || 'last90';
+  const tfMap = { last7:'Last_7_Days', last30:'Last_30_Days', last90:'Last_90_Days', all:'All', custom:'Custom' };
+  const filename = `QA_Monitor_Averages_${tfMap[tf] || 'Last_90_Days'}.xlsx`;
+  const data = rows.map(r=>({
+    'Individual': r.individual,
+    'Average Score': `${(r.avgScore*100).toFixed(2)}%`,
+    '# of Monitors': r.monitorCount
+  }));
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Monitor Averages');
+  XLSX.writeFile(wb, filename);
+}
+
+function buildTeamOptions(rows){
+  const teams = Array.from(new Set(rows.map(r=>String(r.team||"").trim()).filter(Boolean)))
+    .sort((a,b)=>a.localeCompare(b));
+
+  el.teamSel.innerHTML = '';
+  const optAll = document.createElement('option');
+  optAll.value = '__ALL__';
+  optAll.textContent = 'All';
+  el.teamSel.appendChild(optAll);
+
+  for(const t of teams){
+    const o = document.createElement('option');
+    o.value = t;
+    o.textContent = t;
+    el.teamSel.appendChild(o);
+  }
+}
+
+function recomputeReviewerScope(){
+  canonicalQaReviewers = extractTeamScopedReviewerCandidates(getActiveQaRows());
+  loadReviewerState();
+}
+
+function filterRows(){
+  const activeRows = getActiveQaRows();
+  const team = el.teamSel.value;
+  const tf = el.tfSel.value;
+  const range = timeframeRange(tf);
+  const search = (el.searchInp.value||'').trim().toLowerCase();
+
+  return activeRows.filter(r=>{
+    if(team && team!=='__ALL__'){
+      if(String(r.team||'').trim() !== team) return false;
+    }
+    if(tf!=='all'){
+      if(!inRange(rowDate(r), range)) return false;
+    }
+    if(search){
+      const dn = String(r.agent||'').toLowerCase();
+      const pk = String(r.agentKey||'').toLowerCase();
+      if(!dn.includes(search) && !pk.includes(search)) return false;
+    }
+    return isCoachEval(r) || isQaReviewer(r);
+  });
+}
+
+function coachingForRep(repKey, range){
+  if(!coLoaded) return [];
+  const pk = String(repKey||"").toLowerCase();
+  let rows = coRowsAll.filter(c=>{
+    if(String(c.repKey||"").toLowerCase() !== pk) return false;
+    if(range && (range.from || range.to)){
+      if(!inRange(c.date, range)) return false;
+    }
+    return true;
+  });
+  rows.sort((a,b)=> b.date - a.date);
+  return rows;
+}
+
+function computeGlobalSummary(rows, excludeZero){
+  const { coachRows, qaRows } = splitRoleRows(rows);
+
+  const all = avgScore(rows, excludeZero);
+  const allNoZero = avgScore(rows, true);
+
+  const coach = avgScore(coachRows, excludeZero);
+  const qa = avgScore(qaRows, excludeZero);
+
+  const coachNoZero = avgScore(coachRows, true);
+  const qaNoZero = avgScore(qaRows, true);
+
+  const durAll = avgDuration(rows, excludeZero);
+  const durCoach = avgDuration(coachRows, excludeZero);
+  const durQa = avgDuration(qaRows, excludeZero);
+
+  const unreviewedAll = countUnreviewed(rows);
+  const unreviewedCoach = countUnreviewed(coachRows);
+  const unreviewedQa = countUnreviewed(qaRows);
+
+  return {
+    all, allNoZero,
+    coach, qa,
+    coachNoZero, qaNoZero,
+    durAll, durCoach, durQa,
+    unreviewedAll, unreviewedCoach, unreviewedQa,
+    coachRows, qaRows
+  };
+}
+
+function teamHalfTrend(rows, excludeZero){
+  const tr = splitHalfTrend(rows, excludeZero);
+  if(!Number.isFinite(tr.d)) return { pp: NaN, a1: NaN, a2: NaN };
+  return { pp: tr.d*100, a1: tr.a1, a2: tr.a2 };
+}
+
+function paintReviewerControls(){
+  const counts = new Map();
+  const activeRows = getActiveQaRows();
+
+  const team = el.teamSel.value;
+  const tf = el.tfSel.value;
+  const range = timeframeRange(tf);
+
+  for(const r of activeRows){
+    if(team && team !== '__ALL__' && String(r.team||'').trim() !== team) continue;
+    if(tf !== 'all' && !inRange(rowDate(r), range)) continue;
+    if(!isCoachEval(r)){
+      const ev = String(r.evaluator || '').trim();
+      if(ev && canonicalQaReviewers.includes(ev)) counts.set(ev, (counts.get(ev)||0)+1);
+    }
+  }
+
+  const remembered = savedReviewerNames();
+  const mode = loadSettings().reviewerFilterMode || 'custom';
+  el.qaReviewCountPill.textContent = `QA reviewers included: ${activeQaReviewers.length}/${canonicalQaReviewers.length}`;
+  el.reviewersBtnCount.textContent = `${activeQaReviewers.length}/${canonicalQaReviewers.length}`;
+  el.reviewerPopupCount.textContent = `${activeQaReviewers.length}/${canonicalQaReviewers.length} included`;
+  el.rememberedReviewerStatus.textContent = remembered.length
+    ? `${remembered.length} saved name${remembered.length===1?'':'s'} • mode: ${mode === 'remembered' ? 'saved set' : (mode === 'all' ? 'show all' : 'custom')}`
+    : 'No saved reviewer set yet';
+
+  const teamLabel = team === '__ALL__' ? 'All teams' : team;
+  const tfLabel = el.tfSel.options[el.tfSel.selectedIndex]?.textContent || 'All';
+  const dateBasisLabel = currentDateMode() === 'assigned' ? 'Assigned Date' : 'Interaction Date';
+  el.rSub.textContent = `${teamLabel} • ${tfLabel} • ${dateBasisLabel} • Coach removed from reviewer list automatically`;
+
+  el.reviewerChecklist.innerHTML = canonicalQaReviewers.length
+    ? canonicalQaReviewers.map(name => {
+        const safe = name.replace(/"/g,'&quot;');
+        return `<label class="reviewerCheck">
+          <input type="checkbox" data-reviewer-check="${safe}" ${activeQaReviewers.includes(name) ? 'checked' : ''}/>
+          <span>${name}</span>
+          <span class="mono">${counts.get(name)||0}</span>
+        </label>`;
+      }).join('')
+    : `<div class="notice">No QA reviewers detected for the current team/timeframe.</div>`;
+
+  el.reviewerList.innerHTML = activeQaReviewers.length
+    ? activeQaReviewers.map(name => `
+        <span class="reviewerChip">
+          ${name}
+          <span class="mono">(${counts.get(name)||0})</span>
+          <button type="button" data-remove-reviewer="${name.replace(/"/g,'&quot;')}">✕</button>
+        </span>
+      `).join('')
+    : `<span class="notice">No QA reviewers currently included for this team scope.</span>`;
+}
+function paintSummary(rows){
+  const excludeZero = el.excludeZero.checked;
+
+  const teamLabel = (el.teamSel.value==='__ALL__') ? 'All teams' : el.teamSel.value;
+  const tfLabel = el.tfSel.options[el.tfSel.selectedIndex]?.textContent || 'All';
+  const dateBasisLabel = currentDateMode() === 'assigned' ? 'Assigned Date' : 'Interaction Date';
+  el.scopePill.textContent = `${teamLabel} • ${tfLabel} • ${dateBasisLabel} • Rows: ${rows.length}`;
+
+  const sum = computeGlobalSummary(rows, excludeZero);
+
+  const scoreGap = (Number.isFinite(sum.coach.avg) && Number.isFinite(sum.qa.avg))
+    ? (sum.coach.avg - sum.qa.avg)
+    : NaN;
+  const scoreGapPP = Number.isFinite(scoreGap) ? scoreGap*100 : NaN;
+
+  const durGapSec = (Number.isFinite(sum.durCoach.avgSec) && Number.isFinite(sum.durQa.avgSec))
+    ? (sum.durCoach.avgSec - sum.durQa.avgSec)
+    : NaN;
+  const durGapMin = Number.isFinite(durGapSec) ? (durGapSec / 60) : NaN;
+
+  const coachMonitoredRepSet = new Set(sum.coachRows.map(r=>r.agentKey));
+  const qaMonitoredRepSet = new Set(sum.qaRows.map(r=>r.agentKey));
+  const repsShown = new Set(rows.map(r=>r.agentKey));
+
+  let noCoachMonitor = 0;
+  let noQaMonitor = 0;
+  for(const rep of repsShown){
+    if(!coachMonitoredRepSet.has(rep)) noCoachMonitor++;
+    if(!qaMonitoredRepSet.has(rep)) noQaMonitor++;
+  }
+
+  const trendPP = repTrendlineDeltaPP(rows, excludeZero);
+  const ttrTxt = Number.isFinite(trendPP) ? `${trendPP>=0?'+':''}${trendPP.toFixed(1)} pp` : '—';
+  el.teamTrendPill.className = `pill mono ${Number.isFinite(trendPP) ? (trendPP>0.1?'good':(trendPP<-0.1?'bad':'')) : ''}`;
+  el.teamTrendPill.textContent = `Trend: ${ttrTxt}`;
+
+  el.summarySub.textContent = `Overall reflects the selected team/timeframe (${dateBasisLabel}), coach monitors, and only the QA reviewers currently included in the popup. Unreviewed monitors come from Agent Has Read = 0.`;
+
+  const overallRows = [
+    {
+      metric:'Overall average',
+      value:fmtPct1(sum.all.avg),
+      count:fmtInt(sum.all.n),
+      notes:excludeZero ? 'Zeros excluded' : 'Zeros included'
+    },
+    {
+      metric:'Overall average (no 0s)',
+      value:fmtPct1(sum.allNoZero.avg),
+      count:fmtInt(sum.allNoZero.n),
+      notes:'Always excludes zeros'
+    },
+    {
+      metric:'Total unreviewed monitors',
+      value:fmtInt(sum.unreviewedAll),
+      count:fmtInt(rows.length),
+      notes:'Count of all rows where Agent Has Read = 0'
+    },
+    {
+      metric:'Avg call duration',
+      value:fmtHMS(sum.durAll.avgSec),
+      count:fmtInt(sum.durAll.n),
+      notes:'Interaction duration when available'
+    }
+  ];
+
+  el.summaryTbody.innerHTML = overallRows.map(r=>`
+    <tr>
+      <td><b>${r.metric}</b></td>
+      <td class="mono">
+        <span class="pill mono ${r.metric==='Total unreviewed monitors' && Number(r.value.replace(/,/g,''))>0 ? 'bad' : ''}">
+          ${r.value}
+        </span>
+        ${r.metric==='Total unreviewed monitors' ? `<button class="btn tiny inlineAction" type="button" data-open-unreviewed>View more</button>` : ``}
+      </td>
+      <td class="mono">${r.count}</td>
+      <td>${r.notes}</td>
+    </tr>
+  `).join('');
+
+  const compRows = [
+    {
+      coach: fmtPct1(sum.coach.avg),
+      category:'Average score',
+      diff: Number.isFinite(scoreGapPP) ? `${scoreGapPP>=0?'+':''}${scoreGapPP.toFixed(1)} pp` : '—',
+      diffNum: scoreGapPP,
+      diffType: 'pct',
+      qa: fmtPct1(sum.qa.avg),
+      note:'Coach - QA'
+    },
+    {
+      coach: fmtInt(sum.coach.n),
+      category:'Monitor count',
+      diff: (Number.isFinite(sum.coach.n) && Number.isFinite(sum.qa.n))
+        ? `${sum.coach.n-sum.qa.n>=0?'+':''}${sum.coach.n-sum.qa.n}`
+        : '—',
+      diffNum: (sum.coach.n - sum.qa.n),
+      diffType: 'count',
+      qa: fmtInt(sum.qa.n),
+      note:'Coach - QA'
+    },
+    {
+      coach: fmtHMS(sum.durCoach.avgSec),
+      category:'Avg call duration',
+      diff: Number.isFinite(durGapSec)
+        ? `${durGapSec>=0?'+':''}${formatDurationMinutes(Math.abs(durGapSec))}`
+        : '—',
+      diffNum: Number.isFinite(durGapSec) ? durGapSec : NaN,
+      diffType: 'duration',
+      qa: fmtHMS(sum.durQa.avgSec),
+      note:'Coach - QA'
+    },
+    {
+      coach: fmtPct1(sum.coachNoZero.avg),
+      category:'Average score (no 0s)',
+      diff: (Number.isFinite(sum.coachNoZero.avg) && Number.isFinite(sum.qaNoZero.avg))
+        ? `${((sum.coachNoZero.avg-sum.qaNoZero.avg)*100)>=0?'+':''}${((sum.coachNoZero.avg-sum.qaNoZero.avg)*100).toFixed(1)} pp`
+        : '—',
+      diffNum: (sum.coachNoZero.avg-sum.qaNoZero.avg)*100,
+      diffType: 'pct',
+      qa: fmtPct1(sum.qaNoZero.avg),
+      note:'Coach - QA'
+    },
+    {
+      coach: fmtInt(sum.unreviewedCoach),
+      category:'Unreviewed monitors',
+      diff: `${sum.unreviewedCoach-sum.unreviewedQa>=0?'+':''}${sum.unreviewedCoach-sum.unreviewedQa}`,
+      diffNum: (sum.unreviewedCoach-sum.unreviewedQa),
+      diffType: 'count',
+      qa: fmtInt(sum.unreviewedQa),
+      note:'Coach unread - QA unread'
+    },
+    {
+      coach: fmtInt(noCoachMonitor),
+      category:'Representatives without monitor',
+      diff: `${noCoachMonitor-noQaMonitor>=0?'+':''}${noCoachMonitor-noQaMonitor}`,
+      diffNum: (noCoachMonitor-noQaMonitor),
+      diffType: 'count',
+      qa: fmtInt(noQaMonitor),
+      note:'Coach none - QA none'
+    }
+  ];
+
+  el.compareTbody.innerHTML = compRows.map(r=>{
+    const status = compareStatusClass(r.diffNum, r.diffType);
+    return `
+      <tr class="${status}">
+        <td>
+          <div class="compareCategoryTitle">${r.category}</div>
+          <div class="compareRule">${compareRuleText(r.diffType)}</div>
+        </td>
+        <td class="mono"><b>${r.coach}</b></td>
+        <td class="mono"><b>${r.qa}</b></td>
+        <td>
+          <span class="compareBadge ${status}">${r.diff}</span>
+          <div class="compareRule">${compareShortStatus(status)} • ${r.note}</div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function coachingWeightFactor(avgFrac){
+  if(!Number.isFinite(avgFrac)) return 1;
+  const w = Math.max(0.15, Math.min(1, avgFrac));
+  return w;
+}
+
+
+function repTrendlineDeltaPP(rows, excludeZero){
+  const sorted = [...(rows||[])]
+    .filter(r=>rowDate(r) && Number.isFinite(r.score) && !(excludeZero && r.score===0))
+    .sort((a,b)=>rowDate(a)-rowDate(b));
+  if(sorted.length < 2) return NaN;
+  const pts = sorted.map((r,i)=>({ x:i, y:r.score }));
+  const fit = linearTrend(pts);
+  if(!fit) return NaN;
+  return (fit.m * (sorted.length - 1)) * 100;
+}
+
+function focusBaseRows(){
+  const activeRows = getActiveQaRows();
+  const team = el.teamSel.value;
+  const tf = el.tfSel.value;
+  const range = tf === 'all' ? {from:null,to:null} : timeframeRange(tf);
+  return activeRows.filter(r=>{
+    if(team && team !== '__ALL__' && String(r.team||'').trim() !== team) return false;
+    if(tf !== 'all' && !inRange(rowDate(r), range)) return false;
+    return isCoachEval(r) || isQaReviewer(r);
+  });
+}
+
+function coachingOutcomeForRep(rows, coRows, excludeZero){
+  if(!coRows || !coRows.length){
+    return { coached:false, lastDate:null, status:'Needs coaching', className:'bad', multiplier:1.15, improved:false };
+  }
+  const lastDate = coRows[0]?.date || null;
+  const usable = [...rows].filter(r=>rowDate(r) && Number.isFinite(r.score) && !(excludeZero && r.score===0));
+  const before = usable.filter(r=>rowDate(r) < lastDate);
+  const after = usable.filter(r=>rowDate(r) >= lastDate);
+  const beforeAvg = avgScore(before, false).avg;
+  const afterAvg = avgScore(after, false).avg;
+  const afterTrend = repTrendlineDeltaPP(after, false);
+
+  if(after.length >= 2 && Number.isFinite(beforeAvg) && Number.isFinite(afterAvg)){
+    const improved = afterAvg >= beforeAvg || (Number.isFinite(afterTrend) && afterTrend >= 0);
+    const stillNegative = Number.isFinite(afterTrend) && afterTrend <= -2;
+    if(improved && !stillNegative){
+      return { coached:true, lastDate, status:'Improving', className:'good', multiplier:0.50, improved:true, beforeAvg, afterAvg, afterTrend };
+    }
+    return { coached:true, lastDate, status:'Coached — no impact yet', className:'warn', multiplier:1.00, improved:false, beforeAvg, afterAvg, afterTrend };
+  }
+
+  if(after.length >= 1 && Number.isFinite(beforeAvg) && Number.isFinite(afterAvg) && afterAvg >= beforeAvg){
+    return { coached:true, lastDate, status:'Improving', className:'good', multiplier:0.60, improved:true, beforeAvg, afterAvg, afterTrend };
+  }
+
+  return { coached:true, lastDate, status:'Coached — pending read', className:'warn', multiplier:0.78, improved:false, beforeAvg, afterAvg, afterTrend };
+}
+
+function focusRatingClass(rating){
+  if(rating === 'Highly successful') return 'high';
+  if(rating === 'Meeting expectations') return 'meet';
+  if(rating === 'Below expectations') return 'below';
+  if(rating === 'Concerning Performance') return 'concern';
+  if(rating === 'Alarming Performance') return 'alarm';
+  return 'below';
+}
+
+function computeFocusRating(team){
+  const avg = team.avgScore;
+  const below = team.belowGoalPct;
+  const reached = team.reachedPct;
+  const improving = team.improvingPct;
+  const impactPct = team.impactPct;
+  const avgOk = Number.isFinite(avg) && avg >= 0.85;
+
+  if(avgOk && below <= 0.12 && reached >= 0.70 && improving >= 0.40) return 'Highly successful';
+  if(avgOk && (below <= 0.25 || reached >= 0.55 || improving >= 0.35)) return 'Meeting expectations';
+  if(!avgOk && impactPct >= 0.35 && reached < 0.25) return 'Alarming Performance';
+  if(!avgOk && (impactPct >= 0.25 || reached < 0.50 || improving < 0.20)) return 'Concerning Performance';
+  if(!avgOk) return 'Below expectations';
+  if(impactPct >= 0.30 && reached < 0.35) return 'Concerning Performance';
+  return 'Meeting expectations';
+}
+
+function buildFocusTeams(){
+  const excludeZero = el.excludeZero.checked;
+  const rows = focusBaseRows();
+  const tf = el.tfSel.value;
+  const range = tf === 'all' ? {from:null,to:null} : timeframeRange(tf);
+  const byTeam = groupBy(rows, r=>String(r.team||'').trim() || '(blank Team/Coach)');
+  const teams = [];
+
+  for(const [team, teamRows] of byTeam.entries()){
+    const byRep = groupBy(teamRows, r=>r.agentKey);
+    const reps = [];
+    for(const [repKey, arr] of byRep.entries()){
+      const avg = avgScore(arr, excludeZero).avg;
+      const monitors = avgScore(arr, excludeZero).n;
+      const trendPP = repTrendlineDeltaPP(arr, excludeZero);
+      const lowScore = Number.isFinite(avg) && avg < 0.85;
+      const veryLow = Number.isFinite(avg) && avg < 0.70;
+      const heavyNegative = Number.isFinite(trendPP) && trendPP <= -10;
+      const impactor = lowScore || heavyNegative;
+      const coRows = coachingForRep(repKey, range);
+      const outcome = coachingOutcomeForRep(arr, coRows, excludeZero);
+
+      let rawImpact = 0;
+      const factors = [];
+      if(lowScore){
+        rawImpact += 3 + Math.min(4, Math.max(0, (0.85 - avg) * 100 / 4));
+        factors.push({ label:'Below 85%', className:'bad' });
+      }
+      if(veryLow){
+        rawImpact += 5;
+        factors.push({ label:'Below 70%', className:'bad' });
+      }
+      if(heavyNegative){
+        rawImpact += 4 + Math.min(4, Math.abs(trendPP + 10) / 5);
+        factors.push({ label:'Trend ≤ -10 pp', className:'warn' });
+      }
+      if(impactor && !outcome.coached){
+        rawImpact += 2;
+        factors.push({ label:'No CQ coaching', className:'bad' });
+      }else if(impactor && outcome.improved){
+        factors.push({ label:'Improving after coaching', className:'good' });
+      }else if(impactor && outcome.coached){
+        factors.push({ label:'Coached in timeframe', className:'warn' });
+      }
+
+      const impactScore = impactor ? Math.max(0.5, rawImpact * outcome.multiplier) : 0;
+      reps.push({
+        repKey,
+        rep: arr[0]?.agent || repKey,
+        rows: arr,
+        avg,
+        monitors,
+        trendPP,
+        lowScore,
+        veryLow,
+        heavyNegative,
+        impactor,
+        coRows,
+        outcome,
+        factors,
+        impactScore
+      });
+    }
+
+    const totalReps = reps.length;
+    const impactReps = reps.filter(r=>r.impactor).length;
+    const belowGoalReps = reps.filter(r=>r.lowScore).length;
+    const aboveGoalReps = reps.filter(r=>Number.isFinite(r.avg) && r.avg >= 0.85).length;
+    const impacted = reps.filter(r=>r.impactor);
+    const reached = impacted.filter(r=>r.outcome.coached).length;
+    const improving = impacted.filter(r=>r.outcome.improved).length;
+    const focusScore = impacted.reduce((n,r)=>n+r.impactScore,0);
+    const avg = avgScore(teamRows, excludeZero).avg;
+    const teamObj = {
+      team,
+      rows: teamRows,
+      reps: reps.sort((a,b)=>b.impactScore-a.impactScore || a.rep.localeCompare(b.rep)),
+      totalReps,
+      impactReps,
+      belowGoalReps,
+      aboveGoalReps,
+      avgScore: avg,
+      focusScore,
+      impactPct: totalReps ? impactReps/totalReps : 0,
+      belowGoalPct: totalReps ? belowGoalReps/totalReps : 0,
+      aboveGoalPct: totalReps ? aboveGoalReps/totalReps : 0,
+      reachedPct: impactReps ? reached/impactReps : 1,
+      improvingPct: impactReps ? improving/impactReps : 0,
+      reached,
+      improving
+    };
+    teamObj.rating = computeFocusRating(teamObj);
+    teams.push(teamObj);
+  }
+
+  teams.sort((a,b)=>b.focusScore-a.focusScore || b.impactReps-a.impactReps || a.team.localeCompare(b.team));
+  teams.forEach((t,i)=>t.rank=i+1);
+  return teams;
+}
+
+function renderFocusAreas(){
+  const teams = buildFocusTeams();
+  focusTeamRows = teams;
+  const teamLabel = el.teamSel.value === '__ALL__' ? 'All coach teams' : el.teamSel.value;
+  const tfLabel = el.tfSel.options[el.tfSel.selectedIndex]?.textContent || 'All';
+  const dateBasisLabel = currentDateMode() === 'assigned' ? 'Assigned Date' : 'Interaction Date';
+  const totalTeams = teams.length;
+  const totalReps = teams.reduce((n,t)=>n+t.totalReps,0);
+  const totalImpactReps = teams.reduce((n,t)=>n+t.impactReps,0);
+  const alarming = teams.filter(t=>t.rating==='Alarming Performance').length;
+  const topScore = teams[0]?.focusScore || 0;
+
+  el.focusSummaryStats.innerHTML = `
+    <div class="focusMetric"><div class="label">Scope</div><div class="value">${fmtInt(totalTeams)}</div><div class="sub">${teamLabel} • ${tfLabel} • ${dateBasisLabel}</div></div>
+    <div class="focusMetric"><div class="label">Representatives</div><div class="value">${fmtInt(totalReps)}</div><div class="sub">Included after current QA reviewer filter</div></div>
+    <div class="focusMetric"><div class="label">Impact reps</div><div class="value">${fmtInt(totalImpactReps)}</div><div class="sub">Below 85% or trend ≤ -10 pp</div></div>
+    <div class="focusMetric"><div class="label">Highest focus score</div><div class="value">${topScore.toFixed(1)}</div><div class="sub">Alarming teams: ${fmtInt(alarming)}</div></div>
+  `;
+
+  if(!teams.length){
+    el.focusTbody.innerHTML = '';
+    el.focusEmpty.style.display = '';
+    el.focusEmpty.textContent = getActiveQaRows().length ? 'No teams match the current Focus Areas filters.' : 'No QA data available for Focus Areas.';
+    return;
+  }
+  el.focusEmpty.style.display = 'none';
+  el.focusTbody.innerHTML = teams.map(t=>`
+    <tr data-focus-team="${String(t.team).replace(/"/g,'&quot;')}">
+      <td><span class="rankBadge">${t.rank}</span></td>
+      <td><b>${t.team}</b><div class="compareRule">Click to view impacted representatives</div></td>
+      <td><span class="ratingBadge ${focusRatingClass(t.rating)}">${t.rating}</span></td>
+      <td class="mono impactCell ${t.focusScore >= 25 ? 'bad' : (t.focusScore >= 10 ? 'warn' : 'good')}">${t.focusScore.toFixed(1)}</td>
+      <td class="mono"><span class="pill mono ${getScoreColorClass(t.avgScore)}">${fmtPct1(t.avgScore)}</span></td>
+      <td class="mono">${fmtInt(t.totalReps)}</td>
+      <td class="mono">${fmtInt(t.impactReps)}</td>
+      <td class="mono">${fmtPct1(t.belowGoalPct)}</td>
+      <td class="mono">${fmtPct1(t.reachedPct)} <span class="compareRule">(${fmtInt(t.reached)}/${fmtInt(t.impactReps)})</span></td>
+      <td class="mono">${fmtPct1(t.improvingPct)} <span class="compareRule">(${fmtInt(t.improving)}/${fmtInt(t.impactReps)})</span></td>
+      <td class="mono">${fmtPct1(t.aboveGoalPct)}</td>
+    </tr>
+  `).join('');
+}
+
+function openFocusTeamDetails(teamName){
+  const team = focusTeamRows.find(t=>t.team===teamName);
+  if(!team) return;
+  const tfLabel = el.tfSel.options[el.tfSel.selectedIndex]?.textContent || 'All';
+  el.fTitle.textContent = `Focus Areas — ${team.team}`;
+  el.fSub.textContent = `Rank #${team.rank} • ${team.rating} • Focus score ${team.focusScore.toFixed(1)} • ${tfLabel}`;
+  const impacted = team.reps.filter(r=>r.impactor);
+  const rowsToShow = impacted.length ? impacted : team.reps;
+  el.focusBody.innerHTML = `
+    <div class="focusSummaryGrid">
+      <div class="focusMetric"><div class="label">Avg Score</div><div class="value">${fmtPct1(team.avgScore)}</div><div class="sub">Current selected timeframe</div></div>
+      <div class="focusMetric"><div class="label">Impact Reps</div><div class="value">${fmtInt(team.impactReps)}</div><div class="sub">${fmtPct1(team.impactPct)} of team</div></div>
+      <div class="focusMetric"><div class="label">Reached</div><div class="value">${fmtPct1(team.reachedPct)}</div><div class="sub">Impacted reps with CQ coaching</div></div>
+      <div class="focusMetric"><div class="label">Improving</div><div class="value">${fmtPct1(team.improvingPct)}</div><div class="sub">Impacted reps trending up after coaching</div></div>
+    </div>
+    <div class="tblWrap">
+      <table class="focusTbl">
+        <thead>
+          <tr>
+            <th>Representative</th>
+            <th>Avg Score</th>
+            <th>Trend</th>
+            <th>Impact Score</th>
+            <th>Factors</th>
+            <th>Last CQ Coaching</th>
+            <th>Coached in Timeframe</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsToShow.map(r=>`
+            <tr>
+              <td><b>${r.rep}</b><div class="compareRule">${fmtInt(r.monitors)} monitor${r.monitors===1?'':'s'}</div></td>
+              <td class="mono"><span class="pill mono ${getScoreColorClass(r.avg)}">${fmtPct1(r.avg)}</span></td>
+              <td class="mono"><span class="pill mono ${Number.isFinite(r.trendPP) ? (r.trendPP <= -10 ? 'bad' : (r.trendPP < 0 ? 'warn' : 'good')) : ''}">${Number.isFinite(r.trendPP) ? `${r.trendPP>=0?'+':''}${r.trendPP.toFixed(1)} pp` : '—'}</span></td>
+              <td class="mono impactCell ${r.impactScore >= 10 ? 'bad' : (r.impactScore >= 4 ? 'warn' : 'good')}">${r.impactScore.toFixed(1)}</td>
+              <td><div class="factorList">${(r.factors.length ? r.factors : [{label:'Above focus threshold', className:'good'}]).map(f=>`<span class="factorPill ${f.className}">${f.label}</span>`).join('')}</div></td>
+              <td class="mono">${r.outcome.lastDate ? fmtDateOnly(r.outcome.lastDate) : '—'}</td>
+              <td class="mono">${r.outcome.coached ? 'Yes' : 'No'}</td>
+              <td><span class="factorPill ${r.outcome.className}">${r.outcome.status}</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="notice">Impact score is reduced when a representative was coached in the selected timeframe and improved after that coaching. If the post-coaching trend is still negative, the coaching does not reduce the impact score.</div>
+  `;
+  el.focusOverlay.classList.add('show');
+  el.focusOverlay.setAttribute('aria-hidden','false');
+}
+
+function closeFocusOverlay(){
+  el.focusOverlay.classList.remove('show');
+  el.focusOverlay.setAttribute('aria-hidden','true');
+  el.focusBody.innerHTML = '';
+}
+
+function paintCards(rows){
+  el.cards.innerHTML = '';
+  el.empty.style.display = 'none';
+
+  if(!getActiveQaRows().length){
+    el.empty.style.display = '';
+    el.empty.textContent = qaDataSource === 'uploaded'
+      ? 'Uploaded source selected, but no uploaded QA data is available.'
+      : 'QA: Upload needed. (No QA data detected in localStorage dock.)';
+    return;
+  }
+  if(!rows.length){
+    el.empty.style.display = '';
+    el.empty.textContent = 'No evaluations match the current Team / Timeframe / Search filters.';
+    return;
+  }
+
+  const excludeZero = el.excludeZero.checked;
+  const tf = el.tfSel.value;
+  const range = (tf==='all') ? {from:null,to:null} : timeframeRange(tf);
+
+  const byRep = groupBy(rows, r=>r.agentKey);
+  const reps = Array.from(byRep.keys()).sort((a,b)=>a.localeCompare(b));
+
+  const cards = reps.map(pk=>{
+    const arr = byRep.get(pk) || [];
+    const name = (arr[0]?.agent) || pk;
+
+    const total = avgScore(arr, excludeZero);
+    const totalIncl0 = avgScore(arr, false);
+    const wkSeries = sparkSeriesWeekly(arr, excludeZero);
+    const trPP = repTrendlineDeltaPP(arr, excludeZero);
+
+    const zeros = arr.filter(r=>r.score===0).length;
+    const noZero = avgScore(arr, true);
+    const unreadCount = countUnreviewed(arr);
+
+    const { coachRows, qaRows } = splitRoleRows(arr);
+
+    const coachAvg = avgScore(coachRows, excludeZero).avg;
+    const qaAvg = avgScore(qaRows, excludeZero).avg;
+    const gap = (Number.isFinite(coachAvg)&&Number.isFinite(qaAvg)) ? (coachAvg-qaAvg) : NaN;
+    const gapStatus = compareStatusClass(Number.isFinite(gap) ? gap*100 : NaN, 'pct').replace('status','').toLowerCase();
+
+    const durAll = avgDuration(arr, excludeZero);
+    const durCoach = avgDuration(coachRows, excludeZero);
+    const durQa = avgDuration(qaRows, excludeZero);
+    const durGapSec = (Number.isFinite(durCoach.avgSec) && Number.isFinite(durQa.avgSec)) ? (durCoach.avgSec - durQa.avgSec) : NaN;
+    const durGapStatus = compareStatusClass(durGapSec, 'duration').replace('status','').toLowerCase();
+
+    const monitoredByCoach = coachRows.length > 0;
+    const reviewedCount = Math.max(0, arr.length - unreadCount);
+
+    const coRows = coachingForRep(pk, range);
+    const coCount = coRows.length;
+    const coRecent = coRows[0]?.date || null;
+
+    const weightedCoachings = coCount * coachingWeightFactor(total.avg);
+
+    return {
+      pk, name, arr, total, totalIncl0, wkSeries,
+      trPP, zeros, noZero, unreadCount, reviewedCount,
+      coachAvg, qaAvg, gapStatus,
+      durAll, durCoach, durQa, durGapStatus,
+      coCount, coRecent,
+      weightedCoachings,
+      monitoredByCoach,
+      coachCount: coachRows.length,
+      qaCount: qaRows.length
+    };
+  });
+
+  cards.sort((a,b)=>{
+    const aAvg = a.total.avg, bAvg = b.total.avg;
+    const aTrend = a.trPP, bTrend = b.trPP;
+    const fin = (x)=>Number.isFinite(x);
+
+    if(sortMode==="avg"){
+      if(fin(bAvg) && fin(aAvg) && bAvg!==aAvg) return bAvg - aAvg;
+      if(b.total.n !== a.total.n) return b.total.n - a.total.n;
+      return a.name.localeCompare(b.name);
+    }
+    if(sortMode==="zeros"){
+      if(b.zeros !== a.zeros) return b.zeros - a.zeros;
+      if(fin(aAvg) && fin(bAvg) && aAvg!==bAvg) return aAvg - bAvg;
+      return a.name.localeCompare(b.name);
+    }
+    if(sortMode==="trend"){
+      const aBad = !fin(aTrend), bBad = !fin(bTrend);
+      if(aBad && bBad) return 0;
+      if(aBad) return 1;
+      if(bBad) return -1;
+      if(aTrend !== bTrend) return aTrend - bTrend;
+      return a.name.localeCompare(b.name);
+    }
+    if(sortMode==="coachings"){
+      if(a.coCount !== b.coCount) return a.coCount - b.coCount;
+      if(fin(aAvg) && fin(bAvg) && aAvg!==bAvg) return aAvg - bAvg;
+      return a.name.localeCompare(b.name);
+    }
+    if(sortMode==="coachingsWeighted"){
+      if(a.weightedCoachings !== b.weightedCoachings) return a.weightedCoachings - b.weightedCoachings;
+      if(a.coCount !== b.coCount) return a.coCount - b.coCount;
+      if(fin(aAvg) && fin(bAvg) && aAvg!==bAvg) return aAvg - bAvg;
+      return a.name.localeCompare(b.name);
+    }
+    if(sortMode==="unreviewed"){
+      if(b.unreadCount !== a.unreadCount) return b.unreadCount - a.unreadCount;
+      if(b.total.n !== a.total.n) return b.total.n - a.total.n;
+      return a.name.localeCompare(b.name);
+    }
+
+    if(b.total.n !== a.total.n) return b.total.n - a.total.n;
+    return a.name.localeCompare(b.name);
+  });
+
+  for(const c of cards){
+    const trendCls = !Number.isFinite(c.trPP) ? 'trendFlat'
+      : (c.trPP > 0.1 ? 'trendUp' : (c.trPP < -0.1 ? 'trendDn' : 'trendFlat'));
+
+    const trendTxt = !Number.isFinite(c.trPP) ? '—'
+      : `${c.trPP>=0?'+':''}${c.trPP.toFixed(1)} pp`;
+
+    const scoreGapLabel = (Number.isFinite(c.coachAvg) && Number.isFinite(c.qaAvg))
+      ? `${fmtPct1(c.coachAvg)} / ${fmtPct1(c.qaAvg)}`
+      : '— / —';
+
+    const durationGapLabel = (Number.isFinite(c.durCoach.avgSec) && Number.isFinite(c.durQa.avgSec))
+      ? `${fmtHMS(c.durCoach.avgSec)} / ${fmtHMS(c.durQa.avgSec)}`
+      : '— / —';
+
+    const coRecentTxt = c.coRecent ? fmtDateOnly(c.coRecent) : '—';
+    const scoreStatusClass = ['good','warn','bad'].includes(c.gapStatus) ? c.gapStatus : '';
+    const durStatusClass = ['good','warn','bad'].includes(c.durGapStatus) ? c.durGapStatus : '';
+
+    const card = document.createElement('div');
+    card.className = 'card repCard';
+    card.dataset.rep = c.pk;
+
+    card.innerHTML = `
+      <div class="repTop">
+        <div>
+          <div class="repName">${c.name}</div>
+          <div class="repMeta">${c.wkSeries.weeks.length ? `${c.wkSeries.weeks[0]} → ${c.wkSeries.weeks[c.wkSeries.weeks.length-1]}` : 'No weekly trend yet'}</div>
+        </div>
+        <span class="coachFlag ${c.monitoredByCoach ? 'good' : 'bad'}">
+          <span class="coachMark">${c.monitoredByCoach ? '✔' : '✖'}</span>
+          Monitored by Coach
+        </span>
+      </div>
+
+      <div class="trendBanner">
+        <span>Trend</span>
+        <strong class="${trendCls}">${trendTxt}</strong>
+      </div>
+
+      <div class="sparkWrap">
+        <canvas class="spark" width="520" height="110"></canvas>
+      </div>
+
+      <div class="repScoreBand">
+        <div>
+          <div class="label">Total Score</div>
+          <div class="value">${fmtPct1(c.total.avg)}</div>
+        </div>
+        <div class="sub">${fmtInt(c.total.n)} monitor${c.total.n===1?'':'s'}</div>
+      </div>
+
+      <div class="repDataRows">
+        <div class="repDataRow split ${scoreStatusClass}">
+          <span class="label">Coach monitors</span><b>${fmtInt(c.coachCount)} • ${fmtPct1(c.coachAvg)}</b>
+          <span class="label2">QA monitors</span><b>${fmtInt(c.qaCount)} • ${fmtPct1(c.qaAvg)}</b>
+        </div>
+        <div class="repDataRow">
+          <span class="label">Average call length</span><b>${fmtHMS(c.durAll.avgSec)} • ${fmtInt(c.durAll.n)} call${c.durAll.n===1?'':'s'}</b>
+        </div>
+        <div class="repDataRow split ${durStatusClass}">
+          <span class="label">Coach call length</span><b>${fmtHMS(c.durCoach.avgSec)}</b>
+          <span class="label2">QA call length</span><b>${fmtHMS(c.durQa.avgSec)}</b>
+        </div>
+        <div class="repDataRow split ${c.unreadCount > 1 ? 'alert' : ''}">
+          <span class="label">Reviewed calls</span><b>${fmtInt(c.reviewedCount)}</b>
+          <span class="label2">Unread calls</span><b>${fmtInt(c.unreadCount)}</b>
+        </div>
+        <div class="repDataRow split">
+          <span class="label">Zero-score calls</span><b>${fmtInt(c.zeros)}</b>
+          <span class="label2">CQ coachings</span><b>${coLoaded ? fmtInt(c.coCount) : '—'}</b>
+        </div>
+        <div class="repDataRow">
+          <span class="label">Most recent CQ coaching</span><b>${coLoaded ? coRecentTxt : '—'}</b>
+        </div>
+      </div>
+      <div class="repBottomNote">Coach / QA score split: ${scoreGapLabel}. Coach / QA call-length split: ${durationGapLabel}.</div>
+    `;
+
+    el.cards.appendChild(card);
+    drawSpark(card.querySelector('canvas.spark'), c.wkSeries.vals);
+  }
+}
+
+function destroyModalChart(){
+  if(chartMain){
+    try{ chartMain.destroy(); }catch{}
+    chartMain = null;
+  }
+}
+
+function linearTrend(values){
+  const n = values.length;
+  if(n < 2) return null;
+  let sumX=0,sumY=0,sumXY=0,sumXX=0;
+  for(const p of values){
+    sumX += p.x; sumY += p.y; sumXY += p.x*p.y; sumXX += p.x*p.x;
+  }
+  const denom = (n*sumXX - sumX*sumX);
+  if(Math.abs(denom) < 1e-9) return null;
+  const m = (n*sumXY - sumX*sumY) / denom;
+  const b = (sumY - m*sumX) / n;
+  return { m, b };
+}
+
+function openModal(repKey){
+  const rowsScoped = filterRows();
+  const byRep = groupBy(rowsScoped, r=>r.agentKey);
+  const arr = byRep.get(repKey) || [];
+  if(!arr.length) return;
+
+  const excludeZero = el.excludeZero.checked;
+  const name = arr[0].agent || repKey;
+  const coachName = String(arr[0].team||"").trim() || '(blank Team/Coach)';
+  const sortedDesc = [...arr].sort((a,b)=> (rowDate(b)?.getTime()||0) - (rowDate(a)?.getTime()||0));
+
+  const total = avgScore(arr, excludeZero);
+  const incl0 = avgScore(arr, false);
+  const zeros = arr.filter(r=>r.score===0).length;
+  const noZero = avgScore(arr, true);
+  const unreadCount = countUnreviewed(arr);
+
+  const { coachRows, qaRows } = splitRoleRows(arr);
+
+  const coachAvg = avgScore(coachRows, excludeZero);
+  const qaAvg = avgScore(qaRows, excludeZero);
+  const gap = (Number.isFinite(coachAvg.avg)&&Number.isFinite(qaAvg.avg)) ? (coachAvg.avg-qaAvg.avg) : NaN;
+  const gapBad = Number.isFinite(gap) && Math.abs(gap*100) >= DIFF_ALERT_PCTPTS;
+
+  const durAll = avgDuration(arr, excludeZero);
+  const durCoach = avgDuration(coachRows, excludeZero);
+  const durQa = avgDuration(qaRows, excludeZero);
+  const durGapSec = (Number.isFinite(durCoach.avgSec)&&Number.isFinite(durQa.avgSec)) ? (durCoach.avgSec-durQa.avgSec) : NaN;
+  const durGapBad = Number.isFinite(durGapSec) && Math.abs(durGapSec) >= DIFF_ALERT_SECS;
+
+  const monitoredByCoach = coachRows.length > 0;
+
+  const evalCounts = new Map();
+  for(const r of arr){
+    const ev = (r.evaluator||'(blank)').trim() || '(blank)';
+    evalCounts.set(ev, (evalCounts.get(ev)||0)+1);
+  }
+  const evalTop = Array.from(evalCounts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10);
+
+  const teamLabel = (el.teamSel.value==='__ALL__') ? 'All teams' : el.teamSel.value;
+  const tfLabel = el.tfSel.options[el.tfSel.selectedIndex]?.textContent || 'All';
+  const tf = el.tfSel.value;
+  const range = (tf==='all') ? {from:null,to:null} : timeframeRange(tf);
+
+  const coRows = coachingForRep(repKey, range);
+  const coCount = coRows.length;
+  const coRecent = coRows[0]?.date || null;
+  const dateBasisLabel = currentDateMode() === 'assigned' ? 'Assigned Date' : 'Interaction Start Time';
+
+  el.mTitle.textContent = `${name} — QA Details`;
+  el.mSub.textContent = `${teamLabel} • ${tfLabel} • Rows: ${arr.length} • Team/Coach: ${coachName}`;
+
+  destroyModalChart();
+  el.mBody.innerHTML = '';
+
+  const stats = document.createElement('div');
+  stats.className = 'box';
+  stats.innerHTML = `
+    <div class="boxHead">
+      <span>Summary</span>
+      <span class="pill mono ${gapBad?'warn':''}">Coach vs QA gap: ${Number.isFinite(gap)? ((gap>=0?'+':'')+(gap*100).toFixed(1)+' pp') : '—'}</span>
+    </div>
+
+    <div class="row" style="gap:10px">
+      <span class="coachFlag ${monitoredByCoach ? 'good' : 'bad'}">
+        <span class="coachMark">${monitoredByCoach ? '✔' : '✖'}</span>
+        Monitored by Coach
+      </span>
+
+      <span class="pill mono ${unreadCount>0 ? 'bad' : 'good'}"><b>Unreviewed</b> ${fmtInt(unreadCount)}</span>
+      <span class="pill mono"><b>Total</b> ${fmtPct1(total.avg)} • n ${fmtInt(total.n)}</span>
+      <span class="pill mono"><b>Total (incl 0s)</b> ${fmtPct1(incl0.avg)} • n ${fmtInt(incl0.n)}</span>
+      <span class="pill mono"><b>Zeros</b> ${fmtInt(zeros)} • <b>Avg w/o 0s</b> ${fmtPct1(noZero.avg)}</span>
+
+      <span class="pill mono ${gapBad?'warn':''}"><b>Coach</b> ${fmtPct1(coachAvg.avg)} • n ${fmtInt(coachAvg.n)}</span>
+      <span class="pill mono ${gapBad?'warn':''}"><b>QA</b> ${fmtPct1(qaAvg.avg)} • n ${fmtInt(qaAvg.n)}</span>
+
+      <span class="pill mono"><b>Avg call</b> ${fmtHMS(durAll.avgSec)} • n ${fmtInt(durAll.n)}</span>
+      <span class="pill mono ${durGapBad?'warn':''}"><b>Dur coach</b> ${fmtHMS(durCoach.avgSec)} • n ${fmtInt(durCoach.n)}</span>
+      <span class="pill mono ${durGapBad?'warn':''}"><b>Dur QA</b> ${fmtHMS(durQa.avgSec)} • n ${fmtInt(durQa.n)}</span>
+      <span class="pill mono ${durGapBad?'warn':''}"><b>Dur gap</b> ${
+        Number.isFinite(durGapSec) ? `${durGapSec>=0?'+':''}${fmtHMS(Math.abs(durGapSec))}` : '—'
+      }</span>
+
+      <span class="pill mono" title="Documented Coachings filtered to Call Quality only (in selected timeframe)">
+        <b>CQ Coachings</b> ${fmtInt(coCount)} • <b>Most recent</b> ${coRecent ? fmtDateOnly(coRecent) : '—'}
+      </span>
+    </div>
+
+    <div style="margin-top:10px" class="notice">
+      <b>Top evaluators</b> (count): ${evalTop.map(([e,c])=>`${e} (${c})`).join(' • ') || '—'}
+    </div>
+  `;
+  el.mBody.appendChild(stats);
+
+  const coBox = document.createElement('div');
+  coBox.className = 'box';
+  coBox.innerHTML = `
+    <div class="boxHead">
+      <span>Documented Coachings — Call Quality</span>
+      <span class="pill mono">In timeframe: ${tfLabel}</span>
+    </div>
+    ${
+      !coLoaded
+        ? `<div class="notice">No documented coaching data loaded. Pick a Doc coaching key in Additional Options.</div>`
+        : (coRows.length
+          ? `<div class="coList">
+              ${coRows.slice(0, 50).map(c=>`
+                <div class="coItem">
+                  <div class="coHeadRow">
+                    <b>${fmtDateOnly(c.date)}</b>
+                    <span class="pill mono">${(c.coach||'—') ? String(c.coach||'—') : '—'}</span>
+                  </div>
+                  <div class="coMeta">Type: ${c.types.join(", ") || "Call Quality"} • Week: ${c.week || "—"}</div>
+                  ${c.desc ? `<div class="coDesc">${String(c.desc)}</div>` : `<div class="coDesc" style="color:#64748b">No description/notes found.</div>`}
+                </div>
+              `).join("")}
+            </div>
+            ${coRows.length>50 ? `<div class="notice" style="margin-top:10px">Showing newest 50. (${coRows.length} total in timeframe.)</div>` : ``}`
+          : `<div class="notice">No Call Quality coachings found for this rep in the selected timeframe.</div>`
+        )
+    }
+  `;
+  el.mBody.appendChild(coBox);
+
+  const chartBox = document.createElement('div');
+  chartBox.className = 'box';
+  chartBox.innerHTML = `
+    <div class="boxHead">
+      <span>Call Quality Over Time</span>
+      <span class="pill mono">Trendline included</span>
+    </div>
+    <div class="chartWrap"><canvas id="mainChart"></canvas></div>
+    <div class="notice" style="margin-top:10px">
+      Chart respects Exclude zeros.
+    </div>
+  `;
+  el.mBody.appendChild(chartBox);
+
+  const asc = [...arr].sort((a,b)=> (rowDate(a)?.getTime()||0) - (rowDate(b)?.getTime()||0));
+  const points = [];
+  const labels = [];
+  for(const r of asc){
+    if(excludeZero && r.score===0) continue;
+    labels.push(fmtDateTime(rowDate(r)));
+    points.push(r.score);
+  }
+
+  const trendPts = points.map((y,i)=>({x:i,y})).filter(p=>Number.isFinite(p.y));
+  const fit = linearTrend(trendPts);
+  const trendLine = fit ? points.map((_,i)=> (fit.m*i + fit.b)) : points.map(_=>null);
+
+  const ctx = chartBox.querySelector('#mainChart').getContext('2d');
+  chartMain = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        { label:'Score %', data: points, tension:.25, pointRadius:3, pointHoverRadius:5, borderWidth:2 },
+        { label:'Trend', data: trendLine, tension:0, pointRadius:0, borderWidth:2, borderDash:[6,6] }
+      ]
+    },
+    options:{
+      maintainAspectRatio:false,
+      plugins:{
+        legend:{display:true},
+        tooltip:{
+          callbacks:{ label:(tt)=> Number.isFinite(tt.parsed.y) ? ` ${fmtPct2(tt.parsed.y)}` : ' —' }
+        }
+      },
+      scales:{
+        y:{
+          suggestedMin:0, suggestedMax:1,
+          ticks:{ callback:(v)=> Number.isFinite(v) ? (v*100).toFixed(0)+'%' : v }
+        },
+        x:{ ticks:{ maxRotation:0, autoSkip:true, maxTicksLimit:10 } }
+      }
+    }
+  });
+
+  const tbl = document.createElement('div');
+  tbl.className = 'box';
+  tbl.innerHTML = `
+    <div class="boxHead">
+      <span>All Monitors (Most recent → oldest)</span>
+      <span class="pill mono">Includes Agent Has Read</span>
+    </div>
+    <div class="tblWrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Conversation ID</th>
+            <th>Genesys Evaluation ID</th>
+            <th>${dateBasisLabel}</th>
+            <th>Interaction Duration (H:MM:SS)</th>
+            <th>Evaluator</th>
+            <th>Monitor Type</th>
+            <th>Agent Has Read</th>
+            <th>Score %</th>
+            <th>Week</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sortedDesc.map(r=>`
+            <tr>
+              <td class="mono">${r.conversationId ? String(r.conversationId) : '—'}</td>
+              <td class="mono">${(r.evalId||'—') ? String(r.evalId||'—') : '—'}</td>
+              <td class="mono">${fmtDateTime(rowDate(r))}</td>
+              <td class="mono">${r.durationText || '—'}</td>
+              <td>${r.evaluator ? r.evaluator : '—'}</td>
+              <td>${isCoachEval(r) ? 'Coach' : 'QA'}</td>
+              <td class="mono">${r.agentHasRead===null ? '—' : r.agentHasRead}</td>
+              <td class="mono">${fmtPct2(r.score)}</td>
+              <td class="mono">${rowWeek(r)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+  el.mBody.appendChild(tbl);
+
+  el.overlay.classList.add('show');
+  el.overlay.setAttribute('aria-hidden','false');
+}
+
+function closeModal(){
+  destroyModalChart();
+  el.overlay.classList.remove('show');
+  el.overlay.setAttribute('aria-hidden','true');
+  el.mBody.innerHTML = '';
+}
+
+function openReviewerPopup(){
+  paintReviewerControls();
+  el.reviewerOverlay.classList.add('show');
+  el.reviewerOverlay.setAttribute('aria-hidden','false');
+}
+function closeReviewerPopup(){
+  el.reviewerOverlay.classList.remove('show');
+  el.reviewerOverlay.setAttribute('aria-hidden','true');
+}
+
+function openOptionsPopup(){
+  el.optionsOverlay.classList.add('show');
+  el.optionsOverlay.setAttribute('aria-hidden','false');
+}
+function closeOptionsPopup(){
+  el.optionsOverlay.classList.remove('show');
+  el.optionsOverlay.setAttribute('aria-hidden','true');
+}
+
+function unreviewedRows(rows){
+  return rows.filter(r=>r.unreviewed===1);
+}
+
+function unreviewedRepBreakdown(rows){
+  const byRep = groupBy(unreviewedRows(rows), r=>r.agentKey);
+  return Array.from(byRep.entries())
+    .map(([pk, arr])=>({
+      repKey: pk,
+      repName: arr[0]?.agent || pk || '(Unknown)',
+      total: arr.length,
+      rows: [...arr].sort((a,b)=> (rowDate(b)?.getTime()||0) - (rowDate(a)?.getTime()||0))
+    }))
+    .sort((a,b)=>{
+      if(b.total !== a.total) return b.total - a.total;
+      return a.repName.localeCompare(b.repName);
+    });
+}
+
+function paintUnreadPopup(rowsScoped){
+  const tfLabel = el.tfSel.options[el.tfSel.selectedIndex]?.textContent || 'All';
+  const teamLabel = (el.teamSel.value==='__ALL__') ? 'All teams' : el.teamSel.value;
+  const dateBasisLabel = currentDateMode() === 'assigned' ? 'Assigned Date' : 'Interaction Start Time';
+  const reps = unreviewedRepBreakdown(rowsScoped);
+  const totalUnreviewed = reps.reduce((n,r)=>n+r.total,0);
+
+  el.uSub.textContent = `${teamLabel} • ${tfLabel} • Date shown: ${dateBasisLabel} • Click a rep to show/hide conversations`;
+  el.unreadTotalPill.textContent = `Total: ${fmtInt(totalUnreviewed)} • Reps: ${fmtInt(reps.length)}`;
+
+  if(!reps.length){
+    el.unreadRepList.innerHTML = `<div class="notice">No unreviewed monitors found for the current filters.</div>`;
+    return;
+  }
+
+  el.unreadRepList.innerHTML = reps.map((rep, idx)=>{
+    const open = unreadRepExpanded.has(rep.repKey);
+    return `
+      <div class="unreadRepItem">
+        <button class="unreadRepBtn" type="button" data-unread-rep="${rep.repKey.replace(/"/g,'&quot;')}">
+          <span>${idx+1}. ${rep.repName}</span>
+          <span class="unreadRepMeta">Unreviewed: ${fmtInt(rep.total)} ${open ? '▲' : '▼'}</span>
+        </button>
+        ${open ? `
+          <div class="unreadConvWrap">
+            <ol class="unreadConvList">
+              ${rep.rows.map(r=>`
+                <li>
+                  <span class="mono">Conversation ID: ${r.conversationId ? String(r.conversationId) : '—'}</span>
+                  <span> • ${dateBasisLabel}: <b>${fmtDateTime(rowDate(r))}</b></span>
+                </li>
+              `).join('')}
+            </ol>
+          </div>
+        ` : ``}
+      </div>
+    `;
+  }).join('');
+}
+
+function openUnreadPopup(){
+  const rows = filterRows();
+  paintUnreadPopup(rows);
+  el.unreadOverlay.classList.add('show');
+  el.unreadOverlay.setAttribute('aria-hidden','false');
+}
+
+function closeUnreadPopup(){
+  el.unreadOverlay.classList.remove('show');
+  el.unreadOverlay.setAttribute('aria-hidden','true');
+}
+
+function buildDockKeyOptions(){
+  const keys = findDockKeysBySuffix(".dock.qa");
+  el.qaKeySel.innerHTML = '';
+  if(!keys.length){
+    const o = document.createElement('option');
+    o.value = '';
+    o.textContent = '(no .dock.qa found in localStorage)';
+    el.qaKeySel.appendChild(o);
+    return;
+  }
+  for(const k of keys){
+    const o = document.createElement('option');
+    o.value = k;
+    o.textContent = k;
+    el.qaKeySel.appendChild(o);
+  }
+
+  const saved = loadSettings();
+  if(saved.qaKey && keys.includes(saved.qaKey)) el.qaKeySel.value = saved.qaKey;
+  else el.qaKeySel.value = keys[0];
+}
+
+function buildCoKeyOptions(){
+  const keys = findCoachingKeys();
+  el.coKeySel.innerHTML = '';
+  if(!keys.length){
+    const o = document.createElement('option');
+    o.value = '';
+    o.textContent = '(no coaching dock key found)';
+    el.coKeySel.appendChild(o);
+    return;
+  }
+  for(const k of keys){
+    const o = document.createElement('option');
+    o.value = k;
+    o.textContent = k;
+    el.coKeySel.appendChild(o);
+  }
+  const saved = loadSettings();
+  if(saved.coKey && keys.includes(saved.coKey)) el.coKeySel.value = saved.coKey;
+  else el.coKeySel.value = keys[0];
+}
+
+function loadCoachings(){
+  CO_KEY = el.coKeySel.value || null;
+  saveSettings({ coKey: CO_KEY });
+
+  if(!CO_KEY){
+    coLoaded = false;
+    coRowsAll = [];
+    el.coStatusPill.textContent = 'Coachings: (none found)';
+    return;
+  }
+  const obj = loadDockObjByKey(CO_KEY);
+  const rows = canonicalizeCoachings(obj);
+  coRowsAll = rows;
+
+  coLoaded = rows.length>0;
+  el.coStatusPill.textContent = coLoaded
+    ? `Coachings: ${rows.length} Call Quality coaching(s)`
+    : `Coachings: 0 (key loaded, but no Call Quality rows detected)`;
+}
+
+function loadQA(){
+  QA_KEY = el.qaKeySel.value || null;
+  saveSettings({ qaKey: QA_KEY });
+
+  if(!QA_KEY){
+    qaLoaded = false;
+    qaRowsLocal = [];
+    el.statusPill.textContent = 'QA: Upload needed (no dock key found)';
+    updateQaSourceControls();
+    return;
+  }
+  const obj = loadDockObjByKey(QA_KEY);
+  const rows = canonicalizeQA(obj);
+  qaRowsLocal = rows;
+
+  qaLoaded = rows.length>0;
+  el.statusPill.textContent = qaLoaded
+    ? `Loaded QA: ${rows.length} evaluation(s)`
+    : `QA: Upload needed (dock found but no QA rows detected)`;
+
+  buildTeamOptions(getActiveQaRows());
+
+  const saved = loadSettings();
+  if(saved.team && [...el.teamSel.options].some(o=>o.value===saved.team)) el.teamSel.value = saved.team;
+  if(saved.tf && [...el.tfSel.options].some(o=>o.value===saved.tf)) el.tfSel.value = saved.tf;
+  if(saved.dateMode && [...el.dateModeSel.options].some(o=>o.value===saved.dateMode)) el.dateModeSel.value = saved.dateMode;
+  if(saved.excludeZero !== undefined) el.excludeZero.checked = !!saved.excludeZero;
+  if(saved.search !== undefined) el.searchInp.value = saved.search;
+
+  if(el.tfSel.value === 'custom'){
+    if(saved.from) el.fromInp.value = saved.from;
+    if(saved.to) el.toInp.value = saved.to;
+  }
+
+  recomputeReviewerScope();
+  updateQaSourceControls();
+}
+
+function render(){
+  if(getActiveQaRows().length){
+    recomputeReviewerScope();
+  }
+
+  renderActiveView();
+
+  if(!getActiveQaRows().length){
+    el.empty.style.display = '';
+    el.empty.textContent = qaDataSource === 'uploaded'
+      ? 'Uploaded source selected, but no uploaded QA data is available.'
+      : 'QA: Upload needed. (No QA data detected in localStorage dock.)';
+  } else if(!filterRows().length){
+    el.empty.style.display = '';
+    el.empty.textContent = 'No evaluations match the current filters or active QA reviewer list.';
+  } else {
+    el.empty.style.display = 'none';
+  }
+}
+
+function toggleHeaderCustomRange(){
+  const show = el.tfSel.value === 'custom';
+  el.headerCustomRange.classList.toggle('show', show);
+}
+
+function updateQaSourceControls(){
+  const hasUpload = qaRowsUploaded.length > 0;
+  const uploadedOpt = [...el.qaSourceSel.options].find(o=>o.value==='uploaded');
+  if(uploadedOpt) uploadedOpt.disabled = !hasUpload;
+  if(qaDataSource === 'uploaded' && !hasUpload) qaDataSource = 'local';
+  el.qaSourceSel.value = qaDataSource;
+  el.qaSourcePill.textContent = `Source: ${qaDataSource === 'uploaded' ? 'Uploaded File' : 'Local Cache'}`;
+  el.uploadNote.textContent = hasUpload
+    ? `Uploaded file: ${uploadedQaFilename} (${qaRowsUploaded.length} rows)`
+    : 'Uploaded file: none';
+}
+
+function getWeeklyPeriodOptions(type){
+  const rows = getActiveQaRows().filter(r=>rowDate(r));
+  if(type === 'weekly'){
+    const weeks = Array.from(new Set(rows.map(r=>rowWeek(r)).filter(Boolean))).sort().reverse();
+    return weeks.map(w=>{
+      const { start, end } = weekRangeFromIso(w);
+      const [year, wNo] = w.split('-W');
+      return {
+        value: w,
+        label: `Week ${wNo} (${year}) — ${fmtDateOnly(start)} to ${fmtDateOnly(end)}`,
+        range: { from: start, to: end },
+        summaryLabel: `Week ${wNo} (${year}): ${fmtDateOnly(start)} to ${fmtDateOnly(end)}`
+      };
+    });
+  }
+  if(type === 'monthly'){
+    const months = Array.from(new Set(rows.map(r=>{
+      const d = rowDate(r);
+      return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
+    }))).sort().reverse();
+    return months.map(key=>{
+      const [y,m] = key.split('-').map(Number);
+      const from = new Date(y, m-1, 1, 0, 0, 0, 0);
+      const to = new Date(y, m, 0, 23, 59, 59, 999);
+      return {
+        value: key,
+        label: from.toLocaleString(undefined, { month:'long', year:'numeric' }),
+        range: { from, to },
+        summaryLabel: `${from.toLocaleString(undefined, { month:'long', year:'numeric' })}: ${fmtDateOnly(from)} to ${fmtDateOnly(to)}`
+      };
+    });
+  }
+  if(type === 'quarterly'){
+    const quarters = Array.from(new Set(rows.map(r=>{
+      const d = rowDate(r);
+      const q = Math.floor(d.getMonth()/3) + 1;
+      return `${d.getFullYear()}-Q${q}`;
+    }))).sort().reverse();
+    return quarters.map(key=>{
+      const [yPart, qPart] = key.split('-Q');
+      const range = quarterRange(Number(yPart), Number(qPart));
+      return {
+        value: key,
+        label: `Q${qPart} ${yPart} (${fmtDateOnly(range.start)}–${fmtDateOnly(range.end)})`,
+        range: { from: range.start, to: range.end },
+        summaryLabel: `Q${qPart} ${yPart}: ${fmtDateOnly(range.start)} to ${fmtDateOnly(range.end)}`
+      };
+    });
+  }
+  return [];
+}
+
+function getWeeklyRangeAndLabel(){
+  if(weeklyPeriodType === 'custom'){
+    const from = el.weeklyFromInp.value ? new Date(el.weeklyFromInp.value + "T00:00:00") : null;
+    const to = el.weeklyToInp.value ? new Date(el.weeklyToInp.value + "T23:59:59") : null;
+    const fromTxt = from ? fmtDateOnly(from) : 'Any';
+    const toTxt = to ? fmtDateOnly(to) : 'Any';
+    return { range: { from, to }, summaryLabel: `Custom: ${fromTxt} to ${toTxt}` };
+  }
+  const options = getWeeklyPeriodOptions(weeklyPeriodType);
+  const selected = options.find(o=>o.value===weeklyPeriodValue) || options[0] || null;
+  if(!selected) return { range: { from:null, to:null }, summaryLabel: `${weeklyPeriodType}: no data` };
+  weeklyPeriodValue = selected.value;
+  return { range: selected.range, summaryLabel: selected.summaryLabel };
+}
+
+function syncWeeklyFilterControls(){
+  const showCustom = weeklyPeriodType === 'custom';
+  el.weeklyCustomRange.classList.toggle('show', showCustom);
+
+  const options = getWeeklyPeriodOptions(weeklyPeriodType);
+  el.weeklyPeriodSel.disabled = showCustom;
+  el.weeklyPeriodSel.innerHTML = options.length ? options.map(o=>`<option value="${o.value}">${o.label}</option>`).join('') : `<option value="">No periods available</option>`;
+  const nextValue = options.some(o=>o.value===weeklyPeriodValue) ? weeklyPeriodValue : (options[0]?.value || '');
+  weeklyPeriodValue = nextValue;
+  el.weeklyPeriodSel.value = nextValue;
+}
+
+function getReviewerTrackingRows(){
+  const { range } = getWeeklyRangeAndLabel();
+  const rows = getActiveQaRows().filter(r=>{
+    const ev = String(r.evaluator||'').trim();
+    if(!ev) return false;
+    return inRange(rowDate(r), range);
+  });
+  const byReviewer = groupBy(rows, r=>String(r.evaluator||'').trim());
+  const excludeZero = el.excludeZero.checked;
+  const out = [];
+  for(const [reviewer, arr] of byReviewer.entries()){
+    const sorted = [...arr].sort((a,b)=>(rowDate(b)?.getTime()||0)-(rowDate(a)?.getTime()||0));
+    const scoreRows = excludeZero ? arr.filter(r=>r.score!==0) : arr;
+    const avgSc = avgScore(scoreRows, false).avg;
+    const durRows = excludeZero ? arr.filter(r=>r.score!==0) : arr;
+    const avgDur = avgDuration(durRows, false).avgSec;
+    const dates = arr.map(r=>rowDate(r)).filter(Boolean).sort((a,b)=>a-b);
+    out.push({ reviewer, count: arr.length, avgScore: avgSc, avgDurationSec: avgDur, firstDate: dates[0]||null, lastDate: dates[dates.length-1]||null, rows: sorted });
+  }
+  return out;
+}
+
+function renderWeeklyTrackingView(){
+  syncWeeklyFilterControls();
+  const rows = getReviewerTrackingRows();
+  const reviewerNames = Array.from(new Set(rows.map(r=>r.reviewer))).sort((a,b)=>a.localeCompare(b));
+  const remembered = savedReviewerNames();
+  const validWeeklyValues = new Set(['__ALL__','__INCLUDED__']);
+  if(remembered.length) validWeeklyValues.add('__SAVED__');
+  reviewerNames.forEach(n=>validWeeklyValues.add(n));
+  if(!validWeeklyValues.has(weeklyReviewerValue)) weeklyReviewerValue = '__ALL__';
+  const specialOptions = [
+    `<option value="__ALL__">All reviewers</option>`,
+    `<option value="__INCLUDED__">Included QA reviewer set</option>`,
+    remembered.length ? `<option value="__SAVED__">Saved reviewer set (${remembered.length})</option>` : ''
+  ].join('');
+  el.weeklyReviewerSel.innerHTML = `${specialOptions}${reviewerNames.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('')}`;
+  el.weeklyReviewerSel.value = weeklyReviewerValue;
+  const sorted = [...rows].sort((a,b)=>{
+    if(weeklySortMode === 'name') return a.reviewer.localeCompare(b.reviewer);
+    if(weeklySortMode === 'score') return (b.avgScore||-1)-(a.avgScore||-1);
+    if(weeklySortMode === 'duration') return (b.avgDurationSec||-1)-(a.avgDurationSec||-1);
+    if(b.count !== a.count) return b.count - a.count;
+    return a.reviewer.localeCompare(b.reviewer);
+  });
+  const savedSet = savedReviewerNames();
+  const sortedScoped = weeklyReviewerValue === '__ALL__'
+    ? sorted
+    : (weeklyReviewerValue === '__INCLUDED__'
+        ? sorted.filter(r=>activeQaReviewers.includes(r.reviewer))
+        : (weeklyReviewerValue === '__SAVED__'
+            ? sorted.filter(r=>reviewerNameMatchesSaved(r.reviewer, savedSet))
+            : sorted.filter(r=>r.reviewer===weeklyReviewerValue)));
+  weeklyDetailRows = sortedScoped;
+
+  const { summaryLabel } = getWeeklyRangeAndLabel();
+  const scopedFlatRows = sortedScoped.flatMap(x=>x.rows);
+  const overallScore = avgScore(scopedFlatRows, el.excludeZero.checked).avg;
+  const overallDur = avgDuration(el.excludeZero.checked ? scopedFlatRows.filter(r=>r.score!==0) : scopedFlatRows, false).avgSec;
+  const overallScoreClass = getScoreColorClass(overallScore);
+  const overallDurationClass = getDurationColorClass(overallDur);
+  el.weeklySummaryStats.innerHTML = `
+    <span class="pill mono">${summaryLabel}</span>
+    <span class="pill mono">Reviewers: ${fmtInt(sortedScoped.length)}</span>
+    <span class="pill mono">Monitors: ${fmtInt(sortedScoped.reduce((n,r)=>n+r.count,0))}</span>
+    <span class="pill mono ${overallScoreClass}">Overall avg score: ${fmtPct1(overallScore)}</span>
+    <span class="pill mono ${overallDurationClass}">Overall avg duration: ${formatDurationMinutes(overallDur)}</span>
+  `;
+
+  if(!sortedScoped.length){
+    el.weeklyTbody.innerHTML = '';
+    el.weeklyEmpty.style.display = '';
+    el.weeklyEmpty.textContent = getActiveQaRows().length ? 'No reviewer rows match the selected weekly tracking filters.' : 'No QA data available for this source.';
+    return;
+  }
+  el.weeklyEmpty.style.display = 'none';
+  el.weeklyTbody.innerHTML = sortedScoped.map(r=>{
+    const scoreClass = getScoreColorClass(r.avgScore);
+    const durationClass = getDurationColorClass(r.avgDurationSec);
+    return `
+    <tr data-weekly-reviewer="${r.reviewer.replace(/"/g,'&quot;')}">
+      <td><button class="weeklyRowBtn" type="button">${r.reviewer}</button></td>
+      <td class="mono">${fmtInt(r.count)}</td>
+      <td class="mono"><span class="pill mono ${durationClass}">${formatDurationMinutes(r.avgDurationSec)}</span></td>
+      <td class="mono"><span class="pill mono ${scoreClass}">${fmtPct2(r.avgScore)}</span></td>
+      <td class="mono">${fmtDateTime(r.firstDate)}</td>
+      <td class="mono">${fmtDateTime(r.lastDate)}</td>
+    </tr>
+  `;
+  }).join('');
+}
+
+function openWeeklyReviewerDetails(name){
+  const hit = weeklyDetailRows.find(x=>x.reviewer===name);
+  if(!hit) return;
+  const dateBasisLabel = currentDateMode() === 'assigned' ? 'Assigned Date' : 'Interaction Date';
+  el.wTitle.textContent = `Reviewer — ${name}`;
+  el.wSub.textContent = `Monitors: ${fmtInt(hit.count)} • Avg score: ${fmtPct2(hit.avgScore)} • Avg length: ${fmtHMS(hit.avgDurationSec)}`;
+  el.weeklyBody.innerHTML = `
+    <div class="tblWrap">
+      <table>
+        <thead>
+          <tr>
+            <th>${dateBasisLabel}</th>
+            <th>Conversation ID</th>
+            <th>Representative</th>
+            <th>Score</th>
+            <th>Duration</th>
+            <th>Team / Coach</th>
+            <th>Evaluation ID</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${hit.rows.map(r=>`
+            <tr>
+              <td class="mono">${fmtDateTime(rowDate(r))}</td>
+              <td class="mono">${r.conversationId || '—'}</td>
+              <td>${r.agent || '—'}</td>
+              <td class="mono">${fmtPct2(r.score)}</td>
+              <td class="mono">${fmtHMS(r.durationSec)}</td>
+              <td>${r.team || '—'}</td>
+              <td class="mono">${r.evalId || '—'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+  el.weeklyOverlay.classList.add('show');
+  el.weeklyOverlay.setAttribute('aria-hidden','false');
+}
+
+function closeWeeklyOverlay(){
+  el.weeklyOverlay.classList.remove('show');
+  el.weeklyOverlay.setAttribute('aria-hidden','true');
+  el.weeklyBody.innerHTML = '';
+}
+
+function setActiveTab(tab){
+  activeTab = ['rep','weekly','focus','exportAvg'].includes(tab) ? tab : 'rep';
+  saveSettings({ activeTab });
+  document.querySelectorAll('.viewTab').forEach(btn=>btn.classList.toggle('active', btn.dataset.tab===activeTab));
+  el.repView.classList.toggle('active', activeTab==='rep');
+  el.weeklyView.classList.toggle('active', activeTab==='weekly');
+  el.focusView.classList.toggle('active', activeTab==='focus');
+  el.exportAvgView.classList.toggle('active', activeTab==='exportAvg');
+}
+
+function renderRepView(){
+  const rows = filterRows();
+  paintSummary(rows);
+  paintReviewerControls();
+  paintCards(rows);
+}
+
+function renderActiveView(){
+  setActiveTab(activeTab);
+  if(activeTab === 'weekly') renderWeeklyTrackingView();
+  else if(activeTab === 'focus') renderFocusAreas();
+  else if(activeTab === 'exportAvg') renderExportAverages();
+  else renderRepView();
+}
+
+function setSortMode(mode){
+  sortMode = mode;
+  saveSettings({ sortMode: mode });
+
+  document.querySelectorAll(".sortBtn").forEach(b=>{
+    b.classList.toggle("active", b.dataset.sort === mode);
+  });
+  if(el.sortSel && [...el.sortSel.options].some(o=>o.value===mode)) el.sortSel.value = mode;
+
+  const labelMap = {
+    count: "Most evals",
+    avg: "Avg score (high→low)",
+    zeros: "Most 0s",
+    trend: "Trend (neg→pos)",
+    coachings: "Coachings (low→high)",
+    coachingsWeighted: "Weighted coachings (low→high)",
+    unreviewed: "Most unreviewed"
+  };
+  el.sortPill.textContent = `Sort: ${labelMap[mode] || mode}`;
+  render();
+}
+
+el.loadBtn.addEventListener('click', ()=>{ loadQA(); render(); });
+el.reloadCoBtn.addEventListener('click', ()=>{ loadCoachings(); render(); });
+el.coKeySel.addEventListener('change', ()=>{ loadCoachings(); render(); });
+
+el.tfSel.addEventListener('change', ()=>{
+  saveSettings({ tf: el.tfSel.value });
+  toggleHeaderCustomRange();
+  render();
+});
+el.dateModeSel.addEventListener('change', ()=>{
+  saveSettings({ dateMode: el.dateModeSel.value });
+  render();
+});
+el.teamSel.addEventListener('change', ()=>{ saveSettings({ team: el.teamSel.value }); render(); });
+el.excludeZero.addEventListener('change', ()=>{ saveSettings({ excludeZero: el.excludeZero.checked }); render(); });
+el.searchInp.addEventListener('input', ()=>{ saveSettings({ search: el.searchInp.value }); render(); });
+el.sortSel.addEventListener('change', ()=> setSortMode(el.sortSel.value || 'count'));
+el.fromInp.addEventListener('change', ()=>{ saveSettings({ from: el.fromInp.value }); render(); });
+el.toInp.addEventListener('change', ()=>{ saveSettings({ to: el.toInp.value }); render(); });
+el.refreshBtn.addEventListener('click', render);
+el.qaSourceSel.addEventListener('change', ()=>{
+  qaDataSource = el.qaSourceSel.value === 'uploaded' ? 'uploaded' : 'local';
+  if(qaDataSource === 'uploaded' && !qaRowsUploaded.length) qaDataSource = 'local';
+  saveSettings({ qaDataSource });
+  buildTeamOptions(getActiveQaRows());
+  recomputeReviewerScope();
+  updateQaSourceControls();
+  render();
+});
+el.qaUploadInp.addEventListener('change', async ()=>{
+  const file = el.qaUploadInp.files?.[0];
+  if(!file) return;
+  try{
+    const rows = await parseUploadedQaWorkbook(file);
+    qaRowsUploaded = rows;
+    uploadedQaFilename = file.name;
+    if(rows.length){
+      qaDataSource = 'uploaded';
+      saveSettings({ qaDataSource, uploadedQaFilename });
+      buildTeamOptions(getActiveQaRows());
+      recomputeReviewerScope();
+    }
+    updateQaSourceControls();
+    render();
+  }catch(err){
+    console.error(err);
+    el.uploadNote.textContent = `Upload failed: ${err?.message || err}`;
+  }
+});
+document.querySelectorAll('.viewTab').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    setActiveTab(btn.dataset.tab);
+    render();
+  });
+});
+document.querySelectorAll('.weeklySortBtn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    weeklySortMode = btn.dataset.weeklySort || 'monitors';
+    document.querySelectorAll('.weeklySortBtn').forEach(x=>x.classList.toggle('active', x===btn));
+    saveSettings({ weeklySortMode });
+    render();
+  });
+});
+el.weeklyPeriodType.addEventListener('change', ()=>{
+  weeklyPeriodType = el.weeklyPeriodType.value || 'weekly';
+  saveSettings({ weeklyPeriodType });
+  render();
+});
+el.weeklyPeriodSel.addEventListener('change', ()=>{
+  weeklyPeriodValue = el.weeklyPeriodSel.value || '';
+  saveSettings({ weeklyPeriodValue });
+  render();
+});
+el.weeklyFromInp.addEventListener('change', ()=>{
+  saveSettings({ weeklyFrom: el.weeklyFromInp.value });
+  render();
+});
+el.weeklyToInp.addEventListener('change', ()=>{
+  saveSettings({ weeklyTo: el.weeklyToInp.value });
+  render();
+});
+el.weeklyReviewerSel.addEventListener('change', ()=>{
+  weeklyReviewerValue = el.weeklyReviewerSel.value || '__ALL__';
+  saveSettings({ weeklyReviewerValue });
+  render();
+});
+el.weeklyTbody.addEventListener('click', (e)=>{
+  const tr = e.target.closest('tr[data-weekly-reviewer]');
+  if(!tr) return;
+  const reviewer = tr.getAttribute('data-weekly-reviewer');
+  if(reviewer) openWeeklyReviewerDetails(reviewer);
+});
+el.exportAvgTfSel.addEventListener('change', ()=>{ saveSettings({ exportAvgTf: el.exportAvgTfSel.value }); render(); });
+el.exportAvgFromInp.addEventListener('change', ()=>{ saveSettings({ exportAvgFrom: el.exportAvgFromInp.value }); render(); });
+el.exportAvgToInp.addEventListener('change', ()=>{ saveSettings({ exportAvgTo: el.exportAvgToInp.value }); render(); });
+el.exportAvgDateModeSel.addEventListener('change', ()=>{ saveSettings({ exportAvgDateMode: el.exportAvgDateModeSel.value }); render(); });
+el.exportAvgExcelBtn.addEventListener('click', exportAveragesToExcel);
+document.querySelectorAll('th[data-export-sort]').forEach(th=>{
+  th.addEventListener('click', ()=>{
+    const mode = th.getAttribute('data-export-sort') || 'monitors';
+    if(exportAvgSortMode === mode) exportAvgSortDir = exportAvgSortDir === 'asc' ? 'desc' : 'asc';
+    else{
+      exportAvgSortMode = mode;
+      exportAvgSortDir = mode === 'individual' ? 'asc' : 'desc';
+    }
+    render();
+  });
+});
+el.weeklyClose.addEventListener('click', closeWeeklyOverlay);
+el.weeklyOverlay.addEventListener('click', (e)=>{ if(e.target === el.weeklyOverlay) closeWeeklyOverlay(); });
+el.focusClose.addEventListener('click', closeFocusOverlay);
+el.focusOverlay.addEventListener('click', (e)=>{ if(e.target === el.focusOverlay) closeFocusOverlay(); });
+el.focusTbody.addEventListener('click', (e)=>{
+  const tr = e.target.closest('tr[data-focus-team]');
+  if(!tr) return;
+  openFocusTeamDetails(tr.getAttribute('data-focus-team') || '');
+});
+
+document.querySelectorAll(".sortBtn").forEach(b=>{
+  b.addEventListener("click", ()=> setSortMode(b.dataset.sort));
+});
+
+el.reviewersBtn.addEventListener('click', openReviewerPopup);
+el.reviewerClose.addEventListener('click', closeReviewerPopup);
+el.reviewerOverlay.addEventListener('click', (e)=>{ if(e.target === el.reviewerOverlay) closeReviewerPopup(); });
+
+el.optionsBtn.addEventListener('click', openOptionsPopup);
+el.optionsClose.addEventListener('click', closeOptionsPopup);
+el.optionsOverlay.addEventListener('click', (e)=>{ if(e.target === el.optionsOverlay) closeOptionsPopup(); });
+
+el.summaryTbody.addEventListener('click', (e)=>{
+  const btn = e.target.closest('[data-open-unreviewed]');
+  if(!btn) return;
+  openUnreadPopup();
+});
+
+el.unreadClose.addEventListener('click', closeUnreadPopup);
+el.unreadOverlay.addEventListener('click', (e)=>{ if(e.target === el.unreadOverlay) closeUnreadPopup(); });
+el.unreadRepList.addEventListener('click', (e)=>{
+  const btn = e.target.closest('[data-unread-rep]');
+  if(!btn) return;
+  const repKey = btn.getAttribute('data-unread-rep') || '';
+  if(!repKey) return;
+  if(unreadRepExpanded.has(repKey)) unreadRepExpanded.delete(repKey);
+  else unreadRepExpanded.add(repKey);
+  paintUnreadPopup(filterRows());
+});
+
+el.reviewerList.addEventListener('click', (e)=>{
+  const btn = e.target.closest('[data-remove-reviewer]');
+  if(!btn) return;
+  const name = btn.getAttribute('data-remove-reviewer');
+  activeQaReviewers = activeQaReviewers.filter(x => x !== name);
+  saveSettings({ reviewerFilterMode: 'custom' });
+  persistReviewerState();
+  render();
+});
+
+el.reviewerChecklist.addEventListener('change', (e)=>{
+  const cb = e.target.closest('[data-reviewer-check]');
+  if(!cb) return;
+  const selected = [];
+  el.reviewerChecklist.querySelectorAll('[data-reviewer-check]').forEach(input=>{
+    if(input.checked) selected.push(input.getAttribute('data-reviewer-check'));
+  });
+  activeQaReviewers = canonicalQaReviewers.filter(n => selected.includes(n));
+  saveSettings({ reviewerFilterMode: 'custom' });
+  persistReviewerState();
+  render();
+});
+
+el.saveRememberedReviewersBtn.addEventListener('click', ()=>{
+  saveSettings({
+    rememberedQaReviewerNames: [...activeQaReviewers],
+    reviewerFilterMode: 'remembered'
+  });
+  persistReviewerState();
+  render();
+});
+
+el.loadRememberedReviewersBtn.addEventListener('click', ()=>{
+  saveSettings({ reviewerFilterMode: 'remembered' });
+  render();
+});
+
+el.showAllReviewersBtn.addEventListener('click', ()=>{
+  activeQaReviewers = [...canonicalQaReviewers];
+  saveSettings({ reviewerFilterMode: 'all' });
+  persistReviewerState();
+  render();
+});
+
+el.resetReviewersBtn.addEventListener('click', ()=>{
+  activeQaReviewers = [...canonicalQaReviewers];
+  saveSettings({ reviewerFilterMode: 'all' });
+  persistReviewerState();
+  render();
+});
+
+el.cards.addEventListener('click', (e)=>{
+  const card = e.target.closest('.repCard');
+  if(!card) return;
+  const pk = card.dataset.rep;
+  if(pk) openModal(pk);
+});
+
+el.mClose.addEventListener('click', closeModal);
+el.overlay.addEventListener('click', (e)=>{ if(e.target === el.overlay) closeModal(); });
+
+document.addEventListener('keydown', (e)=>{
+  if(e.key==='Escape' && el.overlay.classList.contains('show')) closeModal();
+  if(e.key==='Escape' && el.reviewerOverlay.classList.contains('show')) closeReviewerPopup();
+  if(e.key==='Escape' && el.optionsOverlay.classList.contains('show')) closeOptionsPopup();
+  if(e.key==='Escape' && el.unreadOverlay.classList.contains('show')) closeUnreadPopup();
+  if(e.key==='Escape' && el.weeklyOverlay.classList.contains('show')) closeWeeklyOverlay();
+  if(e.key==='Escape' && el.focusOverlay.classList.contains('show')) closeFocusOverlay();
+});
+
+(function boot(){
+  buildDockKeyOptions();
+  buildCoKeyOptions();
+
+  const s = loadSettings();
+  if(s.tf && [...el.tfSel.options].some(o=>o.value===s.tf)) el.tfSel.value = s.tf;
+  if(s.dateMode && [...el.dateModeSel.options].some(o=>o.value===s.dateMode)) el.dateModeSel.value = s.dateMode;
+  if(s.from) el.fromInp.value = s.from;
+  if(s.to) el.toInp.value = s.to;
+  if(s.excludeZero !== undefined) el.excludeZero.checked = !!s.excludeZero;
+  if(s.search !== undefined) el.searchInp.value = s.search;
+  if(s.sortMode) sortMode = s.sortMode;
+  if(s.weeklySortMode) weeklySortMode = s.weeklySortMode;
+  weeklyPeriodType = s.weeklyPeriodType || 'weekly';
+  weeklyPeriodValue = s.weeklyPeriodValue || '';
+  weeklyReviewerValue = s.weeklyReviewerValue || '__ALL__';
+  el.weeklyPeriodType.value = weeklyPeriodType;
+  if(s.weeklyFrom) el.weeklyFromInp.value = s.weeklyFrom;
+  if(s.weeklyTo) el.weeklyToInp.value = s.weeklyTo;
+  if(s.exportAvgTf && [...el.exportAvgTfSel.options].some(o=>o.value===s.exportAvgTf)) el.exportAvgTfSel.value = s.exportAvgTf;
+  if(s.exportAvgFrom) el.exportAvgFromInp.value = s.exportAvgFrom;
+  if(s.exportAvgTo) el.exportAvgToInp.value = s.exportAvgTo;
+  if(s.exportAvgDateMode && [...el.exportAvgDateModeSel.options].some(o=>o.value===s.exportAvgDateMode)) el.exportAvgDateModeSel.value = s.exportAvgDateMode;
+  else el.exportAvgDateModeSel.value = el.dateModeSel.value;
+  if(s.activeTab) activeTab = s.activeTab;
+  if(s.qaDataSource) qaDataSource = s.qaDataSource;
+  if(s.uploadedQaFilename) uploadedQaFilename = s.uploadedQaFilename;
+
+  loadQA();
+  loadCoachings();
+  toggleHeaderCustomRange();
+  updateQaSourceControls();
+  document.querySelectorAll('.weeklySortBtn').forEach(btn=>btn.classList.toggle('active', btn.dataset.weeklySort===weeklySortMode));
+  setActiveTab(activeTab);
+  setSortMode(sortMode || "count");
+})();
+</script>
+
+</body>
+</html>

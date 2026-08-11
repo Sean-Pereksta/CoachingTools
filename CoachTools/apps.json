@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "suite": {
+    "name": "CoachTools",
+    "subtitle": "All-Star Coaching Intelligence",
+    "description": "A portable desktop for coaching analytics and reporting.",
+    "version": "1.0",
+    "storageContract": "docs/STORAGE-CONTRACT.md"
+  },
+  "apps": [
+    {
+      "id": "allstar",
+      "name": "All-Star Report",
+      "description": "Build and run organization-wide performance models, research, and reports.",
+      "file": "apps/allstar/allstar.html",
+      "icon": "icons/allstar.png",
+      "initials": "AS",
+      "category": "Core",
+      "keywords": [
+        "all star",
+        "report",
+        "model",
+        "research",
+        "organization",
+        "qualtrics"
+      ],
+      "data": [],
+      "favorite": true,
+      "featured": true,
+      "order": 10,
+      "version": "1.0",
+      "enabled": true
+    },
+    {
+      "id": "weekly-data",
+      "name": "Weekly Data",
+      "description": "Import weekly files, correct coach names, save groups, choose scope, and rebuild shared data.",
+      "file": "apps/weekly-data.html",
+      "icon": "icons/weekly-data.png",
+      "initials": "WD",
+      "category": "Data",
+      "keywords": [
+        "loader",
+        "import",
+        "build",
+        "scope",
+        "teams",
+        "coordinators",
+        "select all"
+      ],
+      "data": [],
+      "favorite": true,
+      "featured": false,
+      "order": 20,
+      "version": "1.0",
+      "enabled": true
+    },
+    {
+      "id": "coaching-gaps",
+      "name": "Coaching Gaps",
+      "description": "Compare documented coaching, performance, QA, and checklist gaps.",
+      "file": "apps/coaching-gaps.html",
+      "icon": "icons/coaching-gaps.png",
+      "initials": "CG",
+      "category": "Coaching",
+      "keywords": [
+        "coach",
+        "performance",
+        "opportunities",
+        "teams",
+        "corrective"
+      ],
+      "data": [
+        "retail",
+        "referral",
+        "qa",
+        "coaching",
+        "checklist"
+      ],
+      "favorite": false,
+      "featured": false,
+      "order": 30,
+      "version": "1.0",
+      "enabled": true
+    },
+    {
+      "id": "coach-timeline",
+      "name": "Coach Timeline",
+      "description": "Follow checklist response speed and documented coaching over time.",
+      "file": "apps/coach-timeline.html",
+      "icon": "icons/coach-timeline.png",
+      "initials": "CT",
+      "category": "Coaching",
+      "keywords": [
+        "timeline",
+        "checklist",
+        "coaching",
+        "speed",
+        "coordinator"
+      ],
+      "data": [
+        "coaching",
+        "checklist"
+      ],
+      "favorite": false,
+      "featured": false,
+      "order": 40,
+      "version": "1.0",
+      "enabled": true
+    },
+    {
+      "id": "kpi-impact",
+      "name": "KPI Impact",
+      "description": "Measure KPI movement and the coaching associated with performance change.",
+      "file": "apps/kpi-impact.html",
+      "icon": "icons/kpi-impact.png",
+      "initials": "KI",
+      "category": "Performance",
+      "keywords": [
+        "kpi",
+        "impact",
+        "retail",
+        "referral",
+        "coaching",
+        "trend"
+      ],
+      "data": [
+        "retail",
+        "referral",
+        "coaching"
+      ],
+      "favorite": false,
+      "featured": false,
+      "order": 50,
+      "version": "1.0",
+      "enabled": true
+    },
+    {
+      "id": "qa-scores",
+      "name": "QA Scores",
+      "description": "Review QA performance, reviewer alignment, and Call Quality coaching.",
+      "file": "apps/qa-scores.html",
+      "icon": "icons/qa-scores.png",
+      "initials": "QA",
+      "category": "Quality",
+      "keywords": [
+        "qa",
+        "quality",
+        "monitor",
+        "reviewer",
+        "coaching"
+      ],
+      "data": [
+        "qa",
+        "coaching"
+      ],
+      "favorite": false,
+      "featured": false,
+      "order": 60,
+      "version": "1.0",
+      "enabled": true
+    },
+    {
+      "id": "audit-checklist",
+      "name": "Audit / Checklist",
+      "description": "Analyze checklist addressing speed alongside documented coaching.",
+      "file": "apps/audit-checklist.html",
+      "icon": "icons/audit-checklist.png",
+      "initials": "AC",
+      "category": "Quality",
+      "keywords": [
+        "audit",
+        "checklist",
+        "correctives",
+        "addressed",
+        "speed"
+      ],
+      "data": [
+        "coaching",
+        "checklist"
+      ],
+      "favorite": false,
+      "featured": false,
+      "order": 70,
+      "version": "1.0",
+      "enabled": true
+    }
+  ]
+}
