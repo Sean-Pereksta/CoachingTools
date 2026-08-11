@@ -56,6 +56,7 @@ Portable imported-data package
 
 Rule-schema additions are normalized on load without changing the IndexedDB version:
 - displayColumn.format defaults to Auto and displayColumn.precision defaults to 1.
+- displayColumn.template defaults to blank. Blank preserves the legacy formatted-value display; {value} templates add optional rule-specific explanatory text.
 - statRule.displayFormat defaults to Auto and statRule.displayPrecision defaults to 1.
 - correctiveContext defaults to disabled, with the former-corrective Follow-Up scan also disabled.
 - displayColumn lookupVersion 2 stores displayMode, lookupMatchEntity, lookupMatchColumn, lookupReturnColumn, lookupDateColumn, lookupCustomValue, lookupSelection, displayCalculation, displayValueType, displayMissingMode, displayMissingText, and ordered displayRules.

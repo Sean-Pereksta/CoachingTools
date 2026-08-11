@@ -69,20 +69,27 @@
     if(format==='currency') return n.toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:config.precision,maximumFractionDigits:config.precision});
     return n.toLocaleString('en-US',{minimumFractionDigits:config.precision,maximumFractionDigits:config.precision});
   }
+  function formatDisplayText(header,value,rawConfig){
+    const formatted=formatDisplayValue(header,value,rawConfig);
+    if(!formatted) return '';
+    const template=String(rawConfig?.template||'').trim();
+    if(!template) return formatted;
+    return /\{value\}/i.test(template)?template.replace(/\{value\}/gi,formatted):`${formatted} ${template}`;
+  }
   function classifyCorrective(raw){
     const input=raw||{}, historyCount=Math.max(0,Number(input.historyCount)||0), recentCount=Math.max(0,Number(input.recentCount)||0);
     const currentPoor=!!input.currentPoor, severity=clamp(input.severity), persistent=!!input.persistent, worsening=!!input.worsening, improving=!!input.improving, repeatNeed=!!input.repeatNeed, hasRecentCoaching=!!input.hasRecentCoaching;
     if(!historyCount) return {level:'none',state:improving?'improving':(currentPoor?'standard':'plain'),tags:improving?['Improving']:(persistent?['Persistent']:[]),scoreBoost:improving?-8:0};
-    if(!currentPoor) return {level:'context',state:improving?'improving':'plain',tags:improving?['Prior Corrective','Improving']:[],scoreBoost:improving?-8:0};
-    if(improving&&severity<.75) return {level:'context',state:'improving',tags:['Prior Corrective','Improving'],scoreBoost:-8};
+    if(!currentPoor) return {level:'context',state:improving?'improving':'plain',tags:improving?['Prior Corrective — Improving']:[],scoreBoost:improving?-8:0};
+    if(improving&&severity<.75) return {level:'context',state:'improving',tags:['Prior Corrective — Improving'],scoreBoost:-8};
     const critical=(recentCount>0&&(severity>=.62||persistent||worsening))||(historyCount>1&&severity>=.82)||(persistent&&severity>=.78);
     if(critical){
-      const tags=[historyCount>1?'Repeat Corrective':'Corrective'];
+      const tags=[historyCount>1?'Repeat Corrective History + Current Need':recentCount>0?'Recent Corrective + Current Need':'Corrective History + Current Need'];
       if(persistent) tags.push(hasRecentCoaching?'Coaching Not Sticking':'Persistent');
       else if(worsening) tags.push('Worsening');
       return {level:'critical',state:'critical',tags:tags.slice(0,2),scoreBoost:15};
     }
-    const tags=['Prior Corrective'];
+    const tags=[recentCount>0?'Recent Corrective + Current Need':'Corrective History + Current Need'];
     if(worsening) tags.push('Worsening');
     else if(repeatNeed||persistent) tags.push('Repeat Need');
     else if(!hasRecentCoaching) tags.push('No Recent Coaching');
@@ -126,5 +133,5 @@
     if(worsening-improving>=.2) return 'Declining';
     return 'Stable';
   }
-  return {normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel};
+  return {normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,formatDisplayText,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel};
 });
