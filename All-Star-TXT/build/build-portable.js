@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 
 const root=path.resolve(__dirname,'..');
-function sourcePath(relative){ const direct=path.join(root,relative); return fs.existsSync(direct)?direct:(fs.existsSync(direct+'.txt')?direct+'.txt':direct); }
+function sourcePath(relative){ return path.join(root,relative); }
 const htmlPath=sourcePath('allstar.html');
 const generatorPath=sourcePath(path.join('qualtrics','generator.html'));
 const testsPath=sourcePath(path.join('tests','regression-tests.js'));

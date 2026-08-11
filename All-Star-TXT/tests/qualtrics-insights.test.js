@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const assert=require('node:assert/strict');
-const insights=require('../qualtrics/insights.js.txt');
+const insights=require('../qualtrics/insights.js');
 
 assert.equal(insights.formatDisplayValue('Cash Scheduled %',0.436,{format:'auto',precision:1}),'43.6%');
 assert.equal(insights.formatDisplayValue('Conversion Rate','43.6%',{format:'auto',precision:1}),'43.6%');
