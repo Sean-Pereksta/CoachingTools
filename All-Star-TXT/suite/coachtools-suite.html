@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CoachTools Command Center</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#050814;color:#f7f9ff}
+body{display:grid;place-items:center;background:radial-gradient(circle at 50% 20%,#1a275c 0,#0b1230 25%,#050814 65%);overflow:hidden}
+body:before{content:"";position:fixed;inset:0;background-image:radial-gradient(circle,#fff 0 1px,transparent 1.2px);background-size:83px 83px;opacity:.22}
+.card{position:relative;width:min(620px,calc(100vw - 30px));padding:30px;border:1px solid rgba(165,183,255,.2);border-radius:24px;background:rgba(13,19,43,.88);box-shadow:0 30px 90px rgba(0,0,0,.45);text-align:center}
+.orb{width:62px;height:62px;margin:0 auto 18px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff,#7de8ff 9%,#6174ff 42%,#33226e 70%);box-shadow:0 0 34px rgba(106,132,255,.55)}
+h1{font-size:26px;margin:0}p{color:#aab5d6;font-size:13px;line-height:1.5}.bar{height:8px;background:#171f42;border-radius:99px;overflow:hidden;margin-top:20px}.fill{height:100%;width:14%;background:linear-gradient(90deg,#7de8ff,#bca7ff);animation:pulse 1.5s ease-in-out infinite alternate}.small{font-size:11px;color:#7f8caf;margin-top:10px}@keyframes pulse{to{width:82%}}
+.err{color:#ffc2cf;white-space:pre-wrap;text-align:left;background:rgba(255,120,145,.08);padding:12px;border-radius:12px;display:none;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="card"><div class="orb"></div><h1>CoachTools Command Center</h1><p>Assembling the celestial suite and its shared coaching data workspace…</p><div class="bar"><div class="fill"></div></div><div class="small">Portable payload · 1.09 MB · 22 compact chunks</div><div class="err" id="err"></div></div>
+<script>window.__COACHTOOLS_PAYLOAD__=[];</script>
+<script src="payload/chunk-001.js"></script>
+<script src="payload/chunk-002.js"></script>
+<script src="payload/chunk-003.js"></script>
+<script src="payload/chunk-004.js"></script>
+<script src="payload/chunk-005.js"></script>
+<script src="payload/chunk-006.js"></script>
+<script src="payload/chunk-007.js"></script>
+<script src="payload/chunk-008.js"></script>
+<script src="payload/chunk-009.js"></script>
+<script src="payload/chunk-010.js"></script>
+<script src="payload/chunk-011.js"></script>
+<script src="payload/chunk-012.js"></script>
+<script src="payload/chunk-013.js"></script>
+<script src="payload/chunk-014.js"></script>
+<script src="payload/chunk-015.js"></script>
+<script src="payload/chunk-016.js"></script>
+<script src="payload/chunk-017.js"></script>
+<script src="payload/chunk-018.js"></script>
+<script src="payload/chunk-019.js"></script>
+<script src="payload/chunk-020.js"></script>
+<script src="payload/chunk-021.js"></script>
+<script src="payload/chunk-022.js"></script>
+<script>
+(async()=>{
+  try{
+    const b64=window.__COACHTOOLS_PAYLOAD__.join('');
+    if(b64.length!==338428)throw new Error('Suite payload is incomplete. Expected 338428 characters, found '+b64.length+'.');
+    const bin=atob(b64),bytes=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+    let html='';
+    if('DecompressionStream' in window){
+      const ds=new DecompressionStream('gzip');
+      html=await new Response(new Blob([bytes]).stream().pipeThrough(ds)).text();
+    }else{
+      await new Promise((resolve,reject)=>{
+        const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js';s.onload=resolve;s.onerror=()=>reject(new Error('This browser needs the pako fallback, but the CDN could not load it.'));document.head.appendChild(s);
+      });
+      html=new TextDecoder().decode(window.pako.ungzip(bytes));
+    }
+    document.open();document.write(html);document.close();
+  }catch(err){
+    const el=document.getElementById('err');el.style.display='block';el.textContent='Could not open CoachTools Suite:\n'+String(err?.message||err);
+  }
+})();
+</script>
+</body>
+</html>
