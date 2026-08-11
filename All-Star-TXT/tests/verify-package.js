@@ -3,7 +3,7 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const root=path.resolve(__dirname,'..');
-const sourcePath=p=>{ const direct=path.join(root,p); return fs.existsSync(direct)?direct:(fs.existsSync(direct+'.txt')?direct+'.txt':direct); };
+const sourcePath=p=>path.join(root,p);
 const read=p=>fs.readFileSync(sourcePath(p),'utf8');
 const files=['allstar.html','css/allstar.css','js/core.js','js/persistence.js','js/models.js','js/imports.js','js/calculations.js','js/research.js','js/organizations.js','js/workflow.js','js/list-tester.js','js/reports.js','js/qualtrics-bridge.js','js/app.js','qualtrics/generator.html','qualtrics/insights.js','qualtrics/generator-source.js','tests/regression-tests.js','tests/qualtrics-insights.test.js','build/build-portable.js','dist/All-Star-Portable.html','README.txt','PERSISTENCE-CONTRACTS.txt','REFACTOR-MANIFEST.json','SIZE-REPORT.txt','VALIDATION.txt'];
 let failed=false;
