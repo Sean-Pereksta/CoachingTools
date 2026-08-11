@@ -39,7 +39,8 @@ function validSourceKey(source, fallback='retail_sv2'){
   return allSourceKeys().includes(source) ? source : fallback;
 }
 function normalizeCriterionForStorage(c){
-  c = {...(c||{})};
+  const original=c||{}, hadLookupSettings=Number(original.lookupVersion)>=2||!!plainHeaderName(original.lookupMatchColumn)||original.audience==='coach';
+  c = {...original};
   c.id=c.id||id();
   c.name=String(c.name||'New Criteria').trim();
   c.source=validSourceKey(c.source,'retail_sv2');
@@ -49,7 +50,7 @@ function normalizeCriterionForStorage(c){
   c.leftSource=validSourceKey(c.leftSource,c.source);
   c.rightSource=validSourceKey(c.rightSource,c.source);
   c.customSource=validSourceKey(c.customSource,c.source);
-  c.audience=['both','team','rep'].includes(c.audience)?c.audience:'both';
+  c.audience=['both','team','rep','coach'].includes(c.audience)?c.audience:'both';
   c.scoreType=['rank','points','display'].includes(c.scoreType)?c.scoreType:'rank';
   c.direction=['higher','lower'].includes(c.direction)?c.direction:'higher';
   c.weight=String(c.weight||'1')==='autofail'?'autofail':String(Number(c.weight)||1);
@@ -62,8 +63,19 @@ function normalizeCriterionForStorage(c){
     c.scoreType='display';
     c.trueValueEnabled=false;
     if(c.audience==='both') c.audience='rep';
-    if(c.audience==='team' && !TEAM_TOTAL_SOURCE_KEYS.includes(c.source)) c.source='retail_team_totals';
-    if(c.audience==='rep' && TEAM_TOTAL_SOURCE_KEYS.includes(c.source)) c.source='retail_sv2';
+    c.lookupVersion=hadLookupSettings||Number(c.lookupVersion)>=2?2:1;
+    c.displayMode=['lookup','calculated'].includes(c.displayMode)?c.displayMode:'lookup';
+    c.lookupMatchEntity=['representative','coach','team','custom'].includes(c.lookupMatchEntity)?c.lookupMatchEntity:(c.audience==='rep'?'representative':c.audience==='coach'?'coach':'team');
+    c.lookupMatchColumn=plainHeaderName(c.lookupMatchColumn||'');
+    c.lookupReturnColumn=plainHeaderName(c.lookupReturnColumn||c.column||'');
+    c.lookupDateColumn=plainHeaderName(c.lookupDateColumn||'');
+    c.lookupCustomValue=String(c.lookupCustomValue||'').trim();
+    c.lookupSelection=['latest','earliest','first','last','mostCommon','highest','lowest','joinUnique'].includes(c.lookupSelection)?c.lookupSelection:'latest';
+    c.displayCalculation=['raw','count','daysSince','monthsSince','yearsSince'].includes(c.displayCalculation)?c.displayCalculation:'raw';
+    c.displayValueType=['auto','number','percent','date','text'].includes(c.displayValueType)?c.displayValueType:'auto';
+    c.displayMissingMode=['blank','na','notFound','zero','custom'].includes(c.displayMissingMode)?c.displayMissingMode:'blank';
+    c.displayMissingText=String(c.displayMissingText||'').trim();
+    c.displayRules=(Array.isArray(c.displayRules)?c.displayRules:[]).map(rule=>normalizeDisplayRule(rule));
   }
   c.aggregate=['sum','avg','count','latest','first','max','min','uniqueWeeks','uniqueReps','percent','avgWeeklyPercent','weightedPercent','dateWithin','dateWithinPercent','valueWithin','valueWithinPercent'].includes(c.aggregate)?c.aggregate:'sum';
   c.operator=['divide','multiply','plus','minus','greaterThan','lessThan'].includes(c.operator)?c.operator:'divide';
@@ -92,6 +104,10 @@ function normalizeCriterionForStorage(c){
   ensureRowPullConditions(c);
   c.filters=(c.filters||[]).map(f=>normalizeFilterForStorage(f,c.source));
   return c;
+}
+function normalizeDisplayRule(rule){
+  rule={...(rule||{})};
+  return {id:rule.id||id(),op:['greater','greaterEqual','less','lessEqual','between','equals','contains','blank','notBlank','dateWithin','dateOlder'].includes(rule.op)?rule.op:'equals',value:String(rule.value??'').trim(),value2:String(rule.value2??'').trim(),display:String(rule.display??'').trim(),color:['none','red','yellow','green','blue','gray'].includes(rule.color)?rule.color:'none',style:rule.style==='badge'?'badge':'cell'};
 }
 function normalizeFilterForStorage(f, fallbackSource){
   f={...(f||{})};
@@ -669,7 +685,7 @@ function defaultQAModel(){
   return normalizeModelForStorage({id:id(),name:'QA Score',type:'both',tiebreaker:'overallScore',criteria:[{id:id(),name:'QA Score %',source:'qa',calcType:'qaScore',audience:'both',scoreType:'rank',direction:'higher',weight:'1',format:'pct',missingRank:999,missingPoints:0,zeroCanWin:false,minimumMonitors:0,filters:[],minimumEnabled:false,minimum:0,autofailThreshold:1,autofailOperator:'greaterEqual'}]});
 }
 function emptyCriterion(){
-  return {id:id(),name:'New Criteria',source:'retail_sv2',calcType:'single',audience:'both',scoreType:'rank',direction:'higher',weight:'1',format:'number',missingRank:999,missingPoints:0,zeroCanWin:false,minimumMonitors:0,column:'',aggregate:'sum',withinCompareColumn:'',withinUseRange:false,withinDays:'',withinRangeMin:'',withinRangeMax:'',leftSource:'retail_sv2',leftColumn:'',operator:'divide',rightSource:'retail_sv2',rightColumn:'',customSource:'retail_sv2',expression:'',checkDateColumn:'',checkColumn:'',checkOperator:'contains',checkValueType:'text',checkText:'',filters:[],minimumEnabled:false,minimum:0,points:1,autofailThreshold:1,autofailOperator:'greaterEqual',trueValueEnabled:false,trueValueSource:'',trueValueColumn:''};
+  return {id:id(),name:'New Criteria',source:'retail_sv2',calcType:'single',audience:'both',scoreType:'rank',direction:'higher',weight:'1',format:'number',missingRank:999,missingPoints:0,zeroCanWin:false,minimumMonitors:0,column:'',aggregate:'sum',withinCompareColumn:'',withinUseRange:false,withinDays:'',withinRangeMin:'',withinRangeMax:'',leftSource:'retail_sv2',leftColumn:'',operator:'divide',rightSource:'retail_sv2',rightColumn:'',customSource:'retail_sv2',expression:'',checkDateColumn:'',checkColumn:'',checkOperator:'contains',checkValueType:'text',checkText:'',filters:[],minimumEnabled:false,minimum:0,points:1,autofailThreshold:1,autofailOperator:'greaterEqual',trueValueEnabled:false,trueValueSource:'',trueValueColumn:'',lookupVersion:2,displayMode:'lookup',lookupMatchEntity:'representative',lookupMatchColumn:'',lookupReturnColumn:'',lookupDateColumn:'',lookupCustomValue:'',lookupSelection:'latest',displayCalculation:'raw',displayValueType:'auto',displayMissingMode:'blank',displayMissingText:'',displayRules:[]};
 }
 function getHeaders(source){
   if(source===NONDATED_SOURCE) return state.categorized.nondated.headers || ['Representative','Coach'];
@@ -945,7 +961,8 @@ function finalizeResearchSourceIndex(idx,source){
 function researchSourceIndexSignature(source){
   const rows=getRowsRaw(source)||[], headers=getHeaders(source)||[], cs=isCustomSource(source)?customSource(source):null;
   const fileName=cs?.fileName || (source.startsWith('retail')?state.data.retail.fileName:source.startsWith('referral')?state.data.referral.fileName:(state.data[source]?.fileName||''));
-  return [RESEARCH_SOURCE_INDEX_SCHEMA_VERSION,source,rows.length,headers.join('\u001f'),fileName,state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0].join('\u001e');
+  const sourceVersion=state.sourceMeta?.[source]?.sourceVersion||state.versions?.data||0;
+  return [RESEARCH_SOURCE_INDEX_SCHEMA_VERSION,source,sourceVersion,rows.length,headers.join('\u001f'),fileName,state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0].join('\u001e');
 }
 async function ensureResearchSourceIndex(source,opts={}){
   if(!source || isDynamicResearchSource(source)) return null;
@@ -1063,8 +1080,7 @@ function sourceOptions(selected){
   return allSourceKeys().map(v=>`<option value="${v}" ${v===selected?'selected':''}>${labelSource(v)}</option>`).join('');
 }
 function displayColumnSourceOptions(c){
-  const sources=c?.audience==='team' ? TEAM_TOTAL_SOURCE_KEYS : allSourceKeys().filter(v=>!TEAM_TOTAL_SOURCE_KEYS.includes(v));
-  return sources.map(v=>`<option value="${v}" ${v===c?.source?'selected':''}>${labelSource(v)}</option>`).join('');
+  return allSourceKeys().map(v=>`<option value="${v}" ${v===c?.source?'selected':''}>${labelSource(v)}</option>`).join('');
 }
 function labelSource(v){return customSource(v)?.name || SOURCE_LABELS[v]||v;}
 function headerOptions(source, selected, blank=true){
@@ -1391,7 +1407,14 @@ function requiredColumnsForModel(model){
   const req=new Map();
   const used=new Set(sourcesUsedByModel(model));
   (model.criteria||[]).forEach(c=>{
-    if(c.calcType==='single' || c.calcType==='displayColumn'){ addRequired(req,c.source,`${c.name} column`,c.column); if(c.calcType==='single' && ['dateWithin','dateWithinPercent','valueWithin','valueWithinPercent'].includes(c.aggregate)) addRequired(req,c.source,`${c.name} compare column`,c.withinCompareColumn); }
+    if(c.calcType==='single' || c.calcType==='displayColumn'){
+      if(c.calcType==='displayColumn'){
+        addRequired(req,c.source,`${c.name} match column`,c.lookupMatchColumn);
+        if(c.displayCalculation!=='count') addRequired(req,c.source,`${c.name} return column`,c.lookupReturnColumn||c.column);
+        if(['latest','earliest'].includes(c.lookupSelection)) addRequired(req,c.source,`${c.name} record date column`,c.lookupDateColumn);
+      }else addRequired(req,c.source,`${c.name} column`,c.column);
+      if(c.calcType==='single' && ['dateWithin','dateWithinPercent','valueWithin','valueWithinPercent'].includes(c.aggregate)) addRequired(req,c.source,`${c.name} compare column`,c.withinCompareColumn);
+    }
     if(c.calcType==='multi'){
       addRequired(req,c.leftSource,`${c.name} left column`,c.leftColumn);
       addRequired(req,c.rightSource,`${c.name} right column`,c.rightColumn);
@@ -1488,18 +1511,18 @@ function headerMatch(headers, expected){
 function sourceHasImportedData(source){
   if(source===NONDATED_SOURCE) return !!(state.categorized.nondated.rows||[]).length;
   if(source===DATED_SOURCE) return !!(state.categorized.dated.rows||[]).length;
-  if(source==='retail_sv2') return !!(state.data.retail.sv2Aoa&&state.data.retail.sv2Aoa.length);
-  if(source==='retail_wiper') return !!(state.data.retail.wiperAoa&&state.data.retail.wiperAoa.length);
+  if(source==='retail_sv2') return !!((state.data.retail.sv2||[]).length||(state.data.retail.sv2Aoa||[]).length);
+  if(source==='retail_wiper') return !!((state.data.retail.wiper||[]).length||(state.data.retail.wiperAoa||[]).length);
   if(source==='retail_team_totals') return !!(state.data.retail.teamTotals?.rows||[]).length;
-  if(source==='referral_sv2') return !!(state.data.referral.sv2Aoa&&state.data.referral.sv2Aoa.length);
-  if(source==='referral_wiper') return !!(state.data.referral.wiperAoa&&state.data.referral.wiperAoa.length);
+  if(source==='referral_sv2') return !!((state.data.referral.sv2||[]).length||(state.data.referral.sv2Aoa||[]).length);
+  if(source==='referral_wiper') return !!((state.data.referral.wiper||[]).length||(state.data.referral.wiperAoa||[]).length);
   if(source==='referral_team_totals') return !!(state.data.referral.teamTotals?.rows||[]).length;
-  if(source==='qa') return !!(state.data.qa.aoa&&state.data.qa.aoa.length);
-  if(source===QA_DIRECT_SOURCE) return !!(state.data.qa_direct?.aoa&&state.data.qa_direct.aoa.length);
-  if(source==='checklist') return !!(state.data.checklist.aoa&&state.data.checklist.aoa.length);
-  if(source==='documented_coaching') return !!(state.data.documented_coaching.aoa&&state.data.documented_coaching.aoa.length);
-  if(source==='comp_calls') return !!(state.data.comp_calls.aoa&&state.data.comp_calls.aoa.length);
-  if(isCustomSource(source)) return !!(customSource(source)?.aoa?.length || customSource(source)?.rows?.length);
+  if(source==='qa') return !!((state.data.qa.rows||[]).length||(state.data.qa.aoa||[]).length);
+  if(source===QA_DIRECT_SOURCE) return !!((state.data.qa_direct?.rows||[]).length||(state.data.qa_direct?.aoa||[]).length);
+  if(source==='checklist') return !!((state.data.checklist.rows||[]).length||(state.data.checklist.aoa||[]).length);
+  if(source==='documented_coaching') return !!((state.data.documented_coaching.rows||[]).length||(state.data.documented_coaching.aoa||[]).length);
+  if(source==='comp_calls') return !!((state.data.comp_calls.rows||[]).length||(state.data.comp_calls.aoa||[]).length);
+  if(isCustomSource(source)) return !!((customSource(source)?.rows||[]).length||(customSource(source)?.aoa||[]).length);
   return false;
 }
 function headerWords(s){
@@ -1583,8 +1606,10 @@ function alignDisplayColumnCriterion(c){
   if(!c || c.calcType!=='displayColumn') return;
   c.scoreType='display'; c.trueValueEnabled=false; c.weight='1';
   if(c.audience==='both') c.audience='rep';
-  if(c.audience==='team' && !TEAM_TOTAL_SOURCE_KEYS.includes(c.source)){ c.column=''; setCriterionPrimarySource(c,'retail_team_totals'); }
-  if(c.audience==='rep' && TEAM_TOTAL_SOURCE_KEYS.includes(c.source)){ c.column=''; setCriterionPrimarySource(c,'retail_sv2'); }
+  c.lookupVersion=2;
+  if(!['representative','coach','team','custom'].includes(c.lookupMatchEntity)) c.lookupMatchEntity=c.audience==='rep'?'representative':c.audience==='coach'?'coach':'team';
+  if(!c.lookupReturnColumn && c.column) c.lookupReturnColumn=c.column;
+  c.displayRules=Array.isArray(c.displayRules)?c.displayRules:[];
 }
 function runModelColumnCheck(){
   syncEditModelFields();
@@ -1607,6 +1632,12 @@ function runModelColumnCheck(){
   if(els.columnCheckResults) els.columnCheckResults.innerHTML=html.join('');
   renderTeamSelect();
 }
+function displayRuleHtml(rule,index){
+  rule=normalizeDisplayRule(rule);
+  const op=[['greater','Greater than'],['greaterEqual','Greater/equal'],['less','Less than'],['lessEqual','Less/equal'],['between','Between'],['equals','Equals'],['contains','Contains'],['blank','Blank'],['notBlank','Not blank'],['dateWithin','Date within X days'],['dateOlder','Date older than X days']].map(([v,l])=>`<option value="${v}" ${rule.op===v?'selected':''}>${l}</option>`).join('');
+  const colors=['none','red','yellow','green','blue','gray'].map(v=>`<option value="${v}" ${rule.color===v?'selected':''}>${v==='none'?'No color':v[0].toUpperCase()+v.slice(1)}</option>`).join('');
+  return `<div class="displayRuleRow" data-display-rule="${esc(rule.id)}"><div class="field"><label>Condition</label><select data-drule="op">${op}</select></div><div class="field"><label>Value / days</label><input data-drule="value" value="${esc(rule.value)}" placeholder="30"></div><div class="field"><label>High value</label><input data-drule="value2" value="${esc(rule.value2)}" placeholder="60"></div><div class="field"><label>Display label</label><input data-drule="display" value="${esc(rule.display)}" placeholder="NEW HIRE"></div><div class="field"><label>Color</label><select data-drule="color">${colors}</select></div><div class="field"><label>Style</label><select data-drule="style"><option value="cell" ${rule.style==='cell'?'selected':''}>Cell highlight</option><option value="badge" ${rule.style==='badge'?'selected':''}>Badge</option></select></div><button class="smallBtn red" type="button" data-remove-display-rule="${index}">Remove</button></div>`;
+}
 function criterionHtml(c,i){
   const src=c.source||'retail_sv2';
   const isDisplayColumn=c.calcType==='displayColumn';
@@ -1620,7 +1651,7 @@ function criterionHtml(c,i){
     <div class="grid5">
       <div class="field"><label>Name</label><input data-cfield="name" value="${esc(c.name)}"></div>
       <div class="field"><label>Source</label><select data-cfield="source">${isDisplayColumn?displayColumnSourceOptions(c):sourceOptions(src)}</select></div>
-      <div class="field"><label>Applies To</label><select data-cfield="audience">${isDisplayColumn?'':`<option value="both" ${c.audience==='both'?'selected':''}>Both</option>`}<option value="team" ${c.audience==='team'?'selected':''}>Teams</option><option value="rep" ${c.audience==='rep'?'selected':''}>Representatives</option></select></div>
+      <div class="field"><label>${isDisplayColumn?'Display On':'Applies To'}</label><select data-cfield="audience">${isDisplayColumn?'':`<option value="both" ${c.audience==='both'?'selected':''}>Both</option>`}<option value="rep" ${c.audience==='rep'?'selected':''}>Representatives</option><option value="team" ${c.audience==='team'?'selected':''}>Teams</option>${isDisplayColumn?`<option value="coach" ${c.audience==='coach'?'selected':''}>Coaches</option>`:''}</select></div>
       <div class="field"><label>Type</label><select data-cfield="scoreType" ${isDisplayColumn?'disabled':''}><option value="rank" ${c.scoreType==='rank'?'selected':''}>Rank Item</option><option value="points" ${c.scoreType==='points'?'selected':''}>Points Item</option><option value="display" ${c.scoreType==='display'?'selected':''}>Display Only</option></select></div>
       <div class="field ${isDisplayColumn?'hidden':''}"><label>Weight</label><select data-cfield="weight">${weightOptions}</select></div>
     </div>
@@ -1669,7 +1700,20 @@ function criterionHtml(c,i){
       <div class="field ${c.withinUseRange?'':'hidden'}"><label>Range low ${String(c.aggregate).startsWith('date')?'days':''}</label><input data-cfield="withinRangeMin" type="number" step="any" value="${esc(c.withinRangeMin??'')}" placeholder="3"></div>
       <div class="field ${c.withinUseRange?'':'hidden'}"><label>Range high ${String(c.aggregate).startsWith('date')?'days':''}</label><input data-cfield="withinRangeMax" type="number" step="any" value="${esc(c.withinRangeMax??'')}" placeholder="5"></div>
     </div></div>
-    <div class="${isDisplayColumn?'':'hidden'}" data-block="displayColumn"><div class="panel"><div class="panelTitle">Display a saved cell value</div><div class="grid2"><div class="field"><label>Display Column</label><select data-cfield="column">${headerOptions(src,c.column)}</select></div><div class="hint">${c.audience==='team'?'Coach/team display columns must come directly from Retail Team Totals or Referral Team Totals.':'The most recent nonblank value matched to each representative is shown exactly as saved, including dates and text. It does not affect rank or score.'}</div></div></div></div>
+    <div class="${isDisplayColumn?'':'hidden'}" data-block="displayColumn"><div class="panel"><div class="panelTitle">Lookup / Display Column</div><div class="hint">Choose exactly where the entity is stored. Coach values display on the coach's Team row, but the coach is looked up as a person in the selected source and match column. Display fields never affect rank or points.</div><div class="grid4">
+      <div class="field"><label>Match Entity</label><select data-cfield="lookupMatchEntity"><option value="representative" ${c.lookupMatchEntity==='representative'?'selected':''}>Representative</option><option value="coach" ${c.lookupMatchEntity==='coach'?'selected':''}>Coach</option><option value="team" ${c.lookupMatchEntity==='team'?'selected':''}>Team</option><option value="custom" ${c.lookupMatchEntity==='custom'?'selected':''}>Custom value</option></select></div>
+      <div class="field"><label>${c.audience==='coach'?'Coach Name Expected In':'Match Against Column'}</label><select data-cfield="lookupMatchColumn">${headerOptions(src,c.lookupMatchColumn)}</select></div>
+      <div class="field"><label>Return Column</label><select data-cfield="lookupReturnColumn">${headerOptions(src,c.lookupReturnColumn||c.column)}</select></div>
+      <div class="field"><label>Record Selection</label><select data-cfield="lookupSelection"><option value="latest" ${c.lookupSelection==='latest'?'selected':''}>Latest nonblank</option><option value="earliest" ${c.lookupSelection==='earliest'?'selected':''}>Earliest nonblank</option><option value="first" ${c.lookupSelection==='first'?'selected':''}>First found</option><option value="last" ${c.lookupSelection==='last'?'selected':''}>Last found</option><option value="mostCommon" ${c.lookupSelection==='mostCommon'?'selected':''}>Most common value</option><option value="highest" ${c.lookupSelection==='highest'?'selected':''}>Highest</option><option value="lowest" ${c.lookupSelection==='lowest'?'selected':''}>Lowest</option><option value="joinUnique" ${c.lookupSelection==='joinUnique'?'selected':''}>Join unique values</option></select></div>
+      <div class="field ${c.lookupMatchEntity==='custom'?'':'hidden'}"><label>Custom Match Value</label><input data-cfield="lookupCustomValue" value="${esc(c.lookupCustomValue||'')}"></div>
+      <div class="field ${['latest','earliest'].includes(c.lookupSelection)?'':'hidden'}"><label>Record Date Column</label><select data-cfield="lookupDateColumn">${headerOptions(src,c.lookupDateColumn)}</select><span class="hint">If dates are blank, source order is used safely.</span></div>
+    </div><div class="grid4">
+      <div class="field"><label>Display Mode</label><select data-cfield="displayMode"><option value="lookup" ${c.displayMode!=='calculated'?'selected':''}>Lookup value</option><option value="calculated" ${c.displayMode==='calculated'?'selected':''}>Calculated display</option></select></div>
+      <div class="field"><label>Calculation</label><select data-cfield="displayCalculation"><option value="raw" ${c.displayCalculation==='raw'?'selected':''}>Return selected value</option><option value="count" ${c.displayCalculation==='count'?'selected':''}>Count matching records</option><option value="daysSince" ${c.displayCalculation==='daysSince'?'selected':''}>Days since date</option><option value="monthsSince" ${c.displayCalculation==='monthsSince'?'selected':''}>Months since date</option><option value="yearsSince" ${c.displayCalculation==='yearsSince'?'selected':''}>Years since date</option></select></div>
+      <div class="field"><label>Value Type</label><select data-cfield="displayValueType"><option value="auto" ${c.displayValueType==='auto'?'selected':''}>Automatic</option><option value="number" ${c.displayValueType==='number'?'selected':''}>Number</option><option value="percent" ${c.displayValueType==='percent'?'selected':''}>Percent</option><option value="date" ${c.displayValueType==='date'?'selected':''}>Date</option><option value="text" ${c.displayValueType==='text'?'selected':''}>Text</option></select></div>
+      <div class="field"><label>Missing Value</label><select data-cfield="displayMissingMode"><option value="blank" ${c.displayMissingMode==='blank'?'selected':''}>Blank</option><option value="na" ${c.displayMissingMode==='na'?'selected':''}>N/A</option><option value="notFound" ${c.displayMissingMode==='notFound'?'selected':''}>Not Found</option><option value="zero" ${c.displayMissingMode==='zero'?'selected':''}>0</option><option value="custom" ${c.displayMissingMode==='custom'?'selected':''}>Custom text</option></select></div>
+      <div class="field ${c.displayMissingMode==='custom'?'':'hidden'}"><label>Custom Missing Text</label><input data-cfield="displayMissingText" value="${esc(c.displayMissingText||'')}"></div>
+    </div><div class="row"><strong>Conditional Formatting &amp; Status Labels</strong><button class="smallBtn green" type="button" data-add-display-rule="${esc(c.id)}">Add Rule</button><span class="hint">Rules run top to bottom; the first match can color the value or replace it with a status label.</span></div><div class="displayRulesList">${(c.displayRules||[]).map(displayRuleHtml).join('')||'<div class="hint">No display rules. The calculated or looked-up value will be shown normally.</div>'}</div></div></div>
     <div class="${c.calcType==='multi'?'':'hidden'}" data-block="multi"><div class="grid5">
       <div class="field"><label>Left Source</label><select data-cfield="leftSource" disabled title="Auto-matches the top Source">${sourceOptions(c.leftSource||src)}</select></div>
       <div class="field"><label>Left Column</label><select data-cfield="leftColumn">${headerOptions(c.leftSource||src,c.leftColumn)}</select></div>
@@ -1874,7 +1918,7 @@ function bindCriteriaEditors(){
       if(field==='checkValueType'){
         ensureRowPullConditions(c).forEach(cond=>{ cond.operator=normalizeRowPullOperator(cond.operator,c.checkValueType||'text'); });
       }
-      if(['source','weight','scoreType','calcType','aggregate','withinUseRange','leftSource','rightSource','customSource','checkColumn','checkDateColumn','checkValueType','audience','trueValueEnabled','trueValueSource'].includes(field)) renderEditModel();
+      if(['source','weight','scoreType','calcType','aggregate','withinUseRange','leftSource','rightSource','customSource','checkColumn','checkDateColumn','checkValueType','audience','trueValueEnabled','trueValueSource','lookupMatchEntity','lookupSelection','displayMode','displayCalculation','displayMissingMode'].includes(field)) renderEditModel();
     };
   });
   els.criteriaList.querySelectorAll('[data-expression-input]').forEach(input=>{
@@ -1891,6 +1935,9 @@ function bindCriteriaEditors(){
   });
   els.criteriaList.querySelectorAll('[data-remove-crit]').forEach(b=>b.onclick=()=>{state.editModel.criteria=state.editModel.criteria.filter(c=>c.id!==b.dataset.removeCrit); renderEditModel();});
   els.criteriaList.querySelectorAll('[data-copy-crit]').forEach(b=>b.onclick=()=>{const c=getEditCriterion(b.dataset.copyCrit); if(c){const n=JSON.parse(JSON.stringify(c)); n.id=id(); n.name=n.name+' Copy'; state.editModel.criteria.push(n); renderEditModel();}});
+  els.criteriaList.querySelectorAll('[data-add-display-rule]').forEach(b=>b.onclick=()=>{ const c=getEditCriterion(b.dataset.addDisplayRule); if(!c) return; c.displayRules=c.displayRules||[]; c.displayRules.push(normalizeDisplayRule({})); renderEditModel(); });
+  els.criteriaList.querySelectorAll('[data-remove-display-rule]').forEach(b=>b.onclick=()=>{ const c=getEditCriterion(b.closest('[data-crit]')?.dataset.crit); if(!c) return; c.displayRules=(c.displayRules||[]).filter((_,i)=>i!==Number(b.dataset.removeDisplayRule)); renderEditModel(); });
+  els.criteriaList.querySelectorAll('[data-display-rule]').forEach(row=>row.querySelectorAll('[data-drule]').forEach(input=>{ input.onchange=input.oninput=()=>{ const c=getEditCriterion(input.closest('[data-crit]')?.dataset.crit), rule=(c?.displayRules||[]).find(x=>x.id===row.dataset.displayRule); if(rule) rule[input.dataset.drule]=input.value; }; }));
   els.criteriaList.querySelectorAll('[data-preview-crit]').forEach(b=>b.onclick=()=>showModelCriterionPreview(b.dataset.previewCrit));
   els.criteriaList.querySelectorAll('[data-add-filter]').forEach(b=>b.onclick=()=>{const c=getEditCriterion(b.dataset.addFilter); c.filters=c.filters||[]; c.filters.push({id:id(),action:'include',mode:'include',operator:'is',source:c.source||'retail_sv2',column:'',values:[],value:'',value2:'',targetSource:'qa',targetDateColumn:'',targetValueColumn:'',targetOp:'contains',targetValue:'',windowMode:'days',dayWindow:'0'}); renderEditModel();});
   els.criteriaList.querySelectorAll('[data-remove-filter]').forEach(b=>b.onclick=()=>{const [cid,fid]=b.dataset.removeFilter.split('|'); const c=getEditCriterion(cid); c.filters=(c.filters||[]).filter(f=>f.id!==fid); renderEditModel();});
@@ -2135,7 +2182,14 @@ function collectHeaderRefsForModel(model){
   const refs=[];
   (model.criteria||[]).forEach(c=>{
     const base={modelId:model.id,modelName:model.name,criterionId:c.id,criterionName:c.name};
-    if(c.calcType==='single' || c.calcType==='displayColumn') addHeaderRef(refs,{...base,kind:'criterion',source:c.source,field:'column',label:c.calcType==='displayColumn'?'Display column':'Single column',expected:c.column});
+    if(c.calcType==='single') addHeaderRef(refs,{...base,kind:'criterion',source:c.source,field:'column',label:'Single column',expected:c.column});
+    if(c.calcType==='displayColumn'){
+      if(Number(c.lookupVersion)>=2){
+        addHeaderRef(refs,{...base,kind:'criterion',source:c.source,field:'lookupMatchColumn',label:'Lookup match column',expected:c.lookupMatchColumn});
+        if(c.displayCalculation!=='count') addHeaderRef(refs,{...base,kind:'criterion',source:c.source,field:'lookupReturnColumn',label:'Lookup return column',expected:c.lookupReturnColumn||c.column});
+        if(['latest','earliest'].includes(c.lookupSelection)) addHeaderRef(refs,{...base,kind:'criterion',source:c.source,field:'lookupDateColumn',label:'Lookup record date column',expected:c.lookupDateColumn});
+      }else addHeaderRef(refs,{...base,kind:'criterion',source:c.source,field:'column',label:'Display column',expected:c.column});
+    }
     if(c.calcType==='multi'){
       addHeaderRef(refs,{...base,kind:'criterion',source:c.leftSource,field:'leftColumn',label:'Left column',expected:c.leftColumn});
       addHeaderRef(refs,{...base,kind:'criterion',source:c.rightSource,field:'rightColumn',label:'Right column',expected:c.rightColumn});
@@ -2294,8 +2348,8 @@ function saveEditModel(exit){
   const m=normalizeModelForStorage(JSON.parse(JSON.stringify(state.editModel)));
   const badTrue=(m.criteria||[]).find(c=>c.trueValueEnabled && (!TEAM_TOTAL_SOURCE_KEYS.includes(c.trueValueSource)||!plainHeaderName(c.trueValueColumn)));
   if(badTrue){ alert(`True Value settings for ${badTrue.name||'a criterion'} require a Team Totals source and column.`); return; }
-  const badDisplay=(m.criteria||[]).find(c=>c.calcType==='displayColumn' && (!plainHeaderName(c.column) || c.audience==='both' || (c.audience==='team'&&!TEAM_TOTAL_SOURCE_KEYS.includes(c.source)) || (c.audience==='rep'&&TEAM_TOTAL_SOURCE_KEYS.includes(c.source))));
-  if(badDisplay){ alert(`Display Column settings for ${badDisplay.name||'a criterion'} require one selected column. Representative display columns must use a representative source; coach/team display columns must use Retail Team Totals or Referral Team Totals.`); return; }
+  const badDisplay=(m.criteria||[]).find(c=>c.calcType==='displayColumn' && (c.audience==='both' || (Number(c.lookupVersion)>=2 && (!plainHeaderName(c.lookupMatchColumn) || (c.displayCalculation!=='count'&&!plainHeaderName(c.lookupReturnColumn||c.column)) || (c.lookupMatchEntity==='custom'&&!String(c.lookupCustomValue||'').trim()))) || (Number(c.lookupVersion)<2&&!plainHeaderName(c.column))));
+  if(badDisplay){ alert(`Lookup / Display settings for ${badDisplay.name||'a criterion'} are incomplete. Select where the entity is found and which value to return. Custom matches also require a custom value.`); return; }
   const saved=upsertModel(m);
   state.editModel=JSON.parse(JSON.stringify(saved));
   state.editOriginalId=saved.id;

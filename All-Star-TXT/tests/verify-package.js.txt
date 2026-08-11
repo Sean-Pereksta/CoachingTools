@@ -19,6 +19,9 @@ check('portable has no first-party file dependency',!/<(?:link[^>]+href|script[^
 check('portable contains final generator',['allstar-clear-data','simpleQualtricsExecutiveMatrixHtml','QualtricsInsights','Organization Opportunity Summary'].every(x=>portable.includes(x)));
 const contracts=['allStarStandaloneModels.v1','allStarResearchItems.v1','allStarImportedDataCache.v1','allStarResearchRenderedResults.v1','allStarResearchMetricsDb.v1','allStarOrgBuilder.v1','allStarRepAliases.v1','allStarRunSettings.v2','allStarPdfOptions.v1','allStarRunPresets.v1','allStarSavedReports.v1','coachingEmailGeneratorDB','coachingEmailGeneratorOrganizationSummary.v1'];
 const code=files.filter(f=>f.startsWith('js/')||f==='qualtrics/generator.html').map(read).join('\n');
+check('generalized lookup display fields present',['lookupDisplayIndex','lookupSelection','lookupMatchEntity','Coach Name Expected In'].every(x=>code.includes(x)));
+check('normalized JSON package contract present',['All_Star_Data_Package.json','allstar-data-package','stageAllStarJsonPackage','loadJsonPackageFile'].every(x=>code.includes(x)));
+check('lazy import and versioned Research caches present',['workbookAoaCache','sheetAoaPreview','workbookSheetsNeededForImport','researchQueryFilterCacheKey','baseCohortSignature','versioned filter-position cache'].every(x=>code.includes(x)));
 for(const contract of contracts) check('persistence contract: '+contract,code.includes(contract));
 try{ new Function(files.filter(f=>f.startsWith('js/')).map(read).join('\n')); check('combined application JavaScript parses',true); }catch(error){ check('combined application JavaScript parses',false,error.message); }
 try{ new Function(read('qualtrics/insights.js')); check('Qualtrics insights module parses',true); }catch(error){ check('Qualtrics insights module parses',false,error.message); }

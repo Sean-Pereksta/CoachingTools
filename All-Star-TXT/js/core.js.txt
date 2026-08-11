@@ -121,6 +121,9 @@ const state = {
   researchResultCache: new Map(),
   researchPersistentCache: {},
   researchCohortCache: new Map(),
+  researchFilterResultCache: new Map(),
+  researchCohortRowSignatures: new WeakMap(),
+  researchCohortSequence: 0,
   researchSourceIndexes: new Map(),
   researchSourceIndexJobs: new Map(),
   researchBuildingRowMeta: new WeakMap(),
@@ -200,10 +203,10 @@ Object.assign(els,{
 });
 function esc(v){return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
 function id(){return 'm'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);}
-const HEADER_FIELDS = ['column','leftColumn','rightColumn','withinCompareColumn','checkDateColumn','checkColumn','trueValueColumn'];
+const HEADER_FIELDS = ['column','leftColumn','rightColumn','withinCompareColumn','checkDateColumn','checkColumn','trueValueColumn','lookupMatchColumn','lookupReturnColumn','lookupDateColumn'];
 const SOURCE_LABELS = {nondate:'Non-Date Database',date:'Dated Database',retail_sv2:'Retail SV2',retail_wiper:'Retail Wipers',retail_team_totals:'Retail Team Totals',referral_sv2:'Referral SV2',referral_wiper:'Referral Wipers',referral_team_totals:'Referral Team Totals',qa:'QA Genesys Evaluation Score',qa_direct:'Direct QA Team Score Override',checklist:'Checklist',documented_coaching:'Documented Coaching',comp_calls:'Comp Calls'};
 const PACKAGE_SHEETS = {nondate:'Non-Date Database',date:'Dated Database',retail_sv2:'Retail SV2',retail_wiper:'Retail Wipers',retail_team_totals:'Retail Team Totals',referral_sv2:'Referral SV2',referral_wiper:'Referral Wipers',referral_team_totals:'Referral Team Totals',qa:'QA Genesys Evaluation Score',checklist:'Checklist',documented_coaching:'Documented Coaching',comp_calls:'Comp Calls'};
-const SOURCE_TO_BOOK = {retail_sv2:'retail',retail_wiper:'retail',retail_team_totals:'retail',referral_sv2:'referral',referral_wiper:'referral',referral_team_totals:'referral',qa:'qa',checklist:'checklist',documented_coaching:'documented_coaching',comp_calls:'comp_calls'};
+const SOURCE_TO_BOOK = {retail_sv2:'retail',retail_wiper:'retail',retail_team_totals:'retail',referral_sv2:'referral',referral_wiper:'referral',referral_itac:'referral',referral_team_totals:'referral',qa:'qa',checklist:'checklist',documented_coaching:'documented_coaching',comp_calls:'comp_calls'};
 const SOURCE_SHEET_HINTS = {retail_sv2:['Retail SV2','sv2'],retail_wiper:['Retail Wipers','Retail SV2 Wipers','sv2 wipers','sv2wipers','sv2 wiper','sv2wiper'],referral_sv2:['Referral SV2','sv2'],referral_wiper:['Referral Wipers','Referral SV2 Wipers','sv2 wipers','sv2wipers','sv2 wiper','sv2wiper'],qa:['QA Genesys Evaluation Score','Genesys Evaluation Score','genesys evaluation score','qa','evaluation','evaluations','quality','sheet1'],checklist:['All Items','Checklist','checklist','items','sheet1'],documented_coaching:['Documented Coaching','documented coaching','documented_coaching','coaching','sheet1'],comp_calls:['Compliments','Compliment','Comp Calls','Comp Call','Compliment Calls','sheet1']};
 const FORCE_NONDATED_IMPORT_SOURCES = new Set(['retail_sv2','retail_wiper','retail_team_totals','referral_sv2','referral_wiper','referral_team_totals']);
 const TEAM_TOTAL_SOURCE_KEYS = ['retail_team_totals','referral_team_totals'];

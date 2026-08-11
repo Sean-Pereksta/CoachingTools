@@ -20,6 +20,7 @@
     "js/reports.js",
     "js/research.js",
     "js/organizations.js",
+    "js/workflow.js",
     "js/list-tester.js",
     "js/qualtrics-bridge.js",
     "js/app.js"
@@ -27,8 +28,8 @@
   "extractedRuntimeModules": [
     {
       "file": "js/core.js",
-      "bytes": 62360,
-      "sha256": "a4893b411bce99bdd34e6b60bbe6d7739d9901545508e1762db17b1a438c2b8e"
+      "bytes": 62606,
+      "sha256": "8568051cb3d6f271dafa4f53c236744a9960f0acb0ab37175bac38087f428840"
     },
     {
       "file": "js/persistence.js",
@@ -37,28 +38,33 @@
     },
     {
       "file": "js/models.js",
-      "bytes": 174458,
-      "sha256": "725ae5a114aab1e92db57e2f9d6b4f6e5e70d0ab41c445e51c0c3cb0ce0dd3a7"
+      "bytes": 185461,
+      "sha256": "b40e05444d63b58d82fc1bde0e257f5a3f6f9b4e30d523ea751a1428f8e1f798"
     },
     {
       "file": "js/imports.js",
-      "bytes": 149974,
-      "sha256": "b1a9743a34b1db2923c7ff1b3c239ffa81770df82fb546cdcb1bea8dc5921992"
+      "bytes": 163547,
+      "sha256": "a3b926ed35cb353851819e937c76d71dfef0589967be74980bfbe3aa3bdfe1c9"
     },
     {
       "file": "js/calculations.js",
-      "bytes": 37527,
-      "sha256": "163a98e914b9f30cffcf7bc6bf655e8997a8eea3867ba6808636386e7f77dd9d"
+      "bytes": 42891,
+      "sha256": "855b8f9c3533ce71c9273dd8cbadf3b6bc59408ab6350e68e13b23afdaddffb0"
     },
     {
       "file": "js/research.js",
-      "bytes": 491693,
-      "sha256": "e29fb9ee99fff1864f9d7594b60720fb9e8e46180ee1bbc639f2baccf26dc632"
+      "bytes": 494976,
+      "sha256": "d64cfe7e1306907f77c9c4ae887984140fb8955d928ed679c4381583eeab849b"
     },
     {
       "file": "js/organizations.js",
-      "bytes": 16371,
-      "sha256": "d3e4f11fad23e49f02e8e13acd1e336393df4e2dfd811faccf7d09bfc5d2d976"
+      "bytes": 16393,
+      "sha256": "d93517226daac6c57fc7b8a50446b7bacd65e3cb129c25b546ed77ae292ef376"
+    },
+    {
+      "file": "js/workflow.js",
+      "bytes": 31848,
+      "sha256": "5c0f8ee70d23aaf1ff32b1084bcc16bb664cf3e8b56663231c540fbcd6acf361"
     },
     {
       "file": "js/list-tester.js",
@@ -67,8 +73,8 @@
     },
     {
       "file": "js/reports.js",
-      "bytes": 132006,
-      "sha256": "b4e4a013db38f31df0947c81acb7c0c6a29f46ab2ba31f615dc988052ac5ae04"
+      "bytes": 135002,
+      "sha256": "a9f76a6f7cbf2eb44a3ed38eaacf69a3f0340f4e6b446539a62e03d05f494595"
     },
     {
       "file": "js/qualtrics-bridge.js",
@@ -86,6 +92,9 @@
     "Moved regression suites out of production startup and exposed an on-demand loader.",
     "Replaced the startup roster regression execution with manual debug loading.",
     "Added a lazy, generated Qualtrics source carrier to preserve srcdoc storage compatibility under file://.",
-    "Extracted reusable Qualtrics formatting, corrective-context, urgency, and organization-summary logic into qualtrics/insights.js."
+    "Extracted reusable Qualtrics formatting, corrective-context, urgency, and organization-summary logic into qualtrics/insights.js.",
+    "Added generalized representative/team/coach lookup display fields with calculated values and ordered conditional formatting.",
+    "Replaced new data-package export with a versioned normalized JSON contract while retaining legacy workbook import compatibility.",
+    "Added prefix-based import inspection, selected-sheet materialization, per-workbook worksheet conversion reuse, and versioned Research filter/metric caching."
   ]
 }

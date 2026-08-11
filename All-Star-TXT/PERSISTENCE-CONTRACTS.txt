@@ -45,9 +45,20 @@ Qualtrics generator IndexedDB
 Compatibility policy
 These names, versions, key paths, and stored object structures are deliberately unchanged. The modular Qualtrics carrier uses srcdoc so its saved data remains on the same parent-document storage origin used by the previous embedded generator.
 
+Portable imported-data package
+- Preferred filename: All_Star_Data_Package.json
+- packageType: allstar-data-package
+- schemaVersion: 1
+- The package stores normalized source rows and headers, Retail/Referral rosters, Team Totals, categorized databases, custom-source definitions and rows, source metadata, source settings, and organizations.
+- Workbook objects, worksheet objects, raw Array-of-Arrays copies, indexes, Maps, WeakMaps, memoized results, render caches, and other runtime-only state are excluded.
+- JSON import is validate-then-commit: the package type, schema, and required structures are staged before application state is replaced. A newer schema is rejected with a dedicated compatibility message.
+- Existing .xlsx and .xls packages continue through the legacy worksheet reconstruction path.
+
 Rule-schema additions are normalized on load without changing the IndexedDB version:
 - displayColumn.format defaults to Auto and displayColumn.precision defaults to 1.
 - statRule.displayFormat defaults to Auto and statRule.displayPrecision defaults to 1.
 - correctiveContext defaults to disabled, with the former-corrective Follow-Up scan also disabled.
+- displayColumn lookupVersion 2 stores displayMode, lookupMatchEntity, lookupMatchColumn, lookupReturnColumn, lookupDateColumn, lookupCustomValue, lookupSelection, displayCalculation, displayValueType, displayMissingMode, displayMissingText, and ordered displayRules.
+- Saved Display Column criteria without lookupVersion remain on their legacy matching behavior.
 
 Older saved rules therefore retain their prior matching and presentation behavior until a user explicitly enables the new options.

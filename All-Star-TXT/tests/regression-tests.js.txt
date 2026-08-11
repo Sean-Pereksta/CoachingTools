@@ -336,6 +336,42 @@ window.runWorkflowModernizationRegressionTests=function(){
   check('Preflight blocks a missing model',missing.counts.blocking>0&&missing.status==='needs_attention');
   console.table(results); if(results.some(r=>!r.pass)) throw new Error('Workflow modernization regression tests failed.'); return results;
 };
+window.runLookupPackagePerformanceRegressionTests=function(){
+  const results=[], check=(name,pass,detail='')=>results.push({name,pass:!!pass,detail});
+  const saved=importCacheClone({data:state.data,customSources:state.customSources,sourceMeta:state.sourceMeta,categorized:state.categorized,orgs:state.orgs,models:state.models,books:state.books});
+  try{
+    state.data.retail.headers.sv2=['Representative','Date of Hire','Updated','Region'];
+    state.data.retail.sv2=[{Representative:'John Doe','Date of Hire':'5/3/2017',Updated:'2025-01-01',Region:'East',_sourceKey:'retail_sv2'},{Representative:'John Doe','Date of Hire':'5/3/2017',Updated:'2026-01-01',Region:'Central',_sourceKey:'retail_sv2'}];
+    state.sourceMeta.retail_sv2={sourceVersion:7};
+    const coachCriterion=normalizeCriterionForStorage({...emptyCriterion(),id:'coach_lookup',name:'Coach Hire Date',source:'retail_sv2',calcType:'displayColumn',audience:'coach',lookupVersion:2,lookupMatchEntity:'coach',lookupMatchColumn:'Representative',lookupReturnColumn:'Date of Hire',lookupDateColumn:'Updated',lookupSelection:'latest',displayCalculation:'raw'});
+    const coachEntry={kind:'team',name:'John Doe',team:'John Doe',key:'John Doe'}, opts={};
+    check('Coach lookup finds coach in an explicitly selected representative-name column',displayColumnValue(coachCriterion,coachEntry,opts)==='5/3/2017');
+    check('Coach display criteria are included on Team rows only',criterionAppliesToKind(coachCriterion,'team')&&!criterionAppliesToKind(coachCriterion,'rep'));
+    const regionCriterion=normalizeCriterionForStorage({...coachCriterion,id:'region_lookup',lookupReturnColumn:'Region',lookupSelection:'joinUnique'});
+    check('Join unique record selection preserves distinct values',displayColumnValue(regionCriterion,coachEntry,{})==='East, Central');
+    const tenureCriterion=normalizeCriterionForStorage({...coachCriterion,id:'tenure_lookup',displayMode:'calculated',displayCalculation:'yearsSince'}), tenure=displayColumnValue(tenureCriterion,coachEntry,{});
+    check('Calculated displays derive tenure without affecting score',Number(tenure)>8&&tenureCriterion.scoreType==='display');
+    const statusCriterion=normalizeCriterionForStorage({...tenureCriterion,displayRules:[{op:'greater',value:'5',display:'ESTABLISHED',color:'green',style:'badge'}]});
+    check('Conditional display rules produce labels and badges',/ESTABLISHED/.test(lookupDisplayHtml(statusCriterion,tenure))&&/lookup-green/.test(lookupDisplayHtml(statusCriterion,tenure)));
+    const percentCriterion=normalizeCriterionForStorage({...coachCriterion,id:'percent_lookup',displayValueType:'percent',displayRules:[{op:'less',value:'30',color:'red',style:'cell'}]});
+    check('Percentage thresholds and cell-color rules use displayed percent units',lookupDisplayCellClass(percentCriterion,.29)==='lookup-cell-red');
+    const aoa=[['noise'],['Representative','Metric'],['John Doe',1],['Jane Roe',2]], pack=sheetRowsFromAoa(aoa,0,0,true,['Representative','Metric'],'retail_sv2',null,[]);
+    check('Header detection inspects the prefix then builds the selected layout',pack.headerRow===1&&pack.rows.length===2&&pack.rows[1].Metric===2);
+    state.categorized={nondated:{headers:['Representative','Coach'],rows:[],builtAt:'',sourceStats:[]},dated:{headers:['Representative','Coach','Date'],rows:[],builtAt:'',sourceStats:[]},warnings:[]}; state.customSources=[]; state.orgs=[];
+    const jsonPackage=buildAllStarJsonPackage(), staged=stageAllStarJsonPackage(jsonPackage,'All_Star_Data_Package.json');
+    check('JSON package uses the versioned normalized package contract',jsonPackage.packageType===ALL_STAR_JSON_PACKAGE_TYPE&&jsonPackage.schemaVersion===1&&Array.isArray(jsonPackage.sources.retail_sv2.rows));
+    check('JSON staging hydrates normalized rows without worksheet/AoA reconstruction',staged.nextData.retail.sv2.length===2&&staged.nextData.retail.sv2Aoa.length===0&&staged.books.retail.normalizedPackage===true);
+    let invalidMessage=''; try{stageAllStarJsonPackage({...jsonPackage,schemaVersion:999},'newer.json');}catch(error){invalidMessage=error.message;} check('Newer package schemas fail before state commit',/newer All-Star version/i.test(invalidMessage));
+    state.data.referral.headers.sv2=['Representative']; state.data.referral.sv2=[{Representative:'John Doe',_rep:'John Doe',_repKey:fullNameIdentityKey('John Doe'),_sourceKey:'referral_sv2'}]; state.sourceMeta.referral_sv2={sourceVersion:8}; markDataIndexDirty('lookup package cohort fixture');
+    const baseRows=state.data.referral.sv2.slice(), cohortItem={source:'referral_sv2',analysisGrain:'representatives',crossSourceJoinMode:'strict_rep'}, originalCohortKeys=researchCohortKeys; let cohortKeyBuilds=0;
+    researchCohortKeys=(...args)=>{cohortKeyBuilds++;return originalCohortKeys(...args);};
+    try{ resolveRowsForCohort('retail_sv2',{baseRows,baseSource:'referral_sv2',item:cohortItem},{item:cohortItem}); resolveRowsForCohort('retail_sv2',{baseRows,baseSource:'referral_sv2',item:cohortItem},{item:cohortItem}); }
+    finally{researchCohortKeys=originalCohortKeys;}
+    check('Repeated cohort joins reuse a lightweight cohort signature before rebuilding entity lists',cohortKeyBuilds===1,cohortKeyBuilds);
+    const hugeRows=Array.from({length:50000},()=>({})), signature=researchMetricRowSignature(hugeRows,'retail_sv2'); check('Metric cohort signatures remain lightweight at large row counts',signature.length<200,signature.length);
+  }finally{ state.data=saved.data;state.customSources=saved.customSources;state.sourceMeta=saved.sourceMeta;state.categorized=saved.categorized;state.orgs=saved.orgs;state.models=saved.models;state.books=saved.books;markDataIndexDirty('lookup/package regression restore'); }
+  console.table(results); if(results.some(r=>!r.pass)) throw new Error('Lookup/package/performance regression tests failed.'); return results;
+};
 const allStarRegressionTests=[
   ['researchSourceFieldRefRegressionCases',()=>researchSourceFieldRefRegressionCases()],
   ['runTeamTotalsRegressionTests',()=>runTeamTotalsRegressionTests()],
@@ -347,7 +383,8 @@ const allStarRegressionTests=[
   ['runImportCachePersistenceRegressionTests',()=>window.runImportCachePersistenceRegressionTests()],
   ['runInitialWorkflowRegressionTests',()=>window.runInitialWorkflowRegressionTests()],
   ['runWorkflowModernizationRegressionTests',()=>window.runWorkflowModernizationRegressionTests()],
-  ['runResearchArchitectureV4RegressionTests',()=>window.runResearchArchitectureV4RegressionTests()]
+  ['runResearchArchitectureV4RegressionTests',()=>window.runResearchArchitectureV4RegressionTests()],
+  ['runLookupPackagePerformanceRegressionTests',()=>window.runLookupPackagePerformanceRegressionTests()]
 ];
 window.allStarRegressionTestNames=allStarRegressionTests.map(([name])=>name);
 window.runAllStarRegressionTests=async function(){

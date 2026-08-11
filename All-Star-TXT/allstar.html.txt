@@ -129,7 +129,7 @@
         <div class="panel"><div class="panelTitle">Checklist Items</div><input id="checklistFile" type="file" accept=".xlsx,.xls,.csv"><div id="checklistFileName" class="fileName"></div></div>
         <div class="panel"><div class="panelTitle">Documented Coaching</div><input id="documentedCoachingFile" type="file" accept=".xlsx,.xls,.csv"><div id="documentedCoachingFileName" class="fileName"></div></div>
         <div class="panel"><div class="panelTitle">Comp Calls</div><input id="compCallsFile" type="file" accept=".xlsx,.xls,.csv"><div id="compCallsFileName" class="fileName"></div></div>
-        <div class="panel"><div class="panelTitle">Packaged All Star Data</div><input id="packagedFile" type="file" accept=".xlsx,.xls"><div id="packagedFileName" class="fileName"></div></div>
+        <div class="panel"><div class="panelTitle">Packaged All Star Data</div><input id="packagedFile" type="file" accept=".json,.xlsx,.xls"><div class="hint">JSON packages hydrate normalized data directly. Existing All_Star_Packaged_Data.xlsx files remain supported.</div><div id="packagedFileName" class="fileName"></div></div>
       </div>
       <div class="panel">
         <div class="panelTitle">Custom Sources</div>

@@ -129,17 +129,12 @@ function applyMetricGear(rows,source,field,cfg,warnings=[]){
 function metricRulePass(row,rule,source){ const gear={...researchGearDefault(),...(rule.gear||{})}; if(rule.field && (gear.customTextEnabled || gear.customValueEnabled || (gear.valuesEnabled!==false && Array.isArray(gear.selected)))) return applyMetricGear([row],source,rule.field,gear,[]).length>0; const v=researchFieldValue(row,rule.field,source), op=rule.op||'is'; if(op==='blank') return String(v??'').trim()===''; if(op==='not blank') return String(v??'').trim()!==''; if((rule.selectedValues||[]).length) return rule.selectedValues.includes(String(v??'(blank)')); if(op==='within days of') return Math.abs(calendarDiffDays(v,rule.value)) <= (Number(rule.value2)||0); const mapped={ 'greater or equal':'greater/equal', 'less or equal':'less/equal' }[op]||op; return compareFilter(v,mapped,rule.value,rule.value2); }
 function metricRows(metric,rows,source,warnings=[]){ metric=normalizeMetric(metric); let base=rows||[]; if(metric.field) base=applyMetricGear(base,source,metric.field,metric.gear||{selected:metric.selectedValues},warnings); const andRules=(metric.rules||[]).filter(r=>(r.join||'AND')!=='OR'), orRules=(metric.rules||[]).filter(r=>(r.join||'AND')==='OR'); const passAnd=r=>andRules.every(rule=>metricRulePass(r,rule,source)); if(!orRules.length) return base.filter(passAnd); const set=new Set(); const out=[]; const add=r=>{ if(passAnd(r)&&!set.has(r)){ set.add(r); out.push(r); } }; base.forEach(add); rows.forEach(r=>{ if(orRules.some(rule=>metricRulePass(r,rule,source))) add(r); }); return out; }
 function researchMetricRowSignature(rows,source){
-  const idx=sourceIndex(source), meta=idx?.rowMeta;
-  const parts=(rows||[]).map((r,i)=>{
-    const m=meta?.get?.(r);
-    if(m && m.rowId!==undefined) return String(m.rowId);
-    const rep=personKeyFromRow(r)||getRepIdentity(r,source)?.normalizedName||'';
-    const team=researchRowTeam(r)||rowTeam(r)||'';
-    const ms=rowDateMillisForSource(source,r);
-    const uid=r._rowId||r._id||r.id||r.ID||r.Id||r.uniqueId||r.UniqueID||r['Unique ID']||'';
-    return [i,rep,team,Number.isFinite(ms)?ms:'',uid].join('~');
-  });
-  return parts.join(',');
+  rows=rows||[];
+  if(rows===getRowsRaw(source)) return `${researchSourceIndexSignature(source)}|all`;
+  state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap();
+  let signature=state.researchCohortRowSignatures.get(rows);
+  if(!signature){ signature=`${researchSourceIndexSignature(source)}|cohort${++state.researchCohortSequence}|n${rows.length}`; state.researchCohortRowSignatures.set(rows,signature); }
+  return signature;
 }
 function researchMetricCacheKey(metric,rows,source,item={},col={}){
   const normMetric=normalizeMetric(metric), actualSource=normMetric.source||source;
@@ -156,9 +151,11 @@ function researchMetricCacheKey(metric,rows,source,item={},col={}){
     duplicateReps:!!item.filterDuplicateReps,
     columnMode:col?.mode||'',
     columnField:col?.field||'',
-    sourceSignature:researchSourceCacheSignature(),
-    modelSignature:JSON.stringify((state.models||[]).map(m=>({id:m.id,name:m.name,criteria:(m.criteria||[]).map(c=>({id:c.id,name:c.name}))}))),
-    dataIndexVersion:state.dataIndex?.version||0
+    sourceVersion:researchSourceIndexSignature(actualSource),
+    metricVersion:state.versions?.metrics||0,
+    modelVersion:state.versions?.models||0,
+    rosterVersion:state.versions?.roster||0,
+    mappingVersion:state.versions?.mappings||0
   };
   return 'researchMetricV1|'+JSON.stringify(context);
 }
@@ -1812,8 +1809,19 @@ function dateRangeRowsFromIndex(idx,start,end){
 function queryPlanNote(plan){ if(!plan) return ''; return `Query optimized: ${(plan.initialRows||0).toLocaleString()} rows → ${(plan.candidateRows??plan.finalRows??0).toLocaleString()} candidate rows.`; }
 function queryPlanBadge(plan){ const note=queryPlanNote(plan); return note?`<div class="researchPreviewSummary"><span class="badge">${esc(note)}</span></div>`:''; }
 function isPersonTeamField(field){ const f=normalizeResearchText(field); return /(^| )(rep|representative|associate|agent|person|name|team|coach|job coach|coach assigned)( |$)/.test(f); }
+function researchQueryFilterCacheKey(source,opts={}){
+  const item=opts.item||{}, orgSignature=researchHashText(stableSerialize((state.orgs||[]).map(o=>({id:o.id,name:o.name,coachNames:o.coachNames||[]}))));
+  return ['researchFilterV1',researchSourceIndexSignature(source),state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0,state.versions?.models||0,orgSignature,researchHashText(stableSerialize({dateColumn:opts.dateColumn||'',startDate:opts.startDate||'',endDate:opts.endDate||'',filters:opts.filters||[],populationScope:item.populationScope||{}}))].join('\u001f');
+}
+function researchFilterCacheRows(cached,idx){
+  if(Array.isArray(cached?.positions)&&idx?.rows) return cached.positions.map(i=>idx.rows[i]).filter(Boolean);
+  return Array.isArray(cached?.rows)?cached.rows.slice():null;
+}
 function buildQueryPlan(source, opts={}){
   const idx=sourceIndex(source), all=getRowsRaw(source), plan={source,usedIndex:!!idx,initialRows:all.length,candidateRows:all.length,finalRows:all.length,steps:[],fallbacks:[],filters:[],indexesUsed:[],rowsScanned:0};
+  const filterCacheKey=researchQueryFilterCacheKey(source,opts), cached=state.researchFilterResultCache?.get(filterCacheKey), cachedRows=researchFilterCacheRows(cached,idx);
+  if(cachedRows){ plan.cacheHit=true; plan.candidateRows=cachedRows.length; plan.finalRows=cachedRows.length; plan.indexesUsed.push('versioned filter-position cache'); plan.steps.push({name:'versioned filter cache',before:all.length,candidates:cachedRows.length,after:cachedRows.length,usedIndex:true}); state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(cachedRows,filterCacheKey); return {rows:cachedRows,plan}; }
+  plan.cacheHit=false;
   let rows=all;
   const step=(name,before,candidates,after,used)=>plan.steps.push({name,before,candidates,after,usedIndex:!!used});
   const filters=(opts.filters||[]).filter(Boolean);
@@ -1865,6 +1873,11 @@ function buildQueryPlan(source, opts={}){
   [modelRefs,custom].forEach((list,li)=>list.forEach(f=>{ const before=rows.length; rows=applyResearchFilters(rows,[f],opts.item||{source},plan); step(li===0?'model criteria reference':'custom expression/filter',before,before,rows.length,false); }));
   if(rows===all) rows=all.slice();
   plan.candidateRows=rows.length; plan.finalRows=rows.length;
+  plan.rowsScanned=Math.max(plan.rowsScanned||0,(plan.steps||[]).reduce((n,s)=>n+Number(s.candidates||0),0));
+  const positions=idx?.rowMeta?[...rows].map(r=>idx.rowMeta.get(r)?.rowId):[];
+  const cacheValue=positions.length===rows.length&&positions.every(Number.isInteger)?{positions,plan:{...plan}}:{rows:rows.slice(),plan:{...plan}};
+  state.researchFilterResultCache=state.researchFilterResultCache||new Map(); boundedMapSet(state.researchFilterResultCache,filterCacheKey,cacheValue,120);
+  state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(rows,filterCacheKey);
   return {rows,plan};
 }
 function compileResearchExpression(expression,source='',context='research filter'){ if(!expression) return null; return compileCachedExpression(source,normalizeOrgExpression(expression),getHeaders(source),raw=>Function('row','toNumber','inOrg','return ('+raw+');'),{source,context}); }
@@ -1976,7 +1989,9 @@ function researchAnalysisGrain(item={},rows=[]){
   if(/rep|representative|associate|agent|person|employee|name/.test(field)) return 'representatives';
   if(item.population==='teams') return 'teams';
   if(item.population==='representatives') return 'representatives';
-  const keys=researchCohortKeys(rows,item.source||'');
+  const source=item.source||'', headers=getHeaders(source)||[];
+  if((typeof repColumnForSource==='function'&&repColumnForSource(source))||findHeader(headers,['Representative','Rep','Agent Name','Associate Name','Employee Name'])) return 'representatives';
+  const sample=(rows||[]).slice(0,50), keys=researchCohortKeys(sample,source);
   return keys.reps.size?'representatives':(keys.teams.size?'teams':'rows');
 }
 function researchEffectiveJoinMode(item={},rows=[]){
@@ -2023,10 +2038,11 @@ function researchCohortIdentityIndex(sourceKey,type){
 }
 function resolveRowsForCohort(sourceKey, cohortContext, options = {}){
   const baseRows=cohortContext?.baseRows||cohortContext?.rows||[], baseSource=cohortContext?.baseSource||cohortContext?.source||'', item=cohortContext?.item||options.item||{};
-  const targetSource=resolveDynamicResearchSource({...item,source:sourceKey}), {reps,teams,repTeams}=researchCohortKeys(baseRows,baseSource), joinMode=researchEffectiveJoinMode(item,baseRows);
-  const entitySignature=researchHashText([...reps].sort().join('|')+'//'+[...teams].sort().join('|')), dependencySignature=researchHashText(researchSourceIndexSignature(targetSource)+'//'+researchSourceIndexSignature(baseSource)), cacheKey=[dependencySignature,targetSource,baseSource,joinMode,entitySignature].join('\u001f');
+  const targetSource=resolveDynamicResearchSource({...item,source:sourceKey}), joinMode=researchEffectiveJoinMode(item,baseRows), baseCohortSignature=researchMetricRowSignature(baseRows,baseSource);
+  const dependencySignature=researchHashText(researchSourceIndexSignature(targetSource)+'//'+researchSourceIndexSignature(baseSource)), cacheKey=[dependencySignature,targetSource,baseSource,joinMode,baseCohortSignature].join('\u001f');
   state.researchCohortCache=state.researchCohortCache||new Map();
   const cached=state.researchCohortCache.get(cacheKey); if(cached){ noteResearchJoin(item,cacheKey,cached); return cached; }
+  const {reps,teams,repTeams}=researchCohortKeys(baseRows,baseSource);
   const repIndex=researchCohortIdentityIndex(targetSource,'rep'), teamIndex=researchCohortIdentityIndex(targetSource,'team'), picked=new Set(), matchedRepIdentities=new Set(), matchedCoachIdentities=new Set(), missingRepIdentities=[], missingCoachIdentities=[];
   const addRows=(list,set,key)=>{ if(list?.length){ list.forEach(r=>picked.add(r)); set.add(key); return list.length; } return 0; };
   if(joinMode==='strict_rep' || joinMode==='rep_then_team'){
@@ -2043,7 +2059,8 @@ function resolveRowsForCohort(sourceKey, cohortContext, options = {}){
   }
   if(joinMode==='strict_rep'&&missingRepIdentities.length) researchRuntimeWarnings(item).push(`Cross-source representative join left ${missingRepIdentities.length} representative(s) unmatched; team rows were not substituted.`);
   if(joinMode==='strict_team'&&missingCoachIdentities.length) researchRuntimeWarnings(item).push(`Cross-source team join left ${missingCoachIdentities.length} team(s) unmatched.`);
-  const result={rows:[...picked],targetSource,baseSource,joinMode,fallbackRows,matchedRepIdentities:[...matchedRepIdentities],matchedCoachIdentities:[...matchedCoachIdentities],missingRepIdentities,missingCoachIdentities,warnings:[]};
+  const result={rows:[...picked],targetSource,baseSource,joinMode,cohortSignature:cacheKey,fallbackRows,matchedRepIdentities:[...matchedRepIdentities],matchedCoachIdentities:[...matchedCoachIdentities],missingRepIdentities,missingCoachIdentities,warnings:[]};
+  state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(result.rows,cacheKey);
   boundedMapSet(state.researchCohortCache,cacheKey,result,600); noteResearchJoin(item,cacheKey,result); return result;
 }
 function researchRowsForCohort(targetSource, baseRows, baseSource, item={}){
@@ -2495,6 +2512,7 @@ function selectiveResearchInvalidation(dep={}){
     updateResearchCacheBadge(); return;
   }
   state.researchResultCache=new Map();
+  if(dep.source || dep.aliases || dep.teams || dep.mappings || dep.models) state.researchFilterResultCache=new Map();
   if(dep.metrics || dep.source){ state.researchMetricCache=new Map(); state.metricCache=new Map(); }
   if(dep.aliases || dep.teams || dep.mappings || dep.source){ state.researchDuplicateRepCache=new Map(); state.researchCohortCache=new Map(); }
   if(dep.source || dep.metrics || dep.aliases || dep.teams || dep.mappings) state.percentBuilderCache=new Map();
@@ -2508,6 +2526,8 @@ function clearResearchComputedCaches(reason='cache cleared'){
   state.researchMetricCache=new Map();
   state.researchDuplicateRepCache=new Map();
   state.researchCohortCache=new Map();
+  state.researchFilterResultCache=new Map();
+  state.researchCohortRowSignatures=new WeakMap(); state.researchCohortSequence=0;
   state.percentBuilderCache=new Map();
   state.researchPersistentCache={};
   state.researchCacheStats={hits:0,writes:0,warmed:0};
@@ -2714,7 +2734,8 @@ function researchSourceAuditHtml(item,perf={},joinDiagnostics=null){
 }
 function researchPerformanceHtml(item,perf={},reconciliation=null){
   const cards=researchTimingCardsHtml(perf), plan=perf.queryPlan||{};
-  return `<details class="researchDiagnostics"><summary>Execution diagnostics${perf.cacheUsed?' · cached':''}</summary><div class="researchTimingGrid">${cards||'<div class="researchTimingCard"><span>Total calculation</span><strong>'+Number(perf.totalComputeMs||0).toLocaleString()+' ms</strong></div>'}</div><div class="researchPreviewSummary"><span class="badge">Rows scanned: ${Number(perf.rowsScanned||plan.initialRows||0).toLocaleString()}</span><span class="badge">Candidates: ${Number(plan.candidateRows??plan.finalRows??0).toLocaleString()}</span><span class="badge">Groups: ${Number(perf.groupsCalculated||0).toLocaleString()}</span><span class="badge">Renderer: ${esc(perf.renderer||'automatic')}</span></div>${perf.preparedSources?.length?`<div class="hint">Prepared sources: ${perf.preparedSources.map(s=>esc(labelSource(s)||s)).join(', ')}</div>`:''}</details>${researchReconciliationHtml(reconciliation)}`;
+  const rowsScanned=plan.cacheHit?0:Number(plan.rowsScanned??perf.rowsScanned??plan.initialRows??0), indexes=[...new Set([...(plan.indexesUsed||[]),...(perf.indexesUsed||[])])];
+  return `<details class="researchDiagnostics"><summary>Execution diagnostics${perf.cacheUsed?' · cached':''}</summary><div class="researchTimingGrid">${cards||'<div class="researchTimingCard"><span>Total calculation</span><strong>'+Number(perf.totalComputeMs||0).toLocaleString()+' ms</strong></div>'}</div><div class="researchPreviewSummary"><span class="badge">Source rows: ${Number(plan.initialRows||0).toLocaleString()}</span><span class="badge">Candidates: ${Number(plan.candidateRows??plan.finalRows??0).toLocaleString()}</span><span class="badge">Rows actually scanned: ${rowsScanned.toLocaleString()}</span><span class="badge">Filter cache: ${plan.cacheHit?'hit':'miss'}</span><span class="badge">Groups: ${Number(perf.groupsCalculated||0).toLocaleString()}</span><span class="badge">Expression evaluations: ${Number(perf.expressionEvaluations??state.expressionStats?.evaluated??0).toLocaleString()}</span><span class="badge">Renderer: ${esc(perf.renderer||'automatic')}</span></div>${indexes.length?`<div class="hint">Indexes used: ${indexes.map(esc).join(' · ')}</div>`:''}${perf.preparedSources?.length?`<div class="hint">Prepared sources: ${perf.preparedSources.map(s=>esc(labelSource(s)||s)).join(', ')}</div>`:''}</details>${researchReconciliationHtml(reconciliation)}`;
 }
 function renderResearchDiagnosticsDrawer(){
   if(!els?.researchDiagnosticsBody) return;
