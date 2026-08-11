@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "encoding": "base64",
+  "compression": "gzip",
+  "chunks": 22,
+  "rawBytes": 1139633,
+  "gzipBytes": 253820,
+  "base64Chars": 338428,
+  "sha256": "640df874448168b646e5ceb478c951e6a84713cef34ef8dddcb0ca5acb411c68"
+}
