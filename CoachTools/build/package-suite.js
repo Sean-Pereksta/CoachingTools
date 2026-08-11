@@ -10,7 +10,8 @@ const ROOT = path.resolve(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'dist');
 const OUT_FILE = path.join(OUT_DIR, 'CoachTools.zip');
 const EXCLUDED_DIRS = new Set(['.git', 'node_modules']);
-const EXCLUDED_FILES = new Set(['.DS_Store', 'Thumbs.db']);
+const EXCLUDED_FILES = new Set(['.DS_Store', 'Thumbs.db', '.gitkeep']);
+const REQUIRED_DIRECTORY_ENTRIES = ['CoachTools/graphics/', 'CoachTools/storage/'];
 
 const allStarBuild = spawnSync(process.execPath, [path.join(ROOT, 'apps', 'allstar', 'build', 'build-portable.js')], { stdio: 'inherit' });
 if (allStarBuild.status !== 0) process.exit(allStarBuild.status || 1);
@@ -60,16 +61,14 @@ const centralParts = [];
 let offset = 0;
 let count = 0;
 
-for (const file of walk(ROOT).sort()) {
-  const stat = fs.statSync(file);
-  const data = fs.readFileSync(file);
-  const compressed = zlib.deflateRawSync(data, { level: 9 });
-  const useCompression = compressed.length < data.length;
+function addEntry(archiveName, data, modifiedAt, directory = false) {
+  const compressed = directory ? data : zlib.deflateRawSync(data, { level: 9 });
+  const useCompression = !directory && compressed.length < data.length;
   const payload = useCompression ? compressed : data;
   const method = useCompression ? 8 : 0;
-  const name = Buffer.from('CoachTools/' + path.relative(ROOT, file).split(path.sep).join('/'), 'utf8');
+  const name = Buffer.from(archiveName, 'utf8');
   const crc = crc32(data);
-  const stamp = dosDateTime(stat.mtime);
+  const stamp = dosDateTime(modifiedAt);
 
   const local = Buffer.alloc(30);
   local.writeUInt32LE(0x04034b50, 0);
@@ -101,12 +100,21 @@ for (const file of walk(ROOT).sort()) {
   central.writeUInt16LE(0, 32);
   central.writeUInt16LE(0, 34);
   central.writeUInt16LE(0, 36);
-  central.writeUInt32LE(0, 38);
+  central.writeUInt32LE(directory ? 0x10 : 0, 38);
   central.writeUInt32LE(offset, 42);
   centralParts.push(central, name);
 
   offset += local.length + name.length + payload.length;
   count += 1;
+}
+
+const packageTime = new Date();
+for (const directory of REQUIRED_DIRECTORY_ENTRIES) addEntry(directory, Buffer.alloc(0), packageTime, true);
+
+for (const file of walk(ROOT).sort()) {
+  const stat = fs.statSync(file);
+  const archiveName = 'CoachTools/' + path.relative(ROOT, file).split(path.sep).join('/');
+  addEntry(archiveName, fs.readFileSync(file), stat.mtime);
 }
 
 const centralDirectory = Buffer.concat(centralParts);

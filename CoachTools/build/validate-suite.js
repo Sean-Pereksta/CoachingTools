@@ -12,6 +12,7 @@ const warnings = [];
 
 function relative(filePath) { return path.relative(ROOT, filePath).split(path.sep).join('/'); }
 function exists(filePath) { return fs.existsSync(path.join(ROOT, filePath)); }
+function isDirectory(filePath) { return exists(filePath) && fs.statSync(path.join(ROOT, filePath)).isDirectory(); }
 function fail(message) { errors.push(message); }
 function warn(message) { warnings.push(message); }
 function validateInlineScripts(filePath, html) {
@@ -34,6 +35,7 @@ const required = [
   'apps-manifest.js',
   'README.md',
   'shared/coachtools-storage.js',
+  'shared/coachtools-import.js',
   'shared/coachtools-shell.js',
   'shared/coachtools-theme.css',
   'shared/coachtools-desktop.js',
@@ -41,6 +43,8 @@ const required = [
   'docs/APP-MANIFEST.md'
 ];
 for (const file of required) if (!exists(file)) fail(`Missing required suite file: ${file}`);
+for (const directory of ['graphics', 'storage']) if (!isDirectory(directory)) fail(`Missing required suite directory: ${directory}/`);
+if (exists('graphics/background.png') && fs.statSync(path.join(ROOT, 'graphics/background.png')).isDirectory()) fail('graphics/background.png must be a file when present.');
 
 let manifest = null;
 try { manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps.json'), 'utf8')); }
@@ -80,7 +84,7 @@ for (const file of vendorFiles) if (!exists(file)) fail(`Missing vendored browse
 
 const expectedMarkers = {
   'allstar': ['id="runBtn"', 'id="packagedFile"', 'js/core.js'],
-  'weekly-data': ['id="btnImportMany"', 'id="btnGenerate"', 'myone2.dock.retail'],
+  'weekly-data': ['id="btnImportMany"', 'id="btnGenerate"', 'IMPORT.SOURCES'],
   'coaching-gaps': ['myone2', '.dock.coaching', '.dock.retail'],
   'coach-timeline': ['coachSpeed.columnMap', '.dock.checklist', '.dock.coaching'],
   'kpi-impact': ['impactTool.activeTab', '.dock.coaching'],
@@ -117,9 +121,34 @@ for (const supportFile of ['apps/allstar/qualtrics/generator.html']) {
 
 const index = exists('index.html') ? fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8') : '';
 if (!index.includes('apps-manifest.js')) fail('index.html must load the file://-safe JavaScript manifest.');
+if (!index.includes('shared/coachtools-import.js')) fail('index.html must load the shared Weekly Data importer.');
 if (/fetch\s*\(\s*["']apps\.json/i.test(index)) fail('index.html must not require fetch(apps.json) for local-file startup.');
 const desktopScript = exists('shared/coachtools-desktop.js') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-desktop.js'), 'utf8') : '';
-if (!desktopScript.includes('elements.appFrame.src = app.file')) fail('Desktop app opening must use direct iframe navigation.');
+if (!desktopScript.includes('const openWindows = new Map()')) fail('Desktop must retain one live window state per opened application.');
+if (!desktopScript.includes('iframe.src = app.file')) fail('Desktop app opening must use direct iframe navigation.');
+if (!desktopScript.includes('coachtools.desktop.openApps.v1')) fail('Desktop must persist the lightweight open-application list.');
+if (!desktopScript.includes("fetch('/api/storage'")) fail('Desktop must use the constrained local storage API for automatic loading.');
+
+const importerScript = exists('shared/coachtools-import.js') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-import.js'), 'utf8') : '';
+for (const marker of ['classifyFile', 'prepareDataset', 'packDataset', 'myone2.dock.retail', 'myone2.dock.checklist']) {
+  if (!importerScript.includes(marker)) fail(`Shared importer is missing capability marker ${marker}`);
+}
+try { if (importerScript) new vm.Script(importerScript, { filename: 'shared/coachtools-import.js' }); }
+catch (error) { fail(`shared/coachtools-import.js does not parse: ${error.message}`); }
+try { if (desktopScript) new vm.Script(desktopScript, { filename: 'shared/coachtools-desktop.js' }); }
+catch (error) { fail(`shared/coachtools-desktop.js does not parse: ${error.message}`); }
+
+const weeklyData = exists('apps/weekly-data.html') ? fs.readFileSync(path.join(ROOT, 'apps/weekly-data.html'), 'utf8') : '';
+if (!weeklyData.includes('../shared/coachtools-import.js') || !weeklyData.includes('IMPORT.classifyFile')) fail('Weekly Data must reuse the shared import and classification utility.');
+
+const localServer = exists('build/start-local-server.js') ? fs.readFileSync(path.join(ROOT, 'build/start-local-server.js'), 'utf8') : '';
+for (const marker of ["url.pathname === '/api/storage'", "path.join(ROOT, 'storage')", "new Set(['.xlsx', '.xls', '.csv'])", "rawPath.startsWith('/storage/')", "fileName.includes('/')"]) {
+  if (!localServer.includes(marker)) fail(`Local server storage endpoint is missing safety marker ${marker}`);
+}
+const packageScript = exists('build/package-suite.js') ? fs.readFileSync(path.join(ROOT, 'build/package-suite.js'), 'utf8') : '';
+for (const directory of ['CoachTools/graphics/', 'CoachTools/storage/']) {
+  if (!packageScript.includes(directory)) fail(`Package script must explicitly include ${directory}`);
+}
 
 const storageScript = exists('shared/coachtools-storage.js') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-storage.js'), 'utf8') : '';
 for (const key of ['myone2.dock.retail', 'myone2.dock.referral', 'myone2.dock.qa', 'myone2.dock.coaching', 'myone2.dock.checklist']) {
