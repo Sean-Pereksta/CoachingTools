@@ -1,0 +1,100 @@
+{
+  "sourceFile": "changes_updated_display_column(2).txt",
+  "originalBytes": 2059959,
+  "originalSha256": "11517d830560263e274b98c2428be6161732048da55d79386746eb932ecb0c72",
+  "originalGeneratorBytes": 319011,
+  "originalGeneratorSha256": "ef45579b7b40f942290b1a4ac379ea52ddb8504a716be5d12e2411069ba4f19d",
+  "finalGeneratorBytes": 596270,
+  "finalGeneratorSha256": "14d77e463d5d0fc8db8c91f313e98b72034e1fba0260d2aa0b3c29b8aaf929ee",
+  "qualtricsInsightModule": {
+    "file": "qualtrics/insights.js",
+    "bytes": 9330,
+    "sha256": "064131b17b773934be0a225be8da23abd829449d5047968c32ce03831cecd115"
+  },
+  "classicScriptExecutionOrder": [
+    "js/core.js",
+    "js/persistence.js",
+    "js/models.js",
+    "js/imports.js",
+    "js/calculations.js",
+    "js/reports.js",
+    "js/research.js",
+    "js/organizations.js",
+    "js/workflow.js",
+    "js/list-tester.js",
+    "js/qualtrics-bridge.js",
+    "js/app.js"
+  ],
+  "extractedRuntimeModules": [
+    {
+      "file": "js/core.js",
+      "bytes": 62606,
+      "sha256": "8568051cb3d6f271dafa4f53c236744a9960f0acb0ab37175bac38087f428840"
+    },
+    {
+      "file": "js/persistence.js",
+      "bytes": 47769,
+      "sha256": "b91b40bb652e72f96016bd2a14bb5af920d0068ae54a96dea5c91b44919d647a"
+    },
+    {
+      "file": "js/models.js",
+      "bytes": 185461,
+      "sha256": "b40e05444d63b58d82fc1bde0e257f5a3f6f9b4e30d523ea751a1428f8e1f798"
+    },
+    {
+      "file": "js/imports.js",
+      "bytes": 163547,
+      "sha256": "a3b926ed35cb353851819e937c76d71dfef0589967be74980bfbe3aa3bdfe1c9"
+    },
+    {
+      "file": "js/calculations.js",
+      "bytes": 42891,
+      "sha256": "855b8f9c3533ce71c9273dd8cbadf3b6bc59408ab6350e68e13b23afdaddffb0"
+    },
+    {
+      "file": "js/research.js",
+      "bytes": 494976,
+      "sha256": "d64cfe7e1306907f77c9c4ae887984140fb8955d928ed679c4381583eeab849b"
+    },
+    {
+      "file": "js/organizations.js",
+      "bytes": 16393,
+      "sha256": "d93517226daac6c57fc7b8a50446b7bacd65e3cb129c25b546ed77ae292ef376"
+    },
+    {
+      "file": "js/workflow.js",
+      "bytes": 31848,
+      "sha256": "5c0f8ee70d23aaf1ff32b1084bcc16bb664cf3e8b56663231c540fbcd6acf361"
+    },
+    {
+      "file": "js/list-tester.js",
+      "bytes": 33084,
+      "sha256": "dc93e8173c40b5e800a7cbea86ef4f6c88d9b41e59a4327f0a485c6878a78cae"
+    },
+    {
+      "file": "js/reports.js",
+      "bytes": 135002,
+      "sha256": "a9f76a6f7cbf2eb44a3ed38eaacf69a3f0340f4e6b446539a62e03d05f494595"
+    },
+    {
+      "file": "js/qualtrics-bridge.js",
+      "bytes": 17353,
+      "sha256": "3ffbf063fac175535adcd7c195d8a04d75b0a54a6d693f9148f7b35d953b05b2"
+    },
+    {
+      "file": "js/app.js",
+      "bytes": 35308,
+      "sha256": "0749cad9481a7d7b43804ca2cdb819ab4be91f9717211ea571284b6a82e294c5"
+    }
+  ],
+  "intentionalRuntimeChanges": [
+    "Removed the encoded Qualtrics generator and patchQualtricsGeneratorSource runtime engine after materializing the exact final generator.",
+    "Moved regression suites out of production startup and exposed an on-demand loader.",
+    "Replaced the startup roster regression execution with manual debug loading.",
+    "Added a lazy, generated Qualtrics source carrier to preserve srcdoc storage compatibility under file://.",
+    "Extracted reusable Qualtrics formatting, corrective-context, urgency, and organization-summary logic into qualtrics/insights.js.",
+    "Added generalized representative/team/coach lookup display fields with calculated values and ordered conditional formatting.",
+    "Replaced new data-package export with a versioned normalized JSON contract while retaining legacy workbook import compatibility.",
+    "Added prefix-based import inspection, selected-sheet materialization, per-workbook worksheet conversion reuse, and versioned Research filter/metric caching."
+  ]
+}

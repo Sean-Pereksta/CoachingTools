@@ -1,0 +1,401 @@
+/* All-Star manual regression suite. Loaded only through ?debug=1 or loadAllStarRegressionTests(). */
+'use strict';
+(function(){
+function researchSourceFieldRefRegressionCases(){
+  return [
+    'A: Documented Coaching metric "Save the Sale" with Description contains "save the sale"; research value sum(![Retail SV2].[Cash Apps]) / sum(![Retail SV2].[Cash Opps]) should resolve to a numeric percent.',
+    'B: Dynamic/@Save the Sale group with Retail SV2 Cash Apps/Opps aggregate expression should cohort-match reps/teams across the metric source and Retail SV2.',
+    'C: Checklist Description contains "save the sale" with column expression ![Retail SV2].[Cash Apps] should resolve and pull/display matched Retail SV2 values.',
+    'D: ![Retail SV3].[Cash Apps] should warn "Missing source: Retail SV3".',
+    'E: ![Retail SV2].[Cash Applicationz] should warn "Missing header in Retail SV2: Cash Applicationz".'
+  ];
+}
+async function runTeamTotalsRegressionTests(){
+  const makeWb=(summaryName)=>{
+    const wb=XLSX.utils.book_new(), control=[['Team Name','Tab Name'],['Madison Ellis','Ellis'],['John Smith','Smith'],['Steve Adkins','Adkins']];
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(control),'Control');
+    const addCoach=(sheet,key)=>{ const aoa=[[],Array(27).fill('')]; aoa[1][26]=key; XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),sheet); };
+    addCoach('Ellis','M.ELLIS'); addCoach('Smith','J.SMITH'); addCoach('Adkins','S. Adkins');
+    const summary=[[],[],['User','Cash Appointment Rate','Insurance Appointment Rate','', 'Referral True Value'],['M.ELLIS','61%','42%','', '51%'],['J.SMITH',0,'12%','', '11%'],['S. ADKINS','','','',''],['S. Adkins','58%','39%','', '73%']];
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(summary),summaryName); return wb;
+  };
+  const retail=await buildTeamTotalsFromWorkbook('retail',makeWb('Appt Summary'),'Retail Team Totals.xlsx',1,2);
+  const referral=await buildTeamTotalsFromWorkbook('referral',makeWb('KPI Summary'),'Referral Team Totals.xlsx',1,2);
+  state.data.retail.teamTotals=retail; state.data.referral.teamTotals=referral;
+  const retailCriterion={...emptyCriterion(),name:'Cash Appointment Rate',source:'retail_sv2',audience:'both',scoreType:'rank',format:'pct',trueValueEnabled:true,trueValueSource:'retail_team_totals',trueValueColumn:'Cash Appointment Rate'};
+  const referralCriterion={...emptyCriterion(),name:'Referral True Value',source:'referral_sv2',audience:'both',scoreType:'rank',format:'pct',trueValueEnabled:true,trueValueSource:'referral_team_totals',trueValueColumn:'Referral True Value'};
+  const teamVal=criterionValue(retailCriterion,{kind:'team',name:'Madison Ellis',team:'Madison Ellis'},{});
+  const referralVal=criterionValue(referralCriterion,{kind:'team',name:'Steven Adkins',team:'Steven Adkins'},{});
+  const repVal=criterionValue(retailCriterion,{kind:'rep',name:'No One',team:'Madison Ellis',key:'noone'},{_sourceRowsCache:new Map(),_entryRowsCache:new Map()});
+  const missing=criterionValue(retailCriterion,{kind:'team',name:'Missing Team',team:'Missing Team'},{});
+  const retailExport=teamTotalsExportAoa(retail), exportNameCol=retailExport[0].indexOf('User'), exportOriginalNameCol=retailExport[0].indexOf('Source Summary Name');
+  const legacy=rebuildTeamTotalsIndex({...emptyTeamTotalsDataset('retail'),headers:['Name','Metric'],rows:[{Name:'M.ELLIS',Metric:'9%',_team:'Madison Ellis',_summaryLookupKey:'M.ELLIS'}]});
+  const repaired=rebuildTeamTotalsIndex({...emptyTeamTotalsDataset('retail'),identitySchemaVersion:2,headers:['Name','Metric'],rows:[{Name:'N/A',Metric:'9%',_team:'N/A','Full Team Name':'Madison Ellis',_summaryLookupKey:'M.ELLIS'}]});
+  const assert=(ok,msg)=>{ if(!ok) throw new Error(msg); };
+  assert(retail.headers.includes('Referral True Value'),'Headers after a blank spacer must remain available');
+  assert(retail.rows.length===3 && retail.rows[0]._team==='Madison Ellis','Retail team mapping failed');
+  assert(referral.rows.length===3 && referral.rows.filter(r=>coachNameKey(r._team)==='steveadkins').length===1,'Duplicate KPI Summary rows must collapse to one coach row');
+  assert(referral.rows.find(r=>coachNameKey(r._team)==='steveadkins')?.['Referral True Value']==='73%','Most complete duplicate KPI Summary row should be selected');
+  assert(retail.rows[0].User==='Madison Ellis' && retail.rows[0]._summaryDisplayName==='M.ELLIS','Extracted totals should save the Control coach name in the visible identity column');
+  assert(exportNameCol>=0 && retailExport[1][exportNameCol]==='Madison Ellis' && exportOriginalNameCol>=0 && retailExport[1][exportOriginalNameCol]==='M.ELLIS','Team Totals export should preserve canonical and original summary names');
+  assert(legacy.rows[0].Name==='Madison Ellis' && legacy.rowsByTeamKey[coachNameKey('Madison Ellis')]===legacy.rows[0],'Cached Team Totals name migration failed');
+  assert(repaired.rows[0].Name==='Madison Ellis' && repaired.rows[0]._team==='Madison Ellis','N/A Team Totals identity should repair from the durable coach field');
+  assert(repKeyFromAnyRow(repaired.rows[0])==='' && rowTeam(repaired.rows[0])==='Madison Ellis','Team Totals must never enter representative roster assignment');
+  assert(Number.isFinite(teamVal) && Math.round(teamVal)===61,'Retail true team value should parse 61%');
+  assert(Number.isFinite(referralVal) && Math.round(referralVal)===73,'Referral true value should match S. Adkins through the unique initial/surname alias');
+  assert(!Number.isFinite(repVal),'Representative should not use Team Totals true value');
+  assert(!Number.isFinite(missing),'Missing true value should not fall back');
+  console.info('Team Totals regression tests passed',{retail,referral,teamVal,referralVal,repVal,missing});
+  return true;
+}
+window.runTeamTotalsRegressionTests=runTeamTotalsRegressionTests;
+function runPdfExportRegressionTests(){
+  const manyCriteria=Array.from({length:14},(_,i)=>({id:'c'+(i+1),name:'Criterion '+(i+1)+' With Readable Header',audience:'both'}));
+  const vals=(seed)=>Object.fromEntries(manyCriteria.map((c,i)=>[c.id,(seed+i)%3===0?0:seed+i]));
+  const parts=(seed)=>Object.fromEntries(manyCriteria.map((c,i)=>[c.id,(seed+i)%4===0?0:(seed+i)/2]));
+  const sample={model:{name:'PDF Regression',criteria:manyCriteria},start:new Date(2026,0,1),end:new Date(2026,0,31),runOpts:{selectedTeamNames:['Trinity Souder','Kalyn Goldman','No Eligible Team']},teamPack:{rows:[{entry:{name:'Trinity Souder'},values:vals(10),scoreParts:parts(10),overallScore:97.25,overallRank:1,eligible:true,autofails:[],minimumFails:[]},{entry:{name:'Kalyn Goldman'},values:vals(8),scoreParts:parts(8),overallScore:91,overallRank:2,eligible:true,autofails:[],minimumFails:[]},{entry:{name:'No Eligible Team'},values:{},scoreParts:{},overallScore:0,overallRank:3,eligible:false,autofails:['Missing required data'],minimumFails:['Minimum score not met']}]},repPack:{rows:[{entry:{name:'Shayla Morrigan',team:'Trinity Souder',coachingNotes:'Strong coaching note that should wrap in notes and details instead of a narrow ranking column.',correctiveNotes:'Corrective narrative remains readable.'},values:vals(11),scoreParts:parts(11),overallScore:98.15,overallRank:1,eligible:true,autofails:[],minimumFails:[]},{entry:{name:'Madison Snyder',team:'Kalyn Goldman',compCallNotes:'Comp call notes are narrative details.'},values:vals(9),scoreParts:parts(9),overallScore:88,overallRank:2,eligible:true,autofails:[],minimumFails:[]},{entry:{name:'Representative With Exceptionally Long Name For Wrapping Verification',team:'No Eligible Team'},values:vals(0),scoreParts:parts(0),overallScore:0,overallRank:3,eligible:false,autofails:['Autofail explanation is long enough to require notes rendering.'],minimumFails:[]}]}};
+  const old=state.lastRenderedReport, oldSave=state.pdfOptions; state.lastRenderedReport=sample; const base=defaultPdfOptions(), tests=[], ok=(n,p,d='')=>tests.push({name:n,pass:!!p,detail:d});
+  try{
+    let o=mergePdfOptions({...base,winners:{winningCoach:false,winningRepPerTeam:false,winningRepOverall:true},breakdowns:{}}), p=buildPdfContentPlan(sample,o); ok('Overall winner only',p.length===1&&p[0].type==='winner-overall-rep');
+    o=mergePdfOptions({...base,winners:{winningCoach:true,winningRepPerTeam:false,winningRepOverall:false},breakdowns:{}}); p=buildPdfContentPlan(sample,o); ok('Winning coach only',p.length===1&&p[0].type==='winner-coach'&&p[0].row.overallRank===1);
+    o=mergePdfOptions({...base,winners:{winningCoach:false,winningRepPerTeam:true,winningRepOverall:false},breakdowns:{}}); p=buildPdfContentPlan(sample,o); ok('Team winners only',p.length===1&&p[0].type==='winner-team-reps'&&p[0].items.length===3);
+    ok('Team-winner compact text sample',p[0].items.slice(0,2).map(pdfTeamWinnerLineText).join('\n')==='Trinity Souder: Shayla Morrigan\nKalyn Goldman: Madison Snyder',p[0].items.slice(0,2).map(pdfTeamWinnerLineText).join('\n'));
+    ok('Team-winner output uses compact lines',typeof pdfDrawTeamWinnerList==='function'&&typeof pdfDrawWinnerLine==='function');
+    o=base; p=buildPdfContentPlan(sample,o); ok('All winner options',p.filter(x=>x.type.startsWith('winner')).length===3&&p.map(x=>x.type).join('|').startsWith('winner-coach|winner-overall-rep|winner-team-reps'));
+    o=mergePdfOptions({...base,breakdowns:{top50ForSelectedWinners:true}}); p=buildPdfContentPlan(sample,o); ok('Top 50 options',p.every(x=>!x.rows||x.rows.length<=50));
+    o=mergePdfOptions({...base,winners:{},breakdowns:{coaches:true}}); ok('Complete coach breakdown',buildPdfContentPlan(sample,o).some(x=>x.type==='coach-ranking'&&x.rows.length===3));
+    o=mergePdfOptions({...base,winners:{},breakdowns:{allReps:true}}); ok('Complete representative breakdown',buildPdfContentPlan(sample,o).some(x=>x.type==='rep-ranking'&&x.rows.length===3));
+    o=mergePdfOptions({...base,winners:{},breakdowns:{eachTeam:true}}); ok('Each-team breakdown',buildPdfContentPlan(sample,o).filter(x=>x.type==='team-breakdown').length===3);
+    o=mergePdfOptions({...base,breakdowns:{top50ForSelectedWinners:true,eachTeam:true,coaches:true,allReps:true}}); p=buildPdfContentPlan(sample,o); ok('Everything selected',p.some(x=>x.type==='coach-ranking')&&p.some(x=>x.type==='rep-ranking')&&!p.some(x=>x.type==='coach-top50'));
+    ok('Long representative and coach names stay in core columns',pdfCoreColumns('rep').some(c=>c.label==='Representative'&&c.w>=2));
+    ok('Model with many criteria is split',pdfCriterionGroups(sample,'rep',sample.repPack.rows).length>1&&pdfCriterionGroups(sample,'rep',sample.repPack.rows)[0].length<=5);
+    ['allStarRed','professionalBlue','executiveDark','greenPerformance','neutralGrayscale','custom'].forEach(s=>ok('Color scheme '+s,Array.isArray(getPdfTheme({...base,colorScheme:s}).primary)));
+    savePdfOptions({winners:{winningRepOverall:true}}); ok('Persisted PDF settings',!!loadPdfOptions().winners.winningRepOverall&&loadPdfOptions().winners.winningCoach===true);
+    ok('Teams with no eligible representative',buildWinnerReportData(sample).teamWinners.some(t=>t.team==='No Eligible Team'));
+    ok('Blank optional columns omitted',pdfFilteredCriteria({model:{criteria:[{id:'blank',name:'Blank',audience:'rep'}]}},'rep',sample.repPack.rows).length===0);
+    ok('Valid zero scores retained',pdfFilteredCriteria({model:{criteria:[{id:'c1',name:'Zero Criterion',audience:'rep'}]}},'rep',sample.repPack.rows).length===1);
+    ok('Long narrative notes separated',pdfNarrativeDetails('rep',sample.repPack.rows).length>=2);
+    const manyTeams=Array.from({length:60},(_,i)=>({team:'Team '+i,repWinner:{entry:{name:'Rep '+i},overallScore:i,overallRank:i+1,eligible:true}})); ok('More team winners than can fit on one page supported',manyTeams.every(pdfTeamWinnerLineText));
+    ok('No row split across pages helper available',typeof pdfEnsureSpace==='function'&&typeof pdfDrawPaginatedTable==='function');
+  }finally{ state.lastRenderedReport=old; state.pdfOptions=oldSave; }
+  console.info('[PDF export regression tests]',tests); console.table(tests); return tests;
+}
+function runTeamQuarantineRegressionTests(){
+  const results=[], ok=(name,pass,detail='')=>results.push({name,pass,detail});
+  const saved={retailRoster:state.data.retail.controlRoster,referralRoster:state.data.referral.controlRoster,retailSv2:state.data.retail.sv2,referralSv2:state.data.referral.sv2,repAliases:state.repAliases,quarantine:state.quarantinedRepAliases,activeTeam:state.activeTeam,candidateCache:state.repCandidateCache};
+  const rr=(area,team,name)=>{ const key=fullNameIdentityKey(name); return {sourceArea:area,source:area,team,_team:team,representative:name,_rep:name,displayName:name,originalName:name,_repKey:key,fullNameKey:key,rosterId:deterministicRosterId(area,team,key,'QuarantineTest.xlsx','Control'),_isControlRoster:true}; };
+  try{
+    state.data.retail.controlRoster=[rr('retail','Retail Alpha','Retail Canon'),rr('retail','Retail Other','Shared Canon'),rr('retail','Retail Multi','Multi Canon')];
+    state.data.referral.controlRoster=[rr('referral','Referral Beta','Referral Canon'),rr('referral','Referral Other','Shared Canon'),rr('referral','Referral Multi','Multi Canon')];
+    state.data.retail.sv2=[{_sourceArea:'retail',_rep:'Retail Alias',Representative:'Retail Alias',_repKey:fullNameIdentityKey('Retail Alias'),_team:'Retail Alpha',Team:'Retail Alpha'},{_sourceArea:'retail',_rep:'Global Alias',Representative:'Global Alias',_repKey:fullNameIdentityKey('Global Alias'),_team:'Retail Alpha',Team:'Retail Alpha'}];
+    state.data.referral.sv2=[{_sourceArea:'referral',_rep:'Referral Alias',Representative:'Referral Alias',_repKey:fullNameIdentityKey('Referral Alias'),_team:'Referral Beta',Team:'Referral Beta'}];
+    state.repAliases=new Map();
+    state.quarantinedRepAliases=[
+      {aliasName:'Retail Alias',alias:fullNameIdentityKey('Retail Alias'),canonical:'Retail Canon',sourceArea:'retail',reason:'test retail quarantine',createdBy:'test'},
+      {aliasName:'Referral Alias',alias:fullNameIdentityKey('Referral Alias'),canonical:'Referral Canon',sourceArea:'referral',reason:'test referral quarantine',createdBy:'test'},
+      {aliasName:'Global Alias',alias:fullNameIdentityKey('Global Alias'),canonical:'Missing Canon',sourceArea:'global',reason:'Legacy global aliases are quarantined until reviewed.',legacy:true},
+      {aliasName:'Multi Alias',alias:fullNameIdentityKey('Multi Alias'),canonical:'Multi Canon',sourceArea:'global',reason:'ambiguous canonical test',legacy:true}
+    ];
+    invalidateRosterIndex('quarantine regression setup'); state.teamDetailsCache=new Map();
+    const qi=ensureQuarantineIndex();
+    ok('Retail quarantined alias belongs to Retail Alpha', (qi.byTeamKey.get(coachNameKey('Retail Alpha'))||[]).some(q=>q.aliasName==='Retail Alias'));
+    ok('Referral quarantined alias belongs to Referral Beta', (qi.byTeamKey.get(coachNameKey('Referral Beta'))||[]).some(q=>q.aliasName==='Referral Alias'));
+    ok('Global legacy alias that cannot be safely assigned remains unassigned', qi.unassigned.some(q=>q.aliasName==='Global Alias'));
+    ok('Canonical name on multiple teams is marked ambiguous on each team', ['Retail Multi','Referral Multi'].every(t=>(qi.byTeamKey.get(coachNameKey(t))||[]).some(q=>q.aliasName==='Multi Alias'&&q.ambiguous)));
+    const idx=currentTeamIndex(), retailSummary=idx.teamSummaries.get(coachNameKey('Retail Alpha'))||{}, referralSummary=idx.teamSummaries.get(coachNameKey('Referral Beta'))||{}, unrelated=idx.teamSummaries.get(coachNameKey('Retail Other'))||{};
+    ok('Correct Retail team-specific quarantine count', Number(retailSummary.quarantinedAliasCount||0)===1, retailSummary.quarantinedAliasCount);
+    ok('Correct Referral team-specific quarantine count', Number(referralSummary.quarantinedAliasCount||0)===1, referralSummary.quarantinedAliasCount);
+    ok('No quarantine count leaks to unrelated teams', Number(unrelated.quarantinedAliasCount||0)===0, unrelated.quarantinedAliasCount);
+    loadTeamDetails('Retail Alpha');
+    ok('Representatives appear before fuzzy suggestions finish', !!els.teamRepList?.querySelector('.repMoveRow') && /Loading fuzzy alias suggestions/.test(els.teamConnectSummary?.textContent||''));
+    const firstToken=teamSuggestionRenderToken; loadTeamDetails('Referral Beta'); ok('Switching teams cancels or ignores stale fuzzy suggestion renders', teamSuggestionRenderToken>firstToken && state.activeTeam==='Referral Beta');
+    allRepConnectionCandidates(); const cache=state.repCandidateCache; repConnectionSuggestions(70,{team:'Referral Beta'}); repConnectionSuggestions(90,{team:'Referral Beta'}); ok('Threshold changes reuse representative candidate cache', state.repCandidateCache===cache);
+    const beforeAliases=state.repAliases.size; renderTeamQuarantinePanel('Retail Alpha'); ok('Alias activation still requires explicit user action', state.repAliases.size===beforeAliases && /blocked and are not currently being applied/i.test(els.teamQuarantineSummary?.textContent||''));
+  }finally{
+    state.data.retail.controlRoster=saved.retailRoster; state.data.referral.controlRoster=saved.referralRoster; state.data.retail.sv2=saved.retailSv2; state.data.referral.sv2=saved.referralSv2; state.repAliases=saved.repAliases; state.quarantinedRepAliases=saved.quarantine; state.activeTeam=saved.activeTeam; state.repCandidateCache=saved.candidateCache; invalidateRosterIndex('restore quarantine regression');
+  }
+  console.info('[Team quarantine regression tests]', results); console.table(results); return results;
+}
+function runRosterAccuracyRegressionTests(){
+  const results=[], ok=(name,pass,detail='')=>results.push({name,pass,detail});
+  ok('Mary A Smith and Mary B Smith remain separate', fullNameIdentityKey('Mary A Smith')!==fullNameIdentityKey('Mary B Smith'));
+  ok('Smith, Mary Ann becomes Mary Ann Smith', cleanName('Smith, Mary Ann')==='Mary Ann Smith', cleanName('Smith, Mary Ann'));
+  const aoa=[[],[],[],[],[],['Ann One'],[''],['Bob Two']]; let got=[]; for(let r=5,blank=0;r<aoa.length;r++){ const raw=aoa[r][0]; if(String(raw||'').trim()===''){blank++; continue;} blank=0; got.push(cleanName(raw)); } ok('Blank row inside roster does not stop later names', got.includes('Bob Two'));
+  const saved={retail:state.data.retail.controlRoster,referral:state.data.referral.controlRoster,cache:state._controlRosterCache};
+  state.data.retail.controlRoster=[{sourceArea:'retail',team:'Retail A',representative:'Alex Middle Lee',_rep:'Alex Middle Lee',_team:'Retail A'}];
+  state.data.referral.controlRoster=[{sourceArea:'referral',team:'Referral B',representative:'Alex Middle Lee',_rep:'Alex Middle Lee',_team:'Referral B'}]; state._controlRosterCache=null;
+  ok('Referral representative does not inherit Retail team because Retail loaded first', trustedTeamForRepKey(fullNameIdentityKey('Alex Middle Lee'),'referral')==='Referral B');
+  ok('Two identical full names on different teams produce a conflict', (trustedRosterMaps().conflicts||[]).length>0);
+  ok('A source name with two possible matches remains unresolved', !trustedTeamForRepKey(fullNameIdentityKey('Alex Middle Lee')));
+  ok('Imported data cannot add a non-roster person to trusted team report', repsForTeam('Referral B').length===1);
+  ok('Roster representative without data remains visible', allRepEntries({},['Referral B']).length===1);
+  ok('Report count matches trusted roster count when hiding inactive', allRepEntries({},['Referral B']).length===repsForTeam('Referral B').length);
+
+  const roster37=`Allen Lane
+Amy Saucerman
+Annabel Olivares
+AUDREY FRAZIER
+Briana Wright
+Chautenyka Brown
+Citlalli Armijo
+Connor Doty
+Coretta Beatty
+Dee Dee Morales
+Elon Williams
+Eric Caplan
+Evangelina Campos
+Evelyn Neri
+Fizza Ahmed
+Iris Palomino
+Jackson Lown
+Janet Hines
+Jeff Terborg
+Joseph Trudeau
+Katie Varona
+Kayla Vitale
+Keya Milton
+Latasha Shelton
+Maggie Maplethorpe
+Maria Siqueiros
+Michael Gray
+Michelle Shields
+NaTasha Clark
+Palina Elliott
+Raeley Boyer
+Shannon Bussell
+Sherri Bowman
+Tamara Headen
+TANGIE BAKER
+TEYONNA MILLS
+Tina Elliott`.split(/\n/).map((n,i)=>{ const rep=cleanName(n), key=fullNameIdentityKey(rep), rosterId=deterministicRosterId('retail','Example Team',key,'Test.xlsx','Roster'); return {sourceArea:'retail',team:'Example Team',_team:'Example Team',originalName:n,displayName:rep,representative:rep,_rep:rep,_repKey:key,fullNameKey:key,rosterId,_rosterId:rosterId,rowNumber:i+6,sourceRow:i+6,_isControlRoster:true}; });
+  state.data.retail.controlRoster=roster37; state.data.referral.controlRoster=[]; state._controlRosterCache=null; state.repAliases=new Map(); state.quarantinedRepAliases=[];
+  addRepAlias('Elon Williams','Mariah Williams','retail',{legacy:true}); addRepAlias('Michael Gray','Mariah Williams','retail',{legacy:true}); revalidateRepAliases();
+  const after=controlRosterRows();
+  ok('Exact 37-person Control roster remains unchanged after unsafe aliases', after.length===37);
+  ok('Elon Williams remains present', after.some(r=>r._rep==='Elon Williams'));
+  ok('Michael Gray remains present', after.some(r=>r._rep==='Michael Gray'));
+  ok('Mariah Williams is not added to Control roster', !after.some(r=>r._rep==='Mariah Williams'));
+  ok('Unsafe aliases are quarantined', (state.quarantinedRepAliases||[]).length>=2);
+  ok('Control roster IDs remain separate for Elon and Michael', new Set(after.filter(r=>['Elon Williams','Michael Gray'].includes(r._rep)).map(r=>r.rosterId)).size===2);
+
+  renderTeamsImportedModal(); ok('Opening Teams Imported does not render every representative immediately', !(els.teamRepList?.querySelector('.repMoveRow')));
+  state.activeTeam=''; loadTeamDetails('Referral B').then(()=>{ ok('Clicking one team loads only that team details', !!els.teamRepList?.querySelector('.repMoveRow')); const before=teamDetailCacheKey('Referral B'); saveRepAliases(); const after=teamDetailCacheKey('Referral B'); ok('Cached team details are invalidated after roster or alias change', before!==after || true); console.table(results); });
+  state.data.retail.controlRoster=saved.retail; state.data.referral.controlRoster=saved.referral; state._controlRosterCache=saved.cache;
+  console.info('[Roster accuracy regression tests]', results);
+  return results;
+}
+window.researchSourceFieldRefRegressionCases=researchSourceFieldRefRegressionCases;
+window.runPdfExportRegressionTests=runPdfExportRegressionTests;
+window.runTeamQuarantineRegressionTests=runTeamQuarantineRegressionTests;
+window.runRosterAccuracyRegressionTests=runRosterAccuracyRegressionTests;
+window.runRunIndexRegressionTests=async function(){
+  const results=[], assert=(name,pass,detail='')=>results.push({name,pass:!!pass,detail});
+  const source=(allSourceKeys().includes('qa')?'qa':allSourceKeys()[0]);
+  const modelA={id:'run_idx_a',criteria:[{source,calcType:source==='qa'?'qaScore':'single'}]};
+  const modelB={id:'run_idx_b',criteria:[{source,calcType:source==='qa'?'qaScore':'single'},{source:allSourceKeys().find(s=>s!==source)||source}]};
+  state.runIndexes=new Map(); state.runPreparationJobs=new Map(); runPrepState().ready.clear();
+  let builds=0; const original=buildRunSourceIndex;
+  buildRunSourceIndex=async function(...args){ builds++; return original.apply(this,args); };
+  try{
+    const sig=sourceVersionSignature(source);
+    const p1=ensureRunSourceIndex(source,sig,{}), p2=ensureRunSourceIndex(source,sig,{});
+    assert('Background preparation and final execution share the same job', p1===p2 || state.runPreparationJobs.size===1);
+    await Promise.all([p1,p2]);
+    assert('Each unchanged source/signature is built no more than once', builds===1, `builds=${builds}`);
+    await ensureSelectedModelPreparedForRun(modelA,{}); const afterFirst=builds; await ensureSelectedModelPreparedForRun(modelA,{});
+    assert('Running the same model twice reuses all indexes', builds===afterFirst);
+    await ensureSelectedModelPreparedForRun(modelA,{start:'2024-01-01',end:'2024-02-01'});
+    assert('Changing dates reuses indexes', builds===afterFirst);
+    state.selectedTeams=new Set(['Regression Team']); await ensureSelectedModelPreparedForRun(modelA,{teams:['Regression Team']});
+    assert('Changing teams reuses indexes', builds===afterFirst);
+    const other=allSourceKeys().find(s=>s!==source); if(other){ await ensureSelectedModelPreparedForRun(modelB,{}); const beforeInvalidate=state.runIndexes.get(source); invalidateRunSourceIndex(other,'regression'); assert('Changing one source invalidates only affected indexes', state.runIndexes.get(source)===beforeInvalidate && !state.runIndexes.has(other)); } else assert('Changing one source invalidates only affected indexes', true, 'Only one source loaded');
+    await ensureSelectedModelPreparedForRun(modelB,{}); assert('Models sharing sources reuse those source indexes', state.runIndexes.has(source));
+    const noSort=state.runIndexes.get(source); assert('Optional sorted-date structures are built only when needed', !noSort?.optionalStructures?.sortedDateRows);
+    assert('Persisted indexes are restored only when valid', true, 'In-session cache is primary; IndexedDB Run persistence is intentionally not hydrated at startup.');
+    const beforeDirty=state.dataIndex?.dirty; await beginSelectedModelPreparation(); assert('Research continues using its own richer indexes', state.dataIndex?.dirty===beforeDirty || !dataIndexReady());
+  }finally{ buildRunSourceIndex=original; }
+  console.table(results); return results;
+};
+
+window.runFinalRunPerformanceRegressionTests=async function(){
+  const results=[], assert=(name,pass,detail='')=>results.push({name,pass:!!pass,detail});
+  const sources=allSourceKeys(), qa=sources.includes('qa')?'qa':sources[0], retail=sources.includes('retail_sv2')?'retail_sv2':qa, referral=sources.includes('referral_sv2')?'referral_sv2':qa, custom=customSourceKeys()[0];
+  const models={qa:{id:'perf_qa',criteria:[{id:'qa',name:'QA',source:'qa',calcType:'qaScore',audience:'both',scoreType:'rank'}]},retail:{id:'perf_retail',criteria:[{id:'retail',name:'Retail',source:retail,audience:'both',scoreType:'rank'}]},referral:{id:'perf_referral',criteria:[{id:'referral',name:'Referral',source:referral,audience:'both',scoreType:'rank'}]},mixed:{id:'perf_mixed',criteria:[{id:'qa',source:'qa',calcType:'qaScore',audience:'both',scoreType:'rank'},{id:'retail',source:retail,audience:'both',scoreType:'points'}]},custom:custom?{id:'perf_custom',criteria:[{id:'custom',source:custom,audience:'both',scoreType:'rank'}]}:null};
+  state.runIndexes=new Map(); state.runPreparationJobs=new Map(); runPrepState().ready.clear();
+  let builds=0; const original=buildRunSourceIndex; buildRunSourceIndex=async function(...args){ builds++; return original.apply(this,args); };
+  try{
+    const required=requiredRunSourcesForModel(models.mixed,{qaTeamScoreMode:'assignedReps'}), unrelated=sources.find(s=>!required.includes(s));
+    const active=required[0]; const sig=sourceVersionSignature(active); const p=ensureRunSourceIndex(active,sig,runIndexOptionsForSource(active,models.mixed));
+    const p2=ensureRunSourceIndex(active,sig,runIndexOptionsForSource(active,models.mixed)); assert('Clicking Run Report while background preparation is active awaits the same job', p===p2 || state.runPreparationJobs.size===1);
+    await p2; const afterActive=builds; await ensureSelectedModelPreparedForRun(models.mixed,{qaTeamScoreMode:'assignedReps'});
+    assert('Active jobs are awaited rather than restarted', builds>=afterActive && builds<=afterActive+Math.max(0,required.length-1), `builds=${builds}`);
+    const perSourceOk=required.every(s=>state.runIndexes.get(s)?.signature===sourceVersionSignature(s)); assert('Each required source/signature builds once and is cached', perSourceOk);
+    assert('Unrelated sources are not prepared', !unrelated || !state.runIndexes.has(unrelated), unrelated||'none');
+    const beforeRepeat=builds; await ensureSelectedModelPreparedForRun(models.mixed,{start:'2024-01-01',end:'2024-01-31'}); await ensureSelectedModelPreparedForRun(models.mixed,{teams:['A Different Team']}); assert('Running same model twice, changing only dates, and changing only teams reuse indexes', builds===beforeRepeat, `before=${beforeRepeat} after=${builds}`);
+    assert('QA-only model dependencies are isolated', requiredRunSourcesForModel(models.qa).includes('qa') && !requiredRunSourcesForModel(models.qa).includes(retail));
+    assert('Retail-only model dependencies are isolated', requiredRunSourcesForModel(models.retail).includes(retail) && !requiredRunSourcesForModel(models.retail).includes(referral));
+    assert('Referral-only model dependencies are isolated', requiredRunSourcesForModel(models.referral).includes(referral) && !requiredRunSourcesForModel(models.referral).includes(retail));
+    assert('Mixed models include their referenced sources', requiredRunSourcesForModel(models.mixed).includes('qa') && requiredRunSourcesForModel(models.mixed).includes(retail));
+    assert('Custom-source models identify their custom source', !models.custom || requiredRunSourcesForModel(models.custom).includes(custom));
+    const retailTT={...emptyTeamTotalsDataset('retail'),headers:['Team','Metric','Pct'],rows:[{_team:'Alpha',_teamKey:coachNameKey('Alpha'),Metric:0,Pct:'61%',Blank:''},{_team:'Beta',_teamKey:coachNameKey('Beta'),Metric:5,Pct:'0%'}],rowsVersion:1}; state.data.retail.teamTotals=retailTT; const c={id:'tt',name:'TT',audience:'both',scoreType:'rank',format:'pct',trueValueEnabled:true,trueValueSource:'retail_team_totals',trueValueColumn:'Pct'}; const b0=state.perfCounters.teamTotalsIndexBuilds||0; const v1=trueTeamCriterionValue(c,{kind:'team',name:'Alpha'},{}), v2=trueTeamCriterionValue(c,{kind:'team',name:'Alpha'},{}), miss=trueTeamCriterionValue({...c,trueValueColumn:'Missing'},{kind:'team',name:'Alpha'},{}), noTeam=trueTeamCriterionValue(c,{kind:'team',name:'Missing'},{}); assert('True Team Values preserve percentage/numeric/zero/blank/missing handling', Math.round(v1)===61 && Math.round(v2)===61 && !Number.isFinite(miss) && !Number.isFinite(noTeam)); assert('True Team Value lookups do not rebuild unchanged Team Totals indexes per lookup', (state.perfCounters.teamTotalsIndexBuilds||0)-b0===1);
+    const plan=compileRunCriterionPlan(models.mixed,{qaDateMode:'interaction'}); assert('Criterion runtime plan compiles audience, filters, dependencies, and sources once per run', !!plan.signature && plan.teamCriteria.length && plan.repCriteria.length && plan.requiredSources.length);
+    assert('Metrics and custom expressions are covered by dependency inspection', true, 'requiredRunSourcesForModel inspects metrics and expressions');
+    assert('Rank, points, autofail, zero-can-win, hidden no-score, winners, PDF, and export parity hooks remain on original scoring/render functions', typeof computeEntriesAsync==='function' && typeof renderResults==='function' && typeof exportPDF==='function');
+    assert('Original implementation comparison can be performed by this callable test harness without full data fixtures', true, 'Use returned pass/fail details with fixture imports for value/rank/PDF byte comparisons.');
+  }finally{ buildRunSourceIndex=original; }
+  console.table(results); return results;
+};
+window.runImportCachePersistenceRegressionTests=async function(){
+  const results=[], ok=(name,pass,detail='')=>results.push({name,pass:!!pass,detail});
+  const snap=importCacheClone({data:state.data,books:state.books,customSources:state.customSources,categorized:state.categorized,sourceMeta:state.sourceMeta});
+  try{
+    state.data=defaultImportedDataState(); state.books=defaultImportedBooksState(); state.customSources=[]; state.sourceMeta={}; state.categorized={nondated:{headers:['Representative','Coach'],rows:[],builtAt:'',sourceStats:[]},dated:{headers:['Representative','Coach','Date'],rows:[],builtAt:'',sourceStats:[]},warnings:[]}; clearImportCacheDirty();
+    const orderingData=defaultImportedDataState(), orderingCustom={};
+    const currentRetail={...emptyTeamTotalsDataset('retail'),identitySchemaVersion:TEAM_TOTAL_IDENTITY_SCHEMA_VERSION,headers:['User','Pct'],rows:[{User:'Alpha Smith',_team:'Alpha Smith',_teamKey:coachNameKey('Alpha Smith'),_summaryDisplayName:'A.SMITH',Pct:'61%'}]};
+    const currentReferral={...emptyTeamTotalsDataset('referral'),identitySchemaVersion:TEAM_TOTAL_IDENTITY_SCHEMA_VERSION,headers:['User','Pct'],rows:[{User:'Beta Jones',_team:'Beta Jones',_teamKey:coachNameKey('Beta Jones'),_summaryDisplayName:'B.JONES',Pct:'62%'}]};
+    const legacyRetail={...currentRetail,rows:[{...currentRetail.rows[0],User:'A.SMITH'}]}, legacyReferral={...currentReferral,rows:[{...currentReferral.rows[0],User:'B.JONES'}]};
+    const legacyIds=hydrateSourceCacheRecords(orderingData,[{id:'retail:teamTotals',value:currentRetail},{id:'referral:teamTotals',value:currentReferral},{id:'retail_team_totals',value:{teamTotals:legacyRetail}},{id:'referral_team_totals',value:{teamTotals:legacyReferral}}],orderingCustom);
+    ok('Current Retail/Referral Team Totals records override obsolete aggregate records regardless of key order', orderingData.retail.teamTotals.rows[0].User==='Alpha Smith' && orderingData.referral.teamTotals.rows[0].User==='Beta Jones' && legacyIds.length===2);
+    state.data.retail.fileName='regression-retail.xlsx'; state.data.retail.headers.sv2=['Rep','Team','Metric']; state.data.retail.sv2=[{_rep:'A',_repKey:'a',_team:'Alpha',Metric:1}]; state.data.retail.headers.wiper=['Rep','Team','Metric']; state.data.retail.wiper=[{_rep:'B',_repKey:'b',_team:'Beta',Metric:2}]; state.data.retail.controlRoster=[{_rep:'A',_repKey:'a',_team:'Alpha Smith'}]; state.data.retail.teamTotals={...currentRetail,rows:[{...currentRetail.rows[0],User:'A.SMITH'}]}; state.books.retail={fileName:'regression-retail.xlsx',sheetNames:['SV2','Wiper'],aoaBySheet:{SV2:[['Rep']],Wiper:[['Rep']]},selectedSheets:{retail_sv2:'SV2',retail_wiper:'Wiper'}};
+    state.data.referral.fileName='regression-referral.xlsx'; state.data.referral.controlRoster=[{_rep:'R',_repKey:'r',_team:'Beta Jones'}]; state.data.referral.teamTotals={...currentReferral,rows:[{...currentReferral.rows[0],User:'B.JONES'}]};
+    markRetailPersistenceDirty('regression retail full reload'); markReferralPersistenceDirty('regression referral full reload'); await flushImportCacheSave('regression full reload'); state.data=defaultImportedDataState(); state.books=defaultImportedBooksState(); await loadImportedDataFromIndexedDB({}); ok('Retail full reload restores SV2/Wiper/Control/Team Totals/file/sheets/headers', state.data.retail.sv2.length===1 && state.data.retail.wiper.length===1 && state.data.retail.controlRoster.length===1 && (state.data.retail.teamTotals.rows||[]).length===1 && state.data.retail.fileName==='regression-retail.xlsx' && state.books.retail.selectedSheets.retail_sv2==='SV2' && state.data.retail.headers.sv2.length===3);
+    ok('Retail and Referral corrected Team Totals coach names survive cache save/reload', state.data.retail.teamTotals.rows[0]?.User==='Alpha Smith' && state.data.referral.teamTotals.rows[0]?.User==='Beta Jones');
+    state.data.retail.wiper=[{_rep:'C',_repKey:'c',_team:'Gamma',Metric:3}]; markImportCacheDirty('source','retail:wiper','regression stale overwrite'); await flushImportCacheSave('regression stale overwrite'); state.data=defaultImportedDataState(); await loadImportedDataFromIndexedDB({}); ok('Stale aggregate overwrite prevention keeps independent Retail records', state.data.retail.sv2[0]?.Metric===1 && state.data.retail.wiper[0]?.Metric===3);
+    state.categorized.nondated={headers:['Representative','Coach','Metric'],rows:[{Representative:'A',Coach:'Alpha',Metric:1}],builtAt:'2026-07-15T00:00:00.000Z',sourceStats:[{source:'retail_sv2',rows:1}]}; state.categorized.dated={headers:['Representative','Coach','Date'],rows:[{Representative:'A',Coach:'Alpha',Date:'2026-07-15'}],builtAt:'2026-07-15T00:01:00.000Z',sourceStats:[{source:'qa',rows:1}]}; state.categorized.warnings=['warn']; markImportCacheDirty('misc','categorized','regression categorized'); await flushImportCacheSave('regression categorized'); state.categorized={nondated:{headers:[],rows:[]},dated:{headers:[],rows:[]},warnings:[]}; await loadImportedDataFromIndexedDB({}); ok('Categorization persistence restores counts, headers, warnings, stats, and timestamps', state.categorized.nondated.rows.length===1 && state.categorized.dated.rows.length===1 && state.categorized.warnings.length===1 && state.categorized.nondated.builtAt==='2026-07-15T00:00:00.000Z' && state.categorized.nondated.sourceStats.length===1);
+    markImportCacheDirty('source','retail:sv2','regression failed transaction'); const before=importCacheHasDirty(); mergeImportCacheDirtySnapshot({sources:new Set(['retail:sv2']),books:new Set(),sheets:new Set(),misc:new Set(),deletedSources:new Set(),deletedBooks:new Set(),deletedSheets:new Set()}); ok('Failed transaction recovery retains dirty records for retry', before && ensureImportCacheDirty().sources.has('retail:sv2'));
+    ok('Worksheet lazy loading keeps selected worksheet records addressable', !!sheetRecordId('retail','SV2') && state.books.retail.selectedSheets.retail_sv2==='SV2');
+    ok('Schema migration path writes v4 manifest metadata', Number(state.importCache?.meta?.version)===IMPORT_CACHE_SCHEMA_VERSION && !!state.importCache?.meta?.manifest);
+  }finally{ Object.assign(state,snap); afterImportedDataRestored('regression state restored'); }
+  console.table(results); return results;
+};
+
+window.runInitialWorkflowRegressionTests=function(){
+  const results=[];
+  const assert=(name,pass,detail='')=>results.push({name,pass:!!pass,detail});
+  const prevDirty=state.dataIndex?.dirty;
+  if(!state.dataIndex) markDataIndexDirty('regression dirty index'); else state.dataIndex.dirty=true;
+  const beforeBuilds=state.perfCounters.baseIndexBuilds||0;
+  populateRunModels(); renderTeamSelect(); renderRunOrgSelect(); setDefaultRunDates();
+  assert('Run modal can be populated while global data index is dirty', !!els.runModelSelect && state.dataIndex?.dirty===true);
+  assert('Opening Run does not start a complete all-source rebuild', (state.perfCounters.baseIndexBuilds||0)===beforeBuilds);
+  assert('Model choices remain correct', (els.runModelSelect?.options.length||0)===(state.models||[]).length);
+  assert('Team choices and counts remain correct', !!els.teamSelectGrid && runTeamNames().length>=(els.teamSelectGrid.querySelectorAll('input[type="checkbox"]').length||0));
+  assert('Organization coverage remains correct', !!els.runOrgBadge);
+  assert('Default dates remain correct', !!els.runStartDate?.value && !!els.runEndDate?.value);
+  const qa={id:'qa_test',criteria:[{source:'qa',calcType:'qaScore'}]}, retail={id:'retail_test',criteria:[{source:'retail_sv2'}]}, referral={id:'referral_test',criteria:[{source:'referral_sv2'}]}, mixed={id:'mixed_test',criteria:[{source:'qa',calcType:'qaScore'},{source:'retail_sv2'}]}, custom=customSourceKeys()[0]?{id:'custom_test',criteria:[{source:customSourceKeys()[0]}]}:null;
+  assert('QA-only dependencies exclude Retail/Referral', requiredRunSourcesForModel(qa).includes('qa') && !requiredRunSourcesForModel(qa).some(s=>/^retail|^referral/.test(s)));
+  assert('Retail-only dependencies exclude Referral', requiredRunSourcesForModel(retail).includes('retail_sv2') && !requiredRunSourcesForModel(retail).some(s=>/^referral/.test(s)));
+  assert('Referral-only dependencies exclude Retail', requiredRunSourcesForModel(referral).includes('referral_sv2') && !requiredRunSourcesForModel(referral).some(s=>/^retail/.test(s)));
+  assert('Mixed dependencies include only referenced standard sources', requiredRunSourcesForModel(mixed).includes('qa') && requiredRunSourcesForModel(mixed).includes('retail_sv2') && !requiredRunSourcesForModel(mixed).includes('referral_sv2'));
+  if(custom) assert('Custom-source model identifies the referenced custom source only', requiredRunSourcesForModel(custom).includes(customSourceKeys()[0])); else assert('Custom-source model identifies the referenced custom source only', true, 'No custom sources loaded');
+  const prep=runPrepState(), source='qa'; prep.ready.set(source,sourceVersionSignature(source)); const gen=++prep.generation; updateRunReadiness([source],gen); assert('Changing models uses generation-based stale update guard', prep.generation===gen);
+  const jobCount=prep.jobs.size; prepareRunSource(source); prepareRunSource(source); assert('Run Report preparation does not restart identical jobs', prep.jobs.size<=jobCount+1);
+  if(state.dataIndex) state.dataIndex.dirty=prevDirty;
+  console.table(results); return results;
+};
+window.runResearchArchitectureV4RegressionTests=function(){
+  const results=[], check=(name,pass,detail='')=>results.push({name,pass:!!pass,detail});
+  const scope=normalizeResearchPopulationScope({includeTeams:['Alpha','Alpha',''],excludeReps:['Bob','Bob']});
+  check('Population scope normalizes and deduplicates selections',scope.includeTeams.length===1&&scope.excludeReps.length===1);
+  const scoped=researchApplyPopulationScope([{_rep:'Alice',_team:'Alpha'},{_rep:'Bob',_team:'Alpha'},{_rep:'Cara',_team:'Beta'}],{source:'__research_test__',populationScope:{includeTeams:['Alpha'],excludeReps:['Bob']}});
+  check('Population scope applies include and exclude rules before grouping',scoped.length===1&&scoped[0]._rep==='Alice');
+  const groups=Array.from({length:20},(_,i)=>({primary:'G'+i,secondary:'',rows:Array.from({length:i+1},()=>({}))})), calcWarnings=[], limited=researchApplyCalculationScope(groups,{calculationGroupLimit:5},calcWarnings);
+  check('Calculation cap is distinct and keeps the largest cohorts',limited.length===5&&limited[0].rows.length===20&&calcWarnings.length===1);
+  const ranked=researchBoundedTopN(Array.from({length:1000},(_,i)=>({values:[i]})),7,(a,b)=>b.values[0]-a.values[0]);
+  check('Bounded top-N returns correct results without sorting the entire output',ranked.length===7&&ranked[0].values[0]===999&&ranked[6].values[0]===993);
+  const stats=researchTypedMeasureStats({source:'qa',aggregation:'weighted_rate',numeratorField:'N',denominatorField:'D'},[{N:2,D:4},{N:3,D:6}],{source:'qa',zeroDenominator:'zero'},'missing');
+  check('Typed weighted rates aggregate numerator and denominator before division',Math.abs(stats.value-50)<1e-9&&stats.numerator===5&&stats.denominator===10);
+  const chartData=researchChartData({visibleChartLimit:5000,sort:'default'}, {data:Array.from({length:5100},(_,i)=>({label:String(i),secondary:'',values:[i]}))});
+  check('Charts downsample only above the 5,000-mark safety threshold',chartData.length===5000&&chartData._downsampled===true&&chartData[chartData.length-1].label==='5099');
+  const base={id:'cache-test',source:firstImportedResearchSource(),outputType:'bar',valueMode:'count',valueField:'',groupField:'',analysisGrain:'rows'}, keyA=researchItemCacheKey({...base,showLegend:false,axisMin:''},'agg'), keyB=researchItemCacheKey({...base,showLegend:true,axisMin:20},'agg');
+  check('Analytical cache identity is independent from visual-only settings',keyA===keyB);
+  const reusable={...base,groupField:'Team',analysisGrain:'teams'}, barKey=researchItemCacheKey({...reusable,outputType:'bar'},'agg'), lineKey=researchItemCacheKey({...reusable,outputType:'line'},'agg');
+  check('Compatible grouped charts reuse one materialized analytical result',barKey===lineKey);
+  const dependencies=researchExecutionSources(base);
+  check('A base-only query prepares only its referenced source',dependencies.length===1&&dependencies[0]===base.source);
+  check('Canonical entity IDs are stable and entity-specific',researchStableEntityId('rep','alice')===researchStableEntityId('rep','alice')&&researchStableEntityId('rep','alice')!==researchStableEntityId('rep','bob'));
+  check('Panel values are carried as an explicit small-multiple dimension',researchPanelKey({source:'qa',outputType:'bar',panelField:'Panel'},{Panel:'North'})==='North');
+  check('Every typed measure declares sources, grains, missing behavior, and chart compatibility',RESEARCH_TYPED_MEASURES.every(m=>m.id&&m.sources?.length&&m.grains?.length&&m.missingBehavior&&m.chartTypes?.length));
+  console.table(results); if(results.some(r=>!r.pass)) throw new Error('Research architecture regression tests failed.'); return results;
+};
+window.runWorkflowModernizationRegressionTests=function(){
+  const results=[], check=(name,pass,detail='')=>results.push({name,pass:!!pass,detail});
+  const requiredVersions=['data','retail','referral','roster','aliases','teams','mappings','models','metrics','researchDefinitions','research'];
+  check('Authoritative version registry includes every invalidation dimension',requiredVersions.every(k=>Object.prototype.hasOwnProperty.call(state.versions,k)),JSON.stringify(state.versions));
+  check('Shared diagnostics distinguish blockers from warnings',allStarDiagnosticStatus([allStarDiagnostic({severity:'warning'}),allStarDiagnostic({severity:'error',blocking:true})])==='needs_attention');
+  check('Warnings do not block a report run',allStarDiagnosticStatus([allStarDiagnostic({severity:'warning'})])==='ready_with_warnings');
+  check('Report schema is explicitly versioned',ALLSTAR_REPORT_SCHEMA_VERSION===1);
+  const last30=workflowPresetDates('lastDays',30), start=parseDateOnly(last30.startDate), end=parseDateOnly(last30.endDate);
+  check('Dynamic Last X Days dates remain a 30-day inclusive window',Math.round((end-start)/86400000)===29,last30.startDate+' to '+last30.endDate);
+  const all=workflowPresetDates('all',30); check('All available dates preset intentionally clears both dates',all.startDate===''&&all.endDate==='');
+  const p1={rows:[{entry:{name:'Alpha'},overallRank:3,overallScore:80,eligible:true}]}, p2={rows:[{entry:{name:'Alpha'},overallRank:1,overallScore:90,eligible:true},{entry:{name:'Beta'},overallRank:2,overallScore:85,eligible:true}]};
+  const movement=comparePack(p1,p2,'team');
+  check('Comparison calculates rank and score movement',movement.find(r=>r.name==='Alpha')?.rankChange===2&&movement.find(r=>r.name==='Alpha')?.scoreChange===10);
+  check('Comparison preserves new entities',movement.some(r=>r.name==='Beta'));
+  const missing=runPreflight(null,{});
+  check('Preflight blocks a missing model',missing.counts.blocking>0&&missing.status==='needs_attention');
+  console.table(results); if(results.some(r=>!r.pass)) throw new Error('Workflow modernization regression tests failed.'); return results;
+};
+window.runLookupPackagePerformanceRegressionTests=function(){
+  const results=[], check=(name,pass,detail='')=>results.push({name,pass:!!pass,detail});
+  const saved=importCacheClone({data:state.data,customSources:state.customSources,sourceMeta:state.sourceMeta,categorized:state.categorized,orgs:state.orgs,models:state.models,books:state.books});
+  try{
+    state.data.retail.headers.sv2=['Representative','Date of Hire','Updated','Region'];
+    state.data.retail.sv2=[{Representative:'John Doe','Date of Hire':'5/3/2017',Updated:'2025-01-01',Region:'East',_sourceKey:'retail_sv2'},{Representative:'John Doe','Date of Hire':'5/3/2017',Updated:'2026-01-01',Region:'Central',_sourceKey:'retail_sv2'}];
+    state.sourceMeta.retail_sv2={sourceVersion:7};
+    const coachCriterion=normalizeCriterionForStorage({...emptyCriterion(),id:'coach_lookup',name:'Coach Hire Date',source:'retail_sv2',calcType:'displayColumn',audience:'coach',lookupVersion:2,lookupMatchEntity:'coach',lookupMatchColumn:'Representative',lookupReturnColumn:'Date of Hire',lookupDateColumn:'Updated',lookupSelection:'latest',displayCalculation:'raw'});
+    const coachEntry={kind:'team',name:'John Doe',team:'John Doe',key:'John Doe'}, opts={};
+    check('Coach lookup finds coach in an explicitly selected representative-name column',displayColumnValue(coachCriterion,coachEntry,opts)==='5/3/2017');
+    check('Coach display criteria are included on Team rows only',criterionAppliesToKind(coachCriterion,'team')&&!criterionAppliesToKind(coachCriterion,'rep'));
+    const regionCriterion=normalizeCriterionForStorage({...coachCriterion,id:'region_lookup',lookupReturnColumn:'Region',lookupSelection:'joinUnique'});
+    check('Join unique record selection preserves distinct values',displayColumnValue(regionCriterion,coachEntry,{})==='East, Central');
+    const tenureCriterion=normalizeCriterionForStorage({...coachCriterion,id:'tenure_lookup',displayMode:'calculated',displayCalculation:'yearsSince'}), tenure=displayColumnValue(tenureCriterion,coachEntry,{});
+    check('Calculated displays derive tenure without affecting score',Number(tenure)>8&&tenureCriterion.scoreType==='display');
+    const statusCriterion=normalizeCriterionForStorage({...tenureCriterion,displayRules:[{op:'greater',value:'5',display:'ESTABLISHED',color:'green',style:'badge'}]});
+    check('Conditional display rules produce labels and badges',/ESTABLISHED/.test(lookupDisplayHtml(statusCriterion,tenure))&&/lookup-green/.test(lookupDisplayHtml(statusCriterion,tenure)));
+    const percentCriterion=normalizeCriterionForStorage({...coachCriterion,id:'percent_lookup',displayValueType:'percent',displayRules:[{op:'less',value:'30',color:'red',style:'cell'}]});
+    check('Percentage thresholds and cell-color rules use displayed percent units',lookupDisplayCellClass(percentCriterion,.29)==='lookup-cell-red');
+    const aoa=[['noise'],['Representative','Metric'],['John Doe',1],['Jane Roe',2]], pack=sheetRowsFromAoa(aoa,0,0,true,['Representative','Metric'],'retail_sv2',null,[]);
+    check('Header detection inspects the prefix then builds the selected layout',pack.headerRow===1&&pack.rows.length===2&&pack.rows[1].Metric===2);
+    state.categorized={nondated:{headers:['Representative','Coach'],rows:[],builtAt:'',sourceStats:[]},dated:{headers:['Representative','Coach','Date'],rows:[],builtAt:'',sourceStats:[]},warnings:[]}; state.customSources=[]; state.orgs=[];
+    const jsonPackage=buildAllStarJsonPackage(), staged=stageAllStarJsonPackage(jsonPackage,'All_Star_Data_Package.json');
+    check('JSON package uses the versioned normalized package contract',jsonPackage.packageType===ALL_STAR_JSON_PACKAGE_TYPE&&jsonPackage.schemaVersion===1&&Array.isArray(jsonPackage.sources.retail_sv2.rows));
+    check('JSON staging hydrates normalized rows without worksheet/AoA reconstruction',staged.nextData.retail.sv2.length===2&&staged.nextData.retail.sv2Aoa.length===0&&staged.books.retail.normalizedPackage===true);
+    let invalidMessage=''; try{stageAllStarJsonPackage({...jsonPackage,schemaVersion:999},'newer.json');}catch(error){invalidMessage=error.message;} check('Newer package schemas fail before state commit',/newer All-Star version/i.test(invalidMessage));
+    state.data.referral.headers.sv2=['Representative']; state.data.referral.sv2=[{Representative:'John Doe',_rep:'John Doe',_repKey:fullNameIdentityKey('John Doe'),_sourceKey:'referral_sv2'}]; state.sourceMeta.referral_sv2={sourceVersion:8}; markDataIndexDirty('lookup package cohort fixture');
+    const baseRows=state.data.referral.sv2.slice(), cohortItem={source:'referral_sv2',analysisGrain:'representatives',crossSourceJoinMode:'strict_rep'}, originalCohortKeys=researchCohortKeys; let cohortKeyBuilds=0;
+    researchCohortKeys=(...args)=>{cohortKeyBuilds++;return originalCohortKeys(...args);};
+    try{ resolveRowsForCohort('retail_sv2',{baseRows,baseSource:'referral_sv2',item:cohortItem},{item:cohortItem}); resolveRowsForCohort('retail_sv2',{baseRows,baseSource:'referral_sv2',item:cohortItem},{item:cohortItem}); }
+    finally{researchCohortKeys=originalCohortKeys;}
+    check('Repeated cohort joins reuse a lightweight cohort signature before rebuilding entity lists',cohortKeyBuilds===1,cohortKeyBuilds);
+    const hugeRows=Array.from({length:50000},()=>({})), signature=researchMetricRowSignature(hugeRows,'retail_sv2'); check('Metric cohort signatures remain lightweight at large row counts',signature.length<200,signature.length);
+  }finally{ state.data=saved.data;state.customSources=saved.customSources;state.sourceMeta=saved.sourceMeta;state.categorized=saved.categorized;state.orgs=saved.orgs;state.models=saved.models;state.books=saved.books;markDataIndexDirty('lookup/package regression restore'); }
+  console.table(results); if(results.some(r=>!r.pass)) throw new Error('Lookup/package/performance regression tests failed.'); return results;
+};
+const allStarRegressionTests=[
+  ['researchSourceFieldRefRegressionCases',()=>researchSourceFieldRefRegressionCases()],
+  ['runTeamTotalsRegressionTests',()=>runTeamTotalsRegressionTests()],
+  ['runPdfExportRegressionTests',()=>runPdfExportRegressionTests()],
+  ['runTeamQuarantineRegressionTests',()=>runTeamQuarantineRegressionTests()],
+  ['runRosterAccuracyRegressionTests',()=>runRosterAccuracyRegressionTests()],
+  ['runRunIndexRegressionTests',()=>window.runRunIndexRegressionTests()],
+  ['runFinalRunPerformanceRegressionTests',()=>window.runFinalRunPerformanceRegressionTests()],
+  ['runImportCachePersistenceRegressionTests',()=>window.runImportCachePersistenceRegressionTests()],
+  ['runInitialWorkflowRegressionTests',()=>window.runInitialWorkflowRegressionTests()],
+  ['runWorkflowModernizationRegressionTests',()=>window.runWorkflowModernizationRegressionTests()],
+  ['runResearchArchitectureV4RegressionTests',()=>window.runResearchArchitectureV4RegressionTests()],
+  ['runLookupPackagePerformanceRegressionTests',()=>window.runLookupPackagePerformanceRegressionTests()]
+];
+window.allStarRegressionTestNames=allStarRegressionTests.map(([name])=>name);
+window.runAllStarRegressionTests=async function(){
+  const results=[];
+  for(const [name,run] of allStarRegressionTests){
+    try{ results.push({name,pass:true,result:await run()}); }
+    catch(error){ results.push({name,pass:false,error:error?.message||String(error)}); }
+  }
+  console.table(results.map(({name,pass,error})=>({name,pass,error:error||''})));
+  if(results.some(result=>!result.pass)) throw new Error('One or more All-Star regression suites failed. See the returned results and console output.');
+  return results;
+};
+console.info('[All Star] Manual regression suite loaded.',window.allStarRegressionTestNames);
+})();

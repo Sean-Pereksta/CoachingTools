@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>All Star Model Runner</title>
+<meta name="coachtools-app" content="true" />
+<meta name="coachtools-id" content="allstar" />
+<meta name="coachtools-name" content="All-Star Report" />
+<meta name="coachtools-description" content="Build and run organization-wide performance models, research, and reports." />
+<meta name="coachtools-category" content="Core" />
+<meta name="coachtools-icon" content="icons/allstar.png" />
+<meta name="coachtools-initials" content="AS" />
+<meta name="coachtools-keywords" content="all star, report, model, research, organization, qualtrics" />
+<meta name="coachtools-favorite" content="true" />
+<meta name="coachtools-featured" content="true" />
+<meta name="coachtools-order" content="10" />
+<meta name="coachtools-version" content="1.0" />
+<script src="../../vendor/xlsx.full.min.js"></script>
+<script src="../../vendor/html2pdf.bundle.min.js"></script>
+<script src="../../vendor/jspdf.umd.min.js"></script>
+<script src="../../shared/coachtools-storage.js"></script>
+<script src="../../shared/coachtools-shell.js"></script>
+<link rel="stylesheet" href="css/allstar.css">
+</head>
+<body>
+<div class="toolbar">
+  <select id="categoriesDrop" class="toolbarSelect"><option value="">Categories</option><option value="models">Create/Modify</option><option value="massHeaders">Mass Header Check</option><option value="metrics">Metrics</option></select>
+  <select id="importDrop" class="toolbarSelect"><option value="">Import</option><option value="data">Import Data</option><option value="roster">Roster Reassignment</option><option value="teams">Teams Imported</option><option value="orgs">Org Builder</option></select>
+  <button id="runBtn" class="toolbarBtn">Run</button>
+  <select id="researchBtn" class="toolbarSelect"><option value="">Research</option><option value="listTester">List Tester</option><option value="open">Open Research</option><option value="clear">Clear Research</option></select>
+  <select id="pdfDrop" class="toolbarSelect"><option value="">PDF</option><option value="export">Export</option><option value="options">Options</option></select>
+  <button id="qualtricsEmailBtn" class="toolbarBtn">Qualtrics Email</button>
+  <button id="clearOutputBtn" class="toolbarBtn">Clear</button>
+  <div class="toolbarSpacer"></div>
+  <div id="topStatus" class="statusLine"></div>
+</div>
+<div id="workArea"><div class="empty"></div></div>
+<div id="loadingOverlay" class="loadingOverlay" aria-hidden="true">
+  <div class="loadingCard" role="status" aria-live="polite">
+    <div class="loadingTitle">Working…</div>
+    <div id="loadingText" class="loadingText">Preparing...</div>
+    <div class="loadingBarTrack"><div id="loadingBarFill" class="loadingBarFill"></div></div>
+    <div id="loadingPct" class="loadingPct">0%</div>
+  </div>
+</div>
+
+<div id="pdfOptionsModal" class="modalBackdrop pdfOptionsModal">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">PDF Options</div><button class="dark" data-close="pdfOptionsModal">Close</button></div>
+    <div class="modalBody">
+      <div class="pdfOptionsGrid">
+        <div class="pdfOptionsSection">
+          <h3>PDF Design</h3>
+          <div class="field"><label>PDF Title</label><input id="pdfTitleInput" type="text" placeholder="All Star Report"></div>
+          <div class="field"><label>Optional Subtitle</label><input id="pdfSubtitleInput" type="text" placeholder="Reporting period, department, contest name..."></div>
+          <div class="field"><label>Color Scheme</label><select id="pdfColorScheme"><option value="allStarRed">All Star Red</option><option value="professionalBlue">Professional Blue</option><option value="executiveDark">Executive Dark</option><option value="greenPerformance">Green Performance</option><option value="neutralGrayscale">Neutral Grayscale</option><option value="custom">Custom</option></select></div>
+          <div id="pdfCustomColors" class="pdfCustomColors hidden"><div class="pdfColorGrid">
+            <div class="field"><label>Primary color</label><input id="pdfCustomPrimary" type="color"></div>
+            <div class="field"><label>Accent color</label><input id="pdfCustomSecondary" type="color"></div>
+            <div class="field"><label>Header text color</label><input id="pdfCustomHeaderText" type="color"></div>
+            <div class="field"><label>Light fill color</label><input id="pdfCustomLightFill" type="color"></div>
+          </div></div>
+          <div class="row"><div class="field"><label>Orientation</label><select id="pdfOrientation"><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select></div><div class="field"><label>Page size</label><select id="pdfPageSize"><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>
+        </div>
+        <div class="pdfOptionsSection">
+          <h3>Winners</h3>
+          <label class="checkItem"><input id="pdfWinCoach" type="checkbox"> Winning Coach</label>
+          <label class="checkItem"><input id="pdfWinRepTeam" type="checkbox"> Winning Representative From Each Team</label>
+          <label class="checkItem"><input id="pdfWinRepOverall" type="checkbox"> Winning Representative Overall</label>
+          <h3>Breakdowns</h3>
+          <label class="checkItem"><input id="pdfTop50" type="checkbox"> Top 50 for Selected Winner Sections</label>
+          <label class="checkItem"><input id="pdfEachTeam" type="checkbox"> Break Down Each Team</label>
+          <label class="checkItem"><input id="pdfCoaches" type="checkbox"> Break Down Coaches</label>
+          <label class="checkItem"><input id="pdfAllReps" type="checkbox"> Break Down All Representatives</label>
+        </div>
+      </div>
+      <div class="pdfOptionsSection">
+        <div id="pdfOptionsSummary" class="pdfSummaryBox">Selected PDF Content</div>
+        <div class="pdfOptionActions">
+          <button id="pdfWinnerSummaryBtn" class="dark" type="button">Select Winner Summary</button>
+          <button id="pdfFullReportBtn" class="dark" type="button">Select Full Report</button>
+          <button id="pdfClearBreakdownsBtn" class="gray" type="button">Clear Breakdown Options</button>
+          <button id="pdfRestoreDefaultsBtn" class="gray" type="button">Restore Defaults</button>
+          <span style="flex:1"></span>
+          <button id="pdfSaveOptionsBtn" class="green" type="button">Save Options</button>
+          <button id="pdfSaveExportBtn" class="green" type="button">Save & Export</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="importModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Import Data</div><button class="dark" data-close="importModal">Close</button></div>
+    <div class="modalBody">
+      <div class="panel workflowSourceHealthPanel"><div id="sourceHealthOverview"><div class="hint">Source health will appear when Import opens.</div></div></div>
+      <div class="panel">
+        <div class="panelTitle">Troubleshoot / Categorize Imports</div>
+        <div class="row">
+          <button id="openTroubleshootBtn" class="dark" type="button">Troubleshoot / Update Sheet + Headers</button>
+          <button id="fixTeamsBtn" class="dark" type="button">Fix Teams</button>
+          <button id="categorizeDataBtn" class="green" type="button">Categorize Data</button>
+          <button id="viewSpreadsheetDataBtn" class="dark" type="button">View Spreadsheet Data</button>
+          <button id="packageDataBtn" class="green" type="button">Package Imported Data</button>
+          <span class="checkResultMeta">Preview every workbook sheet, select headers, map representative/coach names, then categorize imports into one Non-Date database and one Dated database.</span>
+        </div>
+        <div id="fixTeamsPanel" class="fixTeamsPanel hidden">
+          <div class="panelTitle">Coach / Team Name Matches</div>
+          <div id="fixTeamsSummary" class="checkResultMeta">Team fix review has not been built yet.</div>
+          <div class="row">
+            <button id="applyFixTeamsBtn" class="green" type="button">Apply Selected Coach Mappings</button>
+            <button id="cancelFixTeamsBtn" class="gray" type="button">Hide Review</button>
+          </div>
+          <div id="fixTeamsReview" class="fixTeamsReview"></div>
+          <div class="panelTitle">Representative Name Matches</div>
+          <div id="fixRepSummary" class="checkResultMeta">Representative fix review has not been built yet.</div>
+          <div class="row">
+            <button id="applyFixRepMatchesBtn" class="green" type="button">Apply Selected Representative Mappings</button>
+          </div>
+          <div id="fixRepReview" class="fixTeamsReview"></div>
+        </div>
+        <div id="categorizedDataSummary" class="checkResultMeta">Categorized database not built yet.</div><div id="teamTotalsImportControls" class="checkResultList"></div>
+        <div id="spreadsheetDataPreview" class="checkResultList hidden"></div>
+      </div>
+      <div class="panel">
+        <div class="panelTitle">Local IndexedDB Import Cache</div>
+        <div class="row">
+          <button id="saveImportCacheBtn" class="green" type="button">Save Imported Data Locally</button>
+          <button id="loadImportCacheBtn" class="dark" type="button">Load Local Data</button>
+          <button id="persistImportCacheBtn" class="dark" type="button">Protect Local Storage</button>
+          <button id="clearImportCacheBtn" class="red" type="button">Clear Local Data</button>
+          <span class="checkResultMeta">Uploads now save to IndexedDB automatically. This lets the report reopen with the last imported workbooks, rows, teams, headers, categorized data, and custom sources already loaded.</span>
+        </div>
+        <div id="importCacheStatus" class="checkResultMeta">Checking local cache...</div>
+      </div>
+      <div class="grid2">
+        <div class="panel"><div class="panelTitle">Retail Stats</div><input id="retailFile" type="file" accept=".xlsx,.xls,.csv"><div id="retailFileName" class="fileName"></div></div>
+        <div class="panel"><div class="panelTitle">Referral Stats</div><input id="referralFile" type="file" accept=".xlsx,.xls,.csv"><div id="referralFileName" class="fileName"></div></div>
+        <div class="panel"><div class="panelTitle">QA Stats</div><input id="qaFile" type="file" accept=".xlsx,.xls,.csv"><div id="qaFileName" class="fileName"></div></div>
+        <div class="panel"><div class="panelTitle">Direct QA Team Score Override</div><input id="qaDirectFile" type="file" accept=".xlsx,.xls,.csv"><div id="qaDirectFileName" class="fileName"></div><div class="row"><button id="clearQADirectFileBtn" class="gray smallBtn" type="button">Clear Direct Override</button></div><div class="checkResultMeta">Optional. Direct QA team-score mode uses this upload first, then falls back to QA Stats. It never uses the categorized dated database.</div></div>
+        <div class="panel"><div class="panelTitle">Checklist Items</div><input id="checklistFile" type="file" accept=".xlsx,.xls,.csv"><div id="checklistFileName" class="fileName"></div></div>
+        <div class="panel"><div class="panelTitle">Documented Coaching</div><input id="documentedCoachingFile" type="file" accept=".xlsx,.xls,.csv"><div id="documentedCoachingFileName" class="fileName"></div></div>
+        <div class="panel"><div class="panelTitle">Comp Calls</div><input id="compCallsFile" type="file" accept=".xlsx,.xls,.csv"><div id="compCallsFileName" class="fileName"></div></div>
+        <div class="panel"><div class="panelTitle">Packaged All Star Data</div><input id="packagedFile" type="file" accept=".json,.xlsx,.xls"><div class="hint">JSON packages hydrate normalized data directly. Existing All_Star_Packaged_Data.xlsx files remain supported.</div><div id="packagedFileName" class="fileName"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panelTitle">Custom Sources</div>
+        <div class="row">
+          <button id="addCustomSourceBtn" class="green" type="button">Add Custom Source</button>
+          <input id="customSourceFile" type="file" accept=".xlsx,.xls,.csv" style="display:none">
+          <span class="checkResultMeta">Import extra CSV/Excel sources, then use Troubleshoot / Update Sheet + Headers to choose sheet, header row, start column, preview, declare missing headers, and map representative/coach/date fields.</span>
+        </div>
+        <div id="customSourcesList" class="checkResultList"></div>
+      </div>
+    </div>
+    <div class="modalFoot"><button class="dark" data-close="importModal">Done</button></div>
+  </div>
+</div>
+
+<div id="rosterReassignmentModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Roster Reassignment</div><button class="dark" data-close="rosterReassignmentModal">Close</button></div>
+    <div class="modalBody">
+      <div class="rosterReassignmentGrid">
+        <div class="panel">
+          <div class="panelTitle">Upload Roster-Only Monthly File</div>
+          <div class="field"><label>Roster Area</label><select id="rosterReassignmentArea"><option value="retail">Retail</option><option value="referral">Referral</option></select></div>
+          <div class="field"><label>Monthly-Layout Workbook</label><input id="rosterReassignmentFile" type="file" accept=".xlsx,.xls"></div>
+          <div id="rosterReassignmentFileName" class="fileName"></div>
+          <div class="checkResultMeta">This reads only the Control sheet and the representative names listed on each mapped team tab. It does not replace SV2, wiper, QA, checklist, coaching, compliment, dated, or Team Totals data.</div>
+          <div class="row">
+            <button id="applyRosterReassignmentBtn" class="green" type="button" disabled>Apply Roster Reassignment</button>
+            <button id="clearRosterReassignmentBtn" class="gray" type="button">Clear Preview</button>
+          </div>
+          <div id="rosterReassignmentStatus" class="checkResultMeta">Choose Retail or Referral, then upload the new roster workbook.</div>
+        </div>
+        <div class="panel">
+          <div class="panelTitle">Reassignment Preview</div>
+          <div id="rosterReassignmentSummary" class="rosterSummaryGrid"></div>
+          <div id="rosterReassignmentWarnings"></div>
+          <div id="rosterReassignmentChanges" class="rosterChangeList"><div class="checkResultMeta">No roster file has been previewed yet.</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="modalFoot"><button class="dark" data-close="rosterReassignmentModal">Cancel</button><button id="applyRosterReassignmentFootBtn" class="green" type="button" disabled>Apply Roster Reassignment</button></div>
+  </div>
+</div>
+
+<div id="orgBuilderModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Org Builder</div><button class="dark" data-close="orgBuilderModal">Close</button></div>
+    <div class="modalBody">
+      <div class="panel">
+        <div class="row">
+          <button id="createOrgBtn" class="green" type="button">Create Org</button>
+          <button id="duplicateOrgBtn" class="dark" type="button">Duplicate Org</button>
+          <button id="deleteOrgBtn" class="red" type="button">Delete Org</button>
+          <button id="saveOrgBtn" class="green" type="button">Save Org</button>
+          <button id="exportOrgsBtn" class="dark" type="button">Export Orgs</button>
+          <label class="gray" style="font-weight:800;cursor:pointer">Import Orgs <input id="importOrgsFile" type="file" accept=".txt,.json" class="hidden"></label>
+        </div>
+      </div>
+      <div class="grid3">
+        <div class="panel"><div class="panelTitle">Orgs</div><input id="orgSearchInput" placeholder="Search orgs..."><div id="orgList" class="teamManagerList"></div></div>
+        <div class="panel"><div class="panelTitle">Known Coaches / Teams</div><input id="orgCoachSearchInput" placeholder="Search coaches..."><div class="row"><button id="selectVisibleOrgCoachesBtn" class="dark" type="button">Select visible coaches</button><button id="clearOrgCoachesBtn" class="gray" type="button">Clear selected coaches</button></div><div id="orgCoachList" class="teamRepList"></div></div>
+        <div class="panel"><div class="panelTitle">Selected Coaches</div><div class="field"><label>Org Name</label><input id="orgNameInput" placeholder="Name this org"></div><div id="orgCountBadge" class="badge">0 coaches · 0 reps covered</div><div id="orgSelectedList" class="teamRepList"></div></div>
+      </div>
+      <div class="panel"><div class="panelTitle">Org Health</div><div id="orgHealthPanel" class="checkResultList"></div></div>
+    </div>
+    <div class="modalFoot"><button class="dark" data-close="orgBuilderModal">Done</button></div>
+  </div>
+</div>
+
+<div id="troubleshootModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Troubleshoot / Update Imported File</div><button class="dark" data-close="troubleshootModal">Close</button></div>
+    <div class="modalBody">
+      <div class="troubleLeft">
+        <div class="panel">
+          <div class="panelTitle">Choose Source + Sheet</div>
+          <div class="grid3">
+            <div class="field"><label>Source</label><select id="troubleSourceSelect"></select></div>
+            <div class="field"><label>Sheet Pulling From</label><select id="troubleSheetSelect"></select></div>
+            <div class="field"><label>Header Row</label><input id="troubleHeaderRowInput" type="number" min="1" step="1"></div>
+            <div class="field"><label>Start Column</label><input id="troubleStartColInput" type="number" min="1" step="1"></div>
+          </div>
+          <div class="row">
+            <button id="troublePreviewBtn" class="dark" type="button">Preview Sheet</button>
+            <button id="troubleApplyBtn" class="green" type="button">Select + Use Displayed Headers</button>
+            <span id="troubleStatus" class="badge"></span>
+          </div>
+          <div class="checkResultMeta">Click a row’s “Use Row” button to preview that row as headers. Click any cell to declare that cell as a column header if the row preview missed it.</div>
+        </div>
+        <div class="troublePreviewWrap"><div id="troubleSheetPreview"></div></div>
+      </div>
+      <div class="troubleRight">
+        <div class="panel">
+          <div class="panelTitle">Headers Found in Selected Row</div>
+          <div id="troubleHeaderSummary" class="badge"></div>
+          <div id="troubleHeaderPreview" class="troubleHeaderList"></div>
+        </div>
+        <div class="panel">
+          <div class="panelTitle">Declare Missing Header From Cell</div>
+          <div class="field"><label>Selected Cell</label><input id="troubleSelectedCell" readonly></div>
+          <div class="field"><label>Header Name to Use</label><input id="troubleManualHeaderName" placeholder="Type the column header name..."></div>
+          <div class="row"><button id="troubleDeclareHeaderBtn" class="green" type="button">Declare Cell as Header</button></div>
+          <div id="troubleManualHeaders" class="troubleManualList"></div>
+        </div>
+        <div class="panel hidden" id="troubleCustomFrameworkPanel"></div>
+	        <div class="panel">
+	          <div class="panelTitle">Representative Name Mapping</div>
+	          <div class="field"><label>Name Mode</label><select id="troubleNameMode"><option value="auto">Auto detect</option><option value="full">One full-name column</option><option value="firstLast">First name + Last name columns</option></select></div>
+	          <div class="field"><label>Full Name Column</label><select id="troubleFullNameColumn"></select></div>
+	          <div class="grid2">
+	            <div class="field"><label>First Name Column</label><select id="troubleFirstNameColumn"></select></div>
+	            <div class="field"><label>Last Name Column</label><select id="troubleLastNameColumn"></select></div>
+	          </div>
+	          <label class="checkItem"><input id="troubleConvertLastFirst" type="checkbox"> Convert “Last, First” values into “First Last”</label>
+	          <div class="checkResultMeta">Use this when a file separates first/last name or stores full names as “Last, First.” The normalized representative name is used for matching and team assignments.</div>
+	        </div>
+	        <div class="panel">
+	          <div class="panelTitle">Team + Date Mapping</div>
+	          <div class="field"><label>Team Name Column</label><select id="troubleTeamColumn"></select></div>
+	          <label class="checkItem"><input id="troubleSkipTeamBuild" type="checkbox"> Do not build teams from this file</label>
+	          <div class="checkResultMeta">Use this when a file identifies representatives but does not reliably identify their coach/team. The rows will still match by representative name and inherit coach/team from trusted imported sources.</div>
+	          <label class="checkItem"><input id="troubleUseDateColumn" type="checkbox"> Use date column for dated matching</label>
+	          <div class="field"><label>Date Column</label><select id="troubleDateColumn"></select></div>
+	          <div class="checkResultMeta">Date is checked automatically when a date-like column is found, but HireDate / Hire Date is ignored. Turn it off for roster or static team files.</div>
+	        </div>
+	      </div>
+	    </div>
+    <div class="modalFoot"><button class="dark" data-close="troubleshootModal">Exit</button><button id="troubleApplyFootBtn" class="green" type="button">Select + Use Displayed Headers</button></div>
+  </div>
+</div>
+
+<div id="teamsModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Teams Imported</div><button class="dark" data-close="teamsModal">Close</button></div>
+    <div class="modalBody">
+      <div class="teamManagerLayout">
+        <div class="panel">
+          <div class="panelTitle">Current Teams</div>
+          <input id="teamManagerSearch" placeholder="Search teams...">
+          <div id="teamManagerList" class="teamManagerList"></div>
+        </div>
+        <div class="panel">
+          <div class="panelTitle" id="teamManagerTitle">Representatives</div>
+          <input id="teamRepSearch" placeholder="Search representatives...">
+          <div class="row">
+            <select id="teamMoveSelect"></select>
+            <button id="selectAllTeamRepsBtn" class="dark" type="button">Select All</button>
+            <button id="unselectAllTeamRepsBtn" class="dark" type="button">Unselect All</button>
+            <button id="moveTeamBtn" class="green">Move Selected Representatives</button>
+          </div>
+          <div id="teamMoveStatus" class="badge"></div>
+          <div id="teamRepList" class="teamRepList"></div>
+	        </div>
+	      </div>
+	      <div class="panel">
+	        <div class="panelTitle">Representative Alias Review (fuzzy suggestions require explicit action)</div>
+	        <div class="teamConnectControls">
+	          <div class="field"><label>Connected match margin: <span id="teamConnectThresholdValue">75%</span></label><input id="teamConnectThreshold" type="range" min="50" max="100" step="1" value="75"></div>
+	          <button id="connectVisibleRepMatchesBtn" class="green" type="button">Connect Selected</button>
+	          <button id="connectAllRepMatchesBtn" class="dark" type="button">Connect All Above Margin</button><button id="rebuildControlRosterBtn" class="dark" type="button">Rebuild All Teams From Control</button><button id="clearAllRepAliasesBtn" class="red" type="button">Clear All Aliases</button><button id="clearRetailRepAliasesBtn" class="gray" type="button">Clear Retail Aliases</button><button id="clearReferralRepAliasesBtn" class="gray" type="button">Clear Referral Aliases</button>
+	        </div>
+	        <div id="teamQuarantineSummary" class="checkResultMeta"></div>
+	        <div id="teamQuarantineList" class="teamConnectList"></div>
+	        <div id="teamConnectSummary" class="checkResultMeta"></div>
+	        <div id="teamConnectList" class="teamConnectList"></div>
+	      </div>
+	    </div>
+	    <div class="modalFoot"><button class="dark" data-close="teamsModal">Done</button></div>
+	  </div>
+</div>
+
+<div id="modelsModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Create / Modify Models</div><button class="dark" data-close="modelsModal">Close</button></div>
+    <div class="modalBody">
+      <div class="row">
+        <button id="createModelBtn" class="green">Create New Model</button>
+        <button id="exportModelsBtn" class="dark">Export TXT</button>
+        <input id="importModelsFile" type="file" accept=".txt,.json">
+      </div>
+      <div id="modelList" class="panel"></div>
+    </div>
+    <div class="modalFoot"><button class="dark" data-close="modelsModal">Close</button></div>
+  </div>
+</div>
+
+<div id="massHeaderModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Mass Header Check</div><button class="dark" data-close="massHeaderModal">Close</button></div>
+    <div class="modalBody">
+      <div class="panel">
+        <div class="panelTitle">Headers Not Aligned</div>
+        <div class="row">
+          <button id="refreshMassHeaderBtn" class="dark">Refresh Check</button>
+          <button id="applyMassHeaderBtn" class="green">Apply Selected Fixes</button>
+          <label class="checkItem"><input id="massShowAllHeaders" type="checkbox"> Show aligned headers too</label>
+          <span id="massHeaderSummary" class="badge"></span>
+        </div>
+        <div class="checkResultMeta">This checks saved models against the headers from the files currently imported in this session. Pick the matching header in a row and apply it to update the saved model.</div>
+      </div>
+      <div id="massHeaderList" class="massHeaderList"></div>
+    </div>
+    <div class="modalFoot"><button class="dark" data-close="massHeaderModal">Done</button></div>
+  </div>
+</div>
+
+
+<div id="metricsModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Research Metrics</div><button class="dark" data-close="metricsModal">Close</button></div>
+    <div class="modalBody">
+      <datalist id="metricHeaderSuggestions"></datalist>
+      <div class="panel"><div class="panelTitle">Reusable Metrics</div><div class="row"><button id="newMetricBtn" class="green" type="button">Create New Metric</button><input id="metricSearchInput" class="metricSearch" placeholder="Search metrics"></div><div id="metricsList" class="metricList"></div><div class="row" style="margin-top:8px"><button id="exportMetricsBtn" class="dark" type="button">Export metrics</button><label class="gray" style="font-weight:800;cursor:pointer">Import <input id="importMetricsFile" type="file" accept=".txt,.json" class="hidden"></label></div></div>
+    </div>
+  </div>
+</div>
+<div id="metricEditorModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Create / Edit Metric</div><button class="dark" data-close="metricEditorModal">Cancel</button></div>
+    <div class="modalBody"><div class="panel">
+      <input id="metricEditId" type="hidden">
+      <div class="grid2"><div class="field"><label>Metric Name</label><input id="metricNameInput"></div><div class="field"><label>Data Source</label><select id="metricSourceSelect"></select></div></div>
+      <div class="grid2"><div class="field"><label>Mode</label><select id="metricModeSelect"><option value="count">Count of</option><option value="percent">% of selected field</option><option value="percent_total">% of total</option><option value="percent_parent">% of parent</option><option value="percent_item">Weighted Rate / % of item</option><option value="date_within">Dates within</option><option value="date_percent_within">Dates within %</option><option value="value_within">Values within</option><option value="value_percent_within">Values within %</option><option value="sum">Sum of</option><option value="avg">Average of</option></select></div><div class="field"><label id="metricFieldLabel">Field/Expression</label><div class="researchInputGear"><input id="metricFieldInput" list="metricHeaderSuggestions" placeholder="Action Taken, @Metric Name, or type ; for models"><button id="metricFieldGearBtn" class="smallBtn researchGearBtn" type="button">⚙</button></div><div id="metricNumericWarn" class="researchFieldError hidden"></div></div></div>
+      <div class="grid2" id="metricExtraOptions"><div class="field" data-metric-percent-item><label>Percent of / denominator item</label><input id="metricPercentOfField" list="metricHeaderSuggestions" placeholder="Column, @Metric, model(), or expression"></div><div class="field" data-metric-within><label id="metricWithinCompareLabel">Comparison Field</label><input id="metricWithinCompareField" list="metricHeaderSuggestions"></div><div class="field" data-metric-within data-metric-within-days><label id="metricWithinDaysLabel">Days / value within</label><input id="metricWithinDays" type="number" step="any" placeholder="3"></div><label class="checkItem" data-metric-within><input id="metricWithinUseRange" type="checkbox"> Use range</label><div class="field" data-metric-within data-metric-within-range><label id="metricWithinRangeMinLabel">Range low</label><input id="metricWithinRangeMin" type="number" step="any" placeholder="3"></div><div class="field" data-metric-within data-metric-within-range><label id="metricWithinRangeMaxLabel">Range high</label><input id="metricWithinRangeMax" type="number" step="any" placeholder="5"></div></div>
+      <div class="hint"><strong>Select values</strong> with the gear. Percent modes and within modes are available here and in Research table/chart metrics.</div>
+      <div class="field"><label>Description/Notes</label><textarea id="metricNotesInput" rows="2"></textarea></div>
+      <div class="researchSectionTitle">Rules</div><div class="row"><button id="addMetricAndBtn" class="smallBtn" type="button">Add AND Item</button><button id="addMetricOrBtn" class="smallBtn" type="button">Add OR Item</button><button id="previewMetricFoundBtn" class="dark smallBtn" type="button">Preview Found</button><span id="metricPreviewSummary" class="badge"></span></div><div id="metricRulesList" class="researchListScroll"></div><div id="metricFoundPreview" class="researchPreviewBox hidden"></div>
+    </div></div>
+    <div class="modalFoot"><button id="deleteMetricBtn" class="red" type="button">Delete Metric</button><button id="saveMetricBtn" class="green" type="button">Save</button><button id="saveExitMetricBtn" class="green" type="button">Save and Close</button></div>
+  </div>
+</div>
+
+<div id="editModelModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle" id="editModelTitle">Model</div><button class="dark" id="cancelModelTopBtn">Cancel</button></div>
+    <div class="modalBody">
+      <div class="grid3">
+        <div class="field"><label>Model Name</label><input id="modelNameInput"></div>
+        <div class="field"><label>Model Type</label><select id="modelTypeInput"><option value="both">Both</option><option value="retail">Retail</option><option value="referral">Referral</option></select></div>
+        <div class="field"><label>Tiebreaker</label><select id="modelTiebreakerInput"></select></div>
+      </div>
+      <div id="sourceSettingsPanel" class="sourceSettingsPanel"></div>
+      <div id="columnCheckResults" class="columnCheckResults"></div>
+      <div class="row"><button id="addCriterionBtn" class="green">Create New Criteria</button></div>
+      <div id="criteriaList"></div>
+    </div>
+    <div class="modalFoot">
+      <button id="cancelModelBtn" class="gray">Cancel and Leave</button>
+      <button id="saveModelBtn" class="green">Save</button>
+      <button id="saveExitModelBtn" class="green">Save and Exit</button>
+    </div>
+  </div>
+</div>
+
+<div id="columnPreviewModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle" id="columnPreviewTitle">Column Preview</div><button class="dark" id="columnPreviewCloseBtn" type="button">Close</button></div>
+    <div class="modalBody">
+      <div class="field"><label>Search preview values</label><input id="columnPreviewSearch" placeholder="Type to filter preview values"></div>
+      <div id="columnPreviewNote" class="hint"></div>
+      <div id="columnPreviewValues" class="previewValues"></div>
+    </div>
+    <div class="modalFoot"><button class="dark" id="columnPreviewDoneBtn" type="button">Close Preview</button></div>
+  </div>
+</div>
+
+<div id="runModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Run All-Star Report</div><button class="dark" data-close="runModal">Close</button></div>
+    <div class="modalBody">
+      <div class="runModeTabs" role="tablist" aria-label="Report run mode">
+        <button id="runSingleTab" class="runModeTab active" type="button" role="tab" aria-selected="true">Single</button>
+        <button id="runMultiTab" class="runModeTab" type="button" role="tab" aria-selected="false">Multi</button>
+      </div>
+      <div id="allstarRunPanel">
+      <div class="grid4">
+        <div class="field"><label>Model</label><select id="runModelSelect"></select></div>
+        <div class="field"><label>Start Date</label><input id="runStartDate" type="date"></div>
+        <div class="field"><label>End Date</label><input id="runEndDate" type="date"></div>
+        <div class="field"><label>View</label><select id="runViewSelect"><option value="both">Both</option><option value="team">Teams</option><option value="rep">Representatives</option></select></div>
+        <div id="qaDateField" class="field hidden"><label>QA Date Source</label><select id="runQADateSelect"><option value="interaction">Interaction Start Time</option><option value="assigned">Assigned Date</option></select></div>
+        <div id="qaTeamScoreModeField" class="field hidden"><label>QA Team Scores</label><select id="runQATeamScoreMode"><option value="assignedReps">Average assigned representatives</option><option value="sheetTeam">Direct raw QA upload: Assigned Date + QA Team + Score</option></select></div>
+        <div class="field"><label><input id="hideNoScoreReps" type="checkbox"> Hide representatives with no score</label><select id="hideNoScoreThreshold" class="hidden"><option value="all">All categories</option><option value="1">1 category</option><option value="2">2 categories</option><option value="3">3 categories</option><option value="4">4 categories</option><option value="5">5 categories</option></select></div>
+        <div class="field"><label><input id="rankRepresentativesWithinTeam" type="checkbox"> Rank representatives within each team</label><span class="hint">Team pages recalculate criterion ranks and scores inside each team, allowing multiple #1 representatives. Total Representatives always keeps the overall ranking across every selected team.</span></div>
+      </div>
+      <details class="workflowPanel">
+        <summary><strong>Presets &amp; report history</strong></summary>
+        <div class="workflowPresetGrid">
+          <div class="field"><label>Run preset</label><select id="runPresetSelect"><option value="">Choose preset…</option></select></div>
+          <div class="field"><label>Preset date behavior</label><select id="runPresetDateMode"><option value="fixed">Fixed dates</option><option value="currentWeek">Current week</option><option value="previousWeek">Previous week</option><option value="lastDays">Last X days</option><option value="currentMonth">Current month</option><option value="previousMonth">Previous month</option><option value="all">All available dates</option></select></div>
+          <div id="runPresetLastDaysWrap" class="field hidden"><label>Days</label><input id="runPresetLastDays" type="number" min="1" max="365" value="30"></div>
+          <div class="field"><label>Optional report note</label><input id="runReportNote" placeholder="Model change, coaching launch, roster update…"></div>
+        </div>
+        <div class="runWorkflowActions"><button id="applyRunPresetBtn" class="dark" type="button">Apply Preset</button><button id="saveRunPresetBtn" class="green" type="button">Save Current as Preset</button><button id="deleteRunPresetBtn" class="gray" type="button">Delete Preset</button><button id="recentRunsBtn" class="dark" type="button">Recent Runs</button></div>
+      </details>
+      <div id="runReadiness" class="runReadiness"><div id="runReadinessTitle" class="runReadinessTitle">Selected model preparation will start after this window opens.</div><div id="runReadinessDetail">Required source count: 0 · Ready sources: 0 · Preparing sources: 0</div><div id="runReadinessMeta" class="runReadinessMeta"><span class="badge">Global rebuild avoided</span></div><div class="runWorkflowActions"><button id="runCheckModelBtn" class="smallBtn dark" type="button">Check Model</button><button id="runViewPreflightBtn" class="smallBtn" type="button">View Details</button></div><div id="runPreflightDetails" class="runPreflightDetails hidden"></div></div>
+      <div id="singleRunSelectionPanel">
+      <div class="runTeamPanel">
+        <div class="runPanelTitle"><span>Teams to Include</span><span id="teamCountBadge" class="teamCount">0 selected</span></div>
+        <div class="teamPickerBar">
+          <input id="teamSearchInput" placeholder="Search teams to add...">
+          <button id="addVisibleTeamsBtn" class="green">Add Visible</button>
+          <button id="removeVisibleTeamsBtn" class="gray">Remove Visible</button>
+          <button id="selectAllTeamsBtn" class="dark">Select All</button>
+          <button id="clearTeamsBtn" class="gray">Unselect All</button>
+        </div>
+        <div id="teamSelectGrid" class="checkGrid teamGrid"></div>
+      </div>
+      <div class="runTeamPanel">
+        <div class="runPanelTitle"><span>Org Filters</span><span id="runOrgBadge" class="teamCount">0 orgs selected · 0 coaches · 0 reps covered</span></div>
+        <div class="teamPickerBar"><input id="runOrgSearchInput" placeholder="Search orgs..."><button id="clearRunOrgsBtn" class="gray" type="button">Clear Orgs</button></div>
+        <div class="grid2"><div><strong>Include orgs</strong><div id="runIncludeOrgGrid" class="checkGrid teamGrid"></div></div><div><strong>Exclude orgs</strong><div id="runExcludeOrgGrid" class="checkGrid teamGrid"></div></div></div>
+        <div class="hint">Selected teams and included orgs are combined: a coach/team may enter the run if it is selected in Teams to Include or belongs to an included org; excluded orgs are removed.</div>
+      </div>
+      </div>
+      <div id="multiRunPanel" class="multiRunPanel hidden">
+        <div class="runPanelTitle"><span>Organizations to Run Separately</span><span id="multiRunOrgBadge" class="teamCount">0 selected</span></div>
+        <div class="teamPickerBar"><input id="multiRunOrgSearch" placeholder="Search organizations..."><button id="multiRunSelectVisibleBtn" class="green" type="button">Select Visible</button><button id="multiRunClearBtn" class="gray" type="button">Clear</button></div>
+        <div id="multiRunOrgGrid" class="multiRunGrid"></div>
+        <div id="multiRunSummary" class="multiRunSummary">Choose two or more organizations. Every organization will use the same model, dates, view, QA settings, no-score setting, and saved PDF options.</div>
+        <div class="hint">Multi runs are sequential: generate → export PDF → generate → export PDF. Each PDF filename starts with its organization name.</div>
+      </div>
+      </div>
+    </div>
+    <div class="modalFoot"><button id="executeRunBtn" class="green">Run Single Report</button></div>
+  </div>
+</div>
+
+<div id="recentRunsModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Recent All-Star Runs</div><button class="dark" data-close="recentRunsModal">Close</button></div>
+    <div class="modalBody">
+      <div class="recentRunsToolbar"><span class="hint">Saved report snapshots reopen without recalculation. Select exactly two compatible runs to compare.</span><button id="compareRecentRunsBtn" class="green" type="button">Compare Selected</button></div>
+      <div id="recentRunsList" class="recentRunsList"></div>
+      <div id="recentRunComparison" class="recentRunComparison"></div>
+    </div>
+  </div>
+</div>
+
+<div id="qualtricsEmailModal" class="modalBackdrop qualtricsModal">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Qualtrics Coaching Email Reports</div><button class="dark" data-close="qualtricsEmailModal">Close</button></div>
+    <div class="qualtricsBridgeBar">
+      <div class="field"><label>Manual weekly stats source</label><select id="qualtricsStatsSource"></select></div>
+      <button id="loadQualtricsWeeklyBtn" class="dark" type="button">Load Selected Weekly Stats</button>
+      <button id="refreshQualtricsDataBtn" class="green" type="button">Refresh Auto-Connected Sources</button>
+      <button id="clearQualtricsDataBtn" class="red" type="button">Clear Qualtrics Data</button>
+      <div id="qualtricsBridgeStatus" class="qualtricsBridgeStatus">Opening this section restores saved rules and connects 90-day KPI, Documented Coaching, and Checklist data once. Weekly Stats only load when you press the weekly button. No preview or report runs automatically.</div>
+    </div>
+    <iframe id="qualtricsEmailFrame" title="Qualtrics Coaching Email Generator" loading="lazy" data-src="qualtrics/generator.html"></iframe>
+  </div>
+</div>
+
+<div id="researchModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Research</div><button class="dark" data-close="researchModal">Close</button></div>
+    <div class="modalBody">
+      <div class="researchToolbar">
+        <button id="addResearchItemBtn" class="green" type="button">Add New Item</button>
+        <button id="exportResearchBtn" class="dark" type="button">Export Research TXT</button>
+        <button id="renderAllResearchBtn" class="green" type="button">Render All</button>
+        <button id="buildResearchIndexBtn" class="dark" type="button">Prepare Used Sources</button>
+        <button id="clearResearchCacheBtn" class="gray" type="button">Clear Cached Results</button>
+        <button id="clearResearchRenderedBtn" class="red" type="button">Clear Stored Rendered Results</button>
+        <button id="stopResearchRenderBtn" class="red hidden" type="button">Stop Rendering</button>
+        <span id="researchCacheBadge" class="badge">Index not built</span>
+        <label class="gray" style="font-weight:800;cursor:pointer">Import Research TXT <input id="importResearchFile" type="file" accept=".txt,.json" class="hidden"></label>
+        <button id="clearResearchBtn" class="red" type="button">Clear Research</button>
+        <span class="hint">Build tables and charts from imported Retail, Referral, QA, Checklist, Documented Coaching, Comp Calls, and model criteria results.</span>
+      </div>
+      <details id="researchDiagnosticsDrawer" class="researchDiagnosticsDrawer">
+        <summary>Performance diagnostics</summary>
+        <div id="researchDiagnosticsBody" class="hint">Run or refresh a Research item to see source preparation, cohort filtering, joining, grouping, calculation, sorting, rendering, and persistence timings.</div>
+      </details>
+      <div id="researchCanvas" class="researchCanvas"></div>
+    </div>
+  </div>
+</div>
+
+<div id="listTesterModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle">Representative List Tester</div><button class="dark" data-close="listTesterModal">Close</button></div>
+    <div class="modalBody">
+      <div class="listTesterLayout">
+        <div class="listTesterInputPanel">
+          <div class="panelTitle">Paste Representative Names</div>
+          <textarea id="listTesterInput" placeholder="Paste one representative per line...&#10;&#10;Examples:&#10;Jordan Smith&#10;Martinez, Elena&#10;Taylor Johnson"></textarea>
+          <label class="checkItem"><input id="listTesterCommaSeparated" type="checkbox"> Treat commas as separators <small>(leave off when names use Last, First)</small></label>
+          <div class="listTesterHelp">Names may also be separated by tabs or semicolons. The tester checks imported associate-name data, Control rosters, saved representative aliases, and the representative-to-coach map.</div>
+          <div class="listTesterCheckCard">
+            <div class="listTesterCheckHead">
+              <div><strong>Check Item Scan</strong><div class="listTesterHelp">Optionally count matching stored records for every pasted representative.</div></div>
+              <label class="listTesterSwitch"><input id="listTesterCheckEnabled" type="checkbox"><span class="listTesterSlider"></span><span>Use Check Item</span></label>
+            </div>
+            <div id="listTesterCheckPanel" class="listTesterCheckPanel hidden">
+              <div class="listTesterCheckGrid">
+                <div class="field"><label>Check item</label><select id="listTesterCheckPreset"><option value="checklist_description">Checklist Description</option><option value="corrective_incident">Corrective Incident</option><option value="manual">Choose Header Manually</option></select></div>
+                <div class="field"><label>Stored source</label><select id="listTesterCheckSource"></select></div>
+                <div class="field"><label>Header to search</label><select id="listTesterCheckHeader"></select></div>
+                <div class="field"><label>Contains</label><input id="listTesterCheckContains" type="text" placeholder='"save the sale", "insurance cash"'></div>
+              </div>
+              <div class="listTesterDateGrid">
+                <div class="field"><label>Date column</label><select id="listTesterCheckDateHeader"></select></div>
+                <div class="field"><label>Start date</label><input id="listTesterCheckStartDate" type="date"></div>
+                <div class="field"><label>End date</label><input id="listTesterCheckEndDate" type="date"></div>
+              </div>
+              <div id="listTesterCheckMeta" class="listTesterCheckMeta">Select a stored source and header. Multiple phrases use the same quoted format: "phrase one", "phrase two". A record counts when it contains any entered phrase.</div>
+            </div>
+          </div>
+          <div class="row">
+            <button id="runListTesterBtn" class="green" type="button">Test List</button>
+            <button id="clearListTesterBtn" class="gray" type="button">Clear Names & Results</button>
+          </div>
+        </div>
+        <div class="listTesterOutputPanel">
+          <div class="panelTitle">Unique Coaches</div>
+          <div id="listTesterSummary" class="listTesterSummary"><span class="badge">Paste names and press Test List.</span></div>
+          <div id="listTesterUniqueCoaches" class="listTesterCoachList"><span class="hint">No coaches pulled yet.</span></div>
+          <div class="row">
+            <button id="copyListTesterCoachesBtn" class="dark" type="button">Copy Unique Coaches</button>
+            <button id="exportListTesterBtn" class="dark" type="button">Export Results CSV</button>
+            <button id="exportListTesterPdfBtn" class="red" type="button">Export Results PDF</button>
+          </div>
+          <div class="panelTitle">Representative Matches</div>
+          <div id="listTesterResults" class="listTesterResultsWrap"><div class="researchEmpty">No list has been tested yet.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="listTesterDetailModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div id="listTesterDetailTitle" class="modalTitle">Matched Record Details</div><button class="dark" data-close="listTesterDetailModal">Close</button></div>
+    <div class="modalBody">
+      <div id="listTesterDetailSummary" class="listTesterDetailSummary"></div>
+      <div id="listTesterDetailBody" class="listTesterDetailRecords"></div>
+    </div>
+  </div>
+</div>
+
+<div id="researchEditorModal" class="modalBackdrop">
+  <div class="modal">
+    <div class="modalHead"><div class="modalTitle" id="researchEditorTitle">Research Item</div><button class="dark" data-close="researchEditorModal">Close</button></div>
+    <div class="modalBody">
+      <input id="researchEditId" type="hidden">
+      <div class="researchBuilderIntro"><strong>Guided Research Builder</strong><span class="hint">Build the question in plain language. The advanced calculation and join settings are generated for you and remain available below.</span></div>
+      <div id="guidedQuestionSummary" class="guidedQuestionSummary"><strong>Live question summary</strong><div id="guidedQuestionText" class="guidedQuestionText">Choose what each result represents to begin.</div></div>
+      <div class="researchSection"><div class="researchSectionTitle">Start with a common question</div><div class="guidedTemplateGrid">
+        <button class="guidedTemplateCard" type="button" data-guided-template="find_people"><strong>Find People</strong><span>Show representatives who match selected performance, coaching, QA, or checklist conditions.</span></button>
+        <button class="guidedTemplateCard" type="button" data-guided-template="compare_groups"><strong>Compare Groups</strong><span>Compare teams or organizations by a count, percentage, average, or total.</span></button>
+        <button class="guidedTemplateCard" type="button" data-guided-template="rank_activity"><strong>Rank Activity</strong><span>Rank coaches, teams, or representatives by records or unique people.</span></button>
+        <button class="guidedTemplateCard" type="button" data-guided-template="analyze_records"><strong>Analyze Records</strong><span>Count or calculate the percentage of coaching, checklist, QA, call, or custom records.</span></button>
+      </div></div>
+      <div id="researchPopulationScopeSection" class="researchSection guidedStep" data-guided-step="population"><div class="guidedStepTitle"><span class="guidedStepNumber">1</span>Choose the population</div>
+        <div class="hint">These selections are applied before grouping, joining, or calculating. Leave every picker empty to include the full imported population.</div>
+        <div class="researchScopeGrid">
+          <div class="researchScopePicker"><strong>Include organizations</strong><div class="row"><input id="researchIncludeOrgInput" list="researchPopulationOrgSuggestions" placeholder="$RetailOrg or another saved org"><button id="researchAddIncludeOrgBtn" class="smallBtn" type="button">Add</button></div><div id="researchIncludeOrgChips" class="researchScopeChips"></div></div>
+          <div class="researchScopePicker"><strong>Include teams</strong><div class="row"><input id="researchIncludeTeamInput" list="researchPopulationTeamSuggestions" placeholder="Search a team or coach"><button id="researchAddIncludeTeamBtn" class="smallBtn" type="button">Add</button></div><div id="researchIncludeTeamChips" class="researchScopeChips"></div></div>
+          <div class="researchScopePicker"><strong>Include representatives</strong><div class="row"><input id="researchIncludeRepInput" list="researchPopulationRepSuggestions" placeholder="Search a representative"><button id="researchAddIncludeRepBtn" class="smallBtn" type="button">Add</button></div><div id="researchIncludeRepChips" class="researchScopeChips"></div></div>
+          <div class="researchScopePicker"><strong>Exclude organizations</strong><div class="row"><input id="researchExcludeOrgInput" list="researchPopulationOrgSuggestions" placeholder="$RetailOrg or another saved org"><button id="researchAddExcludeOrgBtn" class="smallBtn" type="button">Exclude</button></div><div id="researchExcludeOrgChips" class="researchScopeChips"></div></div>
+          <div class="researchScopePicker"><strong>Exclude teams</strong><div class="row"><input id="researchExcludeTeamInput" list="researchPopulationTeamSuggestions" placeholder="Search a team or coach"><button id="researchAddExcludeTeamBtn" class="smallBtn" type="button">Exclude</button></div><div id="researchExcludeTeamChips" class="researchScopeChips"></div></div>
+          <div class="researchScopePicker"><strong>Exclude representatives</strong><div class="row"><input id="researchExcludeRepInput" list="researchPopulationRepSuggestions" placeholder="Search a representative"><button id="researchAddExcludeRepBtn" class="smallBtn" type="button">Exclude</button></div><div id="researchExcludeRepChips" class="researchScopeChips"></div></div>
+        </div>
+        <datalist id="researchPopulationOrgSuggestions"></datalist><datalist id="researchPopulationTeamSuggestions"></datalist><datalist id="researchPopulationRepSuggestions"></datalist>
+        <div class="researchStepGrid">
+          <div class="field"><label>Unmatched entities</label><select id="researchUnmatchedBehavior"><option value="exclude">Exclude from cross-source results</option><option value="blank">Keep and display blanks</option></select></div>
+          <div class="field"><label>Calculation scope cap (optional)</label><input id="researchCalculationGroupLimit" type="number" min="0" placeholder="No calculation cap"><span class="hint">Keeps the largest groups before metric calculation. This is separate from the display limit.</span></div>
+          <label class="checkItem"><input id="researchReconcile" type="checkbox"> Reconcile grouped output to an independent source total</label>
+        </div>
+        <div id="researchJoinPreview" class="researchJoinPreview"><strong>Join preview</strong><span class="hint">Choose evidence sources or a primary source to preview matches.</span></div>
+      </div>
+      <div id="guidedStepSubject" class="researchSection guidedStep" data-guided-step="subject"><div class="guidedStepTitle"><span class="guidedStepNumber">2</span>What should each result represent?</div><div class="researchStepGrid">
+        <div class="field"><label>Each result represents</label><select id="guidedResearchSubject"><option value="representatives">Representatives</option><option value="teams">Teams</option><option value="coaches">Coaches</option><option value="records">Records or Events</option><option value="compare">Compare Two Things</option></select></div>
+        <div id="guidedRecordTypeField" class="field hidden"><label>Record or event type</label><select id="guidedRecordType"><option value="documented_coaching">Documented Coaching records</option><option value="checklist">Checklist records</option><option value="qa_direct">QA evaluations</option><option value="comp_calls">Calls</option><option value="compliments">Compliments</option><option value="date">Weekly statistic rows</option><option value="custom">Records from a custom source</option></select></div>
+        <div class="field"><label>Research title</label><input id="guidedResearchTitle" placeholder="Plain-language title"></div>
+      </div></div>
+      <div class="researchSection"><div class="researchSectionTitle">3. Choose compatible variables</div>
+        <div class="researchMeasurePicker">
+          <div class="researchStepGrid"><div class="field"><label>Typed measure</label><select id="researchTypedMeasure"></select></div><div class="field"><label>Missing values</label><select id="researchMissingBehavior"><option value="missing">Treat blanks as missing</option><option value="zero">Treat blanks as zero</option><option value="warn">Exclude blanks and show a warning</option></select></div><div class="field"><label>Use measure</label><div class="row"><button id="researchUseTypedMeasureBtn" class="smallBtn green" type="button">Use as Y / value</button><button id="researchAddTypedMeasureColumnBtn" class="smallBtn" type="button">Add table column</button></div></div></div>
+          <div id="researchTypedMeasureMeta" class="researchMeasureMeta"><div><strong>Measure</strong>Select a typed measure to see its formula and compatibility.</div></div>
+          <div class="row"><button id="researchPreviewMeasureSamplesBtn" class="smallBtn" type="button">Preview 5 calculations</button><span class="hint">Typed measures expose their source, formula, aggregation, grain, and missing-value behavior before running.</span></div>
+          <div id="researchMeasureSamplePreview" class="researchFormulaPreview hidden"></div>
+        </div>
+      </div>
+      <div id="guidedStepQuestion" class="researchSection guidedStep" data-guided-step="question"><div class="guidedStepTitle"><span class="guidedStepNumber">4</span>What do you want to know?</div><div class="researchStepGrid">
+        <div class="field"><label>Question</label><select id="guidedResearchQuestion"><option value="show">Show matching results</option><option value="count">Count</option><option value="percentage">Percentage</option><option value="average_total">Average or total</option><option value="rank">Rank</option><option value="compare">Compare</option></select></div>
+        <div id="guidedPercentageUnitField" class="field hidden"><label>Percentage of what?</label><select id="guidedPercentageUnit"><option value="unique_reps">Unique representatives</option><option value="teams">Teams</option><option value="coaches">Coaches</option><option value="records">Records or events</option><option value="numeric_total">A numeric value</option></select></div>
+        <div id="guidedAggregateField" class="field hidden"><label>Calculate</label><select id="guidedAggregate"><option value="avg">Average</option><option value="sum">Total</option></select></div>
+        <div id="guidedMeasureFieldWrap" class="field hidden"><label>Numeric field</label><input id="guidedMeasureField" list="researchHeaderSuggestions" placeholder="Select or type a numeric column"></div>
+        <div id="guidedRankUnitField" class="field hidden"><label>Rank by</label><select id="guidedRankUnit"><option value="records">Number of matching records</option><option value="unique_reps">Number of unique representatives</option><option value="value">Selected numeric value</option></select></div>
+      </div></div>
+      <div id="guidedStepEvidence" class="researchSection guidedStep" data-guided-step="evidence"><div class="guidedStepTitle"><span class="guidedStepNumber">5</span>Where should the tool look for evidence?</div><div class="researchStepGrid">
+        <div class="field"><label>Evidence sources (select one or more)</label><select id="guidedEvidenceSources" class="guidedEvidenceSelect" multiple></select><span class="hint">The first selected source is the subject population. Other selected sources are connected through mapped representative, coach, team, organization, and date fields.</span></div>
+        <div class="field"><label>Primary population source</label><select id="guidedPrimarySource"></select><span class="hint" id="guidedEvidenceRelationship">Evaluate Representatives using evidence from the selected sources.</span></div>
+      </div></div>
+      <div id="guidedStepConditions" class="researchSection guidedStep" data-guided-step="conditions"><div class="guidedStepTitle"><span class="guidedStepNumber">6</span>What conditions must be true?</div><div class="hint">Conditions decide who or what qualifies. Turn on Expression to calculate a saved metric or formula for each individual, such as <strong>retail.sv2.cashapps / retail.sv2.cashopps</strong>. Phrase values may contain one or more comma- or semicolon-separated phrases.</div><button id="addGuidedConditionBtn" type="button" class="smallBtn">Add Condition</button><div id="guidedResearchConditions" class="researchListScroll"></div></div>
+      <details class="researchSection guidedAdvancedBlock" data-research-section="build"><summary>Advanced source, date, and join settings</summary><div class="researchStepGrid">
+        <div class="field"><label>Item title</label><input id="researchTitleInput" placeholder="Team cash percentage"></div>
+        <div class="field"><label>Output type</label><select id="researchOutputType"><option value="table">Table</option><option value="conversation">Conversation Viewer</option><option value="line">Line Graph</option><option value="bar">Bar Graph</option><option value="scatter">Scatter / Correlation</option><option value="histogram">Histogram</option><option value="heatmap">Heatmap</option><option value="box">Box Plot</option><option value="pie">Pie / Share Chart</option></select></div>
+        <div class="field"><label>Data source</label><select id="researchSource"></select></div><div class="field"><label>One point/row represents</label><select id="researchAnalysisGrain"><option value="auto">Automatic from Group / X axis</option><option value="representatives">One representative</option><option value="teams">One team</option><option value="rows">One source row</option></select><span class="hint">The resolved grain is saved explicitly with the Research item.</span></div><div class="field"><label>Cross-dataset join</label><select id="researchCrossSourceJoin"><option value="grain">Use analysis grain (recommended)</option><option value="strict_rep">Strict representative match</option><option value="strict_team">Strict team match</option><option value="rep_then_team">Representative, then disclosed team fallback</option></select><span class="hint">No fallback occurs without being shown in the join preview and diagnostics.</span></div>
+        <div class="field"><label>Date column (optional)</label><div class="researchInputGear"><input id="researchDateColumn" list="researchHeaderSuggestions" placeholder="Column, @Metric Name, model(&quot;Model&quot;,&quot;Criteria&quot;), or type ; for models"><button class="smallBtn researchGearBtn" type="button" data-research-gear="dateColumn" title="Filter values for this field">⚙</button></div></div>
+        <div class="field"><label>Start date</label><input id="researchStartDate" type="date"></div>
+        <div class="field"><label>End date</label><input id="researchEndDate" type="date"></div>
+      </div></details>
+      <div id="guidedStepFilters" class="researchSection guidedStep" data-guided-step="filters"><div class="guidedStepTitle"><span class="guidedStepNumber">7</span>Limit the Population <span class="hint">Filters</span></div><div class="hint">Filters restrict the people or records examined before the calculation. Use Team is for searchable multi-team or $organization selection; choose Exclude to include all groups except the selected groups.</div><button id="addResearchFilterBtn" type="button" class="smallBtn">Add Population Filter</button><div id="researchFilters" class="researchListScroll"></div></div>
+      <div id="guidedStepDisplay" class="researchSection guidedStep" data-guided-step="display"><div class="guidedStepTitle"><span class="guidedStepNumber">8</span>How should the answer be divided and displayed?</div><div class="researchStepGrid">
+        <div class="field"><label>Break results down by</label><select id="guidedBreakdown"><option value="none">No breakdown</option><option value="representative">Representative</option><option value="team">Team</option><option value="coach">Coach</option><option value="organization">Organization</option><option value="day">Day</option><option value="week">Week</option><option value="month">Month</option><option value="quarter">Quarter</option><option value="column">Selected source column</option></select></div>
+        <div id="guidedBreakdownColumnWrap" class="field hidden"><label>Breakdown column</label><input id="guidedBreakdownColumn" list="researchHeaderSuggestions" placeholder="Select or type a source column"></div>
+        <div class="field"><label>Display</label><select id="guidedDisplay"><option value="detailed_table">Detailed table</option><option value="ranked_table">Ranked table</option><option value="summary_cards">Summary cards</option><option value="bar">Bar chart</option><option value="line">Line chart</option><option value="heatmap">Heatmap</option><option value="table_chart">Table and chart</option></select><span class="hint">Changing the display never changes the calculation.</span></div>
+        <div class="field"><label>Sort order</label><select id="guidedSort"><option value="default">Natural order</option><option value="yDesc">Highest to lowest</option><option value="yAsc">Lowest to highest</option><option value="xAsc">A to Z / oldest first</option><option value="xDesc">Z to A / newest first</option></select></div>
+      </div></div>
+      <details class="researchSection guidedAdvancedBlock"><summary>Advanced calculation and output settings</summary><div class="researchStepGrid">
+        <div class="field" data-show="table graph"><label>Group / X variable</label><div class="researchInputGear"><input id="researchGroupField" list="researchHeaderSuggestions" placeholder="Column, @Metric Name, model(&quot;Model&quot;,&quot;Criteria&quot;), or type ; for models"><button class="smallBtn researchGearBtn" type="button" data-research-gear="groupField" title="Filter values for this field">⚙</button></div><label class="checkItem" style="margin-top:4px"><input id="researchGroupMultiAdd" type="checkbox"> Multi add</label><div id="researchGroupMultiAddBuilder" class="researchFilterRow hidden"><div class="field"><label>Add line/item or expression</label><input id="researchGroupMultiAddInput" list="researchHeaderSuggestions" placeholder="@Metric, ![Source].[Field] contains &quot;text&quot;, or expression"></div><button id="researchGroupMultiAddBtn" class="smallBtn" type="button">Add</button><div id="researchGroupMultiAddList" class="researchListScroll" style="grid-column:1/-1"></div></div><div class="hint">For line graphs, Multi add creates separate lines when no secondary series field is selected.</div></div><div class="field" data-show="table graph"><label>Use color / series?</label><select id="researchUseSecondaryGroup"><option value="no">No</option><option value="yes">Yes</option></select></div><div class="field" data-show="table graph" data-secondary-group-field><label>Color / series field</label><div class="researchInputGear"><input id="researchSecondaryGroupField" list="researchHeaderSuggestions" placeholder="Column, @Metric Name, model(&quot;Model&quot;,&quot;Criteria&quot;), or type ; for models"><button class="smallBtn researchGearBtn" type="button" data-research-gear="secondaryGroupField" title="Filter values for this field">⚙</button></div></div><div class="field" data-show="graph"><label>Panel / small multiples (optional)</label><div class="researchInputGear"><input id="researchPanelField" list="researchHeaderSuggestions" placeholder="Team, organization, or another category"><button class="smallBtn researchGearBtn" type="button" data-research-gear="panelField" title="Split the result into one chart per selected category">⚙</button></div><span class="hint">Creates a separate chart for each panel value instead of crowding every series together.</span></div>
+        <div class="field" data-show="conversation"><label>Row spacing</label><select id="researchRowDensity"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></div>
+        <div class="field" data-show="conversation"><label><input id="researchTextWrap" type="checkbox" checked> Wrap long text</label></div>
+        <div class="field" data-show="graph"><label>Y axis / value mode</label><select id="researchValueMode"><option value="measure">Typed measure</option><option value="count">Count</option><option value="count_by">Count By</option><option value="unique">Unique Individual</option><option value="percent_total">% of total</option><option value="percent_parent">% of parent</option><option value="percent_item">Weighted Rate / % of item</option><option value="date_within">Dates within</option><option value="date_percent_within">Dates within %</option><option value="value_within">Values within</option><option value="value_percent_within">Values within %</option><option value="sum">Sum</option><option value="avg">Average</option><option value="min">Min</option><option value="max">Max</option><option value="percent">Percent Builder</option><option value="model">Use Model Criteria</option><option value="expression">Custom expression result</option></select></div>
+        <div class="field" data-show="graph"><label>Y axis field/expression / Count By field</label><div class="researchInputGear"><input id="researchValueField" list="researchHeaderSuggestions" placeholder="Column, @Metric Name, model(&quot;Model&quot;,&quot;Criteria&quot;), or type ; for models"><button class="smallBtn researchGearBtn" type="button" data-research-gear="valueField" title="Filter values for this field">⚙</button></div><div id="researchValueFieldError" class="researchFieldError hidden"></div></div><div class="field hidden" data-show="graph" data-percent-item-mode><label>Percent of / denominator item</label><input id="researchPercentOfField" list="researchHeaderSuggestions" placeholder="Column, @Metric, model(), or expression to divide by"></div><div class="field" data-show="graph" data-within-mode><label>Comparison Field</label><input id="researchWithinCompareField" list="researchHeaderSuggestions" placeholder="Column, @Metric Name, model(&quot;Model&quot;,&quot;Criteria&quot;), or type ; for models"></div><div class="field" data-show="graph" data-within-mode data-within-days><label>Days / value within</label><input id="researchWithinDays" type="number" step="any" placeholder="3"></div><label class="checkItem" data-show="graph" data-within-mode><input id="researchWithinUseRange" type="checkbox"> Use range</label><div class="field" data-show="graph" data-within-mode data-within-range><label>Range low</label><input id="researchWithinRangeMin" type="number" step="any" placeholder="3"></div><div class="field" data-show="graph" data-within-mode data-within-range><label>Range high</label><input id="researchWithinRangeMax" type="number" step="any" placeholder="5"></div>
+        <div class="field" data-show="histogram"><label>Histogram bucket size (optional)</label><input id="researchBucketSize" type="number" min="0" step="any" placeholder="Automatic"></div><div class="field" data-show="line"><label>Date grouping</label><select id="researchDateGrouping"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="other">Other / use X axis field</option></select></div>
+        <div class="field" data-show="all"><label>Sort</label><select id="researchSort"><option value="default">Default</option><option value="xAsc">X A-Z</option><option value="xDesc">X Z-A</option><option value="yAsc">Y smallest-to-largest</option><option value="yDesc">Y largest-to-smallest</option><option value="dateDesc">Date newest to oldest</option><option value="dateAsc">Date oldest to newest</option></select></div>
+        <div class="field" data-show="all"><label>Display row limit</label><input id="researchRowLimit" type="number" min="0" placeholder="No display limit"><span class="hint">Applied after calculation; it does not change the analytical population.</span></div>
+        <div class="field" data-show="table"><label>Decimal places</label><input id="researchTableDecimals" type="number" min="0" max="6" value="1"></div>
+        <div class="field" data-show="table"><label><input id="researchTableShowPercent" type="checkbox"> Show % sign</label></div>
+        <div class="field" data-show="table"><label><input id="researchTotals" type="checkbox"> Include totals row</label></div>
+      </div><div data-show="table conversation"><div class="hint">Choose table metrics or conversation display columns.</div><button id="addResearchColumnBtn" type="button" class="smallBtn">Add Column</button><div id="researchColumns" class="researchListScroll"></div></div><div id="researchPercentBuilder" class="field hidden" data-show="table graph" data-percent-builder-panel style="grid-column:1/-1"></div></details>
+      <details class="researchSection" data-show="graph" id="researchVisualOptions"><summary class="researchAdvancedToggle">Visual Options</summary><div class="researchStepGrid" style="margin-top:10px">
+        <div class="field"><label><input id="researchShowValues" type="checkbox" checked> Show value labels</label></div>
+        <div class="field"><label><input id="researchShowDateLabels" type="checkbox"> Show date labels</label></div>
+        <div class="field"><label><input id="researchShowPercent" type="checkbox"> Show percentage sign</label></div>
+        <div class="field"><label>Decimal places</label><input id="researchDecimals" type="number" min="0" max="6" value="1"></div>
+        <div class="field"><label>Fixed Y-axis minimum</label><input id="researchAxisMin" type="number" step="any"></div>
+        <div class="field"><label>Fixed Y-axis maximum</label><input id="researchAxisMax" type="number" step="any"></div>
+        <div class="field"><label>Sort direction</label><select id="researchGraphSort"><option value="inherit">Use Output Settings sort</option><option value="xAsc">X A-Z</option><option value="xDesc">X Z-A</option><option value="yAsc">Y smallest-to-largest</option><option value="yDesc">Y largest-to-smallest</option><option value="dateAsc">Date oldest to newest</option><option value="dateDesc">Date newest to oldest</option></select></div>
+        <div class="field"><label>Limit to top N</label><input id="researchTopN" type="number" min="0" placeholder="No graph-only limit"></div>
+        <div class="field"><label><input id="researchShowSummaryLine" type="checkbox"> Show totals / average reference line</label></div>
+        <div class="field"><label>Goal/reference line</label><input id="researchGoalValue" type="number" step="any" placeholder="85"></div>
+        <div class="field"><label><input id="researchRotateLabels" type="checkbox"> Rotate x-axis labels</label></div>
+        <div class="field"><label><input id="researchWrapLabels" type="checkbox" checked> Wrap long labels</label></div>
+        <div class="field"><label><input id="researchShowLegend" type="checkbox"> Show legend</label></div>
+        <div class="field"><label><input id="researchShowGridlines" type="checkbox" checked> Show gridlines</label></div>
+        <div class="field" data-show="line"><label><input id="researchSmoothLine" type="checkbox"> Smooth line graph</label></div>
+        <div class="field" data-show="line"><label><input id="researchUseDots" type="checkbox" checked> Use dots on line graph</label></div>
+        <div class="field" data-show="bar"><label>Bar orientation</label><select id="researchBarOrientation"><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></div>
+        <div class="field" data-show="bar" data-secondary-group-field><label><input id="researchStackedBars" type="checkbox"> Stacked bar option</label></div>
+        <div class="field" data-show="bar" data-secondary-group-field><label><input id="researchGroupedBars" type="checkbox" checked> Grouped bar option</label></div>
+        <div class="field"><label><input id="researchHideZeroGroups" type="checkbox"> Hide groups with zero value</label></div>
+        <div class="field"><label><input id="researchHighlightBest" type="checkbox"> Highlight best value</label></div>
+        <div class="field"><label><input id="researchHighlightWorst" type="checkbox"> Highlight worst value</label></div>
+      </div></details>
+      <details class="researchSection"><summary class="researchAdvancedToggle">Advanced Calculation and Join Settings</summary><div class="researchStepGrid" style="margin-top:10px">
+        <div class="field"><label title="When the same normalized representative name appears more than once, keep the version with the most linked data and exclude weaker duplicates from research calculations."><input id="researchFilterDuplicateReps" type="checkbox"> Filter duplicate same-name reps by strongest data match</label><span class="hint">When the same normalized representative name appears more than once, keep the version with the most linked data and exclude weaker duplicates from research calculations.</span></div>
+        <div class="field"><label>Data source mode</label><select id="researchMode"><option value="direct">Direct source data</option><option value="model">Model criteria result</option><option value="expression">Custom expression</option><option value="percent">Percent Builder / legacy percent</option></select></div>
+        <div class="field"><label>Custom group expression</label><input id="researchGroupExpression" placeholder="row['Team']"></div>
+        <div class="field"><label>Model</label><select id="researchModelSelect"></select></div><div class="field"><label>Criteria</label><select id="researchCriteriaSelect"></select></div>
+        <div class="field"><label>Model result type</label><select id="researchModelResult"><option value="count">count of people/rows meeting it</option><option value="number">number value</option><option value="percentage">percentage value</option><option value="average">average value</option></select></div>
+        <div class="field"><label>Population</label><select id="researchPopulation"><option value="rows">rows</option><option value="representatives">representatives</option><option value="teams">teams</option><option value="checklist">checklist items</option><option value="documented_coaching">documented coaching items</option></select></div>
+        <div class="field"><label>Numerator filter/expression</label><input id="researchNumeratorExpression" placeholder="Cash > 50 or row['Type'].includes('Final')"></div><div class="field"><label>Numerator count</label><select id="researchNumeratorCount"><option value="rows">count rows</option><option value="unique">count unique representatives</option><option value="checklist">count checklist items</option><option value="documented_coaching">count documented coaching items</option></select></div>
+        <div class="field"><label>Denominator</label><select id="researchDenominator"><option value="groupRows">all rows in group</option><option value="unique">all unique representatives in group</option><option value="checklist">all checklist items in group</option><option value="documented_coaching">all documented coaching rows in group</option><option value="teamReps">all imported representatives on that team</option><option value="custom">custom expression/filter result</option></select></div><div class="field"><label>Denominator expression</label><input id="researchDenominatorExpression" list="researchHeaderSuggestions"></div><div class="field"><label>Column suggestions</label><datalist id="researchHeaderSuggestions"></datalist><span class="hint">Type a column, expression, row['Column'], or !Sheet.Column.</span></div><div class="field"><label>Zero denominator</label><select id="researchZeroDenominator"><option value="zero">Display 0</option><option value="blank">Display blank</option></select></div>
+      </div></details>
+    <div id="guidedCalculationPreview" class="guidedCalculationPreview"><div class="researchSectionTitle">Calculation Preview</div><div id="guidedCalculationStatus" class="hint">Complete the guided question to verify the calculation.</div><div id="guidedCalculationGrid" class="guidedCalculationGrid"></div></div>
+    <div id="researchFoundPreview" class="researchPreviewBox hidden"></div>
+    </div>
+    <div class="modalFoot"><button id="previewResearchFoundBtn" class="dark" type="button">Preview Matching Data</button><button id="saveResearchItemBtn" class="green" type="button">Save &amp; Run Research</button></div>
+  </div>
+</div>
+
+
+
+<!-- Ordered classic scripts preserve file:// compatibility. -->
+<script src="js/core.js"></script>
+<script src="js/persistence.js"></script>
+<script src="js/models.js"></script>
+<script src="js/imports.js"></script>
+<script src="js/calculations.js"></script>
+<script src="js/reports.js"></script>
+<script src="js/research.js"></script>
+<script src="js/organizations.js"></script>
+<script src="js/workflow.js"></script>
+<script src="js/list-tester.js"></script>
+<script src="js/qualtrics-bridge.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>

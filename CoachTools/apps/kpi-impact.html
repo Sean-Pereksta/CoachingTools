@@ -1,0 +1,3899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Impact Tool — Local Cache (MyOne 2.0)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="coachtools-id" content="kpi-impact" />
+<meta name="coachtools-name" content="KPI Impact" />
+<meta name="coachtools-description" content="Measure KPI movement and the coaching associated with performance change." />
+<meta name="coachtools-category" content="Performance" />
+<meta name="coachtools-icon" content="icons/kpi-impact.png" />
+<meta name="coachtools-initials" content="KI" />
+<meta name="coachtools-keywords" content="kpi, impact, retail, referral, coaching, trend" />
+<meta name="coachtools-data" content="retail, referral, coaching" />
+<meta name="coachtools-order" content="50" />
+<meta name="coachtools-version" content="1.0" />
+
+<!-- Export helpers -->
+<script src="../vendor/html2canvas.min.js"></script>
+<script src="../vendor/jspdf.umd.min.js"></script>
+
+<!-- LZ-String (for dock decompression) -->
+<script src="../vendor/lz-string.min.js"></script>
+<script src="../shared/coachtools-storage.js"></script>
+<script src="../shared/coachtools-shell.js"></script>
+
+<style>
+  :root{
+    --bg:#f8fafc; --card:#fff; --ink:#0f172a; --muted:#6b7280; --line:#e5e7eb;
+    --accent:#e11d48; --good:#16a34a; --bad:#dc2626;
+
+    --apps:#16a34a;
+    --opps:#2563eb;
+
+    --warnBg:#fffbeb; --warnBr:#f59e0b; --warnInk:#92400e;
+    --urgentBg:#fff1f2; --urgentBr:#ef4444; --urgentInk:#9f1239;
+
+    --headerH: 120px;
+  }
+
+  *{ box-sizing:border-box }
+  html,body{ height:100% }
+  body{ margin:0; font-family:Segoe UI, Roboto, Arial, sans-serif; color:var(--ink); background:var(--bg); }
+
+  .app{
+    height:100vh;
+    display:grid;
+    grid-template-rows:auto 1fr;
+    overflow:hidden;
+  }
+
+  header{
+    background:#fff;
+    border-bottom:1px solid var(--line);
+    padding:10px 14px;
+    position:sticky;
+    top:0;
+    z-index:50;
+  }
+
+  h1{ font-size:18px; margin:0 }
+  .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap }
+  .btn{ padding:6px 10px; border:1px solid var(--line); border-radius:999px; background:#fff; cursor:pointer; font-weight:800 }
+  .btn.primary{ background:var(--accent); color:#fff; border-color:var(--accent) }
+  .btn.dark{ background:#0f172a; color:#fff; border-color:#0f172a }
+  select,button,input{ font-size:14px }
+  .muted{ color:var(--muted) }
+  .chip{ display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; background:#f1f5f9; color:#334155; border:1px solid var(--line); font-size:12px }
+  .pill{ display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid var(--line); border-radius:999px; background:#f1f5f9; font-size:12px; color:#334155; cursor:pointer; user-select:none; font-weight:800 }
+  .pill input{ width:16px; height:16px; margin:0 }
+  .good{ color:var(--good) } .bad{ color:var(--bad) }
+
+  .content{
+    height: calc(100vh - var(--headerH));
+    min-height:0;
+    overflow:hidden;
+    display:grid;
+    grid-template-columns: 360px 1fr;
+    gap:12px;
+    padding:12px;
+  }
+
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px }
+
+  aside.side{
+    min-height:0;
+    overflow:auto;
+    padding-right:8px;
+    padding-bottom:28px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    scrollbar-gutter: stable;
+  }
+  aside.side::-webkit-scrollbar{ width:10px }
+  aside.side::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:10px; border:2px solid transparent; background-clip:padding-box }
+  aside.side::-webkit-scrollbar-track{ background:transparent }
+
+  main.card{
+    min-height:0;
+    overflow:auto;
+    scrollbar-gutter: stable;
+  }
+  main.card::-webkit-scrollbar{ width:10px }
+  main.card::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:10px; border:2px solid transparent; background-clip:padding-box }
+  main.card::-webkit-scrollbar-track{ background:transparent }
+
+  .box{ border:1px solid var(--line); border-radius:10px; background:#fff; overflow:visible }
+  .box .head{ padding:8px 10px; border-bottom:1px solid var(--line); font-weight:900; background:#fafafa }
+  .box .body{ padding:10px }
+
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:8px }
+  .stack > label{ display:block; font-size:12px; color:#475569; margin-top:6px; font-weight:900 }
+  .stack select{ width:100% }
+
+  .totalRow{
+    display:flex; gap:10px; align-items:center; justify-content:space-between;
+    border:1px solid var(--line); border-radius:10px; padding:10px; background:#fff; margin-bottom:8px
+  }
+  .totalRate{ font-size:20px; font-weight:900 }
+  .diff.good{ color:var(--good) } .diff.bad{ color:var(--bad) }
+
+  .totalsGrid{ display:grid; grid-template-columns:1fr 1fr; gap:10px }
+  .totBox{ border:1px dashed var(--line); border-radius:10px; padding:10px; background:#fff }
+  .totBig{ font-size:18px; font-weight:900 }
+  .totSub{ font-size:12px; color:#475569; font-weight:900 }
+
+  .legend{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; color:#475569 }
+
+  .gridHead{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:10px; flex-wrap:wrap }
+  .gridHeadTitleRow{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-width:0 }
+  .attendance3WeeksToggle{ display:flex; align-items:center; gap:6px; font-size:12px; color:#334155; font-weight:900; min-width:0; white-space:normal; overflow-wrap:anywhere }
+  .attendance3WeeksToggle input{ margin:0 }
+
+  .heatmapWrap{
+    border:1px solid var(--line);
+    border-radius:14px;
+    background:#fff;
+    padding:12px;
+    margin-bottom:10px;
+    display:grid;
+    gap:10px;
+  }
+  .heatmapHead{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+  }
+  .heatmapTitle{ font-weight:900; }
+  .heatmapHint{ font-size:12px; color:#475569; font-weight:800; max-width:82ch; line-height:1.4; }
+  .heatmapStats{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .heatmapLegend{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    align-items:center;
+    font-size:12px;
+    color:#475569;
+    font-weight:800;
+  }
+  .legendSwatch{
+    width:12px;
+    height:12px;
+    border-radius:4px;
+    border:1px solid rgba(148,163,184,.6);
+    display:inline-block;
+  }
+  .legendSwatch.strong{ background:#16a34a; border-color:#15803d; }
+  .legendSwatch.info{ background:#facc15; border-color:#ca8a04; }
+  .legendSwatch.partial{ background:#fb7185; border-color:#e11d48; }
+  .legendSwatch.weak{ background:#dc2626; border-color:#b91c1c; }
+  .legendSwatch.na{ background:#cbd5e1; border-color:#94a3b8; }
+  .legendSwatch.coached{
+    background:repeating-linear-gradient(135deg, rgba(37,99,235,.26) 0 7px, rgba(255,255,255,.1) 7px 14px), #dbeafe;
+    border-color:#2563eb;
+  }
+  .heatmapMeta{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(180px,1fr));
+    gap:8px;
+  }
+  .heatmapMetaCard{
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:10px;
+    background:#fbfdff;
+  }
+  .heatmapMetaLabel{ font-size:11px; color:#64748b; font-weight:900; text-transform:uppercase; letter-spacing:.04em; }
+  .heatmapMetaValue{ font-size:18px; font-weight:900; margin-top:4px; }
+  .heatmapMetaSub{ font-size:12px; color:#475569; font-weight:800; margin-top:4px; line-height:1.35; }
+  .heatmapScroller{
+    overflow:auto;
+    border:1px solid var(--line);
+    border-radius:12px;
+    background:#fff;
+  }
+  .heatmapTable{
+    width:100%;
+    border-collapse:separate;
+    border-spacing:0;
+    min-width:760px;
+  }
+  .heatmapTable th,
+  .heatmapTable td{
+    border-bottom:1px solid var(--line);
+    border-right:1px solid var(--line);
+    padding:0;
+    vertical-align:middle;
+    background:#fff;
+  }
+  .heatmapTable tr:last-child td,
+  .heatmapTable tr:last-child th{ border-bottom:none; }
+  .heatmapTable th:last-child,
+  .heatmapTable td:last-child{ border-right:none; }
+  .heatmapTable thead th{
+    position:sticky;
+    top:0;
+    z-index:3;
+    background:#f8fafc;
+  }
+  .heatmapStub{
+    position:sticky;
+    left:0;
+    z-index:2;
+    min-width:210px;
+    padding:10px 12px;
+    background:#fff;
+  }
+  .heatmapTable thead .heatmapStub{ z-index:4; background:#f8fafc; }
+  .heatmapStub.summary{ background:#fff7ed; }
+  .heatmapRepBtn,
+  .heatmapWeekBtn,
+  .heatmapCellBtn{
+    appearance:none;
+    border:none;
+    background:none;
+    color:inherit;
+    font:inherit;
+    margin:0;
+    cursor:pointer;
+  }
+  .heatmapRepBtn{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:4px;
+    width:100%;
+    text-align:left;
+    padding:0;
+  }
+  .heatmapRepBtn:hover .heatmapRepName{ text-decoration:underline; }
+  .heatmapRepName{ font-weight:900; line-height:1.15; white-space:normal; overflow-wrap:anywhere; min-width:0; }
+  .heatmapRepCoachDate{ font-size:11px; color:#475569; font-weight:900; line-height:1.2; white-space:normal; overflow-wrap:anywhere; min-width:0; }
+  .heatmapRepMeta{ font-size:11px; color:#64748b; font-weight:800; }
+  .heatmapWeekBtn{
+    width:100%;
+    min-width:118px;
+    padding:10px 8px;
+    text-align:center;
+  }
+  .heatmapWeekBtn:hover{ background:rgba(225,29,72,.06); }
+  .heatmapWeekLabel{ font-weight:900; }
+  .heatmapWeekSub{ font-size:11px; color:#64748b; font-weight:800; margin-top:4px; }
+  .heatmapCellBtn{
+    width:100%;
+    min-height:70px;
+    padding:8px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:4px;
+    transition:transform .06s ease, box-shadow .12s ease;
+  }
+  .heatmapCellBtn:hover{ transform:translateY(-1px); box-shadow:inset 0 0 0 2px rgba(15,23,42,.12); }
+  .heatCell{
+    color:#0f172a;
+    font-weight:900;
+  }
+  .heatCell.strong{ background:rgba(22,163,74,.18); }
+  .heatCell.info{ background:rgba(250,204,21,.22); }
+  .heatCell.partial{ background:rgba(251,113,133,.18); }
+  .heatCell.weak{ background:rgba(220,38,38,.2); }
+  .heatCell.na{ background:rgba(203,213,225,.32); color:#475569; }
+  .heatCell.coached{
+    background-image:repeating-linear-gradient(135deg, rgba(37,99,235,.26) 0 8px, rgba(255,255,255,.08) 8px 16px);
+    background-blend-mode:multiply;
+  }
+  .heatCellSummary{ font-size:14px; }
+  .heatCellSummary small,
+  .heatCellRep small{ font-size:11px; font-weight:800; color:#334155; }
+  .heatCellRep{ font-size:13px; }
+  .heatCellRep .tiny{ font-size:10px; font-weight:800; color:#475569; }
+  .heatCellRep .tiny.performance{ font-size:11px; color:#0f172a; }
+  .heatCellRep .tiny.performance.low{ color:#b91c1c; }
+  .heatCellRep .tiny.performance.high{ color:#166534; }
+  .heatCellRep .statusLine{ display:flex; align-items:center; justify-content:center; gap:6px; font-size:11px; font-weight:900; color:#334155; }
+  .heatCellRep .statusIcon{ font-size:16px; line-height:1; }
+  .heatCellRep .statusIcon.big{ font-size:20px; }
+  .heatCellRep .statusIcon.good{ color:#16a34a; }
+  .heatCellRep .statusIcon.bad{ color:#dc2626; }
+  .heatCellRep .statusIcon.info{ color:#2563eb; }
+  .heatCellRep .statusIcon.muted{ color:#94a3b8; }
+  .heatmapStub.attention{
+    background:linear-gradient(135deg, rgba(254,242,242,.98), rgba(255,255,255,.98));
+    box-shadow:inset 4px 0 0 #dc2626;
+  }
+  .heatmapOpportunity{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    margin-top:6px;
+    padding:4px 8px;
+    border-radius:999px;
+    background:rgba(220,38,38,.1);
+    color:#991b1b;
+    font-size:11px;
+    font-weight:900;
+    border:1px solid rgba(220,38,38,.22);
+  }
+  .tag{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:4px 8px; border-radius:999px;
+    border:1px solid var(--line);
+    background:#fff;
+    font-size:12px;
+    font-weight:900;
+    color:#334155;
+  }
+  .tag.warn{ background:var(--warnBg); border-color:rgba(245,158,11,.55); color:var(--warnInk) }
+  .tag.urgent{ background:var(--urgentBg); border-color:rgba(239,68,68,.55); color:var(--urgentInk) }
+  .tag.good{ background:rgba(22,163,74,.1); border-color:rgba(22,163,74,.32); color:#166534; }
+  .tag.info{ background:rgba(37,99,235,.1); border-color:rgba(37,99,235,.28); color:#1d4ed8; }
+  .tag.bad{ background:rgba(220,38,38,.1); border-color:rgba(220,38,38,.24); color:#991b1b; }
+  .heatmapEmpty{
+    border:1px dashed var(--line);
+    border-radius:12px;
+    padding:16px;
+    background:#f8fafc;
+    color:#475569;
+    font-weight:800;
+  }
+  .heatDetailGrid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(200px,1fr));
+    gap:8px;
+    margin-bottom:12px;
+  }
+  .heatDetailCard{
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:10px;
+    background:#fbfdff;
+  }
+  .heatDetailCard.good{ background:rgba(22,163,74,.07); border-color:rgba(22,163,74,.24); }
+  .heatDetailCard.bad{ background:rgba(220,38,38,.07); border-color:rgba(220,38,38,.2); }
+  .heatDetailCard.info{ background:rgba(37,99,235,.07); border-color:rgba(37,99,235,.18); }
+  .heatDetailCard.warn{ background:rgba(245,158,11,.09); border-color:rgba(245,158,11,.22); }
+  .heatDetailLabel{ font-size:11px; color:#64748b; font-weight:900; text-transform:uppercase; letter-spacing:.04em; }
+  .heatDetailValue{ font-size:18px; font-weight:900; margin-top:4px; }
+  .heatDetailValue.good{ color:#166534; }
+  .heatDetailValue.bad{ color:#991b1b; }
+  .heatDetailValue.info{ color:#1d4ed8; }
+  .heatDetailValue.warn{ color:#b45309; }
+  .heatDetailSection{ margin-top:14px; }
+  .heatDetailSection h4{ margin:0 0 8px; font-size:13px; }
+  .heatDetailList{ display:grid; gap:8px; }
+  .heatDetailItem{
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:10px;
+    background:#fff;
+    display:grid;
+    gap:6px;
+  }
+  .heatDetailTop{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+  }
+  .heatDetailRepBtn{
+    appearance:none;
+    border:none;
+    background:none;
+    padding:0;
+    margin:0;
+    color:#0f172a;
+    font-weight:900;
+    cursor:pointer;
+    text-align:left;
+  }
+  .heatDetailRepBtn:hover{ text-decoration:underline; }
+  .heatDetailBadges{ display:flex; gap:6px; flex-wrap:wrap; }
+  .heatDetailMetrics{ display:flex; gap:6px; flex-wrap:wrap; }
+  .heatDetailMetrics .tag{ font-size:11px; }
+  .heatDetailNote{ font-size:12px; color:#475569; font-weight:800; line-height:1.35; }
+  .heatDetailNote.good{ color:#166534; }
+  .heatDetailNote.bad{ color:#991b1b; }
+  .heatDetailNote.info{ color:#1d4ed8; }
+  .heatDetailTrend{
+    display:grid;
+    gap:6px;
+    margin-top:6px;
+    padding-top:6px;
+    border-top:1px dashed rgba(148,163,184,.6);
+  }
+
+  /* UPDATED GRID */
+  .impactGrid{
+    display:grid;
+    grid-template-columns: repeat(4, minmax(280px,1fr));
+    gap:12px;
+    align-items:start;
+  }
+  @media (max-width:1700px){ .impactGrid{ grid-template-columns: repeat(3, minmax(280px,1fr)); } }
+  @media (max-width:1200px){ .impactGrid{ grid-template-columns: repeat(2, minmax(260px,1fr)); } }
+  @media (max-width:720px){ .impactGrid{ grid-template-columns: 1fr; } }
+
+  .repCard{
+    position:relative;
+    border:1px solid var(--line);
+    border-radius:12px;
+    background:#fff;
+    padding:10px;
+    display:grid;
+    gap:8px;
+    overflow:hidden;
+    cursor:pointer;
+    min-width:0;
+  }
+  .repCard:hover{ box-shadow:0 16px 34px rgba(2,6,23,.10); transform:translateY(-1px); }
+  .repCard:active{ transform:translateY(0px); }
+
+  .repCard.stale{
+    border:3px solid rgba(245,158,11,.98);
+    background:linear-gradient(180deg, rgba(245,158,11,.22), #fff 55%);
+    box-shadow:0 0 0 5px rgba(245,158,11,.14), 0 18px 38px rgba(2,6,23,.12);
+  }
+  .repCard.urgent{
+    border:3px solid rgba(239,68,68,.98);
+    background:linear-gradient(180deg, rgba(239,68,68,.22), #fff 55%);
+    box-shadow:0 0 0 6px rgba(239,68,68,.16), 0 22px 46px rgba(2,6,23,.14);
+  }
+  .repCard.stale::before,
+  .repCard.urgent::before{
+    content:"";
+    position:absolute;
+    left:0; top:0; bottom:0;
+    width:10px;
+    border-top-left-radius:12px;
+    border-bottom-left-radius:12px;
+  }
+  .repCard.stale::before{ background:rgba(245,158,11,.98); }
+  .repCard.urgent::before{ background:rgba(239,68,68,.98); }
+
+  /* UPDATED TOP ROW */
+  .repTop{
+    display:grid;
+    grid-template-columns: minmax(0,1fr);
+    gap:8px;
+    align-items:start;
+  }
+
+  .repName{
+    font-weight:900;
+    display:flex;
+    white-space:normal;
+    gap:6px;
+    align-items:flex-start;
+    line-height:1.15;
+    min-width:0;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+    font-size:clamp(13px, 1vw, 16px);
+  }
+
+  /* UPDATED BADGE AREA */
+  .badgeStack{
+    display:grid;
+    gap:6px;
+    width:100%;
+    min-width:0;
+    max-width:none;
+    align-items:start;
+  }
+
+  .impactBadge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:4px 8px;
+    border-radius:999px;
+    font-weight:900;
+    border:1px solid var(--line);
+    white-space:normal;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+    max-width:100%;
+    width:fit-content;
+  }
+  .impactBadge.good{ background:#ecfdf5; color:#065f46; border-color:#a7f3d0 }
+  .impactBadge.bad{ background:#fef2f2; color:#991b1b; border-color:#fecaca }
+
+  .coachRowLine{
+    display:flex;
+    gap:6px;
+    align-items:flex-start;
+    justify-content:flex-start;
+    width:100%;
+    margin-top:0;
+    flex-wrap:wrap;
+    min-width:0;
+  }
+
+  .needScore{
+    font-size:11px;
+    padding:4px 8px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:#f1f5f9;
+    color:#334155;
+    font-weight:900;
+    white-space:normal;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+    max-width:100%;
+  }
+  .needScore.hot{
+    background:var(--urgentBg);
+    border-color:rgba(239,68,68,.55);
+    color:var(--urgentInk);
+  }
+
+  .coachRecency{
+    font-size:11px;
+    padding:4px 8px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:#f8fafc;
+    color:#334155;
+    text-align:left;
+    white-space:normal;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+    font-weight:900;
+    max-width:100%;
+    flex:1 1 180px;
+    min-width:0;
+  }
+  .coachRecency.warn{
+    background:var(--warnBg);
+    border-color:rgba(245,158,11,.65);
+    color:var(--warnInk);
+  }
+  .coachRecency.bad{
+    background:var(--urgentBg);
+    border-color:rgba(239,68,68,.65);
+    color:var(--urgentInk);
+  }
+
+  .barWrap{ width:100%; background:#e5e7eb; border-radius:999px; height:14px; overflow:hidden; position:relative }
+  .barFill{ height:100%; width:0%; background:#16a34a; transition:width .25s ease }
+  .barLabel{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:12px; color:#0f172a; font-weight:900 }
+  .avgTick{ position:absolute; top:0; bottom:0; width:2px; background:#0f172a66 }
+
+  .dbWrap{ display:grid; gap:6px; min-width:0; }
+  .dbLegend{
+    display:flex;
+    gap:10px;
+    font-size:12px;
+    color:#475569;
+    flex-wrap:wrap;
+    font-weight:800;
+    min-width:0;
+  }
+  .dot{ display:inline-block; width:10px; height:10px; border-radius:50% }
+  .dot.apps{ background:var(--apps) }
+  .dot.opps{ background:var(--opps) }
+  .dbTrack{ position:relative; height:16px; background:#f1f5f9; border:1px solid var(--line); border-radius:999px; }
+  .dbLine{ position:absolute; top:7px; height:2px; background:#94a3b8; transform:translateY(-50%); }
+  .dbDot{ position:absolute; top:50%; width:14px; height:14px; border-radius:50%; transform:translate(-50%,-50%); border:2px solid #fff; box-shadow:0 1px 2px rgba(0,0,0,.12); }
+  .dbDot.apps{ background:var(--apps) }
+  .dbDot.opps{ background:var(--opps) }
+  .dbScale{ display:flex; justify-content:space-between; font-size:10px; color:#64748b; margin-top:2px; font-weight:800 }
+
+  .mini2{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+    min-width:0;
+  }
+  .mini2 > div{
+    min-width:0;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+  }
+
+  .xrow{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:8px;
+    font-size:12px;
+    color:#475569;
+    font-weight:800;
+    flex-wrap:wrap;
+    min-width:0;
+  }
+  .xbox{ display:inline-flex; align-items:center; gap:6px; cursor:pointer; user-select:none; font-weight:900; }
+  .xbox input{ width:16px; height:16px }
+
+  .warningBorder{ border:2px solid #fecaca !important; background:#fff7f7 !important }
+  .hide{ display:none !important; }
+
+  .chips{
+    display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;
+    max-height:260px;
+    overflow:auto;
+    padding-right:6px
+  }
+  .chips::-webkit-scrollbar{ width:10px }
+  .chips::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:10px; border:2px solid transparent; background-clip:padding-box }
+  .chips::-webkit-scrollbar-track{ background:transparent }
+
+  .typeChip{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:6px 10px;
+    border:1px solid var(--line);
+    background:#fff;
+    border-radius:999px;
+    font-size:12px;
+    cursor:pointer;
+    user-select:none;
+    font-weight:900;
+    opacity:.45;
+    transition: transform .06s ease, box-shadow .12s ease, opacity .12s ease;
+    white-space:nowrap;
+  }
+  .typeChip:hover{ transform:translateY(-1px); box-shadow:0 8px 18px rgba(2,6,23,.08) }
+  .typeChip.on{ opacity:1; border-color:rgba(225,29,72,.35); box-shadow:0 0 0 3px rgba(225,29,72,.10) }
+
+  .hint{
+    font-size:12px; line-height:1.35;
+    padding:10px 12px; border-radius:12px; border:1px solid var(--line);
+    background:#f8fafc; color:#334155; font-weight:800;
+  }
+
+  .metricBar{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    flex-wrap:wrap;
+    padding:6px 8px;
+    border:1px solid var(--line);
+    border-radius:12px;
+    background:#fbfdff;
+  }
+  .metricBar label{
+    font-size:12px;
+    font-weight:900;
+    color:#475569;
+  }
+  .metricBar select{
+    height:32px;
+    border-radius:10px;
+    border:1px solid var(--line);
+    background:#fff;
+    padding:0 8px;
+  }
+  .metricBar .miniLegend{
+    font-size:11px;
+    color:#64748b;
+    font-weight:800;
+  }
+
+  .modalOverlay{
+    position:fixed;
+    inset:0;
+    background:rgba(15,23,42,.55);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:16px;
+    z-index:9999;
+  }
+  .modalOverlay.show{ display:flex; }
+  .modalPanel{
+    width:min(980px, 96vw);
+    max-height:92vh;
+    background:#fff;
+    border:1px solid rgba(226,232,240,.95);
+    border-radius:16px;
+    box-shadow:0 22px 60px rgba(2,6,23,.35);
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+  }
+  .modalHeadRow{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:10px;
+    padding:12px 14px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg, rgba(225,29,72,.08), rgba(225,29,72,0));
+  }
+  .modalTitle{
+    font-size:16px;
+    font-weight:900;
+    margin:0;
+    line-height:1.1;
+  }
+  .modalSub{
+    font-size:12px;
+    color:#475569;
+    font-weight:800;
+    margin-top:6px;
+    max-width: 62ch;
+  }
+  .modalActions{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+  }
+  .modalBody{
+    padding:12px 14px;
+    overflow:auto;
+    min-height:0;
+  }
+  .coachList{ display:grid; gap:10px; }
+  .coachItem{
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:10px;
+    background:#fbfdff;
+  }
+  .coachItemTop{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    flex-wrap:wrap;
+  }
+  .coachItemDate{ font-weight:900; }
+  .coachItemType{
+    font-weight:900;
+    padding:4px 8px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:#fff;
+    color:#334155;
+  }
+  .coachItemCoach{
+    margin-left:auto;
+    font-size:12px;
+    color:#64748b;
+    font-weight:800;
+  }
+  .coachItemDesc{
+    margin-top:8px;
+    font-size:13px;
+    color:#0f172a;
+    white-space:pre-wrap;
+    line-height:1.35;
+  }
+  .repTrendWrap{
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:10px;
+    margin-bottom:12px;
+    background:#f8fafc;
+    display:grid;
+    gap:10px;
+  }
+  .repTrendHead{
+    display:flex;
+    gap:8px;
+    align-items:flex-start;
+    justify-content:space-between;
+    flex-wrap:wrap;
+  }
+  .repTrendTitle{ font-size:13px; font-weight:900; }
+  .repTrendSub{ font-size:12px; color:#475569; font-weight:800; }
+  .repTrendCanvas{
+    width:100%;
+    min-height:220px;
+    border:1px solid var(--line);
+    border-radius:12px;
+    background:#fff;
+    padding:8px;
+  }
+  .repTrendSvg{ width:100%; height:220px; display:block; }
+  .repImpactBars{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(94px,1fr));
+    gap:6px;
+  }
+  .repImpactBar{
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:6px;
+    background:#fff;
+    display:grid;
+    gap:4px;
+    justify-items:center;
+  }
+  .repImpactBar .wk{ font-size:10px; color:#64748b; font-weight:900; }
+  .repImpactBar .arrow{ font-size:16px; line-height:1; font-weight:900; }
+  .repImpactBar .val{ font-size:12px; font-weight:900; }
+  .repImpactBar.good{ background:rgba(22,163,74,.1); border-color:rgba(22,163,74,.3); color:#166534; }
+  .repImpactBar.bad{ background:rgba(220,38,38,.1); border-color:rgba(220,38,38,.24); color:#991b1b; }
+  .repImpactBar.na{ background:rgba(148,163,184,.1); color:#64748b; }
+  .repTrendInsights{
+    display:grid;
+    gap:8px;
+    grid-template-columns:repeat(auto-fit, minmax(220px,1fr));
+  }
+  .repTrendInsight{
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:8px;
+    background:#fff;
+  }
+  .repTrendInsight.good{ background:rgba(22,163,74,.08); border-color:rgba(22,163,74,.28); }
+  .repTrendInsight.bad{ background:rgba(220,38,38,.08); border-color:rgba(220,38,38,.24); }
+  .repTrendInsight.info{ background:rgba(37,99,235,.08); border-color:rgba(37,99,235,.2); }
+  .repTrendInsight .k{ font-size:11px; color:#64748b; font-weight:900; text-transform:uppercase; }
+  .repTrendInsight .v{ margin-top:2px; font-size:16px; font-weight:900; }
+  .repTrendInsight .d{ margin-top:4px; font-size:12px; color:#334155; font-weight:800; line-height:1.35; }
+
+  @media (max-width: 1100px){
+    .content{ grid-template-columns: 1fr; }
+    aside.side{
+      max-height: 45vh;
+      border-radius:14px;
+    }
+    main.card{
+      max-height: calc(55vh - 12px);
+    }
+  }
+
+
+  /* ===== 2026 UI refresh: cleaner workspace, tabs, compact rep cards ===== */
+  :root{
+    --bg:#f3f6fb;
+    --card:#ffffff;
+    --ink:#111827;
+    --muted:#64748b;
+    --line:#e2e8f0;
+    --accent:#e11d48;
+    --accentDark:#be123c;
+    --softAccent:#fff1f2;
+    --shadow:0 18px 48px rgba(15,23,42,.10);
+    --shadowSoft:0 8px 24px rgba(15,23,42,.07);
+  }
+  body{
+    background:
+      radial-gradient(circle at top left, rgba(225,29,72,.10), transparent 28rem),
+      linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%);
+  }
+  header{
+    border-bottom:1px solid rgba(226,232,240,.95);
+    box-shadow:0 10px 28px rgba(15,23,42,.06);
+    background:rgba(255,255,255,.96);
+    backdrop-filter:blur(10px);
+  }
+  h1{ font-size:19px; letter-spacing:-.02em; }
+  .btn{
+    border-radius:12px;
+    padding:8px 12px;
+    transition:transform .08s ease, box-shadow .14s ease, border-color .14s ease, background .14s ease;
+  }
+  .btn:hover{ transform:translateY(-1px); box-shadow:var(--shadowSoft); }
+  .btn.primary{ background:linear-gradient(135deg, var(--accent), var(--accentDark)); }
+  select,input{
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:#fff;
+    padding:6px 8px;
+  }
+  .content{
+    grid-template-columns:340px minmax(0,1fr);
+    gap:14px;
+    padding:14px;
+  }
+  .card{
+    border-color:rgba(226,232,240,.95);
+    border-radius:18px;
+    box-shadow:var(--shadowSoft);
+  }
+  .box{ border-radius:16px; overflow:hidden; }
+  .box .head{
+    padding:10px 12px;
+    background:linear-gradient(180deg, #ffffff, #f8fafc);
+    letter-spacing:-.01em;
+  }
+  aside.side{ gap:12px; padding-right:4px; }
+  main.card.workspace{
+    padding:0;
+    display:grid;
+    grid-template-rows:auto minmax(0,1fr);
+    overflow:hidden;
+  }
+  .viewTabs{
+    position:sticky;
+    top:0;
+    z-index:20;
+    display:flex;
+    gap:8px;
+    align-items:center;
+    flex-wrap:wrap;
+    padding:12px;
+    border-bottom:1px solid var(--line);
+    background:rgba(255,255,255,.96);
+    backdrop-filter:blur(10px);
+  }
+  .viewTab{
+    appearance:none;
+    border:1px solid var(--line);
+    background:#fff;
+    color:#334155;
+    font-weight:900;
+    border-radius:999px;
+    padding:9px 14px;
+    cursor:pointer;
+    transition:background .14s ease, color .14s ease, box-shadow .14s ease, transform .08s ease;
+  }
+  .viewTab:hover{ transform:translateY(-1px); box-shadow:var(--shadowSoft); }
+  .viewTab.active{
+    background:linear-gradient(135deg, var(--accent), var(--accentDark));
+    border-color:transparent;
+    color:#fff;
+    box-shadow:0 10px 22px rgba(225,29,72,.22);
+  }
+  .tabPanel{
+    min-height:0;
+    overflow:auto;
+    padding:14px;
+    scrollbar-gutter:stable;
+  }
+  .tabPanel:not(.active){ display:none; }
+  .tabPanel::-webkit-scrollbar{ width:10px }
+  .tabPanel::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:10px; border:2px solid transparent; background-clip:padding-box }
+  .impactToolbar{
+    background:rgba(255,255,255,.88);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:10px;
+    margin-bottom:12px;
+    box-shadow:0 8px 18px rgba(15,23,42,.04);
+  }
+  .teamTabIntro{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-bottom:12px;
+    padding:12px 14px;
+    border:1px solid var(--line);
+    border-radius:16px;
+    background:linear-gradient(135deg, #fff, #fff7f8);
+    box-shadow:0 8px 18px rgba(15,23,42,.04);
+  }
+  .teamTabIntro strong{ font-size:15px; }
+  .teamTabIntro span{ color:#64748b; font-size:12px; font-weight:800; }
+  .heatmapWrap{ margin-bottom:0; border-radius:18px; box-shadow:var(--shadowSoft); }
+  .heatmapTitle{ font-size:16px; letter-spacing:-.02em; }
+  .heatmapHint{ display:none; }
+  .impactGrid{
+    grid-template-columns:repeat(auto-fill, minmax(310px,1fr));
+    gap:14px;
+  }
+  @media (max-width:1700px){ .impactGrid{ grid-template-columns:repeat(auto-fill, minmax(300px,1fr)); } }
+  @media (max-width:1200px){ .impactGrid{ grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); } }
+  .repCard{
+    border-radius:18px;
+    padding:13px;
+    gap:10px;
+    box-shadow:0 10px 28px rgba(15,23,42,.07);
+    transition:transform .10s ease, box-shadow .16s ease, border-color .16s ease;
+  }
+  .repCard:hover{ box-shadow:0 18px 42px rgba(15,23,42,.13); }
+  .repName{ font-size:15px; }
+  .badgeStack{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .impactBadge{ padding:6px 10px; box-shadow:inset 0 0 0 1px rgba(255,255,255,.45); }
+  .coachRowLine{ flex:1 1 170px; justify-content:flex-end; }
+  .needScore,.coachRecency{ border-radius:999px; }
+  .mini2{
+    grid-template-columns:1fr 1fr;
+    padding:9px 10px;
+    border:1px solid var(--line);
+    border-radius:14px;
+    background:#f8fafc;
+  }
+  .mini2 .muted{ font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  .dbWrap,.dbTrack,.dbLegend,.dbScale{ display:none !important; }
+  #toggleCompare{ display:none !important; }
+  .barWrap{ height:16px; background:#e2e8f0; }
+  .barFill{ background:linear-gradient(90deg, #fb7185, #e11d48); }
+  .totalRow,.totBox{ border-radius:14px; }
+  .legend{ display:none; }
+  @media (max-width:1100px){
+    .content{ grid-template-columns:1fr; overflow:auto; }
+    aside.side{ max-height:none; }
+    main.card{ max-height:none; }
+  }
+
+
+  /* ===== Request patch: wider scrollable boxes, Filters above summary, coach selector first ===== */
+  header .topControlRow{
+    flex:1 1 auto;
+    justify-content:flex-start;
+    align-items:center;
+  }
+  .coachSelectPrimary{
+    order:-999;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-weight:900;
+    color:#334155;
+    padding:6px 8px;
+    border:1px solid var(--line);
+    border-radius:14px;
+    background:#fff;
+    box-shadow:0 6px 16px rgba(15,23,42,.05);
+  }
+  .coachSelectPrimary select{ min-width:240px !important; }
+
+  .content{
+    grid-template-columns:400px minmax(0,1fr);
+  }
+  aside.side{
+    overflow:auto;
+    min-height:0;
+  }
+  aside.side .card.box{
+    display:flex;
+    flex-direction:column;
+    min-height:170px;
+    max-height:310px;
+    overflow:hidden;
+  }
+  aside.side .card.box .head{
+    flex:0 0 auto;
+  }
+  aside.side .card.box .body{
+    flex:1 1 auto;
+    min-height:0;
+    overflow:auto;
+    scrollbar-gutter:stable;
+  }
+  aside.side .card.box .body::-webkit-scrollbar,
+  .repCard::-webkit-scrollbar{ width:10px; height:10px; }
+  aside.side .card.box .body::-webkit-scrollbar-thumb,
+  .repCard::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:10px; border:2px solid transparent; background-clip:padding-box; }
+  aside.side .card.box .body::-webkit-scrollbar-track,
+  .repCard::-webkit-scrollbar-track{ background:transparent; }
+
+  aside.side .filterBox{
+    min-height:360px;
+    max-height:560px;
+  }
+  aside.side .filterBox .body{
+    min-height:270px;
+  }
+  .filterHead{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .settingsBtn{
+    padding:6px 9px;
+    font-size:12px;
+    white-space:nowrap;
+  }
+  .filterDivider{
+    height:1px;
+    background:var(--line);
+    margin:12px 0 10px;
+  }
+  .filterSectionTitle{
+    font-size:12px;
+    font-weight:900;
+    color:#334155;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+  }
+  .filterHelp{
+    margin-top:4px;
+    font-size:12px;
+    font-weight:800;
+    line-height:1.35;
+  }
+  .filterTypeChips{
+    max-height:330px;
+    padding:4px 4px 8px 0;
+  }
+  .coachingSettingsPanel{
+    width:min(720px, 94vw);
+  }
+  aside.side .teamSummaryBox{ min-height:205px; max-height:350px; }
+  aside.side .teamTotalsBox{ min-height:170px; max-height:270px; }
+
+  .tabPanel{ padding:18px; }
+  .impactGrid{
+    grid-template-columns:repeat(auto-fill, minmax(340px,1fr));
+    align-items:start;
+  }
+  .repCard{
+    min-height:255px;
+    max-height:430px;
+    overflow:auto;
+  }
+  .coachRowLine{
+    align-items:center;
+    gap:8px;
+  }
+  .plainTrendLine{
+    flex:1 1 120px;
+    min-width:110px;
+    padding:4px 0;
+    font-size:11px;
+    line-height:1.25;
+    color:#334155;
+    font-weight:900;
+    white-space:normal;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+    background:transparent;
+    border:0;
+    border-radius:0;
+  }
+
+  @media (max-width:1100px){
+    .content{ grid-template-columns:1fr; }
+    aside.side .card.box,
+    aside.side .filterBox,
+    aside.side .teamSummaryBox,
+    aside.side .teamTotalsBox{ max-height:420px; }
+    .coachSelectPrimary{ width:100%; }
+    .coachSelectPrimary select{ flex:1 1 auto; min-width:180px !important; }
+  }
+
+</style>
+</head>
+
+<body>
+<div class="app">
+<header id="topbar">
+  <div class="row" style="justify-content:space-between">
+    <h1>Impact Tool (Local Cache)</h1>
+
+    <div class="row topControlRow">
+
+      <label class="coachSelectPrimary">Coach (Team/Sheet)
+        <select id="coachSel" style="min-width:220px"></select>
+      </label>
+
+      <!-- MOVED: Metric selection to top bar (left of Reload/Include All) -->
+      <div class="metricBar" title="Rate = A ÷ B (Appointments ÷ Opportunities). Team rate is weighted by opportunities.">
+        <label>Metric</label>
+        <select id="metricMode" style="min-width:170px">
+          <option value="auto" selected>Auto set</option>
+          <option value="manual">Manual (A ÷ B)</option>
+        </select>
+
+        <div id="autoBlock" class="row" style="gap:6px">
+          <select id="autoSetSel" style="min-width:340px"></select>
+        </div>
+
+        <div id="manualBlock" class="row hide" style="gap:6px">
+          <span class="miniLegend">A</span>
+          <select id="kpiA" style="min-width:220px"></select>
+          <span class="miniLegend">÷ B</span>
+          <select id="kpiB" style="min-width:220px"></select>
+        </div>
+
+        <span class="miniLegend">Rate = A ÷ B</span>
+      </div>
+
+      <button class="btn" id="reloadCache">Reload cache</button>
+      <button class="btn" id="includeAllTop">Include all</button>
+      <button class="btn" id="exportPdf">Export to PDF</button>
+
+      <label class="pill" title="Include Retail dock">
+        <input type="checkbox" id="incRetail" checked />
+        Retail
+      </label>
+      <label class="pill" title="Include Referral dock">
+        <input type="checkbox" id="incReferral" checked />
+        Referral
+      </label>
+      <label>Timeframe
+        <select id="timeSel">
+          <option value="3">Last 3 weeks</option>
+          <option value="5" selected>Last 5 weeks</option>
+          <option value="10">Last 10 weeks</option>
+          <option value="custom">Custom…</option>
+        </select>
+      </label>
+      <input id="customWeeks" type="number" min="1" step="1" placeholder="Weeks" style="width:90px; display:none" />
+      <button class="btn primary" id="refreshBtn">Refresh</button>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:8px; justify-content:space-between">
+    <span class="chip" id="dockBadge">dock keys: —</span>
+    <span class="chip" id="coachDockBadge">coachings: not loaded</span>
+  </div>
+</header>
+
+<div class="content" id="content">
+  <!-- LEFT -->
+  <aside class="side">
+
+    <!-- Filters above Team Summary -->
+    <div class="card box filterBox">
+      <div class="head filterHead">
+        <span>Filters</span>
+        <button class="btn dark settingsBtn" id="coachingSettingsBtn" type="button" title="Open documented coaching cache settings">⚙ Coaching Settings</button>
+      </div>
+      <div class="body">
+        <div class="grid2">
+          <button class="btn" id="selectAll">Select all</button>
+          <button class="btn" id="clearAll">Clear all</button>
+        </div>
+        <div class="muted" style="margin-top:6px; font-weight:900" id="repCount">—</div>
+
+        <div class="filterDivider"></div>
+        <div class="filterSectionTitle">Documented Coaching Categories</div>
+        <div class="muted filterHelp">Choose which coaching categories count toward the cards and team breakdown.</div>
+
+        <div class="grid2" style="margin-top:8px">
+          <button class="btn" id="typesAllBtn">Types: all</button>
+          <button class="btn" id="typesNoneBtn">Types: none</button>
+        </div>
+
+        <div class="chips filterTypeChips" id="typeChips">
+          <span class="muted">Load coachings to enable type filters.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Team Summary -->
+    <div class="card box teamSummaryBox">
+      <div class="head">Team Summary</div>
+      <div class="body">
+        <div class="totalRow" id="teamTotals">
+          <div>
+            <div class="muted">Original Team Rate</div>
+            <div id="origRate" class="totalRate">—</div>
+          </div>
+          <div>
+            <div class="muted">Current (after exclusions)</div>
+            <div id="currRate" class="totalRate">—</div>
+          </div>
+          <div>
+            <div class="muted">Change (Curr − Orig)</div>
+            <div id="rateDiff" class="totalRate diff">—</div>
+          </div>
+        </div>
+        <div class="legend">
+          <span>Badge color:</span>
+          <span class="impactBadge good">▲ Team improves without rep</span>
+          <span class="impactBadge bad">▼ Team worsens without rep</span>
+          <span class="chip">⭐ biggest improver (removed)</span>
+          <span class="chip">⚠️ biggest worsener (removed)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card box teamTotalsBox">
+      <div class="head">Team Totals (window)</div>
+      <div class="body">
+        <div class="totalsGrid">
+          <div class="totBox">
+            <div class="totSub">Appointments</div>
+            <div class="totBig" id="totApps">—</div>
+            <div class="totSub" id="totAppsDelta">—</div>
+          </div>
+          <div class="totBox">
+            <div class="totSub">Opportunities</div>
+            <div class="totBig" id="totOpps">—</div>
+            <div class="totSub" id="totOppsDelta">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- RIGHT -->
+  <main class="card workspace">
+    <div class="viewTabs" role="tablist" aria-label="Impact views">
+      <button class="viewTab active" id="mainTabImpacts" type="button" role="tab" aria-selected="true" aria-controls="impactTabPanel">Impact Cards</button>
+      <button class="viewTab" id="mainTabTeam" type="button" role="tab" aria-selected="false" aria-controls="teamTabPanel">Team Breakdown · Last 5 Weeks</button>
+      <span class="muted" id="contextHint" style="margin-left:auto; font-weight:900">—</span>
+    </div>
+
+    <section class="tabPanel active" id="impactTabPanel" role="tabpanel" aria-labelledby="mainTabImpacts">
+      <div class="gridHead impactToolbar">
+        <div class="gridHeadTitleRow">
+          <strong>Member Impact Cards</strong>
+          <label class="attendance3WeeksToggle" title="Only show reps with at least one stat row in the 21 days ending on the latest stats date in the loaded data.">
+            <input type="checkbox" id="attendance3WeeksOnly">
+            <span>3 weeks attendance</span>
+          </label>
+        </div>
+
+        <div class="row" style="margin-left:auto">
+          <label>Sort
+            <select id="sortSel">
+              <option value="abs">Biggest impact → least (|impact|)</option>
+              <option value="pos">Most positive → most negative</option>
+              <option value="neg">Most negative → most positive</option>
+              <option value="negNeedCoach">Most negative impactor + fewest coaching (weighted)</option>
+              <option value="coachDesc">Most recent coaching ↓</option>
+              <option value="coachAsc">Most recent coaching ↑</option>
+              <option value="rateDesc">Highest % → lowest</option>
+              <option value="rateAsc">Lowest % → highest</option>
+            </select>
+          </label>
+          <button class="btn" id="toggleCompare" type="button" aria-hidden="true" tabindex="-1">Hide compare</button>
+        </div>
+      </div>
+
+      <div class="impactGrid" id="impactGrid"></div>
+    </section>
+
+    <section class="tabPanel" id="teamTabPanel" role="tabpanel" aria-labelledby="mainTabTeam">
+      <div class="teamTabIntro">
+        <div>
+          <strong>Team Breakdown</strong>
+          <span>Weekly rep-by-rep table, fixed to the last 5 available weeks for the selected team.</span>
+        </div>
+        <span>Use this tab when you want the big team table; use Impact Cards for the cleaner day-to-day view.</span>
+      </div>
+
+      <div class="heatmapWrap" id="heatmapWrap">
+        <div class="heatmapHead">
+          <div>
+            <div class="heatmapTitle">Weekly Team Breakdown</div>
+            <div class="heatmapHint">
+              Weekly goal view for the selected KPI window. Cells are red below goal, yellow up to 5 points above goal, and green above that. Blue stripes mean the rep was coached that week, and a big red X marks a below-goal week with no coaching.
+            </div>
+          </div>
+          <div class="heatmapStats" id="heatmapStats"></div>
+        </div>
+
+        <div class="heatmapLegend">
+          <span>Legend:</span>
+          <span><span class="legendSwatch weak"></span> Below goal</span>
+          <span><span class="legendSwatch info"></span> Goal to +5 pts</span>
+          <span><span class="legendSwatch strong"></span> More than +5 pts</span>
+          <span><span class="legendSwatch coached"></span> Coached this week</span>
+          <span>❌ below goal and not coached</span>
+          <span><span class="legendSwatch na"></span> No KPI</span>
+        </div>
+
+        <div class="heatmapMeta" id="heatmapMeta"></div>
+        <div class="heatmapScroller" id="heatmapScroller"></div>
+      </div>
+    </section>
+  </main>
+</div>
+</div>
+
+<!-- ===== Documented Coaching Settings Modal ===== -->
+<div id="coachingSettingsOverlay" class="modalOverlay" aria-hidden="true">
+  <div class="modalPanel coachingSettingsPanel" role="dialog" aria-modal="true" aria-labelledby="coachingSettingsTitle">
+    <div class="modalHeadRow">
+      <div>
+        <div id="coachingSettingsTitle" class="modalTitle">Documented Coaching Settings</div>
+        <div class="modalSub">Use this only when the coaching cache key needs to be changed or reloaded. Category filters now live in the Filters box.</div>
+      </div>
+      <div class="modalActions">
+        <button class="btn dark" id="coachingSettingsClose" type="button">Close ✕</button>
+      </div>
+    </div>
+    <div class="modalBody">
+      <div class="hint" style="margin-bottom:12px">
+        Each rep shows their <b>most recent coaching</b> (date + category) with <b>(#)</b> coachings in the selected timeframe.<br/>
+        <b>Yellow</b> = &gt; 3 weeks old • <b>Red</b> = &gt; 6 weeks old (coaching age only).
+      </div>
+
+      <label class="muted" style="font-weight:900">Coaching cache key (MyOne2.0 docks)</label>
+      <select id="coachKeySel" style="width:100%; margin-top:6px"></select>
+
+      <div class="row" style="margin-top:10px">
+        <button class="btn primary" id="loadCoachingsBtn" type="button">Load coachings</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Rep Coaching Modal ===== -->
+<div id="repCoachModalOverlay" class="modalOverlay" aria-hidden="true">
+  <div class="modalPanel" role="dialog" aria-modal="true" aria-labelledby="repCoachModalTitle">
+    <div class="modalHeadRow">
+      <div>
+        <div id="repCoachModalTitle" class="modalTitle">Coachings</div>
+        <div id="repCoachModalMeta" class="modalSub">—</div>
+      </div>
+      <div class="modalActions">
+        <button class="btn primary" id="repCoachModalFiltered">View filtered</button>
+        <button class="btn" id="repCoachModalAll">Show all</button>
+        <button class="btn dark" id="repCoachModalClose">Close ✕</button>
+      </div>
+    </div>
+    <div class="modalBody" id="repCoachModalBody"></div>
+  </div>
+</div>
+
+
+<!-- ===== Heatmap Detail Modal ===== -->
+<div id="heatmapModalOverlay" class="modalOverlay" aria-hidden="true">
+  <div class="modalPanel" role="dialog" aria-modal="true" aria-labelledby="heatmapModalTitle">
+    <div class="modalHeadRow">
+      <div>
+        <div id="heatmapModalTitle" class="modalTitle">Heatmap detail</div>
+        <div id="heatmapModalMeta" class="modalSub">—</div>
+      </div>
+      <div class="modalActions">
+        <button class="btn dark" id="heatmapModalClose">Close ✕</button>
+      </div>
+    </div>
+    <div class="modalBody" id="heatmapModalBody"></div>
+  </div>
+</div>
+
+<script>
+function setHeaderH(){
+  const hb = document.getElementById('topbar');
+  if(!hb) return;
+  const h = Math.max(80, hb.offsetHeight);
+  document.documentElement.style.setProperty('--headerH', h + 'px');
+}
+window.addEventListener('resize', setHeaderH);
+window.addEventListener('load', setHeaderH);
+
+/* =========================
+   Helpers
+   ========================= */
+const toNum = v => {
+  if (v===undefined||v===null||v==='') return NaN;
+  const n = parseFloat(String(v).replace(/%/g,'').replace(/,/g,'').trim());
+  return Number.isFinite(n)? n: NaN;
+};
+const fmtPct1 = v => Number.isFinite(v) ? (v*100).toFixed(1)+'%' : '—';
+const fmtPct2 = v => Number.isFinite(v) ? (v*100).toFixed(2)+'%' : '—';
+
+function excelSerialToLocalDate(n){
+  const base = Date.UTC(1899,11,30);
+  const ms = base + Math.round(n * 86400000);
+  const d = new Date(ms);
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+function parseAnyDate(val){
+  if(val===null||val===undefined||val==="") return null;
+  if(val instanceof Date && !isNaN(val)) return new Date(val.getFullYear(), val.getMonth(), val.getDate());
+
+  if(typeof val==="number" && Number.isFinite(val)){
+    if(val > 20000 && val < 80000) return excelSerialToLocalDate(val);
+  }
+  const s = String(val).trim();
+  if(!s) return null;
+
+  if(/^\d+(\.\d+)?$/.test(s)){
+    const n = Number(s);
+    if(Number.isFinite(n) && n > 20000 && n < 80000) return excelSerialToLocalDate(n);
+  }
+
+  const d = new Date(s);
+  if(!isNaN(d)) return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  return null;
+}
+function mmddyy(d){
+  if(!(d instanceof Date) || isNaN(d)) return "";
+  const m=String(d.getMonth()+1).padStart(2,"0");
+  const day=String(d.getDate()).padStart(2,"0");
+  const yy=String(d.getFullYear()).slice(-2);
+  return `${m}/${day}/${yy}`;
+}
+function isoWeekKey(d){
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7);
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+}
+function groupBy(arr, keyFn){
+  const m=new Map();
+  arr.forEach(x=>{
+    const k=keyFn(x);
+    const a=m.get(k)||[];
+    a.push(x);
+    m.set(k,a);
+  });
+  return m;
+}
+const isTotalName = name => {
+  if (!name) return false;
+  const n = String(name).trim().toLowerCase();
+  return /^(total|totals|team totals?|summary)$/.test(n)
+      || n.startsWith('totals -') || n.startsWith('total -');
+};
+
+/* =========================
+   LocalStorage dock loading
+   ========================= */
+function normHdr(s){
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g," ")
+    .replace(/[^a-z0-9% \-_]/g,"")
+    .replace(/[-_]/g,"")
+    .replace(/\s/g,"");
+}
+function toNumber(v){
+  if(v===null||v===undefined) return null;
+  if(typeof v==="number" && Number.isFinite(v)) return v;
+  const s = String(v).trim();
+  if(!s) return null;
+  const cleaned = s.replace(/,/g,"");
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+function findDockKey(suffix){
+  const want = `.dock.${suffix}`;
+  for(let i=0;i<localStorage.length;i++){
+    const k = localStorage.key(i);
+    if(!k) continue;
+    if(k.toLowerCase().endsWith(want)) return k;
+  }
+  return null;
+}
+function loadDockObjByKey(key){
+  if(!key) return null;
+  const raw = localStorage.getItem(key);
+  if(!raw) return null;
+
+  try{
+    const json = LZString.decompressFromUTF16(raw);
+    if(json) return JSON.parse(json);
+  }catch(e){}
+
+  try{ return JSON.parse(raw); }catch(e){}
+  return null;
+}
+function aoaToRows(aoa){
+  if(!Array.isArray(aoa) || aoa.length<2) return [];
+  const header = aoa[0].map(h=>String(h??"").trim());
+  const out=[];
+  for(let r=1;r<aoa.length;r++){
+    const row=aoa[r];
+    if(!row) continue;
+    const obj={};
+    let any=false;
+    for(let c=0;c<header.length;c++){
+      const k = header[c];
+      if(!k) continue;
+      const v = row[c];
+      if(v!==null && v!==undefined && String(v).trim()!=="") any=true;
+      obj[k]=v;
+    }
+    if(any) out.push(obj);
+  }
+  return out;
+}
+function extractRowArrays(root, sheetNameFallback){
+  const found=[];
+  const seen = new Set();
+
+  function pushArray(arr, sheetName){
+    if(!Array.isArray(arr) || !arr.length) return;
+    const id = sheetName + "|" + arr.length + "|" + (typeof arr[0]);
+    if(seen.has(id)) return;
+    seen.add(id);
+
+    if(arr[0] && typeof arr[0]==="object" && !Array.isArray(arr[0])){
+      found.push({ rows: arr, sheetName });
+      return;
+    }
+    if(Array.isArray(arr[0])){
+      const rows = aoaToRows(arr);
+      if(rows.length) found.push({ rows, sheetName });
+    }
+  }
+
+  function walk(node, sheetName){
+    if(node===null || node===undefined) return;
+    if(Array.isArray(node)){
+      pushArray(node, sheetName ?? sheetNameFallback ?? "");
+      return;
+    }
+    if(typeof node!=="object") return;
+
+    if(Array.isArray(node.rows)) pushArray(node.rows, sheetName ?? sheetNameFallback ?? "");
+    if(Array.isArray(node.data)) pushArray(node.data, sheetName ?? sheetNameFallback ?? "");
+    if(Array.isArray(node.table)) pushArray(node.table, sheetName ?? sheetNameFallback ?? "");
+
+    if(node.sheets && typeof node.sheets==="object" && !Array.isArray(node.sheets)){
+      for(const [sn, sv] of Object.entries(node.sheets)){
+        walk(sv, sn);
+      }
+    }
+
+    for(const [k,v] of Object.entries(node)){
+      if(k==="meta" || k==="sheets") continue;
+      walk(v, sheetName);
+    }
+  }
+
+  walk(root, sheetNameFallback);
+  return found;
+}
+function looksLikeStatsRow(obj){
+  if(!obj || typeof obj!=="object") return false;
+  const keys = Object.keys(obj);
+  if(keys.length<3) return false;
+  const nk = keys.map(normHdr);
+  const hasDate = nk.includes("date") || nk.includes("dt") || nk.includes("day");
+  const hasName = nk.includes("name") || nk.includes("associate") || nk.includes("rep") || nk.includes("employee") || nk.includes("associatename");
+  return hasDate && hasName;
+}
+function pickField(row, candidates){
+  const map = {};
+  for(const k of Object.keys(row)){
+    map[normHdr(k)] = k;
+  }
+  for(const cand of candidates){
+    const real = map[cand];
+    if(real!==undefined) return row[real];
+  }
+  return undefined;
+}
+function canonicalizeStatsRowsFromDock(dockObj, sourceLabel){
+  if(!dockObj) return [];
+  const arrays = extractRowArrays(dockObj, "");
+  const out = [];
+
+  for(const pack of arrays){
+    const sheetName = pack.sheetName || "";
+    for(const r of pack.rows){
+      if(!looksLikeStatsRow(r)) continue;
+
+      const dateRaw = pickField(r, ["date","dt","day","createdon","created"]);
+      const nameRaw = pickField(r, ["name","associate","rep","employee","associatename"]);
+      let sheetRaw = pickField(r, ["sheet","coach","team","jobcoach"]);
+
+      const d = parseAnyDate(dateRaw);
+      const name = String(nameRaw ?? "").trim();
+      const sheet = String((sheetRaw ?? sheetName) ?? "").trim();
+      if(!d || !name || !sheet) continue;
+      if(isTotalName(name)) continue;
+
+      const rowOut = { Date: dateRaw, Sheet: sheet, Name: name, Source: sourceLabel };
+      for(const [k,v] of Object.entries(r)){
+        const nk = normHdr(k);
+        if(["date","dt","day","createdon","created"].includes(nk)) continue;
+        if(["sheet","coach","team","jobcoach"].includes(nk)) continue;
+        if(["name","associate","rep","employee","associatename"].includes(nk)) continue;
+        rowOut[k] = v;
+      }
+
+      rowOut.__date = d;
+      rowOut.__ymd = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      rowOut.__wk = isoWeekKey(d);
+      out.push(rowOut);
+    }
+  }
+  return out;
+}
+function mergeRetailReferral(rows, includeRetail, includeReferral){
+  const keep = rows.filter(r=>{
+    if(r.Source==="Retail" && !includeRetail) return false;
+    if(r.Source==="Referral" && !includeReferral) return false;
+    return true;
+  });
+
+  const map = new Map();
+  for(const r of keep){
+    const key = `${r.__ymd}|${String(r.Sheet).toLowerCase()}|${String(r.Name).toLowerCase()}`;
+    if(!map.has(key)){
+      const base = {...r};
+      base.Sources = new Set([r.Source]);
+      map.set(key, base);
+      continue;
+    }
+    const cur = map.get(key);
+    cur.Sources.add(r.Source);
+
+    for(const [k,v] of Object.entries(r)){
+      if(["Source","Sources","__date","__ymd","__wk","Date","Sheet","Name"].includes(k)) continue;
+      const a = cur[k];
+      const na = toNumber(a);
+      const nb = toNumber(v);
+      const isPercentLike = /rate|%|pct|percent/i.test(String(k));
+      if(na!==null && nb!==null){
+        cur[k] = isPercentLike ? ((na + nb) / 2) : (na + nb);
+      }else if((a===null || a===undefined || String(a).trim()==="") && (v!==null && v!==undefined && String(v).trim()!=="")){
+        cur[k] = v;
+      }
+    }
+  }
+
+  const out = [];
+  for(const v of map.values()){
+    v.Sources = Array.from(v.Sources).sort().join(", ");
+    out.push(v);
+  }
+  return out;
+}
+
+/* =========================
+   Documented Coaching
+   ========================= */
+function findCoachingCandidates(){
+  const keys=[];
+  for(let i=0;i<localStorage.length;i++){
+    const k = localStorage.key(i);
+    if(!k) continue;
+    const lk = k.toLowerCase();
+    if(!lk.includes(".dock.")) continue;
+    if(lk.includes("coach")) keys.push(k);
+  }
+  keys.sort((a,b)=>{
+    const A=a.toLowerCase(), B=b.toLowerCase();
+    const score = (s)=>{
+      let x=0;
+      if(s.includes("document")) x+=50;
+      if(s.includes("documented")) x+=50;
+      if(s.includes("coaching")) x+=30;
+      if(s.endsWith(".dock.coaching")) x+=10;
+      if(s.includes("myone2")) x+=5;
+      return x;
+    };
+    return score(B)-score(A);
+  });
+  return keys;
+}
+function looksLikeCoachingRow(obj){
+  if(!obj || typeof obj!=="object") return false;
+  const nk = Object.keys(obj).map(normHdr);
+  const hasRep = nk.includes("associatename") || nk.includes("associate") || nk.includes("name") || nk.includes("rep");
+  const hasDate = nk.includes("date") || nk.includes("dt") || nk.includes("day");
+  const hasType = nk.includes("coachingtypemulti") || nk.includes("coachingtype") || nk.includes("type");
+  return hasRep && hasDate && hasType;
+}
+function splitTypes(val){
+  const s = String(val ?? "").trim();
+  if(!s) return [];
+  return s.split(/[,;]+/).map(x=>x.trim()).filter(Boolean);
+}
+function canonicalizeDocumentedCoachings(dockObj){
+  if(!dockObj) return [];
+  const arrays = extractRowArrays(dockObj,"");
+  const out=[];
+
+  for(const pack of arrays){
+    for(const r of pack.rows){
+      if(!looksLikeCoachingRow(r)) continue;
+
+      const repRaw   = pickField(r, ["associatename","associate","name","rep"]);
+      const dateRaw  = pickField(r, ["date","dt","day"]);
+
+      const typeMulti  = pickField(r, ["coachingtypemulti"]);
+      const typeSingle = pickField(r, ["coachingtype","type"]);
+
+      const coachRaw = pickField(r, ["jobcoach","coach","sheet","team"]);
+      const descRaw  = pickField(r, ["description","desc","notes","note","details","summary","coachingnotes"]);
+
+      const rep = String(repRaw ?? "").trim();
+      const d = parseAnyDate(dateRaw);
+      if(!rep || !d) continue;
+
+      const types = Array.from(new Set([
+        ...splitTypes(typeMulti),
+        ...splitTypes(typeSingle)
+      ]));
+
+      if(!types.length) continue;
+
+      out.push({
+        rep,
+        coach: String(coachRaw ?? "").trim(),
+        date: d,
+        ymd: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`,
+        wk: isoWeekKey(d),
+        types,
+        desc: String(descRaw ?? "").trim()
+      });
+    }
+  }
+  return out;
+}
+
+/* =========================
+   State
+   ========================= */
+let allRows = [];
+let sheets = [];
+let selectedSheet = null;
+
+let headers = [];
+let autoSets = [];
+let selectedSet = null;
+
+let metricMode = 'auto';
+let excluded = new Set();
+let showCompare = false;
+let attendance3WeeksOnly = false;
+
+let includeRetail = true;
+let includeReferral = true;
+
+let dockKeyRetail = null;
+let dockKeyReferral = null;
+
+let coachingKey = null;
+let coachingCandidates = [];
+let coachings = [];
+let coachingTypes = new Set();
+let enabledTypes = new Set();
+let coachingByRepKey = new Map();
+let lastCoachingLoadedKey = null;
+
+function personKey(name){
+  let s = String(name||"").trim().toLowerCase();
+  s = s.replace(/\./g,"").replace(/\s+/g," ");
+  if(!s) return "";
+
+  if(s.includes(",")){
+    const parts = s.split(",");
+    const last = (parts[0]||"").trim();
+    const rest = (parts[1]||"").trim();
+    const first = (rest.split(/\s+/)[0]||"").trim();
+    if(first && last) s = `${first} ${last}`;
+    else s = s.replace(/,/g," ");
+  }
+
+  const toks = s.split(/\s+/).filter(Boolean);
+  if(toks.length>=2) return `${toks[0]} ${toks[toks.length-1]}`;
+  return toks[0] || "";
+}
+function rebuildCoachingIndex(){
+  coachingByRepKey = new Map();
+  for(const c of coachings){
+    const k = personKey(c.rep);
+    if(!k) continue;
+    const arr = coachingByRepKey.get(k) || [];
+    arr.push(c);
+    coachingByRepKey.set(k, arr);
+  }
+  for(const [k, arr] of coachingByRepKey.entries()){
+    arr.sort((a,b)=> b.date - a.date);
+  }
+}
+function latestCoachingForRep(repName){
+  if(!coachings.length) return null;
+  if(coachingTypes.size && enabledTypes.size===0) return null;
+
+  const k = personKey(repName);
+  const arr = coachingByRepKey.get(k);
+  if(!arr || !arr.length) return null;
+
+  for(const c of arr){
+    if(!coachingTypes.size) return c;
+    const match = c.types.some(t=>enabledTypes.has(t));
+    if(match) return c;
+  }
+  return null;
+}
+function coachingSortTime(repName){
+  const c = latestCoachingForRep(repName);
+  return c?.date instanceof Date && !isNaN(c.date) ? c.date.getTime() : null;
+}
+function formatCoachingDateForLabel(repName){
+  const c = latestCoachingForRep(repName);
+  return c?.date instanceof Date && !isNaN(c.date) ? `${c.date.getMonth()+1}/${c.date.getDate()}/${c.date.getFullYear()}` : '—';
+}
+function repLastCoachedLabel(repName){
+  return `${repName} (Last Coached ${formatCoachingDateForLabel(repName)})`;
+}
+
+/* =========================
+   Timeframe controls
+   ========================= */
+const timeSel = document.getElementById('timeSel');
+const customWeeks = document.getElementById('customWeeks');
+timeSel.onchange = ()=>{
+  customWeeks.style.display = (timeSel.value==='custom') ? 'inline-block' : 'none';
+};
+function currentWeeks(){
+  if (timeSel.value==='custom'){
+    const n = parseInt(customWeeks.value,10);
+    return (Number.isFinite(n) && n>0) ? n : 5;
+  }
+  return parseInt(timeSel.value,10);
+}
+function coachingWindowStart(){
+  const weeks = currentWeeks();
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  start.setDate(start.getDate() - (weeks * 7));
+  return start;
+}
+function coachingCountForRep(repName){
+  if(!coachings.length) return 0;
+  if(coachingTypes.size && enabledTypes.size===0) return 0;
+
+  const k = personKey(repName);
+  const arr = coachingByRepKey.get(k) || [];
+  if(!arr.length) return 0;
+
+  const start = coachingWindowStart();
+  let n=0;
+
+  // arr is sorted newest -> oldest
+  for(const c of arr){
+    if(c.date < start) break;
+    if(!coachingTypes.size){
+      n++;
+      continue;
+    }
+    if((c.types || []).some(t=>enabledTypes.has(t))) n++;
+  }
+  return n;
+}
+function needCoachingScore(repName, impact){
+  const cnt = coachingCountForRep(repName);
+  const imp = Number.isFinite(impact) ? Math.max(impact, 0) : 0;
+  const score = imp / (1 + cnt); // weighting requested
+  return { score, cnt };
+}
+
+function buildRepRateTrendMap(repNames, bottomHalfSetGlobal){
+  const trendMap = new Map();
+  const set = effectiveSet();
+  const names = Array.from(new Set((repNames || []).filter(Boolean)));
+  if(!set || !names.length) return trendMap;
+
+  const model = buildWeeklyHeatmapModel(set, names, bottomHalfSetGlobal || new Set(), currentWeeks());
+  (model?.repSummaries || []).forEach(summary => {
+    const points = (summary.entries || [])
+      .map((entry, idx)=> ({ idx, rate: Number.isFinite(entry?.repRate) ? entry.repRate : NaN }))
+      .filter(p => Number.isFinite(p.rate));
+
+    if(points.length < 2){
+      trendMap.set(summary.rep, { value: NaN, text: 'Trend: —' });
+      return;
+    }
+
+    const first = points[0];
+    const last = points[points.length - 1];
+    const delta = last.rate - first.rate;
+    const sign = delta >= 0 ? '+' : '-';
+    trendMap.set(summary.rep, {
+      value: delta,
+      text: `Trend: ${sign}${fmtPct2(Math.abs(delta))}`,
+      firstWeekIndex: first.idx,
+      lastWeekIndex: last.idx
+    });
+  });
+  return trendMap;
+}
+function trendTextForRepFromMap(trendMap, repName){
+  const item = trendMap?.get(repName);
+  return item?.text || 'Trend: —';
+}
+
+/* =========================
+   Rep Coaching Modal
+   ========================= */
+const repCoachingModal = { rep: null, mode: 'filtered' };
+
+function linearTrend(points){
+  const valid = points
+    .map((y, idx)=> ({ x:idx, y }))
+    .filter(p => Number.isFinite(p.y));
+  if(valid.length < 2) return { slope: NaN, intercept: NaN };
+  const n = valid.length;
+  const sumX = valid.reduce((s,p)=>s+p.x,0);
+  const sumY = valid.reduce((s,p)=>s+p.y,0);
+  const sumXY = valid.reduce((s,p)=>s+(p.x*p.y),0);
+  const sumXX = valid.reduce((s,p)=>s+(p.x*p.x),0);
+  const denom = (n * sumXX) - (sumX * sumX);
+  if(!denom) return { slope: NaN, intercept: NaN };
+  const slope = ((n * sumXY) - (sumX * sumY)) / denom;
+  const intercept = (sumY - (slope * sumX)) / n;
+  return { slope, intercept };
+}
+function buildRepTrendSummary(rep){
+  const model = lastHeatmapModel || buildWeeklyHeatmapModel(effectiveSet(), applyAttendance3WeeksFilter(getRepNamesInScope(5)).filter(n => !excluded.has(n)), new Set(), 5);
+  const entries = (model?.weekly || []).map(w => (w.rows || []).find(r => r.rep === rep) || null);
+  const filled = entries.map((entry, idx)=>{
+    const week = model.weekly[idx];
+    return {
+      weekKey: week.weekKey,
+      weekLabel: week.label,
+      repRate: Number.isFinite(entry?.repRate) ? entry.repRate : NaN,
+      impact: Number.isFinite(entry?.impact) ? entry.impact : NaN,
+      coached: !!entry?.coached,
+      needsCoaching: !!entry?.needsCoaching,
+      performanceLabel: entry?.performanceLabel || 'No KPI'
+    };
+  });
+  const impacts = filled.map(f => f.impact);
+  const rates = filled.map(f => f.repRate);
+  const impactTrend = linearTrend(impacts);
+  const avgImpact = impacts.filter(Number.isFinite).reduce((s,v)=>s+v,0) / Math.max(1, impacts.filter(Number.isFinite).length);
+  const harmingWeeks = filled.filter(f => Number.isFinite(f.impact) && f.impact > 0);
+  const coachedHarming = harmingWeeks.filter(f => f.coached).length;
+  const coachingConsistency = harmingWeeks.length ? (coachedHarming / harmingWeeks.length) : NaN;
+
+  const coachedIndices = filled.map((f, i)=> (f.coached ? i : -1)).filter(i => i >= 0);
+  const followRateDeltas = coachedIndices.map(i=>{
+    const now = rates[i];
+    const next = rates[i+1];
+    return (Number.isFinite(now) && Number.isFinite(next)) ? (next - now) : NaN;
+  }).filter(Number.isFinite);
+  const followImpactDeltas = coachedIndices.map(i=>{
+    const now = impacts[i];
+    const next = impacts[i+1];
+    return (Number.isFinite(now) && Number.isFinite(next)) ? (next - now) : NaN;
+  }).filter(Number.isFinite);
+  const avgRateMovementAfterCoaching = followRateDeltas.reduce((s,v)=>s+v,0) / Math.max(1, followRateDeltas.length);
+  const avgImpactMovementAfterCoaching = followImpactDeltas.reduce((s,v)=>s+v,0) / Math.max(1, followImpactDeltas.length);
+
+  return {
+    model,
+    points: filled,
+    impactTrend,
+    avgImpact,
+    harmingWeeks,
+    coachingConsistency,
+    avgRateMovementAfterCoaching,
+    avgImpactMovementAfterCoaching,
+    followSampleSize: followRateDeltas.length
+  };
+}
+function repTrendMarkup(rep){
+  const summary = buildRepTrendSummary(rep);
+  const points = summary.points;
+  if(!points.length){
+    return `<div class="repTrendWrap"><div class="muted" style="font-weight:900">No weekly timeline available in this timeframe.</div></div>`;
+  }
+
+  const validImpacts = points.map(p=>p.impact).filter(Number.isFinite);
+  const minY = validImpacts.length ? Math.min(...validImpacts, 0) : -0.01;
+  const maxY = validImpacts.length ? Math.max(...validImpacts, 0) : 0.01;
+  const span = Math.max(0.0001, maxY - minY);
+  const W = 860;
+  const H = 220;
+  const padL = 42;
+  const padR = 18;
+  const padT = 18;
+  const padB = 36;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const xFor = i => padL + ((points.length <= 1 ? 0 : (i/(points.length-1))) * innerW);
+  const yFor = y => padT + ((maxY - y) / span) * innerH;
+  const zeroY = yFor(0);
+  const pointPath = points.map((p,i)=> `${i===0?'M':'L'} ${xFor(i).toFixed(2)} ${yFor(Number.isFinite(p.impact) ? p.impact : 0).toFixed(2)}`).join(' ');
+  const trendLine = Number.isFinite(summary.impactTrend.slope) ? (()=> {
+    const y0 = summary.impactTrend.intercept;
+    const y1 = summary.impactTrend.intercept + (summary.impactTrend.slope * (points.length - 1));
+    return `M ${xFor(0).toFixed(2)} ${yFor(y0).toFixed(2)} L ${xFor(points.length - 1).toFixed(2)} ${yFor(y1).toFixed(2)}`;
+  })() : '';
+  const trendTxt = Number.isFinite(summary.impactTrend.slope)
+    ? (summary.impactTrend.slope < 0 ? 'Improving trend (impact drifting down)' : summary.impactTrend.slope > 0 ? 'Worsening trend (impact drifting up)' : 'Flat trend')
+    : 'Trend unavailable';
+
+  const consistencyTone = Number.isFinite(summary.coachingConsistency) ? (summary.coachingConsistency >= 0.7 ? 'good' : 'bad') : 'info';
+  const consistencyText = Number.isFinite(summary.coachingConsistency)
+    ? `${(summary.coachingConsistency*100).toFixed(0)}% of harmful weeks were coached`
+    : 'No harmful weeks in this timeframe';
+  const consistencyDesc = Number.isFinite(summary.coachingConsistency)
+    ? (summary.coachingConsistency >= 0.7 ? 'Coaching appears consistent with need in harmful weeks.' : 'Coaching is not consistent with need in harmful weeks.')
+    : 'This rep did not post harmful impact weeks (red condition) in the selected window.';
+
+  const movementTone = Number.isFinite(summary.avgRateMovementAfterCoaching) ? (summary.avgRateMovementAfterCoaching >= 0 ? 'good' : 'bad') : 'info';
+
+  const bars = points.map(p=>{
+    let tone = 'na';
+    let arrow = '•';
+    let desc = 'No impact';
+    if(Number.isFinite(p.impact)){
+      const helpsTeam = p.impact < 0;
+      tone = helpsTeam ? 'good' : (p.impact > 0 ? 'bad' : 'na');
+      arrow = helpsTeam ? '↗' : (p.impact > 0 ? '↘' : '→');
+      desc = helpsTeam ? `+team ${fmtPct2(Math.abs(p.impact))}` : (p.impact > 0 ? `-team ${fmtPct2(Math.abs(p.impact))}` : 'neutral');
+    }
+    return `<div class="repImpactBar ${tone}" title="${p.weekKey}: ${desc}">
+      <div class="wk">${p.weekKey}</div>
+      <div class="arrow">${arrow}</div>
+      <div class="val">${desc}</div>
+    </div>`;
+  }).join('');
+
+  const circles = points.map((p,i)=>{
+    const x = xFor(i).toFixed(2);
+    const y = yFor(Number.isFinite(p.impact) ? p.impact : 0).toFixed(2);
+    const clr = Number.isFinite(p.impact) ? (p.impact < 0 ? '#16a34a' : p.impact > 0 ? '#dc2626' : '#64748b') : '#94a3b8';
+    return `<circle cx="${x}" cy="${y}" r="4" fill="${clr}"><title>${p.weekKey}: ${Number.isFinite(p.impact) ? fmtPct2(p.impact) : 'N/A'}</title></circle>`;
+  }).join('');
+
+  return `<div class="repTrendWrap">
+    <div class="repTrendHead">
+      <div>
+        <div class="repTrendTitle">Weekly impact timeline</div>
+        <div class="repTrendSub">Line = weekly impact (team rate change if removed). Dashed line = overall trend across selected weeks.</div>
+      </div>
+      <span class="tag ${Number.isFinite(summary.avgImpact) ? (summary.avgImpact < 0 ? 'good' : summary.avgImpact > 0 ? 'bad' : 'info') : 'info'}">Avg impact: ${Number.isFinite(summary.avgImpact) ? fmtPct2(summary.avgImpact) : '—'}</span>
+    </div>
+    <div class="repTrendCanvas">
+      <svg class="repTrendSvg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Rep weekly impact trend">
+        <line x1="${padL}" y1="${zeroY.toFixed(2)}" x2="${W-padR}" y2="${zeroY.toFixed(2)}" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 4"></line>
+        <path d="${pointPath}" fill="none" stroke="#0f172a" stroke-width="2.2"></path>
+        ${trendLine ? `<path d="${trendLine}" fill="none" stroke="#2563eb" stroke-width="2" stroke-dasharray="6 4"></path>` : ''}
+        ${circles}
+      </svg>
+      <div class="repTrendSub" style="margin-top:6px">${trendTxt}</div>
+    </div>
+    <div class="repImpactBars">${bars}</div>
+    <div class="repTrendInsights">
+      <div class="repTrendInsight ${consistencyTone}">
+        <div class="k">Coaching vs need</div>
+        <div class="v">${consistencyText}</div>
+        <div class="d">${consistencyDesc}</div>
+      </div>
+      <div class="repTrendInsight ${movementTone}">
+        <div class="k">Average movement after coaching</div>
+        <div class="v">${summary.followSampleSize ? `${fmtPct2(summary.avgRateMovementAfterCoaching)} rate • ${fmtPct2(summary.avgImpactMovementAfterCoaching)} impact` : 'No week-after samples'}</div>
+        <div class="d">Computed as average week-to-next-week change after coached weeks in this timeframe.</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function openRepCoachings(rep){
+  repCoachingModal.rep = rep;
+  repCoachingModal.mode = 'filtered';
+  document.getElementById('repCoachModalTitle').textContent = `${rep} — Coachings`;
+  const ov = document.getElementById('repCoachModalOverlay');
+  ov.classList.add('show');
+  ov.setAttribute('aria-hidden','false');
+  paintRepCoachingsModal();
+}
+function closeRepCoachings(){
+  const ov = document.getElementById('repCoachModalOverlay');
+  ov.classList.remove('show');
+  ov.setAttribute('aria-hidden','true');
+  repCoachingModal.rep = null;
+}
+function setRepCoachingsMode(mode){
+  repCoachingModal.mode = mode;
+  paintRepCoachingsModal();
+}
+function paintRepCoachingsModal(){
+  const rep = repCoachingModal.rep;
+  const body = document.getElementById('repCoachModalBody');
+  const meta = document.getElementById('repCoachModalMeta');
+  const btnFiltered = document.getElementById('repCoachModalFiltered');
+  const btnAll = document.getElementById('repCoachModalAll');
+
+  btnFiltered.classList.toggle('primary', repCoachingModal.mode === 'filtered');
+  btnAll.classList.toggle('primary', repCoachingModal.mode === 'all');
+
+  body.innerHTML = '';
+
+  if(!rep){
+    meta.textContent = '—';
+    body.innerHTML = `<div class="muted" style="font-weight:900">No representative selected.</div>`;
+    return;
+  }
+
+  if(!coachings.length){
+    meta.textContent = 'Coachings not loaded';
+    body.innerHTML = `${repTrendMarkup(rep)}<div class="muted" style="font-weight:900">No coaching dock found/loaded yet.</div>`;
+    return;
+  }
+
+  const k = personKey(rep);
+  const all = coachingByRepKey.get(k) || [];
+  const total = all.length;
+
+  let shown = all;
+  let note = '';
+
+  if(repCoachingModal.mode === 'filtered'){
+    if(coachingTypes.size && enabledTypes.size===0){
+      shown = [];
+      note = 'Filtered view: no coaching types are selected in the main filter.';
+    }else if(coachingTypes.size){
+      shown = all.filter(c => (c.types || []).some(t => enabledTypes.has(t)));
+      note = 'Filtered view: using the coaching type filter from the main page.';
+    }else{
+      shown = all;
+      note = 'Filtered view: (no type filter available).';
+    }
+  }else{
+    shown = all;
+    note = 'Show all: ignoring the coaching type filter.';
+  }
+
+  meta.textContent = `${note}  Showing ${shown.length} of ${total} coaching(s).`;
+
+  if(!total){
+    body.innerHTML = `${repTrendMarkup(rep)}<div class="muted" style="font-weight:900">No coaching records found for this rep in the loaded coaching dock.</div>`;
+    return;
+  }
+  if(!shown.length){
+    body.innerHTML = `${repTrendMarkup(rep)}<div class="muted" style="font-weight:900">No coachings match the current filter for this rep.</div>`;
+    return;
+  }
+
+  body.insertAdjacentHTML('beforeend', repTrendMarkup(rep));
+
+  const list = document.createElement('div');
+  list.className = 'coachList';
+
+  shown.forEach(c=>{
+    const item = document.createElement('div');
+    item.className = 'coachItem';
+
+    const top = document.createElement('div');
+    top.className = 'coachItemTop';
+
+    const dt = document.createElement('div');
+    dt.className = 'coachItemDate';
+    dt.textContent = mmddyy(c.date);
+
+    const typ = document.createElement('div');
+    typ.className = 'coachItemType';
+    typ.textContent = (c.types && c.types.length) ? c.types.join(', ') : '—';
+
+    top.appendChild(dt);
+    top.appendChild(typ);
+
+    if(c.coach){
+      const coach = document.createElement('div');
+      coach.className = 'coachItemCoach';
+      coach.textContent = `Coach: ${c.coach}`;
+      top.appendChild(coach);
+    }
+
+    const desc = document.createElement('div');
+    desc.className = 'coachItemDesc';
+    desc.textContent = c.desc ? c.desc : '—';
+
+    item.appendChild(top);
+    item.appendChild(desc);
+    list.appendChild(item);
+  });
+
+  body.appendChild(list);
+}
+
+/* =========================
+   UI builders
+   ========================= */
+function buildCoachSel(){
+  const sel = document.getElementById('coachSel');
+  sel.innerHTML = '';
+  sheets.forEach(s=>{
+    const o=document.createElement('option');
+    o.value=s; o.textContent=s;
+    sel.appendChild(o);
+  });
+  sel.onchange = ()=>{
+    selectedSheet = sel.value || null;
+    excluded.clear();
+    renderAll();
+  };
+}
+function computeHeaders(){
+  const skip = new Set(['Name','Date','Sheet','Team','Source','Sources','__date','__ymd','__wk','_d']);
+  const all = Array.from(new Set(allRows.flatMap(r=>Object.keys(r)).filter(k=>!skip.has(k))));
+  headers = all.filter(h => allRows.some(r=>Number.isFinite(toNum(r[h])))).sort();
+}
+function buildAutoSets(){
+  const opps = headers.filter(h=>/\bopportunities\b/i.test(h));
+  const apps = headers.filter(h=>/\bappointments?\b/i.test(h));
+  const canonical = s => s.toLowerCase().replace(/\s+/g,' ').trim();
+  function stem(h){
+    return canonical(h)
+      .replace(/\bopportunities\b/g,'')
+      .replace(/\bappointments?\b/g,'')
+      .trim();
+  }
+  const mapOpp = new Map();
+  opps.forEach(o=> mapOpp.set(stem(o), o));
+  autoSets = [];
+  apps.forEach(a=>{
+    const st = stem(a);
+    if (mapOpp.has(st)){
+      const A=a, B=mapOpp.get(st);
+      const label = (st? (st.charAt(0).toUpperCase()+st.slice(1)+' ') : '') + 'Rate';
+      autoSets.push({label, A, B});
+    }
+  });
+  const seen=new Set();
+  autoSets = autoSets.filter(s=>{
+    const k=s.A+'|'+s.B;
+    if(seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+function preferConsumerSet(){
+  if(!autoSets.length) return null;
+  const idx = autoSets.findIndex(s=>{
+    const A = String(s.A||"").toLowerCase();
+    const B = String(s.B||"").toLowerCase();
+    return A.includes("consumer") && A.includes("appoint") && B.includes("consumer") && (B.includes("opp") || B.includes("opportun"));
+  });
+  if(idx >= 0) return autoSets[idx];
+  const idx2 = autoSets.findIndex(s => String(s.label||"").toLowerCase().includes("consumer"));
+  if(idx2 >= 0) return autoSets[idx2];
+  return autoSets[0];
+}
+function paintAutoSetSel(){
+  const sel = document.getElementById('autoSetSel');
+  sel.innerHTML = '';
+  if (!autoSets.length){
+    const o=document.createElement('option'); o.value=''; o.textContent='(No auto sets found)'; sel.appendChild(o);
+    return;
+  }
+  autoSets.forEach((s,i)=>{
+    const o=document.createElement('option');
+    o.value=String(i);
+    o.textContent=`${s.label} — ${s.A} / ${s.B}`;
+    sel.appendChild(o);
+  });
+  const idx = autoSets.findIndex(x=>x.A===selectedSet?.A && x.B===selectedSet?.B);
+  if (idx>=0) sel.value = String(idx);
+  sel.onchange = ()=>{
+    const i = parseInt(sel.value,10);
+    if (Number.isFinite(i)){
+      const pick = autoSets[i];
+      selectedSet = {A:pick.A, B:pick.B};
+      syncManualToSet();
+      renderAll();
+    }
+  };
+}
+function feedManualKpis(){
+  const A = document.getElementById('kpiA');
+  const B = document.getElementById('kpiB');
+  function fill(sel){
+    sel.innerHTML = '';
+    headers.forEach(h=>{
+      const o=document.createElement('option'); o.value=h; o.textContent=h; sel.appendChild(o);
+    });
+  }
+  fill(A); fill(B);
+  A.onchange = ()=>{
+    selectedSet = {A:A.value, B:B.value};
+    if(metricMode==='manual') renderAll();
+  };
+  B.onchange = ()=>{
+    selectedSet = {A:A.value, B:B.value};
+    if(metricMode==='manual') renderAll();
+  };
+}
+function syncManualToSet(){
+  if (!selectedSet) return;
+  const A = document.getElementById('kpiA');
+  const B = document.getElementById('kpiB');
+  if ([...A.options].some(o=>o.value===selectedSet.A)) A.value=selectedSet.A;
+  if ([...B.options].some(o=>o.value===selectedSet.B)) B.value=selectedSet.B;
+}
+function syncModeUI(){
+  const autoBlock = document.getElementById('autoBlock');
+  const manualBlock = document.getElementById('manualBlock');
+  if (metricMode==='auto'){ autoBlock.classList.remove('hide'); manualBlock.classList.add('hide'); }
+  else { autoBlock.classList.add('hide'); manualBlock.classList.remove('hide'); }
+}
+
+/* =========================
+   Scoping
+   ========================= */
+function rowsInScope(weeksOverride=null){
+  if (!selectedSheet) return [];
+  const rows = allRows
+    .filter(r => String(r.Sheet||'').trim()===selectedSheet)
+    .filter(r => !isTotalName(r.Name));
+  if (!rows.length) return [];
+  const wkMap = groupBy(rows, r=>isoWeekKey(r._d));
+  const keys = Array.from(wkMap.keys()).sort();
+  const N = Number.isFinite(weeksOverride) && weeksOverride > 0 ? weeksOverride : currentWeeks();
+  const lastKeys = keys.slice(-N);
+  const keep = new Set(lastKeys);
+  return rows.filter(r => keep.has(isoWeekKey(r._d)));
+}
+function getRepNamesInScope(weeksOverride=null){
+  const rows = rowsInScope(weeksOverride);
+  return Array.from(new Set(rows.map(r=>String(r.Name||'').trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+}
+function attendanceReferenceRows(){
+  return allRows
+    .filter(r => !selectedSheet || String(r.Sheet||'').trim()===selectedSheet)
+    .filter(r => !isTotalName(r.Name))
+    .filter(r => r._d instanceof Date && !isNaN(r._d));
+}
+function latestStatsDateInActiveDataset(){
+  const rows = attendanceReferenceRows();
+  if(!rows.length) return null;
+  return rows.reduce((latest, r)=> (!latest || r._d > latest ? r._d : latest), null);
+}
+function attendance3WeeksCutoff(){
+  const latest = latestStatsDateInActiveDataset();
+  if(!latest) return null;
+  const cutoff = new Date(latest.getFullYear(), latest.getMonth(), latest.getDate());
+  cutoff.setDate(cutoff.getDate() - 21);
+  return cutoff;
+}
+function hasStatsInLast3Weeks(repName){
+  const cutoff = attendance3WeeksCutoff();
+  if(!cutoff) return true;
+  const repKey = personKey(repName);
+  return attendanceReferenceRows().some(r => personKey(r.Name) === repKey && r._d >= cutoff);
+}
+function applyAttendance3WeeksFilter(names){
+  if(!attendance3WeeksOnly) return [...names];
+  return names.filter(n => hasStatsInLast3Weeks(n));
+}
+function effectiveSet(){
+  if (!selectedSet || !selectedSet.A || !selectedSet.B) return null;
+  return selectedSet;
+}
+
+/* =========================
+   Team & impacts
+   ========================= */
+function computeTeamMetrics(set, excludeNames=new Set()){
+  if (!set || !set.A || !set.B) return {apps:0, opps:0, rate:NaN, byRep:[]};
+
+  const rows = rowsInScope();
+  const byRep = new Map();
+  rows.forEach(r=>{
+    const rep = String(r.Name||'').trim();
+    if (!rep || isTotalName(rep) || excludeNames.has(rep)) return;
+    const a = toNum(r[set.A]); const o = toNum(r[set.B]);
+    const e = byRep.get(rep) || {apps:0, opps:0};
+    if (Number.isFinite(a)) e.apps += a;
+    if (Number.isFinite(o)) e.opps += o;
+    byRep.set(rep, e);
+  });
+  let A=0,B=0;
+  const byRepRows=[];
+  byRep.forEach((e,rep)=>{
+    const repRate = (e.opps>0) ? (e.apps/e.opps) : NaN;
+    byRepRows.push({rep, apps:e.apps, opps:e.opps, repRate});
+    if (Number.isFinite(e.apps)) A += e.apps;
+    if (Number.isFinite(e.opps)) B += e.opps;
+  });
+  const rate = (B>0) ? (A/B) : NaN;
+  return {apps:A, opps:B, rate, byRep:byRepRows};
+}
+function computeImpacts(set, excludedNow){
+  const base = computeTeamMetrics(set, excludedNow);
+  const baseRate = base.rate;
+
+  const rows = [];
+  base.byRep.forEach(r=>{
+    const excl = new Set([...excludedNow, r.rep]);
+    const w = computeTeamMetrics(set, excl);
+    const impact = (w.rate - baseRate);
+    rows.push({
+      rep: r.rep,
+      apps: r.apps, opps: r.opps,
+      repRate: r.repRate,
+      weightShare: (base.opps>0 ? (r.opps/base.opps) : 0),
+      impact,
+      rateWithout: w.rate
+    });
+  });
+
+  rows.sort((a,b)=> Math.abs(b.impact) - Math.abs(a.impact));
+  return {base, rows};
+}
+
+/* =========================
+   Sort + view controls
+   ========================= */
+const sortSel = document.getElementById('sortSel');
+sortSel.onchange = ()=> renderAll();
+
+const attendance3WeeksOnlyCb = document.getElementById('attendance3WeeksOnly');
+attendance3WeeksOnlyCb.onchange = ()=>{
+  attendance3WeeksOnly = attendance3WeeksOnlyCb.checked;
+  renderAll();
+};
+
+const toggleCompareBtn = document.getElementById('toggleCompare');
+if(toggleCompareBtn){
+  toggleCompareBtn.textContent = 'Compare removed';
+  toggleCompareBtn.onclick = ()=>{};
+}
+
+/* =========================
+   Team totals rendering
+   ========================= */
+function paintTotals(original, current){
+  const totApps = document.getElementById('totApps');
+  const totOpps = document.getElementById('totOpps');
+  const totAppsDelta = document.getElementById('totAppsDelta');
+  const totOppsDelta = document.getElementById('totOppsDelta');
+
+  const a0 = Number.isFinite(original.apps)? original.apps : NaN;
+  const b0 = Number.isFinite(original.opps)? original.opps : NaN;
+  const a1 = Number.isFinite(current.apps)? current.apps : NaN;
+  const b1 = Number.isFinite(current.opps)? current.opps : NaN;
+
+  const da = (Number.isFinite(a0)&&Number.isFinite(a1)) ? (a0 - a1) : NaN;
+  const db = (Number.isFinite(b0)&&Number.isFinite(b1)) ? (b0 - b1) : NaN;
+
+  totApps.textContent = Number.isFinite(a0) ? a0.toFixed(0) : '—';
+  totOpps.textContent = Number.isFinite(b0) ? b0.toFixed(0) : '—';
+  totAppsDelta.textContent = Number.isFinite(da) ? `− ${da.toFixed(0)} removed` : '—';
+  totOppsDelta.textContent = Number.isFinite(db) ? `− ${db.toFixed(0)} removed` : '—';
+}
+function paintTeamSummary(orig, curr){
+  const o = document.getElementById('origRate');
+  const c = document.getElementById('currRate');
+  const d = document.getElementById('rateDiff');
+  o.textContent = fmtPct1(orig);
+  c.textContent = fmtPct1(curr);
+  const delta = curr - orig;
+  d.textContent = (delta>=0?'+':'') + fmtPct2(delta);
+  d.classList.toggle('good', delta>0);
+  d.classList.toggle('bad', delta<0);
+}
+function updateRepCount(total, excl, visibleTotal=total){
+  const suffix = attendance3WeeksOnly ? ` • ${visibleTotal} with 3-week attendance` : '';
+  document.getElementById('repCount').textContent = `${total - excl} included of ${total} total${suffix}`;
+}
+
+/* =========================
+   Most-recent coaching flags
+   ========================= */
+function daysBetween(a,b){
+  const ms = (a.getTime() - b.getTime());
+  return ms / 86400000;
+}
+function coachingRecencyInfo(repName){
+  const c = latestCoachingForRep(repName);
+  if(!c) return { text:'—', ageDays:null, type:null, date:null, has:false };
+  let type = (coachingTypes.size ? (c.types.find(t=>enabledTypes.has(t)) || c.types[0]) : (c.types[0]||'')) || '';
+  const today = new Date();
+  const ageDays = daysBetween(today, c.date);
+  const text = `${mmddyy(c.date)} • ${type}`;
+  return { text, ageDays, type, date:c.date, has:true };
+}
+
+/* =========================
+   Heatmap helpers
+   ========================= */
+function weekStartFromKey(key){
+  const m = String(key || '').match(/^(\d{4})-W(\d{2})$/);
+  if(!m) return null;
+  const year = Number(m[1]);
+  const week = Number(m[2]);
+  if(!Number.isFinite(year) || !Number.isFinite(week)) return null;
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = jan4.getUTCDay() || 7;
+  const monday = new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate() - jan4Day + 1 + ((week - 1) * 7));
+  return new Date(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate());
+}
+function endOfWeekFromKey(key){
+  const start = weekStartFromKey(key);
+  if(!start) return null;
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  end.setDate(end.getDate() + 6);
+  end.setHours(23,59,59,999);
+  return end;
+}
+function fmtWeekLabel(key){
+  const start = weekStartFromKey(key);
+  if(!start) return key || '—';
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  end.setDate(end.getDate() + 6);
+  return `${mmddyy(start)}–${mmddyy(end)}`;
+}
+function filteredCoachingsForRep(repName){
+  const k = personKey(repName);
+  const arr = coachingByRepKey.get(k) || [];
+  if(!coachingTypes.size) return arr.slice();
+  if(enabledTypes.size===0) return [];
+  return arr.filter(c => (c.types || []).some(t => enabledTypes.has(t)));
+}
+function latestCoachingBefore(repName, endDate){
+  const arr = filteredCoachingsForRep(repName);
+  for(const c of arr){
+    if(c.date <= endDate) return c;
+  }
+  return null;
+}
+function coachingCountForRepUntil(repName, endDate, startDate=null){
+  const arr = filteredCoachingsForRep(repName);
+  let n = 0;
+  for(const c of arr){
+    if(c.date > endDate) continue;
+    if(startDate && c.date < startDate) continue;
+    n++;
+  }
+  return n;
+}
+function coachingsForRepWeek(repName, weekKey){
+  const arr = filteredCoachingsForRep(repName);
+  return arr.filter(c => c.wk === weekKey);
+}
+function metricGoalConfig(set){
+  const hay = `${set?.A || ''} ${set?.B || ''}`.toLowerCase().replace(/\s+/g,' ');
+  if(hay.includes('consumer') && hay.includes('appoint')) return { key:'consumer', label:'Consumer Appointment Rate', goal:0.47 };
+  if(hay.includes('insurance') && hay.includes('appoint')) return { key:'insurance', label:'Insurance Appointment Rate', goal:0.92 };
+  if(hay.includes('commercial')) return { key:'commercial', label:'Commercial Appointment Rate', goal:0.85 };
+  if(hay.includes('wiper')) return { key:'wiper', label:'Wiper Rate', goal:0.23 };
+  return null;
+}
+function calcPercentile(value, sortedValues){
+  if(!Number.isFinite(value) || !Array.isArray(sortedValues) || !sortedValues.length) return null;
+  let less = 0;
+  let equal = 0;
+  for(const v of sortedValues){
+    if(v < value) less++;
+    else if(v === value) equal++;
+  }
+  return Math.max(0, Math.min(100, ((less + (equal / 2)) / sortedValues.length) * 100));
+}
+function percentileBand(percentile){
+  if(!Number.isFinite(percentile)) return 'na';
+  if(percentile < 35) return 'low';
+  if(percentile >= 65) return 'high';
+  return 'mid';
+}
+function fmtPercentile(percentile){
+  return Number.isFinite(percentile) ? `${Math.round(percentile)}th pct` : 'No percentile';
+}
+function coachingStatusForEntry(entry){
+  if(!entry?.rows) return { label:'—', state:'na', icon:'', iconTone:'muted' };
+  const label = entry.isPriority ? 'Below Goal' : (entry.isStrongPerformer ? 'Above Goal' : 'Near Goal');
+  if(entry.isPriorityMiss) return { label, state:'weak', icon:'❌', iconTone:'bad' };
+  if(entry.coached) return { label, state:'info', icon:'✅', iconTone:'info' };
+  return { label, state: entry.isPriority ? 'weak' : (entry.isStrongPerformer ? 'strong' : 'info'), icon:'', iconTone:'muted' };
+}
+function percentileState(entry){
+  if(!Number.isFinite(entry?.percentile)) return 'na';
+  if(entry.percentile < 40) return 'weak';
+  if(entry.percentile >= 70) return 'strong';
+  return 'info';
+}
+function performanceState(rate, goalConfig){
+  if(!Number.isFinite(rate) || !goalConfig || !Number.isFinite(goalConfig.goal)) return 'na';
+  if(rate < goalConfig.goal) return 'weak';
+  if(rate <= goalConfig.goal + 0.05) return 'info';
+  return 'strong';
+}
+function performanceLabel(rate, goalConfig){
+  if(!Number.isFinite(rate) || !goalConfig || !Number.isFinite(goalConfig.goal)) return 'No KPI';
+  if(rate < goalConfig.goal) return 'Below goal';
+  if(rate <= goalConfig.goal + 0.05) return 'At goal';
+  return 'Above goal';
+}
+function coachingDescriptionsText(entry){
+  const weekCoachings = entry?.coachedThisWeek || [];
+  if(!weekCoachings.length) return 'No coaching logged in this week';
+  return weekCoachings.map(c=>{
+    const bits = [`${mmddyy(c.date)}`];
+    if((c.types || []).length) bits.push((c.types || []).join(', '));
+    if(c.desc) bits.push(c.desc);
+    return bits.join(' • ');
+  }).join(' | ');
+}
+function detailToneClass(kind, value){
+  if(kind === 'percentile'){
+    const band = percentileBand(value);
+    if(band === 'low') return 'bad';
+    if(band === 'high') return 'info';
+    return 'warn';
+  }
+  if(kind === 'impact' || kind === 'delta'){
+    if(!Number.isFinite(value)) return '';
+    if(value > 0) return 'good';
+    if(value < 0) return 'bad';
+    return 'warn';
+  }
+  if(kind === 'coverage'){
+    if(!Number.isFinite(value)) return 'warn';
+    if(value >= 0.75) return 'good';
+    if(value >= 0.4) return 'warn';
+    return 'bad';
+  }
+  return '';
+}
+function buildWeeklyHeatmapModel(set, includedNames, bottomHalfSetGlobal, weeksOverride=null){
+  const rows = rowsInScope(weeksOverride);
+  const windowWeeks = Number.isFinite(weeksOverride) && weeksOverride > 0 ? weeksOverride : currentWeeks();
+  const weekKeys = Array.from(new Set(rows.map(r=>isoWeekKey(r._d)))).sort();
+  const coachingLoaded = coachings.length > 0;
+  const typeFilterBlocked = coachingTypes.size > 0 && enabledTypes.size === 0;
+  const scopeStart = weekKeys.length ? weekStartFromKey(weekKeys[0]) : null;
+  const goalConfig = metricGoalConfig(set);
+
+  const grouped = new Map();
+  rows.forEach(r=>{
+    const wk = isoWeekKey(r._d);
+    const rep = String(r.Name || '').trim();
+    if(!wk || !rep || !includedNames.includes(rep)) return;
+    const repMap = grouped.get(wk) || new Map();
+    const cur = repMap.get(rep) || { rep, apps:0, opps:0, rows:0, sourceRows:[] };
+    const a = toNum(r[set?.A]);
+    const b = toNum(r[set?.B]);
+    if(Number.isFinite(a)) cur.apps += a;
+    if(Number.isFinite(b)) cur.opps += b;
+    cur.rows += 1;
+    cur.sourceRows.push(r);
+    repMap.set(rep, cur);
+    grouped.set(wk, repMap);
+  });
+
+  const repNames = [...includedNames].sort((a,b)=>a.localeCompare(b));
+  const byRep = new Map(repNames.map(rep => [rep, []]));
+  const weekly = [];
+
+  for(const wk of weekKeys){
+    const repMap = grouped.get(wk) || new Map();
+    const repEntries = repNames.map(rep=>{
+      const base = repMap.get(rep) || { rep, apps:0, opps:0, rows:0, sourceRows:[] };
+      const repRate = base.opps > 0 ? (base.apps / base.opps) : NaN;
+      return { ...base, repRate };
+    });
+
+    const teamApps = repEntries.reduce((sum, r)=> sum + (Number.isFinite(r.apps) ? r.apps : 0), 0);
+    const teamOpps = repEntries.reduce((sum, r)=> sum + (Number.isFinite(r.opps) ? r.opps : 0), 0);
+    const teamRate = teamOpps > 0 ? (teamApps / teamOpps) : NaN;
+
+    const validRates = repEntries.filter(r=>Number.isFinite(r.repRate)).map(r=>r.repRate).sort((a,b)=>a-b);
+    let weeklyBottomThreshold = NaN;
+    if(validRates.length >= 2){
+      const bottomCount = Math.max(1, Math.floor(validRates.length / 2));
+      weeklyBottomThreshold = validRates[bottomCount - 1];
+    }
+
+    const prelim = repEntries.map(entry=>{
+      const oppsWithout = teamOpps - (Number.isFinite(entry.opps) ? entry.opps : 0);
+      const appsWithout = teamApps - (Number.isFinite(entry.apps) ? entry.apps : 0);
+      const rateWithout = oppsWithout > 0 ? (appsWithout / oppsWithout) : NaN;
+      const impact = Number.isFinite(rateWithout) && Number.isFinite(teamRate) ? (rateWithout - teamRate) : NaN;
+      const weekStart = weekStartFromKey(wk);
+      const weekEnd = endOfWeekFromKey(wk);
+      const latest = weekEnd ? latestCoachingBefore(entry.rep, weekEnd) : null;
+      const touchesWindow = weekEnd ? coachingCountForRepUntil(entry.rep, weekEnd, scopeStart || coachingWindowStart()) : 0;
+      const coachedThisWeek = coachingsForRepWeek(entry.rep, wk);
+      const recencyDays = (latest && weekEnd) ? Math.floor(daysBetween(weekEnd, latest.date)) : null;
+      const belowTeam = Number.isFinite(entry.repRate) && Number.isFinite(teamRate) ? Math.max(teamRate - entry.repRate, 0) : 0;
+      const percentile = calcPercentile(entry.repRate, validRates);
+      const inWeeklyBottomHalf = Number.isFinite(entry.repRate) && Number.isFinite(weeklyBottomThreshold) ? entry.repRate <= weeklyBottomThreshold : false;
+      const inGlobalBottomHalf = bottomHalfSetGlobal.has(entry.rep);
+      const coached = coachedThisWeek.length > 0;
+      const perfState = performanceState(entry.repRate, goalConfig);
+      const goalDelta = Number.isFinite(entry.repRate) && goalConfig ? (entry.repRate - goalConfig.goal) : NaN;
+      const needsCoaching = goalConfig ? perfState === 'weak' : (Number.isFinite(percentile) ? percentile < 40 : false);
+      const isStrongPerformer = goalConfig ? perfState === 'strong' : (Number.isFinite(percentile) ? percentile >= 70 : false);
+      return {
+        ...entry,
+        weekKey: wk,
+        weekStart,
+        weekEnd,
+        teamRate,
+        impact,
+        rateWithout,
+        latestCoaching: latest,
+        touchesWindow,
+        coachedThisWeek,
+        coached,
+        recencyDays,
+        belowTeam,
+        percentile,
+        percentileBand: percentileBand(percentile),
+        goalConfig,
+        goalDelta,
+        performanceState: perfState,
+        performanceLabel: performanceLabel(entry.repRate, goalConfig),
+        inWeeklyBottomHalf,
+        inGlobalBottomHalf,
+        isPriority: needsCoaching,
+        needsCoaching,
+        isStrongPerformer,
+        isPriorityMiss: needsCoaching && !coached
+      };
+    });
+
+    const maxImpact = Math.max(...prelim.map(r => Number.isFinite(r.impact) ? Math.max(r.impact, 0) : 0), 0);
+    const maxBelow = Math.max(...prelim.map(r => Number.isFinite(r.belowTeam) ? r.belowTeam : 0), 0);
+
+    const scored = prelim.map(entry=>{
+      const impactNorm = maxImpact > 0 ? (Math.max(entry.impact || 0, 0) / maxImpact) : 0;
+      const rateNorm = maxBelow > 0 ? ((entry.belowTeam || 0) / maxBelow) : 0;
+      let recencyNorm = 0;
+      if(entry.recencyDays === null) recencyNorm = coachingLoaded && !typeFilterBlocked ? 1 : 0;
+      else if(entry.recencyDays > 42) recencyNorm = 1;
+      else if(entry.recencyDays > 21) recencyNorm = 0.65;
+      else recencyNorm = 0.15;
+      let touchNorm = 0;
+      if(!coachingLoaded || typeFilterBlocked) touchNorm = 0;
+      else touchNorm = 1 - Math.min(1, (entry.touchesWindow || 0) / 3);
+      const bottomNorm = (entry.inWeeklyBottomHalf || entry.inGlobalBottomHalf) ? 1 : 0;
+      const score = (impactNorm * 0.45) + (rateNorm * 0.22) + (recencyNorm * 0.18) + (touchNorm * 0.1) + (bottomNorm * 0.05);
+      return {
+        ...entry,
+        needScore: score,
+        needScorePct: score * 100
+      };
+    });
+
+    const ranked = [...scored].sort((a,b)=>{
+      if((b.needScore || 0) !== (a.needScore || 0)) return (b.needScore || 0) - (a.needScore || 0);
+      if((b.impact || 0) !== (a.impact || 0)) return (b.impact || 0) - (a.impact || 0);
+      return String(a.rep).localeCompare(String(b.rep));
+    });
+    const positiveNeed = ranked.filter(r => (r.needScore || 0) > 0.01 && (Number.isFinite(r.repRate) || r.rows > 0));
+    const targetCount = positiveNeed.length ? Math.min(positiveNeed.length, Math.max(2, Math.ceil(positiveNeed.length * 0.35))) : 0;
+    const thresholdScore = positiveNeed[Math.max(0, targetCount - 1)]?.needScore ?? 0;
+    const targetSet = new Set();
+    ranked.forEach((entry, idx)=>{
+      const needed = !!entry.rows && positiveNeed.length > 0 && ((idx < targetCount && entry.needScore > 0) || entry.needScore >= Math.max(0.45, thresholdScore));
+      entry.needed = needed;
+      if(needed) targetSet.add(entry.rep);
+    });
+
+    const priorityRows = ranked.filter(r => r.needsCoaching);
+    const neededRows = priorityRows;
+    const coveredCount = priorityRows.filter(r => r.coached).length;
+    const missedCount = priorityRows.filter(r => !r.coached).length;
+    const coachedNonPriority = ranked.filter(r => !r.isPriority && r.coached).length;
+    const coverageRate = priorityRows.length ? (coveredCount / priorityRows.length) : NaN;
+    let coverageState = 'na';
+    if(!coachingLoaded || typeFilterBlocked) coverageState = 'na';
+    else if(!neededRows.length) coverageState = 'na';
+    else if(coverageRate >= 0.75) coverageState = 'strong';
+    else if(coverageRate >= 0.4) coverageState = 'partial';
+    else coverageState = 'weak';
+
+    const weekSummary = {
+      weekKey: wk,
+      label: fmtWeekLabel(wk),
+      teamRate,
+      teamApps,
+      teamOpps,
+      repCount: repEntries.filter(r => r.rows).length,
+      neededCount: neededRows.length,
+      coveredCount,
+      missedCount,
+      coachedNonPriority,
+      priorityCount: priorityRows.length,
+      coverageRate,
+      coverageState,
+      rows: ranked,
+      targetSet,
+      coachingLoaded,
+      typeFilterBlocked,
+      goalConfig
+    };
+    weekly.push(weekSummary);
+    ranked.forEach(entry=>{
+      byRep.get(entry.rep).push(entry);
+    });
+  }
+
+  const repSummaries = repNames.map(rep=>{
+    const entries = byRep.get(rep) || [];
+    const neededCount = entries.filter(e => e.isPriority).length;
+    const coachedWhenNeeded = entries.filter(e => e.isPriority && e.coached).length;
+    const totalNeed = entries.reduce((sum, e)=> sum + (e.needScore || 0), 0);
+    const missedWeeks = entries.filter(e => e.isPriorityMiss).length;
+    const redXCount = missedWeeks;
+    const hasCoachingOpportunity = redXCount > 1;
+    return { rep, entries, neededCount, coachedWhenNeeded, totalNeed, missedWeeks, redXCount, hasCoachingOpportunity };
+  }).sort((a,b)=>{
+    if((b.totalNeed || 0) !== (a.totalNeed || 0)) return (b.totalNeed || 0) - (a.totalNeed || 0);
+    if((b.neededCount || 0) !== (a.neededCount || 0)) return (b.neededCount || 0) - (a.neededCount || 0);
+    return String(a.rep).localeCompare(String(b.rep));
+  });
+
+  const totalNeeded = weekly.reduce((sum, w)=> sum + w.neededCount, 0);
+  const totalCovered = weekly.reduce((sum, w)=> sum + w.coveredCount, 0);
+  const overallCoverage = totalNeeded ? (totalCovered / totalNeeded) : NaN;
+  const weakestWeek = weekly.filter(w => Number.isFinite(w.coverageRate)).sort((a,b)=> (a.coverageRate - b.coverageRate) || (b.missedCount - a.missedCount))[0] || null;
+
+  return { weekKeys, weekly, repSummaries, overallCoverage, totalNeeded, totalCovered, weakestWeek, coachingLoaded, typeFilterBlocked, goalConfig, windowWeeks };
+}
+function weekSummaryTags(week){
+  const tags = [];
+  tags.push(`<span class="tag">Below goal: ${week.neededCount}</span>`);
+  tags.push(`<span class="tag">Coached: ${week.coveredCount}</span>`);
+  tags.push(`<span class="tag">Red Xs: ${week.missedCount}</span>`);
+  if(week.coachedNonPriority) tags.push(`<span class="tag info">Above-goal coached: ${week.coachedNonPriority}</span>`);
+  return tags.join(' ');
+}
+function paintHeatmap(model){
+  lastHeatmapModel = model;
+  const scroller = document.getElementById('heatmapScroller');
+  const meta = document.getElementById('heatmapMeta');
+  const stats = document.getElementById('heatmapStats');
+  scroller.innerHTML = '';
+  meta.innerHTML = '';
+  stats.innerHTML = '';
+
+  if(!selectedSheet){
+    scroller.innerHTML = `<div class="heatmapEmpty">Choose a coach/team to generate the weekly coaching coverage heatmap.</div>`;
+    return;
+  }
+  if(!effectiveSet()){
+    scroller.innerHTML = `<div class="heatmapEmpty">Select KPI fields to compute weekly coaching need coverage.</div>`;
+    return;
+  }
+  if(!model.weekly.length){
+    scroller.innerHTML = `<div class="heatmapEmpty">No rows were found for the selected team in the last 5 available weeks.</div>`;
+    return;
+  }
+
+  const statBits = [
+    `<span class="chip">${selectedSheet || '—'}</span>`,
+    `<span class="chip">${model.windowWeeks || 5} week team table</span>`
+  ];
+  if(model.goalConfig){
+    statBits.push(`<span class="chip">${model.goalConfig.label} goal: ${fmtPct1(model.goalConfig.goal)}</span>`);
+  }
+  if(model.coachingLoaded){
+    statBits.push(`<span class="chip">Filtered coachings: ${coachings.length}</span>`);
+  }else{
+    statBits.push(`<span class="chip">Coachings not loaded</span>`);
+  }
+  stats.innerHTML = statBits.join('');
+
+  const cards = [
+    {
+      label:'Below-goal coverage',
+      value:Number.isFinite(model.overallCoverage) ? fmtPct1(model.overallCoverage) : 'N/A',
+      sub:`${model.totalCovered} of ${model.totalNeeded || 0} below-goal weeks were coached.`
+    },
+    {
+      label:'Most missed week',
+      value:model.weakestWeek ? model.weakestWeek.weekKey : '—',
+      sub:model.weakestWeek ? `${fmtWeekLabel(model.weakestWeek.weekKey)} • ${model.weakestWeek.missedCount} red X(s).` : 'No week currently has enough data for a missed-week callout.'
+    },
+    {
+      label:'Below-goal reps',
+      value:String(model.repSummaries.filter(r => r.neededCount > 0).length),
+      sub:'Distinct reps who fell below the goal at least once in the selected timeframe.'
+    },
+    {
+      label:'Concern reps',
+      value:String(model.repSummaries.filter(r => r.hasCoachingOpportunity).length),
+      sub:'Reps with more than one red X. Those names are highlighted in the left column.'
+    }
+  ];
+  cards.forEach(card=>{
+    const el = document.createElement('div');
+    el.className = 'heatmapMetaCard';
+    el.innerHTML = `<div class="heatmapMetaLabel">${card.label}</div><div class="heatmapMetaValue">${card.value}</div><div class="heatmapMetaSub">${card.sub}</div>`;
+    meta.appendChild(el);
+  });
+
+  const table = document.createElement('table');
+  table.className = 'heatmapTable';
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  const stub = document.createElement('th');
+  stub.className = 'heatmapStub';
+  stub.textContent = 'Rep / coverage';
+  hr.appendChild(stub);
+  model.weekly.forEach(week=>{
+    const th = document.createElement('th');
+    const btn = document.createElement('button');
+    btn.className = 'heatmapWeekBtn';
+    btn.title = 'Click for weekly coverage detail';
+    btn.innerHTML = `<div class="heatmapWeekLabel">${week.weekKey}</div><div class="heatmapWeekSub">${week.label}</div>`;
+    btn.addEventListener('click', ()=> openHeatmapWeekDetail(week.weekKey));
+    th.appendChild(btn);
+    hr.appendChild(th);
+  });
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  const summaryRow = document.createElement('tr');
+  const summaryStub = document.createElement('th');
+  summaryStub.className = 'heatmapStub summary';
+  summaryStub.innerHTML = `<div class="heatmapRepName">Weekly summary</div><div class="heatmapRepMeta">Click any week for below-goal misses, coaching checks, and note detail.</div>`;
+  summaryRow.appendChild(summaryStub);
+  model.weekly.forEach(week=>{
+    const td = document.createElement('td');
+    td.className = `heatCell ${week.coverageState}`;
+    const btn = document.createElement('button');
+    btn.className = 'heatmapCellBtn heatCellSummary';
+    btn.title = 'Open weekly summary';
+    btn.innerHTML = `<div>${Number.isFinite(week.coverageRate) ? fmtPct1(week.coverageRate) : 'N/A'}</div><small>${week.coveredCount}/${week.neededCount || 0} below goal</small>`;
+    btn.addEventListener('click', ()=> openHeatmapWeekDetail(week.weekKey));
+    td.appendChild(btn);
+    summaryRow.appendChild(td);
+  });
+  tbody.appendChild(summaryRow);
+
+  model.repSummaries.forEach(repSummary=>{
+    const tr = document.createElement('tr');
+    const th = document.createElement('th');
+    th.className = `heatmapStub${repSummary.hasCoachingOpportunity ? ' attention' : ''}`;
+    const repBtn = document.createElement('button');
+    repBtn.className = 'heatmapRepBtn';
+    repBtn.title = 'Open rep coaching history';
+    repBtn.innerHTML = `
+      <span class="heatmapRepName">${repSummary.rep}</span>
+      <span class="heatmapRepCoachDate">(Last Coached ${formatCoachingDateForLabel(repSummary.rep)})</span>
+      <span class="heatmapRepMeta">Below goal: ${repSummary.neededCount} • ✅ ${repSummary.coachedWhenNeeded} • ❌ ${repSummary.redXCount}</span>
+      <span class="heatmapOpportunity">Red Xs: ${repSummary.redXCount}</span>
+      ${repSummary.hasCoachingOpportunity ? `<span class="heatmapOpportunity">Concern</span>` : ''}
+    `;
+    repBtn.addEventListener('click', ()=> openRepCoachings(repSummary.rep));
+    th.appendChild(repBtn);
+    tr.appendChild(th);
+
+    repSummary.entries.forEach(entry=>{
+      const td = document.createElement('td');
+      const status = coachingStatusForEntry(entry);
+      const state = entry.goalConfig ? entry.performanceState : percentileState(entry);
+      td.className = `heatCell ${state}${entry.coached ? ' coached' : ''}`;
+      const btn = document.createElement('button');
+      btn.className = 'heatmapCellBtn heatCellRep';
+      btn.title = 'Open weekly rep detail';
+      const perfClass = state === 'weak' ? 'low' : (state === 'strong' ? 'high' : '');
+      const coachingLabel = entry.coached ? `${entry.coachedThisWeek.length} coaching${entry.coachedThisWeek.length===1?'':'s'}` : entry.isPriorityMiss ? 'Not coached' : 'No coaching';
+      btn.innerHTML = `
+        <div>${status.label}</div>
+        <div class="statusLine">${status.icon ? `<span class="statusIcon ${status.iconTone}${entry.isPriorityMiss ? ' big' : ''}">${status.icon}</span>` : `<span class="statusIcon muted">•</span>`}<span>${coachingLabel}</span></div>
+        <div class="tiny performance ${perfClass}">${entry.goalConfig ? `${entry.performanceLabel} • Goal ${fmtPct1(entry.goalConfig.goal)}` : fmtPercentile(entry.percentile)}</div>
+        <div class="tiny">${Number.isFinite(entry.repRate) ? fmtPct1(entry.repRate) : 'No KPI'}</div>
+      `;
+      btn.addEventListener('click', ()=> openHeatmapCellDetail(entry.rep, entry.weekKey));
+      td.appendChild(btn);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  scroller.appendChild(table);
+}
+let lastHeatmapModel = null;
+const heatmapModalState = { type:null, weekKey:null, rep:null, model:null };
+function findHeatmapWeek(model, weekKey){
+  return (model?.weekly || []).find(w => w.weekKey === weekKey) || null;
+}
+function findHeatmapEntry(model, rep, weekKey){
+  const week = findHeatmapWeek(model, weekKey);
+  return week?.rows?.find(r => r.rep === rep) || null;
+}
+function openHeatmapWeekDetail(weekKey){
+  const model = lastHeatmapModel || buildWeeklyHeatmapModel(effectiveSet(), applyAttendance3WeeksFilter(getRepNamesInScope(5)).filter(n => !excluded.has(n)), new Set(), 5);
+  heatmapModalState.type = 'week';
+  heatmapModalState.weekKey = weekKey;
+  heatmapModalState.rep = null;
+  heatmapModalState.model = model;
+  paintHeatmapModal();
+  const ov = document.getElementById('heatmapModalOverlay');
+  ov.classList.add('show');
+  ov.setAttribute('aria-hidden','false');
+}
+function openHeatmapCellDetail(rep, weekKey){
+  const model = lastHeatmapModel || buildWeeklyHeatmapModel(effectiveSet(), applyAttendance3WeeksFilter(getRepNamesInScope(5)).filter(n => !excluded.has(n)), new Set(), 5);
+  heatmapModalState.type = 'cell';
+  heatmapModalState.weekKey = weekKey;
+  heatmapModalState.rep = rep;
+  heatmapModalState.model = model;
+  paintHeatmapModal();
+  const ov = document.getElementById('heatmapModalOverlay');
+  ov.classList.add('show');
+  ov.setAttribute('aria-hidden','false');
+}
+function closeHeatmapModal(){
+  const ov = document.getElementById('heatmapModalOverlay');
+  ov.classList.remove('show');
+  ov.setAttribute('aria-hidden','true');
+  heatmapModalState.type = null;
+  heatmapModalState.weekKey = null;
+  heatmapModalState.rep = null;
+}
+function detailItemMarkup(entry){
+  const latestTxt = entry.latestCoaching ? `${mmddyy(entry.latestCoaching.date)} • ${(entry.latestCoaching.types || []).join(', ')}` : 'No prior filtered coaching';
+  const weekCoachTxt = coachingDescriptionsText(entry);
+  const wrap = document.createElement('div');
+  wrap.className = 'heatDetailItem';
+  const status = coachingStatusForEntry(entry);
+  const rateDelta = Number.isFinite(entry.repRate) && Number.isFinite(entry.teamRate) ? (entry.repRate - entry.teamRate) : NaN;
+  const percentileTone = detailToneClass('percentile', entry.percentile);
+  const impactTone = detailToneClass('impact', entry.impact);
+  const rateTone = detailToneClass('delta', rateDelta);
+  const perfTone = entry.goalConfig ? entry.performanceState === 'strong' ? 'good' : entry.performanceState === 'info' ? 'warn' : entry.performanceState === 'weak' ? 'bad' : '' : percentileTone;
+  const badges = [
+    entry.isPriority ? `<span class="tag urgent">Below Goal</span>` : entry.isStrongPerformer ? `<span class="tag good">Above Goal</span>` : `<span class="tag">Near Goal</span>`,
+    entry.coached ? `<span class="tag info">${entry.coachedThisWeek.length} Coaching${entry.coachedThisWeek.length===1?'':'s'}</span>` : entry.isPriorityMiss ? `<span class="tag bad">${status.icon} Red X</span>` : `<span class="tag warn">No coaching</span>`,
+    entry.goalConfig ? `<span class="tag ${perfTone || ''}">${entry.performanceLabel} • Goal ${fmtPct1(entry.goalConfig.goal)}</span>` : Number.isFinite(entry.percentile) ? `<span class="tag ${percentileTone || ''}">${fmtPercentile(entry.percentile)}</span>` : `<span class="tag">No percentile</span>`
+  ].join('');
+  wrap.innerHTML = `
+    <div class="heatDetailTop">
+      <button class="heatDetailRepBtn" type="button">${repLastCoachedLabel(entry.rep)}</button>
+      <div class="heatDetailBadges">${badges}</div>
+    </div>
+    <div class="heatDetailMetrics">
+      <span class="tag ${rateTone || ''}">Rate: ${Number.isFinite(entry.repRate) ? fmtPct1(entry.repRate) : '—'}</span>
+      <span class="tag ${rateTone || ''}">Vs team: ${Number.isFinite(rateDelta) ? (rateDelta >= 0 ? '+' : '') + fmtPct2(rateDelta) : '—'}</span>
+      <span class="tag ${impactTone || ''}">Impact: ${Number.isFinite(entry.impact) ? fmtPct2(entry.impact) : '—'}</span>
+      <span class="tag">Need: ${Number.isFinite(entry.needScorePct) ? entry.needScorePct.toFixed(0) : '0'}</span>
+      <span class="tag">Touches: ${entry.touchesWindow || 0}</span>
+    </div>
+    <div class="heatDetailTrend">
+      <div class="heatDetailNote ${rateTone || ''}">Rate trend: ${Number.isFinite(rateDelta) ? `${rateDelta >= 0 ? 'above' : 'below'} team by ${fmtPct2(Math.abs(rateDelta))}` : 'No rate comparison available'}.</div>
+      <div class="heatDetailNote ${perfTone || ''}">Goal signal: ${entry.goalConfig ? `${entry.performanceLabel} versus ${entry.goalConfig.label} goal of ${fmtPct1(entry.goalConfig.goal)}${Number.isFinite(entry.goalDelta) ? ` (${entry.goalDelta >= 0 ? '+' : ''}${fmtPct2(entry.goalDelta)})` : ''}.` : 'No goal mapping is configured for this KPI.'}</div>
+      <div class="heatDetailNote ${impactTone || ''}">Growth signal: ${Number.isFinite(entry.impact) ? (entry.impact > 0 ? `coaching this rep could lift team rate by ${fmtPct2(entry.impact)}` : entry.impact < 0 ? `this rep is already helping team rate by ${fmtPct2(Math.abs(entry.impact))}` : 'neutral impact in this week') : 'No impact signal available'}.</div>
+      <div class="heatDetailNote ${percentileTone || ''}">Percentile signal: ${Number.isFinite(entry.percentile) ? `${fmtPercentile(entry.percentile)} on the team, so ${entry.isPriority ? 'this week counts as Priority' : entry.isStrongPerformer ? 'this rep showed up as a Strong Performer' : 'this rep landed in the middle tier'}` : 'Percentile unavailable for this week'}.</div>
+      <div class="heatDetailNote">Latest filtered coaching before week end: ${latestTxt}.</div>
+      <div class="heatDetailNote">Coaching events in ${entry.weekKey}: ${weekCoachTxt}.</div>
+    </div>
+  `;
+  wrap.querySelector('.heatDetailRepBtn').addEventListener('click', ()=> openRepCoachings(entry.rep));
+  return wrap;
+}
+function paintHeatmapModal(){
+  const title = document.getElementById('heatmapModalTitle');
+  const meta = document.getElementById('heatmapModalMeta');
+  const body = document.getElementById('heatmapModalBody');
+  body.innerHTML = '';
+  const model = heatmapModalState.model;
+  if(!model){
+    title.textContent = 'Heatmap detail';
+    meta.textContent = '—';
+    body.innerHTML = `<div class="muted" style="font-weight:900">No heatmap detail is available.</div>`;
+    return;
+  }
+
+  const week = findHeatmapWeek(model, heatmapModalState.weekKey);
+  if(!week){
+    title.textContent = 'Heatmap detail';
+    meta.textContent = 'Week not found';
+    body.innerHTML = `<div class="muted" style="font-weight:900">The selected week is no longer in scope.</div>`;
+    return;
+  }
+
+  if(heatmapModalState.type === 'cell'){
+    const entry = findHeatmapEntry(model, heatmapModalState.rep, heatmapModalState.weekKey);
+    title.textContent = `${repLastCoachedLabel(heatmapModalState.rep)} — ${week.weekKey}`;
+    meta.textContent = `${week.label} • ${selectedSheet || '—'} • ${selectedSet?.A || 'A'} ÷ ${selectedSet?.B || 'B'}`;
+    if(!entry){
+      body.innerHTML = `<div class="muted" style="font-weight:900">No detail is available for that rep/week cell.</div>`;
+      return;
+    }
+    const grid = document.createElement('div');
+    grid.className = 'heatDetailGrid';
+    const status = coachingStatusForEntry(entry);
+    const rateDelta = Number.isFinite(entry.repRate) && Number.isFinite(entry.teamRate) ? (entry.repRate - entry.teamRate) : NaN;
+    const cards = [
+      ['Weekly rate', Number.isFinite(entry.repRate) ? fmtPct1(entry.repRate) : '—', `Team ${fmtPct1(entry.teamRate)} • ${Number.isFinite(rateDelta) ? `${rateDelta >= 0 ? 'above' : 'below'} team by ${fmtPct2(Math.abs(rateDelta))}` : 'no team comparison'}.`, detailToneClass('delta', rateDelta)],
+      ['Goal check', entry.goalConfig ? `${fmtPct1(entry.goalConfig.goal)}` : '—', entry.goalConfig ? `${entry.performanceLabel} versus the ${entry.goalConfig.label} goal.` : 'No configured goal for this KPI.', entry.goalConfig ? (entry.performanceState === 'strong' ? 'good' : entry.performanceState === 'info' ? 'warn' : entry.performanceState === 'weak' ? 'bad' : 'warn') : 'warn'],
+      ['Coaching status', status.label, entry.coached ? `${entry.coachedThisWeek.length} coaching event(s) matched in this ISO week.` : entry.isPriorityMiss ? 'No coaching event matched this ISO week, so this week receives a red X.' : 'No coaching event matched this ISO week.', status.state === 'strong' ? 'good' : status.state === 'weak' ? 'bad' : status.state === 'info' ? 'info' : 'warn'],
+      ['Coaching notes', entry.coached ? `${entry.coachedThisWeek.length} logged` : 'None', coachingDescriptionsText(entry), entry.coached ? 'info' : 'warn'],
+      ['Red X count', String((model.repSummaries.find(r => r.rep === entry.rep)?.redXCount) || 0), 'More than one red X is treated as a concern and highlights the rep name in the heatmap.', ((model.repSummaries.find(r => r.rep === entry.rep)?.redXCount) || 0) > 1 ? 'bad' : 'info'],
+      ['Trend impact', Number.isFinite(entry.impact) ? fmtPct2(entry.impact) : '—', Number.isFinite(entry.impact) ? (entry.impact > 0 ? 'Positive value means coaching this rep could improve team rate.' : entry.impact < 0 ? 'Negative value means removing this rep would lower team rate.' : 'Neutral impact this week.') : 'No impact signal available.', detailToneClass('impact', entry.impact)]
+    ];
+    cards.forEach(([label, value, sub, tone])=>{
+      const card = document.createElement('div');
+      card.className = `heatDetailCard${tone ? ` ${tone}` : ''}`;
+      card.innerHTML = `<div class="heatDetailLabel">${label}</div><div class="heatDetailValue${tone ? ` ${tone}` : ''}">${value}</div><div class="heatDetailNote${tone ? ` ${tone}` : ''}">${sub}</div>`;
+      grid.appendChild(card);
+    });
+    body.appendChild(grid);
+    body.appendChild(detailItemMarkup(entry));
+    return;
+  }
+
+  title.textContent = `${week.weekKey} — Coverage detail`;
+  meta.textContent = `${week.label} • ${selectedSheet || '—'} • ${selectedSet?.A || 'A'} ÷ ${selectedSet?.B || 'B'} • ${weekSummaryTags(week).replace(/<[^>]+>/g,' ')}`;
+
+  const grid = document.createElement('div');
+  grid.className = 'heatDetailGrid';
+  const cards = [
+    ['Coverage', Number.isFinite(week.coverageRate) ? fmtPct1(week.coverageRate) : 'N/A', `${week.coveredCount} of ${week.neededCount || 0} below-goal reps coached in this week.`, detailToneClass('coverage', week.coverageRate)],
+    ['Red Xs', String(week.missedCount), week.missedCount ? 'These reps were below goal and had no coaching event this week.' : 'No below-goal reps were missed this week.', week.missedCount ? 'bad' : 'good'],
+    ['Team KPI', Number.isFinite(week.teamRate) ? fmtPct1(week.teamRate) : '—', `${week.teamApps.toFixed(0)} ${selectedSet?.A || 'A'} vs ${week.teamOpps.toFixed(0)} ${selectedSet?.B || 'B'} across ${week.repCount} rep(s).`, Number.isFinite(week.teamRate) ? 'info' : 'warn']
+  ];
+  cards.forEach(([label, value, sub, tone])=>{
+    const card = document.createElement('div');
+    card.className = `heatDetailCard${tone ? ` ${tone}` : ''}`;
+    card.innerHTML = `<div class="heatDetailLabel">${label}</div><div class="heatDetailValue${tone ? ` ${tone}` : ''}">${value}</div><div class="heatDetailNote${tone ? ` ${tone}` : ''}">${sub}</div>`;
+    grid.appendChild(card);
+  });
+  body.appendChild(grid);
+
+  const sections = [
+    ['Below-goal reps coached', week.rows.filter(r => r.needsCoaching && r.coached)],
+    ['Below-goal reps missed', week.rows.filter(r => r.isPriorityMiss)],
+    ['Above-goal reps', week.rows.filter(r => r.isStrongPerformer)]
+  ];
+  sections.forEach(([label, rows])=>{
+    const sec = document.createElement('div');
+    sec.className = 'heatDetailSection';
+    sec.innerHTML = `<h4>${label} (${rows.length})</h4>`;
+    if(!rows.length){
+      sec.innerHTML += `<div class="muted" style="font-weight:900">None.</div>`;
+    }else{
+      const list = document.createElement('div');
+      list.className = 'heatDetailList';
+      rows.forEach(r => list.appendChild(detailItemMarkup(r)));
+      sec.appendChild(list);
+    }
+    body.appendChild(sec);
+  });
+}
+
+/* =========================
+   Rep grid rendering
+   ========================= */
+function paintRepGrid(rows, teamRate, allNames, maxVal, bottomHalfSet){
+  const grid = document.getElementById('impactGrid');
+  grid.innerHTML = '';
+
+  const topImprover = rows.find(r=>r.impact>0);
+  const topWorsener = rows.find(r=>r.impact<0);
+
+  const includedSet = new Set(rows.map(r=>r.rep));
+  const excludedNames = allNames.filter(n=>!includedSet.has(n));
+  const cardData = [
+    ...rows.map(r=>({ ...r, isExcluded:false })),
+    ...excludedNames.map(name=>({ rep:name, apps:NaN, opps:NaN, repRate:NaN, impact:NaN, weightShare:0, isExcluded:true }))
+  ];
+
+  const cardTrendMap = buildRepRateTrendMap(allNames, bottomHalfSet || new Set());
+
+  cardData.forEach(r=>{
+    const off = r.isExcluded || excluded.has(r.rep);
+
+    const rec = coachingRecencyInfo(r.rep);
+    const urgent = (!off && (rec.ageDays===null || rec.ageDays>42));
+    const stale  = (!off && !urgent && rec.ageDays!==null && rec.ageDays>21);
+
+    const impactCls = Number.isFinite(r.impact) ? (r.impact>0 ? 'good' : (r.impact<0 ? 'bad' : '')) : '';
+    const badgeTxt = Number.isFinite(r.impact)
+      ? (r.impact>0 ? `▲ +${fmtPct2(Math.abs(r.impact))}` : (r.impact<0 ? `▼ -${fmtPct2(Math.abs(r.impact))}` : '• 0.00%'))
+      : (off ? 'Excluded' : '—');
+
+    const star = (!off && topImprover && r.rep===topImprover.rep) ? '⭐' : '';
+    const warn = (!off && topWorsener && r.rep===topWorsener.rep) ? '⚠️' : '';
+
+    const card = document.createElement('div');
+    card.className = 'repCard' + (off ? ' warningBorder' : '') + (urgent ? ' urgent' : (stale ? ' stale' : ''));
+    card.title = 'Click to view coaching history';
+
+    card.addEventListener('click', (ev)=>{
+      if(ev.target.closest('input') || ev.target.closest('label') || ev.target.closest('button') || ev.target.closest('select')) return;
+      openRepCoachings(r.rep);
+    });
+
+    const top = document.createElement('div');
+    top.className='repTop';
+
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'repName';
+    nameDiv.innerHTML = `${repLastCoachedLabel(r.rep)} ${star||warn? `<span class="muted">${star}${warn}</span>`:''}`;
+
+    const badgeStack = document.createElement('div');
+    badgeStack.className = 'badgeStack';
+
+    const badge = document.createElement('div');
+    badge.className = `impactBadge ${impactCls}`;
+    badge.textContent = badgeTxt;
+
+    // NEW: Need score (weighted by fewest coachings) shown left of recency
+    const scoreInfo = needCoachingScore(r.rep, r.impact);
+    const scorePill = document.createElement('div');
+    const scoreHot = (!off && scoreInfo.score > 0 && scoreInfo.cnt === 0); // quick visual pop for "big need + zero coachings"
+    scorePill.className = 'needScore' + (scoreHot ? ' hot' : '');
+    const scoreTxt = (Number.isFinite(scoreInfo.score) && scoreInfo.score>0)
+      ? `Need +${fmtPct2(scoreInfo.score)}`
+      : `Need —`;
+    scorePill.textContent = scoreTxt;
+    scorePill.title = `NeedScore = max(impact,0) ÷ (1 + coachingCountInWindow). Impact is team-rate improvement if this rep is removed. Window = last ${currentWeeks()} week(s).`;
+
+    const recLine = document.createElement('div');
+    recLine.className = 'coachRecency' + (urgent ? ' bad' : (stale ? ' warn' : ''));
+
+    const nWin = coachingCountForRep(r.rep);
+
+    if(!coachings.length){
+      recLine.textContent = 'Coachings not loaded';
+      recLine.title = 'No coaching dock found/loaded yet.';
+    }else if(coachingTypes.size && enabledTypes.size===0){
+      recLine.textContent = `Types filtered out (${nWin})`;
+      recLine.title = 'No coaching types selected.';
+    }else{
+      if(rec.has){
+        recLine.textContent = `${rec.text} (${nWin})`;
+        recLine.title = `${rec.text} • ${nWin} coaching(s) in last ${currentWeeks()}w`;
+      }else{
+        recLine.textContent = `No coaching (${nWin})`;
+        recLine.title = `No matching coaching found for this rep. In-window count: ${nWin}.`;
+      }
+    }
+
+    const trendLine = document.createElement('div');
+    trendLine.className = 'plainTrendLine';
+    trendLine.textContent = trendTextForRepFromMap(cardTrendMap, r.rep);
+    trendLine.title = `Trend across the selected ${currentWeeks()} week time period.`;
+
+    const coachRow = document.createElement('div');
+    coachRow.className = 'coachRowLine';
+    coachRow.appendChild(scorePill);
+    coachRow.appendChild(recLine);
+    coachRow.appendChild(trendLine);
+
+    badgeStack.appendChild(badge);
+    badgeStack.appendChild(coachRow);
+
+    top.appendChild(nameDiv);
+    top.appendChild(badgeStack);
+
+    const bar = document.createElement('div'); bar.className='barWrap';
+    const fill = document.createElement('div'); fill.className='barFill';
+    const pct = Number.isFinite(r.repRate) ? Math.max(0, Math.min(1, r.repRate))*100 : 0;
+    const isAbove = Number.isFinite(r.repRate) && Number.isFinite(teamRate) && r.repRate >= teamRate;
+    fill.style.width = pct.toFixed(1) + '%';
+    fill.style.background = isAbove ? '#16a34a' : '#dc2626';
+    const label = document.createElement('div'); label.className='barLabel'; label.textContent = Number.isFinite(r.repRate) ? (pct.toFixed(1)+'%') : '—';
+    const avg = document.createElement('div'); avg.className='avgTick';
+    const avgLeft = Number.isFinite(teamRate) ? (Math.max(0, Math.min(1, teamRate))*100) : 0;
+    avg.style.left = `calc(${avgLeft}% - 1px)`;
+    bar.appendChild(fill); bar.appendChild(avg); bar.appendChild(label);
+
+    const compareWrap = document.createElement('div');
+    compareWrap.className = 'dbWrap';
+    if (showCompare){
+      const legend = document.createElement('div');
+      legend.className = 'dbLegend';
+      legend.innerHTML = `<span><span class="dot apps"></span> A: Apps <b>${Number.isFinite(r.apps)? r.apps.toFixed(0): (off?'—':'0')}</b></span>
+                          <span><span class="dot opps"></span> B: Opps <b>${Number.isFinite(r.opps)? r.opps.toFixed(0): (off?'—':'0')}</b></span>`;
+      const track = document.createElement('div'); track.className='dbTrack';
+
+      const aVal = Number.isFinite(r.apps) ? r.apps : 0;
+      const bVal = Number.isFinite(r.opps) ? r.opps : 0;
+      const aPct = Math.min(100, Math.max(0, (aVal / maxVal) * 100));
+      const bPct = Math.min(100, Math.max(0, (bVal / maxVal) * 100));
+      const leftPct = Math.min(aPct, bPct);
+      const rightPct = Math.max(aPct, bPct);
+
+      const line = document.createElement('div');
+      line.className='dbLine';
+      line.style.left = `calc(${leftPct}% )`;
+      line.style.width = `calc(${rightPct - leftPct}% )`;
+
+      const dotA = document.createElement('div'); dotA.className='dbDot apps'; dotA.style.left = `${aPct}%`;
+      const dotB = document.createElement('div'); dotB.className='dbDot opps'; dotB.style.left = `${bPct}%`;
+
+      track.appendChild(line); track.appendChild(dotA); track.appendChild(dotB);
+
+      const scale = document.createElement('div');
+      scale.className='dbScale';
+      scale.innerHTML = `<span>0</span><span>${Math.max(1, Math.round(maxVal)).toLocaleString()}</span>`;
+
+      compareWrap.appendChild(legend);
+      compareWrap.appendChild(track);
+      compareWrap.appendChild(scale);
+    }
+
+    const mid = document.createElement('div'); mid.className='mini2';
+    const aDiv = document.createElement('div'); aDiv.innerHTML = `<div class="muted" style="font-weight:900">Appointments</div><div style="font-weight:900; font-size:16px">${Number.isFinite(r.apps)? r.apps.toFixed(0): (off?'—':'0')}</div>`;
+    const oDiv = document.createElement('div'); oDiv.innerHTML = `<div class="muted" style="font-weight:900">Opportunities</div><div style="font-weight:900; font-size:16px">${Number.isFinite(r.opps)? r.opps.toFixed(0): (off?'—':'0')}</div>`;
+    mid.appendChild(aDiv); mid.appendChild(oDiv);
+
+    const bottom = document.createElement('div'); bottom.className='xrow';
+    const xb = document.createElement('label'); xb.className='xbox';
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=off;
+    const txt=document.createElement('span'); txt.textContent = off? 'Excluded' : 'Include';
+    cb.onchange = ()=>{
+      if (cb.checked) excluded.add(r.rep); else excluded.delete(r.rep);
+      txt.textContent = cb.checked? 'Excluded':'Include';
+      renderAll();
+    };
+    xb.appendChild(cb); xb.appendChild(txt);
+    bottom.appendChild(xb);
+
+    const b50 = document.createElement('div');
+    b50.className = 'muted';
+    b50.style.fontWeight = '900';
+    b50.style.fontSize = '11px';
+    if(!off && bottomHalfSet.has(r.rep)){
+      b50.textContent = 'Bottom 50% (rate)';
+    }
+    bottom.appendChild(b50);
+
+    card.appendChild(top);
+    card.appendChild(bar);
+    if (showCompare) card.appendChild(compareWrap);
+    card.appendChild(mid);
+    card.appendChild(bottom);
+
+    grid.appendChild(card);
+  });
+}
+
+/* =========================
+   Render
+   ========================= */
+function renderAll(){
+  setHeaderH();
+
+  const set = effectiveSet();
+  const rows = rowsInScope();
+  const weeks = currentWeeks();
+  const wks = Array.from(new Set(rows.map(r=>isoWeekKey(r._d)))).sort();
+  const first = wks[0], last = wks[wks.length-1];
+  document.getElementById('contextHint').textContent =
+    selectedSheet ? `${selectedSheet} • ${weeks}w • ${first||'—'} → ${last||'—'} • ${rows.length} row(s)` : '—';
+
+  const names = getRepNamesInScope();
+  excluded.forEach(n=>{ if (!names.includes(n)) excluded.delete(n); });
+  const visibleNames = applyAttendance3WeeksFilter(names);
+  const visibleNameSet = new Set(visibleNames);
+
+  const {base, rows:impRowsRaw} = computeImpacts(set, excluded);
+  const impRowsDefault = impRowsRaw.filter(r => visibleNameSet.has(r.rep));
+  const originalAll = computeTeamMetrics(set, new Set());
+
+  paintTotals(originalAll, base);
+  paintTeamSummary(originalAll.rate, base.rate);
+  updateRepCount(names.length, excluded.size, visibleNames.length);
+
+  const maxVal = Math.max(
+    ...originalAll.byRep.map(r=>Math.max(r.apps||0, r.opps||0)),
+    1
+  );
+
+  const ratePairs = originalAll.byRep
+    .map(r=>({rep:r.rep, rate:r.repRate}))
+    .filter(x=>Number.isFinite(x.rate))
+    .sort((a,b)=>a.rate-b.rate);
+
+  const bottomHalfSet = new Set();
+  if(ratePairs.length>=2){
+    const bottomCount = Math.floor(ratePairs.length/2);
+    const threshold = ratePairs[bottomCount-1]?.rate;
+    if(Number.isFinite(threshold)){
+      ratePairs.forEach(p=>{
+        if(p.rate <= threshold) bottomHalfSet.add(p.rep);
+      });
+    }
+  }
+
+  const mode = sortSel.value || 'abs';
+  const rowsSorted = [...impRowsDefault];
+
+  if (mode === 'pos'){
+    rowsSorted.sort((a,b)=> (b.impact) - (a.impact));
+  } else if (mode === 'neg'){
+    rowsSorted.sort((a,b)=> (a.impact) - (b.impact));
+  } else if (mode === 'rateDesc'){
+    rowsSorted.sort((a,b)=> (b.repRate ?? -Infinity) - (a.repRate ?? -Infinity));
+  } else if (mode === 'rateAsc'){
+    rowsSorted.sort((a,b)=> (a.repRate ?? Infinity) - (b.repRate ?? Infinity));
+  } else if (mode === 'coachDesc'){
+    rowsSorted.sort((a,b)=>{
+      const A = coachingSortTime(a.rep);
+      const B = coachingSortTime(b.rep);
+      if(A === null && B === null) return String(a.rep).localeCompare(String(b.rep));
+      if(A === null) return 1;
+      if(B === null) return -1;
+      if(B !== A) return B - A;
+      return String(a.rep).localeCompare(String(b.rep));
+    });
+  } else if (mode === 'coachAsc'){
+    rowsSorted.sort((a,b)=>{
+      const A = coachingSortTime(a.rep);
+      const B = coachingSortTime(b.rep);
+      if(A === null && B === null) return String(a.rep).localeCompare(String(b.rep));
+      if(A === null) return 1;
+      if(B === null) return -1;
+      if(A !== B) return A - B;
+      return String(a.rep).localeCompare(String(b.rep));
+    });
+  } else if (mode === 'negNeedCoach'){
+    rowsSorted.sort((a,b)=>{
+      const A = needCoachingScore(a.rep, a.impact);
+      const B = needCoachingScore(b.rep, b.impact);
+      if(B.score !== A.score) return B.score - A.score;
+      const bi = Number.isFinite(b.impact) ? Math.max(b.impact,0) : 0;
+      const ai = Number.isFinite(a.impact) ? Math.max(a.impact,0) : 0;
+      if(bi !== ai) return bi - ai;
+      if(A.cnt !== B.cnt) return A.cnt - B.cnt;
+      return String(a.rep).localeCompare(String(b.rep));
+    });
+  } else {
+    rowsSorted.sort((a,b)=> Math.abs(b.impact) - Math.abs(a.impact));
+  }
+
+  const includedNames = visibleNames.filter(n => !excluded.has(n));
+  const heatmapNames = applyAttendance3WeeksFilter(getRepNamesInScope(5)).filter(n => !excluded.has(n));
+  const heatmapModel = buildWeeklyHeatmapModel(set, heatmapNames, bottomHalfSet, 5);
+  paintHeatmap(heatmapModel);
+
+  paintRepGrid(rowsSorted, base.rate, visibleNames, maxVal, bottomHalfSet);
+}
+
+/* =========================
+   Metric mode
+   ========================= */
+const metricModeSel = document.getElementById('metricMode');
+metricModeSel.onchange = ()=>{
+  metricMode = metricModeSel.value;
+
+  if (metricMode==='auto' && autoSets.length){
+    const autoSel = document.getElementById('autoSetSel');
+    const i = parseInt(autoSel.value,10);
+    const pick = Number.isFinite(i) ? autoSets[i] : autoSets[0];
+    selectedSet = {A:pick.A, B:pick.B};
+    syncManualToSet();
+  }else if (metricMode==='manual'){
+    const A = document.getElementById('kpiA').value;
+    const B = document.getElementById('kpiB').value;
+    if (A && B) selectedSet = {A, B};
+  }
+  syncModeUI();
+  renderAll();
+};
+
+/* =========================
+   Coaching UI
+   ========================= */
+function repaintTypeChips(){
+  const wrap = document.getElementById('typeChips');
+  wrap.innerHTML = '';
+  if(!coachingTypes.size){
+    wrap.innerHTML = `<span class="muted" style="font-weight:900">Load coachings to enable type filters.</span>`;
+    return;
+  }
+  const sorted = Array.from(coachingTypes).sort((a,b)=>a.localeCompare(b));
+  for(const t of sorted){
+    const on = enabledTypes.has(t);
+    const chip = document.createElement('span');
+    chip.className = 'typeChip' + (on ? ' on' : '');
+    chip.textContent = t;
+    chip.onclick = ()=>{
+      if(enabledTypes.has(t)) enabledTypes.delete(t);
+      else enabledTypes.add(t);
+      repaintTypeChips();
+      renderAll();
+      if(document.getElementById('repCoachModalOverlay').classList.contains('show') && repCoachingModal.mode==='filtered'){
+        paintRepCoachingsModal();
+      }
+    };
+    wrap.appendChild(chip);
+  }
+}
+function populateCoachingKeySelect(){
+  coachingCandidates = findCoachingCandidates();
+  const sel = document.getElementById('coachKeySel');
+  sel.innerHTML = '';
+  if(!coachingCandidates.length){
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '(No coaching dock keys found yet)';
+    sel.appendChild(opt);
+    coachingKey = null;
+    return;
+  }
+  for(const k of coachingCandidates){
+    const opt = document.createElement('option');
+    opt.value = k;
+    opt.textContent = k;
+    sel.appendChild(opt);
+  }
+  if(!coachingKey || !coachingCandidates.includes(coachingKey)) coachingKey = coachingCandidates[0];
+  sel.value = coachingKey;
+
+  sel.onchange = ()=>{
+    coachingKey = sel.value;
+    // auto-load on change (silent)
+    loadCoachings({ silent:true });
+  };
+}
+
+function loadCoachings(opts={silent:false}){
+  const silent = !!opts.silent;
+
+  const sel = document.getElementById('coachKeySel');
+  const key = (sel && sel.value) ? sel.value : coachingKey;
+
+  if(!key){
+    if(!silent) alert('No coaching cache key available. Load Documented Coaching in MyOne2.0 first, then reload cache.');
+    return false;
+  }
+  const dock = loadDockObjByKey(key);
+  if(!dock){
+    if(!silent) alert('Could not read coaching dock from the selected key.');
+    return false;
+  }
+
+  coachings = canonicalizeDocumentedCoachings(dock);
+  coachingTypes = new Set();
+  for(const c of coachings) for(const t of c.types) coachingTypes.add(t);
+  enabledTypes = new Set(coachingTypes);
+  rebuildCoachingIndex();
+  repaintTypeChips();
+
+  lastCoachingLoadedKey = key;
+  document.getElementById('coachDockBadge').textContent = `coachings: ${coachings.length}`;
+  renderAll();
+  return true;
+}
+
+function autoLoadCoachingsIfPossible(){
+  // only attempt if we have candidates
+  if(!coachingCandidates.length) return;
+  if(!coachingKey) return;
+
+  // avoid reloading if already loaded for this key
+  if(coachings.length && lastCoachingLoadedKey === coachingKey) return;
+
+  loadCoachings({ silent:true });
+}
+
+function shortKey(k){
+  if(!k) return '—';
+  if(k.length<=26) return k;
+  return k.slice(0,12)+'…'+k.slice(-10);
+}
+
+/* =========================
+   Refresh cache
+   ========================= */
+function refreshFromCache(){
+  includeRetail = document.getElementById('incRetail').checked;
+  includeReferral = document.getElementById('incReferral').checked;
+
+  dockKeyRetail = findDockKey('retail');
+  dockKeyReferral = findDockKey('referral');
+
+  const retailDock = loadDockObjByKey(dockKeyRetail);
+  const referralDock = loadDockObjByKey(dockKeyReferral);
+
+  const retailRows = canonicalizeStatsRowsFromDock(retailDock, 'Retail');
+  const referralRows = canonicalizeStatsRowsFromDock(referralDock, 'Referral');
+
+  const combinedRaw = [...retailRows, ...referralRows];
+  const merged = mergeRetailReferral(combinedRaw, includeRetail, includeReferral);
+
+  allRows = merged
+    .map(r=>{
+      const d = r.__date || parseAnyDate(r.Date);
+      return {...r, _d:d};
+    })
+    .filter(r=>r._d instanceof Date && !isNaN(r._d));
+
+  sheets = Array.from(new Set(allRows.map(r=>String(r.Sheet||'').trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+
+  document.getElementById('dockBadge').textContent =
+    `dock keys: R=${shortKey(dockKeyRetail)} • F=${shortKey(dockKeyReferral)} • rows=${allRows.length}`;
+
+  const prevSheet = selectedSheet;
+  buildCoachSel();
+
+  if(!selectedSheet){
+    selectedSheet = sheets[0] || null;
+  }else if(prevSheet && sheets.includes(prevSheet)){
+    selectedSheet = prevSheet;
+  }else if(!sheets.includes(selectedSheet)){
+    selectedSheet = sheets[0] || null;
+  }
+  document.getElementById('coachSel').value = selectedSheet || '';
+
+  computeHeaders();
+  buildAutoSets();
+  feedManualKpis();
+
+  // Default metric on boot: Consumer Appointment Rate (if found)
+  if (!selectedSet){
+    const pref = preferConsumerSet();
+    if(pref) selectedSet = {A:pref.A, B:pref.B};
+    else if(headers.length>=2) selectedSet = {A:headers[0], B:headers[1]};
+  } else {
+    const hasA = headers.includes(selectedSet.A);
+    const hasB = headers.includes(selectedSet.B);
+    if(!hasA || !hasB){
+      const pref = preferConsumerSet();
+      if(pref) selectedSet = {A:pref.A, B:pref.B};
+      else if(headers.length>=2) selectedSet = {A:headers[0], B:headers[1]};
+    }
+  }
+
+  paintAutoSetSel();
+  syncManualToSet();
+  syncModeUI();
+
+  // coaching key list (and auto-load)
+  populateCoachingKeySelect();
+  autoLoadCoachingsIfPossible();
+
+  setHeaderH();
+  renderAll();
+}
+
+/* =========================
+   Controls
+   ========================= */
+
+function setMainTab(which){
+  const impactBtn = document.getElementById('mainTabImpacts');
+  const teamBtn = document.getElementById('mainTabTeam');
+  const impactPanel = document.getElementById('impactTabPanel');
+  const teamPanel = document.getElementById('teamTabPanel');
+  const isTeam = which === 'team';
+  impactBtn?.classList.toggle('active', !isTeam);
+  teamBtn?.classList.toggle('active', isTeam);
+  impactPanel?.classList.toggle('active', !isTeam);
+  teamPanel?.classList.toggle('active', isTeam);
+  impactBtn?.setAttribute('aria-selected', String(!isTeam));
+  teamBtn?.setAttribute('aria-selected', String(isTeam));
+  try{ localStorage.setItem('impactTool.activeTab', isTeam ? 'team' : 'impacts'); }catch(e){}
+}
+document.getElementById('mainTabImpacts')?.addEventListener('click', ()=> setMainTab('impacts'));
+document.getElementById('mainTabTeam')?.addEventListener('click', ()=> setMainTab('team'));
+try{ setMainTab(localStorage.getItem('impactTool.activeTab') === 'team' ? 'team' : 'impacts'); }catch(e){ setMainTab('impacts'); }
+
+document.getElementById('reloadCache').onclick = refreshFromCache;
+document.getElementById('refreshBtn').onclick = ()=> renderAll();
+
+document.getElementById('selectAll').onclick = ()=>{ excluded.clear(); renderAll(); };
+document.getElementById('includeAllTop').onclick = ()=>{ excluded.clear(); renderAll(); };
+document.getElementById('clearAll').onclick = ()=>{
+  excluded = new Set(getRepNamesInScope());
+  renderAll();
+};
+
+document.getElementById('incRetail').addEventListener('change', refreshFromCache);
+document.getElementById('incReferral').addEventListener('change', refreshFromCache);
+
+document.getElementById('loadCoachingsBtn').onclick = ()=> loadCoachings({silent:false});
+document.getElementById('typesAllBtn').onclick = ()=>{
+  enabledTypes = new Set(coachingTypes);
+  repaintTypeChips();
+  renderAll();
+  if(document.getElementById('repCoachModalOverlay').classList.contains('show') && repCoachingModal.mode==='filtered'){
+    paintRepCoachingsModal();
+  }
+};
+document.getElementById('typesNoneBtn').onclick = ()=>{
+  enabledTypes = new Set();
+  repaintTypeChips();
+  renderAll();
+  if(document.getElementById('repCoachModalOverlay').classList.contains('show') && repCoachingModal.mode==='filtered'){
+    paintRepCoachingsModal();
+  }
+};
+
+document.getElementById('autoSetSel').addEventListener('change', e=>{
+  const i = parseInt(e.target.value,10);
+  if (Number.isFinite(i) && autoSets[i]){
+    selectedSet = {A:autoSets[i].A, B:autoSets[i].B};
+    syncManualToSet();
+    if(metricMode==='auto') renderAll();
+  }
+});
+
+function openCoachingSettings(){
+  const ov = document.getElementById('coachingSettingsOverlay');
+  if(!ov) return;
+  ov.classList.add('show');
+  ov.setAttribute('aria-hidden','false');
+}
+function closeCoachingSettings(){
+  const ov = document.getElementById('coachingSettingsOverlay');
+  if(!ov) return;
+  ov.classList.remove('show');
+  ov.setAttribute('aria-hidden','true');
+}
+document.getElementById('coachingSettingsBtn')?.addEventListener('click', openCoachingSettings);
+document.getElementById('coachingSettingsClose')?.addEventListener('click', closeCoachingSettings);
+document.getElementById('coachingSettingsOverlay')?.addEventListener('click', (e)=>{
+  if(e.target.id === 'coachingSettingsOverlay') closeCoachingSettings();
+});
+
+/* =========================
+   Modal controls
+   ========================= */
+document.getElementById('repCoachModalClose').addEventListener('click', closeRepCoachings);
+document.getElementById('repCoachModalFiltered').addEventListener('click', ()=> setRepCoachingsMode('filtered'));
+document.getElementById('repCoachModalAll').addEventListener('click', ()=> setRepCoachingsMode('all'));
+document.getElementById('repCoachModalOverlay').addEventListener('click', (e)=>{
+  if(e.target.id === 'repCoachModalOverlay') closeRepCoachings();
+});
+document.getElementById('heatmapModalClose').addEventListener('click', closeHeatmapModal);
+document.getElementById('heatmapModalOverlay').addEventListener('click', (e)=>{
+  if(e.target.id === 'heatmapModalOverlay') closeHeatmapModal();
+});
+document.addEventListener('keydown', (e)=>{
+  if(e.key === 'Escape'){
+    const settingsOv = document.getElementById('coachingSettingsOverlay');
+    if(settingsOv?.classList.contains('show')){
+      closeCoachingSettings();
+      return;
+    }
+    const heatOv = document.getElementById('heatmapModalOverlay');
+    if(heatOv.classList.contains('show')){
+      closeHeatmapModal();
+      return;
+    }
+    const ov = document.getElementById('repCoachModalOverlay');
+    if(ov.classList.contains('show')) closeRepCoachings();
+  }
+});
+
+/* =========================
+   PDF Export
+   ========================= */
+document.getElementById('exportPdf').addEventListener('click', async ()=>{
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit:'pt', format:'letter' });
+  const margin = 36;
+
+  const origTxt = document.getElementById('origRate').textContent || '';
+  const currTxt = document.getElementById('currRate').textContent || '';
+  const diffTxt = document.getElementById('rateDiff').textContent || '';
+  const appsTxt = document.getElementById('totApps').textContent || '';
+  const oppsTxt = document.getElementById('totOpps').textContent || '';
+  const appsDelta = document.getElementById('totAppsDelta').textContent || '';
+  const oppsDelta = document.getElementById('totOppsDelta').textContent || '';
+
+  pdf.setFont('helvetica','bold'); pdf.setFontSize(14);
+  pdf.text('Impact Tool Export', margin, margin);
+  pdf.setFont('helvetica','normal'); pdf.setFontSize(11);
+  pdf.text(`Original Rate: ${origTxt}`, margin, margin+18);
+  pdf.text(`Current Rate: ${currTxt}   (Change: ${diffTxt})`, margin, margin+34);
+  pdf.text(`Team Totals — Apps: ${appsTxt} (${appsDelta})   Opps: ${oppsTxt} (${oppsDelta})`, margin, margin+50);
+
+  const cards = Array.from(document.querySelectorAll('#impactGrid .repCard'));
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+
+  const colW = (pageW - margin*2 - 12)/2;
+  let x = margin, y = margin+70;
+
+  for (let i=0; i<cards.length; i++){
+    const card = cards[i];
+    const canvas = await html2canvas(card, {backgroundColor: null, scale:2});
+    const imgData = canvas.toDataURL('imagePNG', 1.0);
+    const w = colW;
+    const h = (canvas.height/canvas.width) * w;
+
+    if (y + h > pageH - margin){
+      pdf.addPage(); x = margin; y = margin;
+    }
+    pdf.addImage(imgData, 'PNG', x, y, w, h);
+    if (x === margin){ x = margin + colW + 12; }
+    else { x = margin; y += h + 12; }
+  }
+
+  pdf.save('impact-tool-export.pdf');
+});
+
+/* =========================
+   Boot
+   ========================= */
+(function boot(){
+  setHeaderH();
+  refreshFromCache(); // refresh also populates coaching keys and auto-loads coachings if possible
+})();
+</script>
+</body>
+</html>
