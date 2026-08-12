@@ -24,7 +24,7 @@
   const DEFAULT_APP_ICON = SYSTEM_ICON_PATHS['default-app'];
   const apps = (manifest.apps || [])
     .filter(app => app && app.enabled !== false)
-    .map(app => ({ ...app, icon: APP_ICON_PATHS[app.id] || app.icon || DEFAULT_APP_ICON }));
+    .map(app => ({ ...app, icon: app.icon || APP_ICON_PATHS[app.id] || DEFAULT_APP_ICON }));
   const byId = new Map(apps.map(app => [app.id, app]));
   const storage = root.CoachToolsStorage;
   const importer = root.CoachToolsImport;
@@ -35,6 +35,8 @@
   const STORAGE_FILES_KEY = 'coachtools.storage.processed.v1';
   const MAX_RECENT = 8;
   const APP_LOAD_TIMEOUT_MS = 12000;
+  const ICON_PRELOAD_CONCURRENCY = 4;
+  const ICON_PRELOAD_TIMEOUT_MS = 5000;
   const FILTERS = Object.freeze(['All', 'Favorites', 'Core', 'People', 'Data', 'Coaching', 'Performance', 'Quality', 'Other', 'Needs Data']);
   const elements = {};
   const openWindows = new Map();
@@ -57,6 +59,7 @@
     pendingStageSent: false,
     lastScan: null,
     iconFailures: new Set(),
+    preloadedIcons: new Map(),
     scopeOptions: new Map(),
     wallpaperReady: Promise.resolve(false),
     pendingRestoreActiveId: '',
@@ -119,14 +122,87 @@
     return new Promise(resolve => root.requestAnimationFrame(() => resolve()));
   }
 
-  function appendImageWithFallback(wrap, primaryPath, failureKey) {
+  function yieldLowPriority() {
+    return new Promise(resolve => {
+      if (typeof root.requestIdleCallback === 'function') root.requestIdleCallback(() => resolve(), { timeout: 900 });
+      else root.setTimeout(resolve, 18);
+    });
+  }
+
+  function desktopAssetPaths() {
+    return Array.from(new Set([
+      ...apps.map(app => app.icon),
+      ...Object.values(SYSTEM_ICON_PATHS),
+      DEFAULT_APP_ICON
+    ].filter(Boolean)));
+  }
+
+  function preloadIconAsset(path) {
+    if (state.preloadedIcons.has(path)) return state.preloadedIcons.get(path);
+    const promise = new Promise(resolve => {
+      const image = new Image();
+      let settled = false;
+      const finish = loaded => {
+        if (settled) return;
+        settled = true;
+        root.clearTimeout(timer);
+        image.onload = null;
+        image.onerror = null;
+        if (loaded) state.iconFailures.delete(path);
+        else state.iconFailures.add(path);
+        resolve({ path, loaded });
+      };
+      const timer = root.setTimeout(() => finish(false), ICON_PRELOAD_TIMEOUT_MS);
+      image.decoding = 'async';
+      image.onload = async () => {
+        if (typeof image.decode === 'function') {
+          try { await image.decode(); } catch (_) {}
+        }
+        finish(true);
+      };
+      image.onerror = () => finish(false);
+      image.src = path;
+    });
+    state.preloadedIcons.set(path, promise);
+    return promise;
+  }
+
+  async function preloadDesktopAssets() {
+    const paths = desktopAssetPaths();
+    if (!paths.length) return { total: 0, loaded: 0, failed: [] };
+    const diagnostics = root.CoachToolsDiagnostics;
+    if (diagnostics) diagnostics.start('Icon preload', { total: paths.length });
+    let cursor = 0;
+    let completed = 0;
+    let loaded = 0;
+    const failed = [];
+    const worker = async () => {
+      while (cursor < paths.length) {
+        const path = paths[cursor++];
+        const result = await preloadIconAsset(path);
+        completed += 1;
+        if (result.loaded) loaded += 1;
+        else failed.push(path);
+        setStartupProgress(24 + (completed / paths.length) * 34, 'Loading icons', `Preparing desktop artwork · ${completed} of ${paths.length}`, `${completed} of ${paths.length}`);
+      }
+    };
+    try {
+      await Promise.all(Array.from({ length: Math.min(ICON_PRELOAD_CONCURRENCY, paths.length) }, worker));
+      return { total: paths.length, loaded, failed };
+    } finally {
+      if (diagnostics) diagnostics.end('Icon preload', { total: paths.length, loaded, failed: failed.slice() });
+    }
+  }
+
+  function appendImageWithFallback(wrap, primaryPath) {
     const paths = Array.from(new Set([primaryPath, DEFAULT_APP_ICON].filter(Boolean)));
     if (!paths.length) return;
     const image = document.createElement('img');
     image.alt = '';
-    image.loading = 'lazy';
+    image.loading = 'eager';
     image.decoding = 'async';
     let pathIndex = 0;
+    let currentPath = '';
 
     const loadNextPath = () => {
       const path = paths[pathIndex];
@@ -135,13 +211,17 @@
         image.remove();
         return;
       }
+      currentPath = path;
       image.src = path;
     };
 
-    image.addEventListener('load', () => wrap.classList.add('loaded'));
+    image.addEventListener('load', () => {
+      if (currentPath) state.iconFailures.delete(currentPath);
+      wrap.classList.add('loaded');
+    });
     image.addEventListener('error', () => {
       wrap.classList.remove('loaded');
-      if (failureKey) state.iconFailures.add(failureKey);
+      if (currentPath) state.iconFailures.add(currentPath);
       loadNextPath();
     });
     wrap.appendChild(image);
@@ -227,6 +307,11 @@
   function missingRequirements(app) {
     const required = Array.isArray(app.data) ? app.data : [];
     return required.filter(source => !storage || !storage.has(source));
+  }
+
+  function datasetLabel(type) {
+    const status = currentDatasetStatuses().find(item => (item.datasetType || item.id) === type);
+    return status && status.label || String(type || 'Data').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, letter => letter.toUpperCase());
   }
 
   function appSearchText(app) {
@@ -461,7 +546,7 @@
     windowState.warmState = success ? 'ready' : 'failed';
     if (state.firstAppOpenStarted && !state.firstAppOpened) {
       state.firstAppOpened = true;
-      if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end('First application open', { appId: windowState.app.id, success: Boolean(success) });
+      if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end('First app shell visible', { appId: windowState.app.id, success: Boolean(success) });
     }
     windowState.resolveReady(Boolean(success));
   }
@@ -502,7 +587,8 @@
       lastActivated: 0,
       readySettled: true,
       readyPromise: Promise.resolve(false),
-      resolveReady: null
+      resolveReady: null,
+      usefulRenderMeasured: false
     };
     openWindows.set(app.id, windowState);
     return windowState;
@@ -522,6 +608,7 @@
 
     const iframe = document.createElement('iframe');
     iframe.title = app.name;
+    iframe.dataset.appId = app.id;
     iframe.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen');
 
     const loading = document.createElement('div');
@@ -529,8 +616,21 @@
     const ring = document.createElement('span');
     ring.className = 'loader-ring';
     const loadingText = document.createElement('strong');
-    loadingText.textContent = `Opening ${app.name}…`;
-    loading.append(ring, loadingText);
+    loadingText.textContent = `Opening ${app.name}`;
+    const loadingSummary = document.createElement('p');
+    loadingSummary.textContent = 'Preparing the application shell…';
+    const loadingData = document.createElement('div');
+    loadingData.className = 'frame-data-status';
+    for (const type of Array.isArray(app.data) ? app.data : []) {
+      const row = document.createElement('span');
+      const label = document.createElement('b');
+      label.textContent = datasetLabel(type);
+      const value = document.createElement('small');
+      value.textContent = 'Waiting';
+      row.append(label, value);
+      loadingData.appendChild(row);
+    }
+    loading.append(ring, loadingText, loadingSummary, loadingData);
 
     const unavailable = document.createElement('div');
     unavailable.className = 'frame-message error';
@@ -554,6 +654,7 @@
       pane,
       iframe,
       loading,
+      loadingData,
       unavailable,
       unavailablePath,
       minimized: Boolean(options && options.minimized),
@@ -565,7 +666,8 @@
       lastActivated: 0,
       readySettled: false,
       readyPromise: null,
-      resolveReady: null
+      resolveReady: null,
+      usefulRenderMeasured: false
     };
     windowState.readyPromise = new Promise(resolve => { windowState.resolveReady = resolve; });
     openWindows.set(app.id, windowState);
@@ -595,8 +697,9 @@
     }, APP_LOAD_TIMEOUT_MS);
     if (!state.firstAppOpened && !state.firstAppOpenStarted && root.CoachToolsDiagnostics) {
       state.firstAppOpenStarted = true;
-      root.CoachToolsDiagnostics.start('First application open', { appId: app.id });
+      root.CoachToolsDiagnostics.start('First app shell visible', { appId: app.id });
     }
+    if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.start(`First useful app render · ${app.id}`, { appId: app.id });
     iframe.src = app.file;
     renderTaskbar();
     persistOpenWindows();
@@ -687,6 +790,8 @@
     const windowState = id && openWindows.get(id);
     if (!windowState) return;
     clearTimeout(windowState.loadTimer);
+    if (!windowState.deferred && !windowState.usefulRenderMeasured && root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end(`First useful app render · ${windowState.app.id}`, { cancelled: true });
+    try { if (windowState.iframe) windowState.iframe.contentWindow.postMessage({ type: 'coachtools:cancel-data-loads' }, '*'); } catch (_) {}
     if (windowState.pane) windowState.pane.remove();
     openWindows.delete(id);
     if (state.activeAppId === id) {
@@ -847,6 +952,9 @@
       ['Remembered on refresh', 'Yes · app list only'],
       ['Icon fallbacks in use', String(state.iconFailures.size)]
     ]));
+    content.appendChild(diagnosticSection('Icon diagnostics', state.iconFailures.size
+      ? Array.from(state.iconFailures).sort().map(path => [path, 'Fallback in use'])
+      : [['Icon preload', 'All requested paths loaded']]));
     content.appendChild(diagnosticSection('Storage folder', [
       ['Automatic scanning', location.protocol === 'file:' ? 'No · direct-file mode' : (scan.available === false ? 'Unavailable' : 'Yes')],
       ['Supported files found', String(scan.fileCount || 0)],
@@ -1136,6 +1244,7 @@
   async function scanStorage(options) {
     const manual = Boolean(options && options.manual);
     const startup = Boolean(options && options.startup);
+    const background = Boolean(options && options.background);
     if (state.autoScanRunning) {
       if (manual) showToast('A storage scan is already running.');
       return;
@@ -1211,6 +1320,7 @@
     for (let index = 0; index < listedFiles.length; index += 1) {
       const metadata = listedFiles[index];
       try {
+        if (background) await yieldLowPriority();
         setImportProgress(8 + (index / listedFiles.length) * 37, 'Reading files', metadata.filename, `${index + 1} of ${listedFiles.length}`);
         await nextPaint();
         const response = await fetch(metadata.url, { cache: 'no-store' });
@@ -1435,7 +1545,7 @@
 
     root.addEventListener('message', event => {
       const type = event.data && event.data.type;
-      const windowState = Array.from(openWindows.values()).find(item => item.iframe.contentWindow === event.source) || null;
+      const windowState = Array.from(openWindows.values()).find(item => item.iframe && item.iframe.contentWindow === event.source) || null;
       if (type === 'coachtools:app-ready' && windowState) {
         windowState.loading.hidden = true;
         windowState.unavailable.hidden = true;
@@ -1446,6 +1556,20 @@
       if (type === 'coachtools:pop-out' && windowState) popOut(windowState.app);
       if (type === 'coachtools:app-error' && windowState && state.activeAppId === windowState.app.id) {
         elements.workspaceNotice.textContent = String(event.data.detail && event.data.detail.message || 'Application error');
+      }
+      if (type === 'coachtools:app-data-progress' && windowState) {
+        const detail = event.data.detail || {};
+        windowState.dataProgress = windowState.dataProgress || new Map();
+        if (detail.type) windowState.dataProgress.set(detail.type, detail.status || 'waiting');
+        if (state.activeAppId === windowState.app.id) {
+          const labels = { waiting: 'Waiting', loading: 'Loading', ready: 'Ready', cached: 'Ready', error: 'Unavailable', cancelled: 'Stopped' };
+          const summary = (windowState.app.data || []).map(datasetType => `${datasetLabel(datasetType)} ${labels[windowState.dataProgress.get(datasetType)] || 'Waiting'}`).join(' · ');
+          elements.workspaceNotice.textContent = summary || requirementNotice(windowState.app);
+        }
+      }
+      if (type === 'coachtools:first-useful-render' && windowState && !windowState.usefulRenderMeasured) {
+        windowState.usefulRenderMeasured = true;
+        if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end(`First useful app render · ${windowState.app.id}`, { appId: windowState.app.id });
       }
       if (type === 'coachtools:storage-stage-result' && windowState && windowState.app.id === 'weekly-data') {
         state.pendingStageFiles = [];
@@ -1559,16 +1683,24 @@
   async function runStartupSequence() {
     state.startupStartedAt = Date.now();
     if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.start('Desktop boot');
-    setStartupProgress(18, 'Starting CoachTools', 'Reading shared data readiness…', 'Starting');
+    setStartupProgress(10, 'Starting CoachTools', 'Preparing the visual shell and application manifest…', 'Starting');
+    await nextPaint();
+    setStartupProgress(22, 'Loading interface', `${apps.length} applications found · applications remain deferred.`, `${apps.length} apps`);
+    await preloadDesktopAssets();
+    setStartupProgress(62, 'Opening shared storage', 'Opening IndexedDB metadata without reading complete datasets…', 'Metadata');
     try { if (storage && storage.ready) await storage.ready(); } catch (_) {}
     const statuses = currentDatasetStatuses();
     const totalSources = datasetTotal(statuses);
     renderStartupDatasets(statuses);
     const readyCount = statuses.filter(item => item.ready).length;
-    setStartupProgress(72, 'Rendering desktop', `${readyCount} of ${totalSources} data sources available from IndexedDB metadata.`, `${readyCount} of ${totalSources} ready`);
+    setStartupProgress(78, 'Checking current data', `${readyCount} of ${totalSources} data sources available from IndexedDB metadata.`, `${readyCount} of ${totalSources} ready`);
     await nextPaint();
+    hydrateSystemIcons();
+    renderCategories();
     renderDataStatus();
     restoreOpenWindows();
+    setStartupProgress(92, 'Preparing workspace', 'Restoring desktop and taskbar state without opening application frames…', 'Almost ready');
+    await nextPaint();
     setStartupProgress(100, 'CoachTools ready', `${readyCount} of ${totalSources} shared data sources ready · applications load on demand.`, 'Ready');
     await nextPaint();
     dismissStartupSplash();
@@ -1581,6 +1713,7 @@
     }, 0);
 
     root.setTimeout(async () => {
+      await yieldLowPriority();
       state.storageCheckLabel = location.protocol === 'file:' ? '' : 'Checking shared storage…';
       renderDataStatus();
       try { await scanStorage({ startup: true, background: true }); }
@@ -1591,14 +1724,13 @@
         renderDataStatus();
       }
       if (state.pendingStageFiles.length) showToast('Some storage files need review. Open Data Manager to place them safely.', 6500);
-    }, 50);
+    }, 220);
 
     if (state.pendingRestoreActiveId) root.setTimeout(() => activateWindow(state.pendingRestoreActiveId), 90);
   }
 
   function init() {
     collectElements();
-    hydrateSystemIcons();
     const savedFavorites = readJson(FAVORITES_KEY, null);
     if (Array.isArray(savedFavorites)) state.favorites = new Set(savedFavorites.filter(id => byId.has(id)));
     else {
@@ -1610,8 +1742,6 @@
     $('startVersion').textContent = `Version ${manifest.suite && manifest.suite.version || '2.0'}`;
     bind();
     state.wallpaperReady = detectWallpaper();
-    renderCategories();
-    renderDataStatus();
     updateClock();
     state.clockTimer = setInterval(updateClock, 30000);
     if (!apps.length) showToast('No applications were found. Run the manifest generator and reload.', 8000);
