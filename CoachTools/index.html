@@ -49,9 +49,9 @@
       </label>
 
       <button id="readinessButton" class="readiness-button" type="button" data-action="toggle-data-panel" aria-expanded="false" aria-controls="dataPanel">
-        <span class="system-icon small" data-system-icon="shared-data" data-icon-fallback="◫"></span><span class="status-dot"></span><span id="readyCount">0/5 Data</span>
+        <span class="system-icon small" data-system-icon="shared-data" data-icon-fallback="◫"></span><span class="status-dot"></span><span id="readyCount">0/8 Data</span>
       </button>
-      <button class="command-button" type="button" data-action="open-weekly-data">Update Data</button>
+      <button class="command-button" type="button" data-action="quick-upload-data">Update Data</button>
       <button class="command-more" type="button" data-action="diagnostics" aria-label="Open diagnostics" title="Diagnostics"><span class="system-icon small" data-system-icon="settings" data-icon-fallback="•••"></span></button>
     </header>
 
@@ -89,14 +89,15 @@
   <footer id="taskbar" class="taskbar">
     <button id="startButton" class="start-button" type="button" aria-expanded="false" aria-controls="startMenu"><span class="system-icon taskbar-size" data-system-icon="start" data-icon-fallback="✦"></span><span>Start</span></button>
     <div id="taskbarOpen" class="taskbar-open" aria-label="Open applications"></div>
-    <button class="taskbar-data" type="button" data-action="toggle-data-panel" title="Data readiness"><span class="system-icon small" data-system-icon="shared-data" data-icon-fallback="◫"></span><span class="status-dot"></span><span id="taskbarReadyCount">0/5</span></button>
+    <button class="taskbar-data" type="button" data-action="toggle-data-panel" title="Data readiness"><span class="system-icon small" data-system-icon="shared-data" data-icon-fallback="◫"></span><span class="status-dot"></span><span id="taskbarReadyCount">0/8</span></button>
     <time id="taskbarClock" class="taskbar-clock"></time>
   </footer>
 
   <section id="startMenu" class="start-menu" hidden>
     <div class="start-heading"><span class="mini-mark"><span class="system-icon menu-size" data-system-icon="coachtools-home" data-icon-fallback="✦"></span></span><div><strong>CoachTools</strong><small id="startVersion">Version 2.0</small></div></div>
-    <button type="button" data-action="open-weekly-data"><span><span class="system-icon menu-size" data-system-icon="weekly-data" data-icon-fallback="↥"></span></span><div><strong>Weekly Data / Update Data</strong><small>Import files and choose the current scope</small></div></button>
-    <button type="button" data-action="scan-storage"><span><span class="system-icon menu-size" data-system-icon="shared-data" data-icon-fallback="⌕"></span></span><div><strong>Scan Storage Folder</strong><small>Load recognizable missing weekly files</small></div></button>
+    <button type="button" data-action="quick-upload-data"><span><span class="system-icon menu-size" data-system-icon="shared-data" data-icon-fallback="↥"></span></span><div><strong>Load All Data Files</strong><small>Select weekly, monthly, QA, coaching, and checklist files together</small></div></button>
+    <button type="button" data-action="open-weekly-data"><span><span class="system-icon menu-size" data-system-icon="weekly-data" data-icon-fallback="↥"></span></span><div><strong>Data Manager / Update Data</strong><small>Review imports, identities, teams, and current scope</small></div></button>
+    <button type="button" data-action="scan-storage"><span><span class="system-icon menu-size" data-system-icon="shared-data" data-icon-fallback="⌕"></span></span><div><strong>Scan Storage Folder</strong><small>Load all recognizable new or updated data files</small></div></button>
     <div class="menu-divider"></div>
     <button type="button" data-action="backup"><span><span class="system-icon menu-size" data-system-icon="backup-restore" data-icon-fallback="⇩"></span></span><div><strong>Backup CoachTools</strong><small>Shared data and lightweight settings</small></div></button>
     <button type="button" data-action="restore"><span><span class="system-icon menu-size" data-system-icon="backup-restore" data-icon-fallback="⇧"></span></span><div><strong>Restore CoachTools</strong><small>Load a CoachTools backup</small></div></button>
@@ -106,12 +107,13 @@
   </section>
 
   <section id="dataPanel" class="data-panel" hidden aria-label="Data readiness">
-    <div class="panel-heading"><div><p class="eyebrow">Current data</p><h2>Weekly readiness</h2></div><button type="button" data-action="close-data-panel" aria-label="Close">×</button></div>
+    <div class="panel-heading"><div><p class="eyebrow">Current data</p><h2>Data readiness</h2></div><button type="button" data-action="close-data-panel" aria-label="Close">×</button></div>
     <p id="scopeLabel" class="scope-label">All people</p>
     <div id="datasetStatus" class="dataset-status" aria-live="polite"></div>
     <p id="storageAvailability" class="panel-note"></p>
     <div class="panel-actions">
-      <button class="command-button" type="button" data-action="open-weekly-data">Update Data</button>
+      <button class="command-button" type="button" data-action="quick-upload-data">Load All Files</button>
+      <button class="command-button secondary" type="button" data-action="open-weekly-data">Data Manager</button>
       <button class="command-button secondary" type="button" data-action="scan-storage">Scan Storage</button>
     </div>
   </section>
@@ -126,13 +128,13 @@
 
   <section id="importProgress" class="import-progress" hidden role="dialog" aria-modal="true" aria-labelledby="importTitle">
     <div class="import-card">
-      <div class="import-heading"><div><p class="eyebrow">CoachTools storage</p><h2 id="importTitle">Preparing weekly data</h2></div><button id="importClose" type="button" data-action="dismiss-import" aria-label="Close" hidden>×</button></div>
+      <div class="import-heading"><div><p class="eyebrow">CoachTools storage</p><h2 id="importTitle">Preparing shared data</h2></div><button id="importClose" type="button" data-action="dismiss-import" aria-label="Close" hidden>×</button></div>
       <p id="importSummary" class="import-summary">Scanning storage…</p>
       <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="importProgressFill"></span></div>
-      <div class="progress-meta"><strong id="importCurrentSource">Scanning storage</strong><span id="importCount">0 of 5</span></div>
+      <div class="progress-meta"><strong id="importCurrentSource">Scanning storage</strong><span id="importCount">0 of 8</span></div>
       <p id="importCurrentFile" class="progress-file"></p>
       <ol id="importSteps" class="progress-steps"></ol>
-      <div class="panel-actions"><button id="importReview" class="command-button" type="button" data-action="review-staged-files" hidden>Review in Weekly Data</button></div>
+      <div class="panel-actions"><button id="importReview" class="command-button" type="button" data-action="review-staged-files" hidden>Review in Data Manager</button></div>
     </div>
   </section>
 
@@ -159,6 +161,7 @@
   </dialog>
 
   <input id="restoreInput" type="file" accept=".json,application/json" hidden>
+  <input id="quickDataInput" type="file" accept=".xlsx,.xls,.csv" multiple data-coachtools-auto-import="false" hidden>
   <div id="toast" class="suite-toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>

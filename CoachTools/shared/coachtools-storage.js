@@ -404,7 +404,8 @@
     if (!datasetType) return { status: 'needs-review', reason: 'Unknown CoachTools dataset.', becomesCurrent: false };
     const meta = { ...(metadata || {}) };
     const importedAt = meta.importedAt || new Date().toISOString();
-    const detectedPeriod = normalizedPeriod(meta.detectedPeriod || data && data.meta && data.meta.detectedPeriod, { ...meta, importedAt });
+    const sourcePeriod = meta.detectedPeriod || data && data.meta && data.meta.detectedPeriod;
+    const detectedPeriod = normalizedPeriod(sourcePeriod, { ...meta, importedAt });
     const candidate = {
       datasetType,
       fingerprint: fingerprintValue(data, meta),
@@ -629,20 +630,15 @@
     return true;
   }
   function getDatasetStatus() {
-    return Object.keys(DOCK_KEYS).map(legacy => {
-      const type = LEGACY_TO_DATASET[legacy];
-      const pointer = currentPointers.get(type);
-      const raw = safeGet(DOCK_KEYS[legacy]);
+    return centralStatus().map(status => {
+      const legacy = DATASET_TO_LEGACY[status.id] || '';
+      const raw = legacy ? safeGet(DOCK_KEYS[legacy]) : null;
       return {
-        id: legacy,
-        datasetType: type,
-        label: LABELS[type],
-        key: DOCK_KEYS[legacy],
-        ready: Boolean(pointer || raw),
-        bytes: pointer && pointer.fileSize || (raw ? raw.length * 2 : 0),
-        updatedAt: pointer && pointer.importedAt || null,
-        fileName: pointer && pointer.originalFileName || '',
-        period: pointer && pointer.detectedPeriod && pointer.detectedPeriod.label || ''
+        ...status,
+        datasetType: status.id,
+        key: legacy ? DOCK_KEYS[legacy] : '',
+        ready: Boolean(status.ready || raw),
+        bytes: status.bytes || (raw ? raw.length * 2 : 0)
       };
     });
   }

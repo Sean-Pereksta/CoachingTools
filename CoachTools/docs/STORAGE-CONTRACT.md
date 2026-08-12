@@ -191,7 +191,7 @@ Before changing persistence, validate this sequence:
 
 1. Open CoachTools.
 2. Open Weekly Data and load a scope.
-3. Return to the desktop and confirm all five readiness values update.
+3. Return to the desktop and confirm all eight readiness values update.
 4. Open Coaching Gaps, QA Scores, Coach Timeline, and KPI Impact.
 5. Confirm each detects the same selected dock data.
 6. Reopen All-Star and confirm models, research, organizations, aliases, run settings, PDF options, Qualtrics rules, and IndexedDB caches remain intact.

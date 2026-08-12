@@ -221,6 +221,11 @@
     return storage && storage.getDatasetStatus ? storage.getDatasetStatus() : [];
   }
 
+  function datasetTotal(statuses) {
+    const list = Array.isArray(statuses) ? statuses : currentDatasetStatuses();
+    return list.length || importer && importer.DATASET_ORDER && importer.DATASET_ORDER.length || 8;
+  }
+
   function dismissStartupSplash() {
     if (!elements.startupSplash || elements.startupSplash.hidden) return;
     elements.startupSplash.classList.add('is-leaving');
@@ -423,7 +428,7 @@
       return row;
     }));
     const ready = statuses.filter(item => item.ready).length;
-    const total = statuses.length || 5;
+    const total = datasetTotal(statuses);
     elements.readyCount.textContent = `${ready}/${total} Data`;
     elements.taskbarReadyCount.textContent = `${ready}/${total}`;
     elements.readinessButton.classList.toggle('ready', ready === total && ready > 0);
@@ -434,7 +439,7 @@
       if (state.scopeOptions.has(value)) elements.globalScopeSelect.value = value;
     }
     elements.storageAvailability.textContent = location.protocol === 'file:'
-      ? 'Automatic storage-folder loading is available when CoachTools is started with START COACHTOOLS. Manual Weekly Data import remains available.'
+      ? 'Automatic storage-folder loading is available when CoachTools is started with START COACHTOOLS. Manual Data Manager import remains available.'
       : 'Storage scanning is available from the local CoachTools launcher.';
     renderApps();
   }
@@ -904,7 +909,7 @@
   function openWeeklyData() {
     const app = weeklyDataApp();
     if (app) openApp(app);
-    else showToast('Weekly Data is not present in the application manifest.');
+    else showToast('Data Manager is not present in the application manifest.');
   }
 
   function renderProgressSteps() {
@@ -941,27 +946,29 @@
   }
 
   function beginImportProgress(options) {
+    const total = datasetTotal();
     state.startupScanActive = Boolean(options && options.startup);
     state.progressSteps = [];
     if (state.startupScanActive) {
-      setStartupProgress(18, 'Scanning storage', 'Recognizable files were found. Checking only the missing shared datasets…', '0 of 5');
+      setStartupProgress(18, 'Scanning storage', 'Recognizable files were found. Checking all shared datasets…', `0 of ${total}`);
       renderProgressSteps();
       return;
     }
     elements.importProgress.hidden = false;
     elements.importClose.hidden = true;
     elements.importReview.hidden = true;
-    setImportProgress(0, 'Scanning storage', '', '0 of 5', 'Looking for recognizable weekly files…');
+    setImportProgress(0, 'Preparing files', '', `0 of ${total}`, 'Looking for recognizable weekly, monthly, QA, coaching, and checklist files…');
     renderProgressSteps();
   }
 
   function finishImportProgress(summary, options) {
+    const total = datasetTotal();
     if (state.startupScanActive) {
       renderStartupDatasets(currentDatasetStatuses());
-      setStartupProgress(50, options && options.warning ? 'Data review available' : 'Shared data ready', summary, options && options.count || '5 of 5');
+      setStartupProgress(50, options && options.warning ? 'Data review available' : 'Shared data ready', summary, options && options.count || `${total} of ${total}`);
       return;
     }
-    setImportProgress(100, options && options.warning ? 'Review needed' : 'Ready', '', options && options.count || '5 of 5', summary);
+    setImportProgress(100, options && options.warning ? 'Review needed' : 'Ready', '', options && options.count || `${total} of ${total}`, summary);
     elements.importClose.hidden = false;
     elements.importReview.hidden = !(options && options.review);
   }
@@ -992,6 +999,79 @@
     }
   }
 
+  async function importSelectedFiles(files) {
+    const selectedFiles = Array.from(files || []);
+    if (!selectedFiles.length) return;
+    if (!importer || !root.CoachToolsData) {
+      showToast('The shared IndexedDB import service is unavailable. Open Data Manager and retry.', 6000);
+      return;
+    }
+    if (state.autoScanRunning) {
+      showToast('Another data import is already running.');
+      return;
+    }
+
+    state.autoScanRunning = true;
+    beginImportProgress({ startup: false });
+    setProgressStep('Reading selected files', 'active');
+    const totalFiles = selectedFiles.length;
+    try {
+      const analysis = await importer.analyzeFiles(selectedFiles, {
+        onProgress(progress) {
+          const sheetFraction = progress.total ? progress.current / progress.total : 0;
+          const completed = Number(progress.fileIndex) + sheetFraction;
+          setImportProgress(5 + (completed / Math.max(1, totalFiles)) * 55, 'Reading selected files', `${progress.fileName || ''}${progress.sheetName ? ` · ${progress.sheetName}` : ''}`, `${Math.min(totalFiles, Number(progress.fileIndex) + 1)} of ${totalFiles}`);
+        }
+      });
+
+      setProgressStep('Reading selected files', analysis.errors.length ? 'warning' : 'success');
+      setProgressStep('Saving to IndexedDB', 'active');
+      const imported = [];
+      const errors = analysis.errors.map(entry => `${entry.file && entry.file.name || 'File'}: ${entry.error && entry.error.message || entry.error}`);
+      for (let index = 0; index < analysis.recognized.length; index += 1) {
+        const entry = analysis.recognized[index];
+        const type = entry.classification.id;
+        try {
+          setImportProgress(62 + ((index + 1) / Math.max(1, analysis.recognized.length)) * 34, `Saving ${importer.SOURCES[type].label}`, entry.file.name, `${index + 1} of ${analysis.recognized.length}`);
+          const result = await importer.saveRecognizedEntry(entry, { scope: null });
+          imported.push({ id: type, fileName: entry.file.name, status: result.status });
+        } catch (error) {
+          errors.push(`${entry.file.name}: ${error && error.message || error}`);
+        }
+      }
+
+      state.pendingStageFiles = analysis.needsReview.map(entry => entry.file);
+      state.pendingStageSent = false;
+      setProgressStep('Saving to IndexedDB', errors.length ? 'warning' : 'success');
+      if (analysis.needsReview.length) setProgressStep(`${analysis.needsReview.length} file${analysis.needsReview.length === 1 ? '' : 's'} need review`, 'warning');
+      setProgressStep('Ready', analysis.needsReview.length || errors.length ? 'warning' : 'success');
+      renderDataStatus();
+      const statuses = currentDatasetStatuses();
+      const ready = statuses.filter(item => item.ready).length;
+      const total = datasetTotal(statuses);
+      const duplicates = imported.filter(item => item.status === 'duplicate').length;
+      const saved = imported.length - duplicates;
+      const summaryParts = [
+        `${ready} of ${total} data sources ready`,
+        saved ? `${saved} file${saved === 1 ? '' : 's'} saved to IndexedDB` : '',
+        duplicates ? `${duplicates} duplicate${duplicates === 1 ? '' : 's'} already stored` : '',
+        analysis.needsReview.length ? `${analysis.needsReview.length} need manual placement` : '',
+        errors.length ? `${errors.length} could not be saved` : ''
+      ].filter(Boolean);
+      finishImportProgress(summaryParts.join(' · ') + '.', {
+        warning: Boolean(analysis.needsReview.length || errors.length),
+        review: state.pendingStageFiles.length > 0,
+        count: `${ready} of ${total}`
+      });
+    } catch (error) {
+      setProgressStep('Saving to IndexedDB', 'warning');
+      finishImportProgress(`Import failed: ${error && error.message || error}`, { warning: true, review: false });
+    } finally {
+      state.autoScanRunning = false;
+      if (elements.quickDataInput) elements.quickDataInput.value = '';
+    }
+  }
+
   async function scanStorage(options) {
     const manual = Boolean(options && options.manual);
     const startup = Boolean(options && options.startup);
@@ -1005,20 +1085,22 @@
     }
     const statuses = currentDatasetStatuses();
     const datasetTypes = statuses.map(item => item.datasetType || item.id);
+    const totalSources = datasetTypes.length || datasetTotal(statuses);
+    const readyBefore = statuses.filter(item => item.ready).length;
     if (location.protocol === 'file:') {
       saveScanRecord({ available: false, fileCount: 0, ambiguous: [], summary: 'Direct-file mode · manual import available' });
-      if (startup) setStartupProgress(50, 'Shared data ready', `${statuses.filter(item => item.ready).length} of 5 data sources ready · use START COACHTOOLS for automatic storage loading.`, `${statuses.filter(item => item.ready).length} of 5 ready`);
-      if (manual) showToast('Start CoachTools with START COACHTOOLS to scan storage. Manual Weekly Data import is still available.', 5800);
+      if (startup) setStartupProgress(50, 'Shared data ready', `${readyBefore} of ${totalSources} data sources ready · use START COACHTOOLS for automatic storage loading.`, `${readyBefore} of ${totalSources} ready`);
+      if (manual) showToast('Start CoachTools with START COACHTOOLS to scan storage. Manual Data Manager import is still available.', 5800);
       return;
     }
     if (!importer) {
-      if (startup) setStartupProgress(50, 'Shared data ready', 'Shared import utilities are unavailable. Manual Weekly Data import remains available.', `${statuses.filter(item => item.ready).length} of 5 ready`);
-      if (manual) showToast('The shared import utility is unavailable. Use Weekly Data for manual import.', 5600);
+      if (startup) setStartupProgress(50, 'Shared data ready', 'Shared import utilities are unavailable. Manual Data Manager import remains available.', `${readyBefore} of ${totalSources} ready`);
+      if (manual) showToast('The shared import utility is unavailable. Use Data Manager for manual import.', 5600);
       return;
     }
 
     state.autoScanRunning = true;
-    if (startup) setStartupProgress(20, 'Checking storage folder', 'Looking for new, updated, duplicate, and older shared files…', `${statuses.filter(item => item.ready).length} of 5 ready`);
+    if (startup) setStartupProgress(20, 'Checking storage folder', 'Looking for new, updated, duplicate, and older shared files…', `${readyBefore} of ${totalSources} ready`);
     let listing;
     try {
       const response = await fetch('/api/storage', { cache: 'no-store', headers: { Accept: 'application/json' } });
@@ -1027,8 +1109,8 @@
     } catch (error) {
       state.autoScanRunning = false;
       saveScanRecord({ available: false, fileCount: 0, ambiguous: [], summary: 'Storage API unavailable' });
-      if (startup) setStartupProgress(50, 'Shared data ready', 'Storage scanning is unavailable. Existing data is unchanged and manual import remains available.', `${statuses.filter(item => item.ready).length} of 5 ready`);
-      if (manual) showToast('Storage scanning is unavailable. Manual Weekly Data import remains available.', 5600);
+      if (startup) setStartupProgress(50, 'Shared data ready', 'Storage scanning is unavailable. Existing data is unchanged and manual import remains available.', `${readyBefore} of ${totalSources} ready`);
+      if (manual) showToast('Storage scanning is unavailable. Manual Data Manager import remains available.', 5600);
       return;
     }
 
@@ -1036,7 +1118,7 @@
     if (!listedFiles.length) {
       state.autoScanRunning = false;
       saveScanRecord({ available: true, fileCount: 0, ambiguous: [], summary: 'No supported storage files found' });
-      if (startup) setStartupProgress(50, 'Shared data ready', 'No XLSX, XLS, or CSV files were found in CoachTools/storage. Existing data is unchanged.', `${statuses.filter(item => item.ready).length} of 5 ready`);
+      if (startup) setStartupProgress(50, 'Shared data ready', 'No XLSX, XLS, or CSV files were found in CoachTools/storage. Existing data is unchanged.', `${readyBefore} of ${totalSources} ready`);
       if (manual) showToast('No XLSX, XLS, or CSV files were found in CoachTools/storage.');
       return;
     }
@@ -1121,7 +1203,7 @@
       setProgressStep('Saving shared data', ambiguous.length ? 'warning' : 'success');
       const summary = ambiguous.length ? `Shared data is unchanged · ${ambiguous.length} file${ambiguous.length === 1 ? '' : 's'} need review.` : 'Shared data is current · no new or updated files were imported.';
       saveScanRecord({ available: true, fileCount: listedFiles.length, ambiguous, skipped, results: scanResults, loaded: [], summary });
-      finishImportProgress(summary, { warning: Boolean(ambiguous.length), review: state.pendingStageFiles.length > 0, count: `${statuses.filter(item => item.ready).length} of 5` });
+      finishImportProgress(summary, { warning: Boolean(ambiguous.length), review: state.pendingStageFiles.length > 0, count: `${readyBefore} of ${totalSources}` });
       state.autoScanRunning = false;
       return;
     }
@@ -1160,11 +1242,11 @@
     const missingLabels = after.filter(item => !item.ready).map(item => item.label);
     const newCount = written.filter(entry => entry.status === 'new').length, updatedCount = written.filter(entry => entry.status === 'updated').length;
     const actions = [newCount ? `${newCount} new` : '', updatedCount ? `${updatedCount} updated` : ''].filter(Boolean).join(' · ');
-    const summary = `${readyCount} of 5 data sources ready${actions ? ` · ${actions} imported` : ''}${missingLabels.length ? ` · ${missingLabels.join(', ')} require manual selection` : ''}${writeErrors.length ? ` · ${writeErrors.length} save error${writeErrors.length === 1 ? '' : 's'}` : ''}.`;
+    const summary = `${readyCount} of ${totalSources} data sources ready${actions ? ` · ${actions} imported` : ''}${missingLabels.length ? ` · ${missingLabels.join(', ')} require manual selection` : ''}${writeErrors.length ? ` · ${writeErrors.length} save error${writeErrors.length === 1 ? '' : 's'}` : ''}.`;
     state.pendingStageFiles = parsedEntries.filter(entry => ambiguous.some(label => label.startsWith(entry.metadata.filename)) || writeErrors.some(label => label.startsWith(entry.metadata.filename))).map(entry => entry.file);
     state.pendingStageSent = false;
     saveScanRecord({ available: true, fileCount: listedFiles.length, ambiguous, skipped, results: scanResults, loaded: written, errors: writeErrors, summary });
-    finishImportProgress(summary, { warning: Boolean(missingLabels.length || ambiguous.length || writeErrors.length), review: state.pendingStageFiles.length > 0, count: `${readyCount} of 5` });
+    finishImportProgress(summary, { warning: Boolean(missingLabels.length || ambiguous.length || writeErrors.length), review: state.pendingStageFiles.length > 0, count: `${readyCount} of ${totalSources}` });
     state.autoScanRunning = false;
   }
 
@@ -1177,6 +1259,7 @@
 
   function handleAction(action) {
     if (action === 'open-weekly-data') openWeeklyData();
+    if (action === 'quick-upload-data') elements.quickDataInput.click();
     if (action === 'scan-storage') scanStorage({ manual: true });
     if (action === 'diagnostics') showDiagnostics();
     if (action === 'about') showAbout();
@@ -1244,6 +1327,8 @@
       if (action === 'close') closeWindow(app.id);
       closeMenus();
     });
+
+    elements.quickDataInput.addEventListener('change', event => importSelectedFiles(event.target.files));
 
     elements.appSearch.addEventListener('input', event => {
       state.query = event.target.value;
@@ -1347,6 +1432,7 @@
       aboutSummary: $('aboutSummary'),
       aboutFacts: $('aboutFacts'),
       restoreInput: $('restoreInput'),
+      quickDataInput: $('quickDataInput'),
       toast: $('toast')
     });
   }
@@ -1427,16 +1513,17 @@
     setStartupProgress(6, 'Starting CoachTools', 'Opening shared storage…', 'Starting');
     try { if (storage && storage.ready) await storage.ready(); } catch (_) {}
     let statuses = currentDatasetStatuses();
+    const totalSources = datasetTotal(statuses);
     renderStartupDatasets(statuses);
     const initialReady = statuses.filter(item => item.ready).length;
-    setStartupProgress(10, 'Checking shared data', `${initialReady} of 5 data sources already available.`, `${initialReady} of 5 ready`);
+    setStartupProgress(10, 'Checking shared data', `${initialReady} of ${totalSources} data sources already available.`, `${initialReady} of ${totalSources} ready`);
     await nextPaint();
 
     try {
       await scanStorage({ startup: true });
     } catch (error) {
       saveScanRecord({ available: false, fileCount: 0, ambiguous: [], summary: 'Startup data check could not finish' });
-      setStartupProgress(50, 'Shared data ready', 'The startup data check could not finish. Existing data is unchanged and manual Weekly Data import remains available.', `${initialReady} of 5 ready`);
+      setStartupProgress(50, 'Shared data ready', 'The startup data check could not finish. Existing data is unchanged and manual Data Manager import remains available.', `${initialReady} of ${totalSources} ready`);
     }
 
     renderDataStatus();
@@ -1457,16 +1544,16 @@
     const scanIsCurrent = Boolean(state.lastScan && Date.parse(state.lastScan.scannedAt) >= state.startupStartedAt);
     const loadedCount = scanIsCurrent && Array.isArray(state.lastScan.loaded) ? state.lastScan.loaded.length : 0;
     const warmSummary = warmup.total ? `${warmup.completed - warmup.failed} of ${warmup.total} applications prepared` : 'Applications will load on demand';
-    const finalSummary = readyCount === 5
+    const finalSummary = readyCount === totalSources
       ? `Shared data ready${loadedCount ? ` · ${loadedCount} updated` : ''} · ${warmSummary}.`
-      : `${readyCount} of 5 shared data sources ready · ${warmSummary}.`;
+      : `${readyCount} of ${totalSources} shared data sources ready · ${warmSummary}.`;
     setStartupProgress(100, 'CoachTools ready', finalSummary, 'Ready');
     await nextPaint();
 
     state.startupScanActive = false;
     dismissStartupSplash();
     if (state.pendingStageFiles.length) {
-      setTimeout(() => showToast('Some storage files need review. Open Weekly Data to place them safely.', 6500), 300);
+      setTimeout(() => showToast('Some storage files need review. Open Data Manager to place them safely.', 6500), 300);
     }
   }
 
