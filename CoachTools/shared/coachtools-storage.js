@@ -1,7 +1,7 @@
 (function attachCoachToolsData(root) {
   'use strict';
 
-  const VERSION = '2.1.0';
+  const VERSION = '2.2.0';
   const EVENT_NAME = 'coachtools:data-updated';
   const SCOPE_EVENT_NAME = 'coachtools:scope-updated';
   const CHANNEL_NAME = 'coachtools-data-v2';
@@ -15,12 +15,16 @@
   // a second large-data database beside it. All-Star uses the first four stores;
   // the shared API owns the CoachTools data and identity stores added through schema version 6.
   const DB_NAME = 'allStarImportedDataCache.v1';
-  const DB_VERSION = 6;
+  const DB_VERSION = 7;
   const DATASET_STORE = 'coachtoolsDatasets';
+  const DATASET_CHUNK_STORE = 'coachtoolsDatasetChunks';
   const CURRENT_STORE = 'coachtoolsCurrent';
   const IMPORT_STORE = 'coachtoolsImports';
   const PEOPLE_STORE = 'coachtoolsPeople';
   const IDENTITY_REVIEW_STORE = 'coachtoolsIdentityReviews';
+  const CHUNK_ROWS = 2000;
+  const CHUNK_THRESHOLD_BYTES = 4 * 1024 * 1024;
+  const CHUNK_THRESHOLD_ROWS = 12000;
   const ALLSTAR_STORES = Object.freeze(['meta', 'sourceData', 'books', 'misc']);
 
   const DATASET_TYPES = Object.freeze([
@@ -128,6 +132,48 @@
     try { if (typeof structuredClone === 'function') return structuredClone(value); } catch (_) {}
     return value == null ? value : JSON.parse(JSON.stringify(value));
   }
+  function shouldChunkDataset(data, metadata) {
+    const fileSize = Number(metadata && metadata.fileSize || data && data.meta && data.meta.fileSize) || 0;
+    const rowCount = Number(metadata && metadata.rowCount || data && data.meta && data.meta.totalRows) || 0;
+    if (fileSize >= CHUNK_THRESHOLD_BYTES || rowCount >= CHUNK_THRESHOLD_ROWS) return true;
+    try { return JSON.stringify(data).length * 2 >= CHUNK_THRESHOLD_BYTES; }
+    catch (_) { return false; }
+  }
+  function splitDataIntoChunks(data, datasetId) {
+    const skeleton = clone(data);
+    const sourceSheets = data && data.workbook && data.workbook.data;
+    const targetSheets = skeleton && skeleton.workbook && skeleton.workbook.data;
+    const chunks = [];
+    let index = 0;
+    if (!sourceSheets || !targetSheets) return { skeleton, chunks };
+    for (const [sheetName, sourceSheet] of Object.entries(sourceSheets)) {
+      if (!sourceSheet || !Array.isArray(sourceSheet.aoa) || !targetSheets[sheetName]) continue;
+      targetSheets[sheetName].aoa = [];
+      for (let rowStart = 0; rowStart < sourceSheet.aoa.length; rowStart += CHUNK_ROWS) {
+        chunks.push({
+          id: `${datasetId}:${String(index).padStart(6, '0')}`,
+          datasetId,
+          index,
+          sheetName,
+          rowStart,
+          rows: clone(sourceSheet.aoa.slice(rowStart, rowStart + CHUNK_ROWS))
+        });
+        index += 1;
+      }
+    }
+    return { skeleton, chunks };
+  }
+  function assembleDataFromChunks(skeleton, chunks) {
+    const data = clone(skeleton);
+    const sheets = data && data.workbook && data.workbook.data;
+    if (!sheets) return data;
+    for (const chunk of (chunks || []).slice().sort((left, right) => Number(left.index) - Number(right.index))) {
+      if (!chunk || !sheets[chunk.sheetName]) continue;
+      if (!Array.isArray(sheets[chunk.sheetName].aoa)) sheets[chunk.sheetName].aoa = [];
+      sheets[chunk.sheetName].aoa.push(...clone(chunk.rows || []));
+    }
+    return data;
+  }
   function canonicalType(type) {
     const raw = String(type || '').trim();
     if (DATASET_TYPES.includes(raw)) return raw;
@@ -198,6 +244,11 @@
           store.createIndex('datasetType', 'datasetType', { unique: false });
           store.createIndex('periodKey', ['datasetType', 'periodKey'], { unique: false });
           store.createIndex('fingerprint', ['datasetType', 'fingerprint'], { unique: false });
+        }
+        if (!db.objectStoreNames.contains(DATASET_CHUNK_STORE)) {
+          const store = db.createObjectStore(DATASET_CHUNK_STORE, { keyPath: 'id' });
+          store.createIndex('datasetId', 'datasetId', { unique: false });
+          store.createIndex('datasetOrder', ['datasetId', 'index'], { unique: true });
         }
         if (!db.objectStoreNames.contains(CURRENT_STORE)) db.createObjectStore(CURRENT_STORE, { keyPath: 'datasetType' });
         if (!db.objectStoreNames.contains(IMPORT_STORE)) {
@@ -287,7 +338,10 @@
       classificationMethod: record.classificationMethod || '',
       validationStatus: record.validationStatus || 'ready',
       replacedDatasetId: record.replacedDatasetId || '',
-      supersededBy: record.supersededBy || ''
+      supersededBy: record.supersededBy || '',
+      chunked: Boolean(record.chunked),
+      chunkCount: Number(record.chunkCount) || 0,
+      storageFormat: record.storageFormat || (record.chunked ? 'rows-v1' : 'record-v1')
     };
   }
   function compareCurrent(candidate, current) {
@@ -311,6 +365,36 @@
       for (const pointer of pointers || []) currentPointers.set(pointer.datasetType, pointer);
       return pointers || [];
     } finally { db.close(); }
+  }
+  function prepareStoredData(data, datasetId, metadata) {
+    if (!shouldChunkDataset(data, metadata)) return { chunked: false, data: clone(data), dataShape: null, chunks: [] };
+    const prepared = splitDataIntoChunks(data, datasetId);
+    if (!prepared.chunks.length) return { chunked: false, data: clone(data), dataShape: null, chunks: [] };
+    return { chunked: true, data: null, dataShape: prepared.skeleton, chunks: prepared.chunks };
+  }
+  function readDatasetChunks(db, datasetId) {
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      const transaction = db.transaction(DATASET_CHUNK_STORE, 'readonly');
+      const request = transaction.objectStore(DATASET_CHUNK_STORE).index('datasetId').openCursor(datasetId);
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        chunks.push(cursor.value);
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error || new Error(`Could not read chunks for ${datasetId}.`));
+      transaction.oncomplete = () => resolve(chunks.sort((left, right) => Number(left.index) - Number(right.index)));
+      transaction.onerror = () => reject(transaction.error || new Error(`Chunk transaction failed for ${datasetId}.`));
+      transaction.onabort = () => reject(transaction.error || new Error(`Chunk transaction was interrupted for ${datasetId}.`));
+    });
+  }
+  async function materializeDatasetRecord(db, record) {
+    if (!record || !record.chunked) return record;
+    if (!record.dataShape || Number(record.chunkCount) < 1) throw new Error(`Dataset ${record.datasetType || record.id} has invalid chunk metadata.`);
+    const chunks = await readDatasetChunks(db, record.id);
+    if (chunks.length !== Number(record.chunkCount)) throw new Error(`Dataset ${record.datasetType || record.id} is incomplete (${chunks.length} of ${record.chunkCount} chunks).`);
+    return { ...record, data: assembleDataFromChunks(record.dataShape, chunks) };
   }
   async function putDataset(type, data, metadata) {
     const datasetType = canonicalType(type);
@@ -346,6 +430,7 @@
       const samePeriod = (records || []).filter(record => record.periodKey === periodKey && !record.supersededBy).sort((a, b) => String(b.importedAt).localeCompare(String(a.importedAt)))[0];
       const version = (records || []).reduce((max, record) => Math.max(max, Number(record.version) || 0), 0) + 1;
       const id = `${datasetType}:${periodKey}:${fingerprint}:${Date.now().toString(36)}`;
+      const storedData = prepareStoredData(data, id, { ...meta, rowCount: meta.rowCount || data && data.meta && data.meta.totalRows });
       const record = {
         id,
         datasetType,
@@ -359,19 +444,24 @@
         importedAt,
         rowCount: Number(meta.rowCount || data && data.meta && data.meta.totalRows) || 0,
         fingerprint,
-        schemaVersion: Number(meta.schemaVersion) || 1,
+        schemaVersion: Math.max(Number(meta.schemaVersion) || 1, storedData.chunked ? 2 : 1),
         classificationMethod: meta.classificationMethod || 'filename+headers',
         validationStatus: meta.validationStatus || 'ready',
         replacedDatasetId: samePeriod && samePeriod.id || '',
         supersededBy: '',
-        data: clone(data)
+        chunked: storedData.chunked,
+        chunkCount: storedData.chunks.length,
+        storageFormat: storedData.chunked ? 'rows-v1' : 'record-v1',
+        dataShape: storedData.dataShape,
+        data: storedData.data
       };
       const pointerCandidate = { ...compactMetadata(record), datasetId: id, updatedAt: importedAt };
       const shouldBecomeCurrent = compareCurrent(pointerCandidate, current);
-      const tx = db.transaction([DATASET_STORE, CURRENT_STORE, IMPORT_STORE], 'readwrite');
+      const tx = db.transaction([DATASET_STORE, DATASET_CHUNK_STORE, CURRENT_STORE, IMPORT_STORE], 'readwrite');
       const datasetStore = tx.objectStore(DATASET_STORE);
       if (samePeriod) datasetStore.put({ ...samePeriod, supersededBy: id });
       datasetStore.put(record);
+      for (const chunk of storedData.chunks) tx.objectStore(DATASET_CHUNK_STORE).put(chunk);
       if (shouldBecomeCurrent) tx.objectStore(CURRENT_STORE).put(pointerCandidate);
       tx.objectStore(IMPORT_STORE).put({
         ...compactMetadata(record),
@@ -382,7 +472,7 @@
       await transactionDone(tx);
       if (shouldBecomeCurrent) {
         currentPointers.set(datasetType, pointerCandidate);
-        cacheCurrentRecord(datasetType, record);
+        cacheCurrentRecord(datasetType, { ...record, data: clone(data) });
       }
       persistMetadataSnapshot();
       notifyDataUpdated(datasetType, { reason: samePeriod ? 'replacement' : 'imported', datasetId: id, version });
@@ -505,7 +595,8 @@
     if (diagnostics) diagnostics.start(`${datasetType} IndexedDB read`);
     const db = await openDatabase();
     try {
-      const record = await idbRequest(db.transaction(DATASET_STORE, 'readonly').objectStore(DATASET_STORE).get(pointer.datasetId));
+      const storedRecord = await idbRequest(db.transaction(DATASET_STORE, 'readonly').objectStore(DATASET_STORE).get(pointer.datasetId));
+      const record = await materializeDatasetRecord(db, storedRecord);
       if (record) cacheCurrentRecord(datasetType, record);
       return options && options.includeRecord ? record || null : record && record.data || null;
     } finally {
@@ -522,7 +613,14 @@
       let records = await idbRequest(db.transaction(DATASET_STORE, 'readonly').objectStore(DATASET_STORE).index('datasetType').getAll(datasetType));
       records = (records || []).sort((a, b) => String(b.periodSort || b.importedAt).localeCompare(String(a.periodSort || a.importedAt)) || String(b.importedAt).localeCompare(String(a.importedAt)));
       if (options && options.activeOnly) records = records.filter(record => !record.supersededBy);
-      return options && options.metadataOnly ? records.map(compactMetadata) : records;
+      if (options && options.storageRecords) return records;
+      if (options && options.metadataOnly) return records.map(compactMetadata);
+      const materialized = [];
+      for (const record of records) {
+        materialized.push(await materializeDatasetRecord(db, record));
+        if (record.chunked) await new Promise(resolve => root.setTimeout(resolve, 0));
+      }
+      return materialized;
     } finally { db.close(); }
   }
   async function getImportHistory(options) {
@@ -545,7 +643,7 @@
     await readyPromise;
     const datasetType = canonicalType(type);
     if (!datasetType || databaseUnavailable) return false;
-    const history = await getHistory(datasetType, { includeSuperseded: true });
+    const history = await getHistory(datasetType, { includeSuperseded: true, storageRecords: true });
     const targets = datasetId ? history.filter(record => record.id === datasetId) : history;
     if (!targets.length) return false;
     const targetIds = new Set(targets.map(target => target.id));
@@ -557,8 +655,11 @@
     const remaining = survivors.filter(record => !record.supersededBy).sort((a, b) => String(b.periodSort || b.importedAt).localeCompare(String(a.periodSort || a.importedAt)));
     const db = await openDatabase();
     try {
-      const tx = db.transaction([DATASET_STORE, CURRENT_STORE, IMPORT_STORE], 'readwrite');
-      for (const target of targets) tx.objectStore(DATASET_STORE).delete(target.id);
+      const tx = db.transaction([DATASET_STORE, DATASET_CHUNK_STORE, CURRENT_STORE, IMPORT_STORE], 'readwrite');
+      for (const target of targets) {
+        tx.objectStore(DATASET_STORE).delete(target.id);
+        for (let index = 0; index < Number(target.chunkCount || 0); index += 1) tx.objectStore(DATASET_CHUNK_STORE).delete(`${target.id}:${String(index).padStart(6, '0')}`);
+      }
       for (const survivor of restored) tx.objectStore(DATASET_STORE).put(survivor);
       if (remaining[0]) tx.objectStore(CURRENT_STORE).put({ ...compactMetadata(remaining[0]), datasetId: remaining[0].id, updatedAt: new Date().toISOString() });
       else tx.objectStore(CURRENT_STORE).delete(datasetType);
@@ -807,7 +908,9 @@
   }
 
   const CoachToolsData = Object.freeze({
-    VERSION, DB_NAME, DB_VERSION, DATASET_TYPES, LABELS, EVENT_NAME, ready: () => readyPromise,
+    VERSION, DB_NAME, DB_VERSION, DATASET_TYPES, LABELS, EVENT_NAME,
+    storageFormat: Object.freeze({ CHUNK_ROWS, CHUNK_THRESHOLD_BYTES, CHUNK_THRESHOLD_ROWS, splitDataIntoChunks, assembleDataFromChunks }),
+    ready: () => readyPromise,
     importDataset: async (type, data, metadata) => { await readyPromise; if (databaseUnavailable) throw new Error('IndexedDB is unavailable.'); const result = await putDataset(type, data, metadata); if (root.CoachToolsIdentity && result.status !== 'duplicate') await root.CoachToolsIdentity.ingestDataset(canonicalType(type), data, { ...(metadata || {}), fingerprint: result.dataset && result.dataset.fingerprint || metadata && metadata.fingerprint || '' }).catch(error => console.warn('[CoachToolsData] Identity learning could not finish.', error)); return result; },
     replaceDataset: async (type, data, metadata) => { await readyPromise; const result = await putDataset(type, data, { ...(metadata || {}), replace: true }); if (root.CoachToolsIdentity) await root.CoachToolsIdentity.ingestDataset(canonicalType(type), data, { ...(metadata || {}), fingerprint: result.dataset && result.dataset.fingerprint || metadata && metadata.fingerprint || '' }).catch(() => {}); return result; },
     getCurrent, getHistory, getDatasetVersion, getImportHistory, inspectDataset, removeDataset,
