@@ -654,7 +654,7 @@ async function backfillCoachToolsDataFromAllStar(){
   }
   return synced;
 }
-async function syncAllStarFromCoachToolsData(){
+async function syncAllStarFromCoachToolsData(options={}){
   if(!window.CoachToolsData) return false;
   await window.CoachToolsData.ready();
   const mappings=[
@@ -678,6 +678,7 @@ async function syncAllStarFromCoachToolsData(){
     const ok=await loader(file,wb); if(ok===false) continue; synced[datasetType]=record.id; loaded++;
   }
   try{ localStorage.setItem(syncKey,JSON.stringify(synced)); }catch(_){}
+  if(loaded>0) await categorizeImportedData({automatic:true,reason:options.reason||'central IndexedDB synchronization'});
   return loaded>0;
 }
 
@@ -704,25 +705,33 @@ async function importCoachToolsBatch(){
   const batch=state.coachToolsImportBatch;
   if(!batch?.recognized?.length) return;
   els.coachtoolsImportAllBtn.disabled=true;
-  let imported=0, failed=0;
-  for(let index=0;index<batch.recognized.length;index++){
-    const entry=batch.recognized[index], type=entry.classification.id;
-    showProgress(`Importing ${window.CoachToolsImport.SOURCES[type]?.label||type}...`,Math.round(index/batch.recognized.length*100));
-    try{
-      let ok=true;
-      if(type==='weeklyRetail'||type==='weeklyReferral') ok=!!(await window.CoachToolsImport.saveRecognizedEntry(entry));
-      else if(type==='monthlyRetail') ok=await loadRetailFile(entry.file);
-      else if(type==='monthlyReferral') ok=await loadReferralFile(entry.file);
-      else if(type==='qa') ok=await loadQAFile(entry.file);
-      else if(type==='documentedCoaching') ok=await loadChecklistLikeFile(entry.file,'documented_coaching');
-      else if(type==='checklist') ok=await loadChecklistFile(entry.file);
-      else if(type==='compCoaching') ok=await loadChecklistLikeFile(entry.file,'comp_calls');
-      if(ok===false) failed++; else imported++;
-    }catch(error){ console.error('[All-Star] Shared batch import failed',entry.file?.name,error); failed++; }
+  state.coachToolsBatchImportRunning=true;
+  let imported=0, failed=0, categorizable=0, categorized=false;
+  try{
+    for(let index=0;index<batch.recognized.length;index++){
+      const entry=batch.recognized[index], type=entry.classification.id;
+      showProgress(`Importing ${window.CoachToolsImport.SOURCES[type]?.label||type}...`,Math.round(index/batch.recognized.length*100));
+      try{
+        let ok=true;
+        if(type==='weeklyRetail'||type==='weeklyReferral') ok=!!(await window.CoachToolsImport.saveRecognizedEntry(entry));
+        else if(type==='monthlyRetail') ok=await loadRetailFile(entry.file);
+        else if(type==='monthlyReferral') ok=await loadReferralFile(entry.file);
+        else if(type==='qa') ok=await loadQAFile(entry.file);
+        else if(type==='documentedCoaching') ok=await loadChecklistLikeFile(entry.file,'documented_coaching');
+        else if(type==='checklist') ok=await loadChecklistFile(entry.file);
+        else if(type==='compCoaching') ok=await loadChecklistLikeFile(entry.file,'comp_calls');
+        if(ok===false) failed++;
+        else { imported++; if(type!=='weeklyRetail'&&type!=='weeklyReferral') categorizable++; }
+      }catch(error){ console.error('[All-Star] Shared batch import failed',entry.file?.name,error); failed++; }
+    }
+    hideProgress();
+    if(categorizable) categorized=await categorizeImportedData({automatic:true,reason:'shared multi-file upload'});
+  }finally{
+    state.coachToolsBatchImportRunning=false;
+    hideProgress();
+    els.coachtoolsImportAllBtn.disabled=false;
   }
-  hideProgress();
-  els.coachtoolsImportAllBtn.disabled=false;
-  if(els.coachtoolsImportSummary) els.coachtoolsImportSummary.textContent=`CoachTools Data Ready · ${imported} source${imported===1?'':'s'} updated${failed?` · ${failed} failed`:''}.`;
+  if(els.coachtoolsImportSummary) els.coachtoolsImportSummary.textContent=`CoachTools Data Ready · ${imported} source${imported===1?'':'s'} updated${categorized?' · Dated and Non-Date databases rebuilt':''}${failed?` · ${failed} failed`:''}.`;
 }
 function setSourceRowsAndHeaders(source, headers, rows, model){
   if(source===NONDATED_SOURCE || source===DATED_SOURCE){
@@ -957,11 +966,12 @@ function renderSpreadsheetDataPreview(){
     return `<details class="panel"><summary><strong>${esc(labelSource(src))}</strong> <span class="badge">${rows.length.toLocaleString()} rows</span> <span class="badge">${headers.length} headers</span></summary><div class="checkResultMeta">${headers.map(esc).join(' | ')||'No headers'}</div><div class="checkResultMeta">Showing first ${shown.length.toLocaleString()} rows.</div>${table}</details>`;
   }).join('');
 }
-async function categorizeImportedData(){
+async function categorizeImportedData(options={}){
+  const automatic=!!options.automatic;
   const packs=categorizedSourceRowsForBuild().filter(p=>(p.rows||[]).length);
-  if(!packs.length){ alert('Import data before categorizing.'); return; }
+  if(!packs.length){ if(!automatic) alert('Import data before categorizing.'); return false; }
   const timing=importTiming('categorization');
-  showProgress('Preparing categorized databases...',4);
+  showProgress(automatic?'Auto-categorizing Dated and Non-Date data...':'Preparing categorized databases...',4);
   try{
     await yieldToBrowser();
     updateProgress('Building date and non-date datasets...',6);
@@ -1001,9 +1011,9 @@ async function categorizeImportedData(){
     const warnings=[];
     const unknown=[...new Set(missingCoachRows.map(cleanName).filter(Boolean))];
     if(unknown.length) warnings.push(`${unknown.length.toLocaleString()} reps had no coach in any imported source; their Coach cell was left blank.`);
-    if(unknown.length && !confirm(`${unknown.length.toLocaleString()} representative name${unknown.length===1?'':'s'} could not be tied to a coach/team from any imported source. Proceed and categorize the rest anyway?`)){
+    if(unknown.length && !automatic && !confirm(`${unknown.length.toLocaleString()} representative name${unknown.length===1?'':'s'} could not be tied to a coach/team from any imported source. Proceed and categorize the rest anyway?`)){
       updateProgress('Categorize cancelled before saving.',100);
-      return;
+      return false;
     }
     const nonRows=[...nondateByRep.values()].sort((a,b)=>(a.Coach||'').localeCompare(b.Coach||'')||a.Representative.localeCompare(b.Representative));
     datedRows.sort((a,b)=>(a.Date||'').localeCompare(b.Date||'')||(a.Coach||'').localeCompare(b.Coach||'')||a.Representative.localeCompare(b.Representative));
@@ -1022,7 +1032,8 @@ async function categorizeImportedData(){
     renderCategorizedSummary();
     timing.mark('rendering previews', 'summary only; full preview deferred until opened');
     timing.end('categorize complete');
-  }catch(err){ console.error(err); alert('Categorize failed. Check the console for details.'); }
+    return true;
+  }catch(err){ console.error(err); if(!automatic) alert('Categorize failed. Check the console for details.'); return false; }
   finally{ hideProgress(); }
 }
 

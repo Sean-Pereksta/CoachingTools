@@ -215,6 +215,24 @@ function wire(){
 
 }
 
+let coachToolsCentralSyncTimer=0;
+let coachToolsCentralSyncQueue=Promise.resolve(false);
+const ALLSTAR_CENTRAL_DATASETS=new Set(['all','monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist','compCoaching']);
+function queueAllStarCentralSync(reason){
+  coachToolsCentralSyncQueue=coachToolsCentralSyncQueue.catch(error=>{ console.warn('[All-Star] Previous shared data sync failed.',error); return false; }).then(()=>syncAllStarFromCoachToolsData({reason}));
+  return coachToolsCentralSyncQueue;
+}
+function scheduleAllStarCentralSync(detail={}){
+  if(state.coachToolsBatchImportRunning) return;
+  const source=detail.source||'all';
+  if(!ALLSTAR_CENTRAL_DATASETS.has(source)) return;
+  clearTimeout(coachToolsCentralSyncTimer);
+  coachToolsCentralSyncTimer=setTimeout(()=>{
+    const ready=state.importCacheStartupPromise||Promise.resolve();
+    ready.then(()=>queueAllStarCentralSync('shared IndexedDB update')).catch(error=>console.warn('[All-Star] Shared CoachTools update sync failed',error));
+  },350);
+}
+
 
 let allStarRegressionTestsLoadPromise=null;
 function loadAllStarRegressionTests(){
@@ -238,4 +256,4 @@ if(new URLSearchParams(window.location.search).get('debug')==='1'){
 
 window.addEventListener('pagehide',()=>{ flushImportCacheSave('pagehide flush').catch(err=>console.warn('[Import Cache] pagehide flush failed',err)); });
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') flushImportCacheSave('visibilitychange flush').catch(err=>console.warn('[Import Cache] visibility flush failed',err)); });
-loadModels(); loadRepAliases(); loadResearchItems(); loadPdfOptions(); loadOrgs(); wire(); loadMetrics().then(()=>{ refreshMetricDatalist(); }).catch(err=>console.warn('[Research Metrics] Startup load failed',err)); renderCustomSourcesList(); renderCategorizedSummary(); renderModelList(); populateRunModels(); setStatus(); state.importCacheStartupPromise=loadImportCacheOnStartup(); state.importCacheStartupPromise.then(()=>syncAllStarFromCoachToolsData()).catch(err=>console.warn('[All-Star] Shared CoachTools startup sync failed',err));
+loadModels(); loadRepAliases(); loadResearchItems(); loadPdfOptions(); loadOrgs(); wire(); window.addEventListener('coachtools:data-updated',event=>scheduleAllStarCentralSync(event.detail||{})); loadMetrics().then(()=>{ refreshMetricDatalist(); }).catch(err=>console.warn('[Research Metrics] Startup load failed',err)); renderCustomSourcesList(); renderCategorizedSummary(); renderModelList(); populateRunModels(); setStatus(); state.importCacheStartupPromise=loadImportCacheOnStartup(); state.importCacheStartupPromise.then(()=>queueAllStarCentralSync('startup IndexedDB synchronization')).catch(err=>console.warn('[All-Star] Shared CoachTools startup sync failed',err));
