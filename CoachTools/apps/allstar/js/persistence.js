@@ -260,6 +260,8 @@ function importCacheOpenDb(){
       if(!db.objectStoreNames.contains('coachtoolsDatasets')){ const store=db.createObjectStore('coachtoolsDatasets',{keyPath:'id'}); store.createIndex('datasetType','datasetType',{unique:false}); store.createIndex('periodKey',['datasetType','periodKey'],{unique:false}); store.createIndex('fingerprint',['datasetType','fingerprint'],{unique:false}); }
       if(!db.objectStoreNames.contains('coachtoolsCurrent')) db.createObjectStore('coachtoolsCurrent',{keyPath:'datasetType'});
       if(!db.objectStoreNames.contains('coachtoolsImports')){ const store=db.createObjectStore('coachtoolsImports',{keyPath:'id'}); store.createIndex('datasetType','datasetType',{unique:false}); store.createIndex('importedAt','importedAt',{unique:false}); }
+      if(!db.objectStoreNames.contains('coachtoolsPeople')){ const store=db.createObjectStore('coachtoolsPeople',{keyPath:'personId'}); store.createIndex('normalizedName','normalizedName',{unique:false}); store.createIndex('role','role',{unique:false}); store.createIndex('department','department',{unique:false}); store.createIndex('currentCoachId','currentCoachId',{unique:false}); }
+      if(!db.objectStoreNames.contains('coachtoolsIdentityReviews')){ const store=db.createObjectStore('coachtoolsIdentityReviews',{keyPath:'id'}); store.createIndex('status','status',{unique:false}); store.createIndex('createdAt','createdAt',{unique:false}); }
     };
     req.onsuccess=()=>resolve(req.result);
     req.onerror=()=>reject(req.error||new Error('Could not open import cache database.'));
@@ -465,7 +467,7 @@ async function loadImportedDataFromIndexedDB(opts={}){
     clearImportCacheDirty();
     legacySourceRecordIds.forEach(id=>markImportCacheDirty('deletedSource',id,'obsolete aggregate source cache migrated'));
     const compactedPackageCache=compactPackagedWorkbookViews({markDirty:true});
-    if(Number(meta.version||0)<IMPORT_CACHE_SCHEMA_VERSION || migrated || compactedPackageCache){ ['retail:metadata','retail:sv2','retail:wiper','retail:controlRoster','retail:teamTotals','referral:metadata','referral:sv2','referral:wiper','referral:itac','referral:controlRoster','referral:teamTotals'].forEach(k=>markImportCacheDirty('source',k,'schema v5 migration')); markImportCacheDirty('misc','customSources','schema v5 migration'); markImportCacheDirty('misc','manifest','schema v5 migration'); migrated=true; }
+    if(Number(meta.version||0)<IMPORT_CACHE_SCHEMA_VERSION || migrated || compactedPackageCache){ ['retail:metadata','retail:sv2','retail:wiper','retail:controlRoster','retail:teamTotals','referral:metadata','referral:sv2','referral:wiper','referral:itac','referral:controlRoster','referral:teamTotals'].forEach(k=>markImportCacheDirty('source',k,'schema v6 migration')); markImportCacheDirty('misc','customSources','schema v6 migration'); markImportCacheDirty('misc','manifest','schema v6 migration'); migrated=true; }
     if(teamTotalsIdentityMigrated || teamTotalsIdentityChanged){ ['retail:teamTotals','referral:teamTotals'].forEach(k=>markImportCacheDirty('source',k,'canonical Team Totals coach-name migration')); migrated=true; }
     if(migrated){ legacyBookRecords.forEach(r=>{ markBookCacheDirty(r.id,'legacy cache migrated to sheet records'); }); scheduleImportedDataSave(compactedPackageCache?'compacting duplicated packaged workbook cache':'legacy cache migrated to sheet records',{delay:500}); }
     if(opts.showProgress) updateProgress('Local data loaded',100,{force:true});

@@ -7,8 +7,8 @@ CoachTools is a portable coaching-intelligence desktop. Every application remain
 1. Put current or dated Retail Weekly, Referral Weekly, QA, Documented Coaching, and Checklist files in `storage/`.
 2. On Windows, run `START COACHTOOLS.bat`. On macOS, run `start-coachtools.command`. You can also run `npm run serve` anywhere Node.js is available.
 3. CoachTools checks the current pointers in the shared All-Star/CoachTools IndexedDB.
-4. Only missing datasets are matched and imported from `storage/`. Existing datasets are never automatically replaced.
-5. If a file is ambiguous or fails header validation, CoachTools stages it for review in **Data Manager**.
+4. CoachTools compares dataset type, reporting period, and fingerprint. Newer periods import automatically; same-period changed files become retained replacements; duplicates and older files do not overwrite current data.
+5. If a file is ambiguous or cannot be compared safely, CoachTools stages it for review in **Data Manager**.
 6. Open several applications, minimize them, and switch between their live sessions from the bottom taskbar.
 
 The local launcher serves only the CoachTools folder on `http://127.0.0.1`. Its `/api/storage` endpoint lists only direct `.xlsx`, `.xls`, and `.csv` files inside `storage/`; it does not browse other directories.
@@ -30,13 +30,13 @@ Browsers do not allow a local HTML file to enumerate a neighboring folder, so au
 
 Place an optional wallpaper at `graphics/background.png`. It is centered and cover-scaled behind a subtle readability overlay. If it is absent or unreadable, the built-in gradient remains fully functional. Application and desktop-control icons stay under `icons/`; the built-in icon set is preloaded on startup and receives a small glow/scale treatment on mouse or keyboard focus.
 
-The compact startup bar appears before the desktop or a remembered app session is revealed. It reports readiness for Retail, Referral, QA, Documented Coaching, and Checklist, then safely scans `storage/` for missing sources when the local launcher is active. Existing datasets are never replaced. Direct `index.html` mode exits the startup check quickly and keeps manual Weekly Data import available.
+The compact startup bar appears before the desktop or a remembered app session is revealed. It reports readiness for Retail, Referral, QA, Documented Coaching, Checklist, and the People Registry, then compares `storage/` with local IndexedDB history when the launcher is active. Direct `index.html` mode exits the startup check quickly and keeps manual Data Manager import available.
 
 ## Data Manager and shared storage
 
 Manual and automatic imports use `shared/coachtools-import.js` for workbook reading, filename classification, header validation, period detection, and scoped dataset preparation. Data Manager retains the prior Weekly Data grouping and scope workflow while adding a central current-data status view.
 
-Large shared data is authoritative in `allStarImportedDataCache.v1`, schema version 5. The central API stores dated history once and keeps a pointer to the newest current record for each of these logical datasets:
+Large shared data and canonical people are authoritative in `allStarImportedDataCache.v1`, schema version 6. The central API stores dated history once and keeps a pointer to the newest current record for each of these logical datasets:
 
 ```text
 weeklyRetail, weeklyReferral
@@ -44,7 +44,7 @@ monthlyRetail, monthlyReferral
 qa, documentedCoaching, checklist, compCoaching
 ```
 
-The old `myone2.dock.*` keys remain a temporary current-data compatibility view for the existing embedded report readers; they are no longer authoritative and do not retain history. Ambiguous or structurally incompatible files are never guessed into a dataset.
+The old `myone2.dock.*` keys remain a temporary current-data compatibility view for the existing embedded report readers; they are no longer authoritative and do not retain history. Ambiguous or structurally incompatible files are never guessed into a dataset. `CoachToolsIdentity` resolves exact names and aliases, records source spellings, keeps coach/representative relationships, and queues unsafe partial-name matches for review.
 
 Use **Scan Storage Folder** from the Start menu, data-readiness panel, or top command bar to scan again without restarting. Use **Update Data** to open the full Weekly Data workflow at any time.
 
@@ -56,11 +56,13 @@ Use **Scan Storage Folder** from the Start menu, data-readiness panel, or top co
 
 - All-Star Report
 - Data Manager
+- People Profiles
 - Coaching Gaps
 - Coach Timeline
 - KPI Impact
 - QA Scores
 - Audit / Checklist
+- Contact Center Checklist
 
 ## Add an application
 

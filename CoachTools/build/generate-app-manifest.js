@@ -90,8 +90,10 @@ function existingManifest() {
 const existing = existingManifest();
 const existingById = new Map((existing.apps || []).map(app => [app.id, app]));
 const candidates = [];
+const excluded = [];
+const allHtmlFiles = walk(APPS_DIR);
 
-for (const file of walk(APPS_DIR)) {
+for (const file of allHtmlFiles) {
   const relativeFromApps = posix(path.relative(APPS_DIR, file));
   const parts = relativeFromApps.split('/');
   const html = fs.readFileSync(file, 'utf8');
@@ -99,8 +101,9 @@ for (const file of walk(APPS_DIR)) {
   const isTopLevel = parts.length === 1;
   const isDirectoryIndex = parts.length === 2 && /^index\.html?$/i.test(parts[1]);
   const explicitlyInstalled = bool(meta.app, false);
-  if (!isTopLevel && !isDirectoryIndex && !explicitlyInstalled) continue;
-  if (bool(meta.hidden, false)) continue;
+  const hasCoachToolsMetadata = Object.keys(meta).length > 0;
+  if (!isTopLevel && !isDirectoryIndex && !explicitlyInstalled && !hasCoachToolsMetadata) { excluded.push({ path: relativeFromApps, reason: 'nested support HTML without coachtools metadata' }); continue; }
+  if (bool(meta.hidden, false)) { excluded.push({ path: relativeFromApps, reason: 'coachtools-hidden metadata' }); continue; }
   candidates.push({ file, relativeFromApps, html, meta });
 }
 
@@ -116,7 +119,8 @@ const discovered = candidates.map((item, index) => {
     return fallback;
   };
   const file = `apps/${item.relativeFromApps}`;
-  const name = pick('name', item.meta.name, title || titleCase(fallbackFileName));
+  const defaultNameSource = /^index\.html?$/i.test(fallbackFileName) ? path.basename(path.dirname(item.file)) : fallbackFileName;
+  const name = pick('name', item.meta.name, title || titleCase(defaultNameSource));
   const favorite = bool(pick('favorite', item.meta.favorite, false), false);
   const featured = bool(pick('featured', item.meta.featured, false), false);
   const enabled = bool(pick('enabled', item.meta.enabled, true), true);
@@ -125,7 +129,7 @@ const discovered = candidates.map((item, index) => {
     name,
     description: pick('description', item.meta.description, `Open ${name}.`),
     file,
-    icon: pick('icon', item.meta.icon, `icons/${fallbackId}.png`),
+    icon: pick('icon', item.meta.icon, 'icons/default-app.png'),
     initials: pick('initials', item.meta.initials, ''),
     category: pick('category', item.meta.category, 'Other'),
     keywords: list(pick('keywords', item.meta.keywords, []), []),
@@ -139,6 +143,27 @@ const discovered = candidates.map((item, index) => {
 }).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
 
 if (!discovered.length) throw new Error('No installed HTML applications were discovered under apps/.');
+
+const errors = [];
+const duplicateCheck = (items, field, label) => {
+  const seen = new Map();
+  for (const item of items) {
+    const value = item && item[field];
+    if (!value) continue;
+    if (seen.has(value)) errors.push(`Duplicate ${label} ${value}: ${seen.get(value)} and ${item.file || item.path || item.id}`);
+    else seen.set(value, item.file || item.path || item.id);
+  }
+};
+duplicateCheck(discovered, 'id', 'application id');
+duplicateCheck(discovered, 'file', 'application path');
+duplicateCheck(existing.apps || [], 'id', 'id in existing manifest');
+duplicateCheck(existing.apps || [], 'file', 'path in existing manifest');
+for (const app of existing.apps || []) {
+  if (app.file && !fs.existsSync(path.join(ROOT, app.file))) errors.push(`Manifest entry ${app.id || '(missing id)'} points to missing file ${app.file}.`);
+}
+const discoveredPaths = new Set(discovered.map(app => app.file.replace(/^apps\//, '')));
+for (const item of candidates) if (!discoveredPaths.has(item.relativeFromApps)) errors.push(`HTML application was unexpectedly excluded: apps/${item.relativeFromApps}.`);
+if (errors.length) throw new Error(`Application manifest validation failed:\n- ${errors.join('\n- ')}`);
 
 const manifest = {
   schemaVersion: 1,
@@ -166,9 +191,9 @@ if (checkOnly) {
     console.error('Manifest files are out of date. Run: node build/generate-app-manifest.js');
     process.exit(1);
   }
-  console.log(`Manifest is current: ${discovered.length} applications.`);
+  console.log(`Manifest is current: ${discovered.length} applications. ${excluded.length} nested support file${excluded.length === 1 ? '' : 's'} intentionally excluded.`);
 } else {
   fs.writeFileSync(JSON_PATH, json, 'utf8');
   fs.writeFileSync(JS_PATH, javascript, 'utf8');
-  console.log(`Generated apps.json and apps-manifest.js for ${discovered.length} applications.`);
+  console.log(`Generated apps.json and apps-manifest.js for ${discovered.length} applications. ${excluded.length} nested support file${excluded.length === 1 ? '' : 's'} intentionally excluded.`);
 }

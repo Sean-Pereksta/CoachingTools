@@ -8,7 +8,9 @@
   <link rel="stylesheet" href="shared/coachtools-theme.css">
   <script src="vendor/xlsx.full.min.js" defer></script>
   <script src="vendor/lz-string.min.js" defer></script>
+  <script src="shared/coachtools-sync.js" defer></script>
   <script src="shared/coachtools-storage.js" defer></script>
+  <script src="shared/coachtools-identity.js" defer></script>
   <script src="shared/coachtools-import.js" defer></script>
   <script src="apps-manifest.js" defer></script>
   <script src="shared/coachtools-desktop.js" defer></script>
@@ -36,6 +38,11 @@
       <div class="suite-name"><strong>CoachTools</strong><small>Coaching Intelligence</small></div>
 
       <nav id="categoryFilters" class="category-filters" aria-label="Application filters"></nav>
+
+      <label class="global-scope" title="Choose the person, team, or department open CoachTools apps should follow">
+        <span>Scope</span>
+        <select id="globalScopeSelect" aria-label="Global CoachTools scope"><option value="all:">All people</option></select>
+      </label>
 
       <label class="search-box">
         <span aria-hidden="true">⌕</span>
@@ -103,7 +110,7 @@
 
   <section id="dataPanel" class="data-panel" hidden aria-label="Data readiness">
     <div class="panel-heading"><div><p class="eyebrow">Current data</p><h2>Weekly readiness</h2></div><button type="button" data-action="close-data-panel" aria-label="Close">×</button></div>
-    <p id="scopeLabel" class="scope-label">All available coaches</p>
+    <p id="scopeLabel" class="scope-label">All people</p>
     <div id="datasetStatus" class="dataset-status" aria-live="polite"></div>
     <p id="storageAvailability" class="panel-note"></p>
     <div class="panel-actions">

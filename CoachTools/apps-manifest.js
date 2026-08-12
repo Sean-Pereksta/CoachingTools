@@ -57,6 +57,42 @@ window.COACHTOOLS_MANIFEST = {
       "enabled": true
     },
     {
+      "id": "people-profiles",
+      "name": "People Profiles",
+      "description": "Find a coach or representative and review department-relative performance, rankings, coaching, checklist, QA, and timeline details.",
+      "file": "apps/people-profiles.html",
+      "icon": "icons/default-app.png",
+      "initials": "PP",
+      "category": "People",
+      "keywords": [
+        "people",
+        "profile",
+        "coach",
+        "representative",
+        "rep",
+        "performance",
+        "ranking",
+        "coaching",
+        "qa",
+        "checklist",
+        "timeline"
+      ],
+      "data": [
+        "weeklyRetail",
+        "weeklyReferral",
+        "monthlyRetail",
+        "monthlyReferral",
+        "qa",
+        "documentedCoaching",
+        "checklist"
+      ],
+      "favorite": true,
+      "featured": false,
+      "order": 25,
+      "version": "1.0",
+      "enabled": true
+    },
+    {
       "id": "coaching-gaps",
       "name": "Coaching Gaps",
       "description": "Compare documented coaching, performance, QA, and checklist gaps.",
