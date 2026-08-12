@@ -5,18 +5,22 @@
   const EVENT_NAME = 'coachtools:data-updated';
   const SCOPE_EVENT_NAME = 'coachtools:scope-updated';
   const CHANNEL_NAME = 'coachtools-data-v2';
+  const LEGACY_CHANNEL_NAME = 'coachtools-data-v1';
   const SCOPE_KEY = 'coachtools.scope.v1';
   const DATA_META_KEY = 'coachtools.data.meta.v2';
+  const LEGACY_DATA_META_KEY = 'coachtools.data.meta.v1';
   const MIGRATION_KEY = 'coachtools.indexeddb.migration.v1';
 
   // CoachTools now extends All-Star's existing import database instead of creating
   // a second large-data database beside it. All-Star uses the first four stores;
-  // the shared API owns the three CoachTools stores added in schema version 5.
+  // the shared API owns the CoachTools data and identity stores added through schema version 6.
   const DB_NAME = 'allStarImportedDataCache.v1';
-  const DB_VERSION = 5;
+  const DB_VERSION = 6;
   const DATASET_STORE = 'coachtoolsDatasets';
   const CURRENT_STORE = 'coachtoolsCurrent';
   const IMPORT_STORE = 'coachtoolsImports';
+  const PEOPLE_STORE = 'coachtoolsPeople';
+  const IDENTITY_REVIEW_STORE = 'coachtoolsIdentityReviews';
   const ALLSTAR_STORES = Object.freeze(['meta', 'sourceData', 'books', 'misc']);
 
   const DATASET_TYPES = Object.freeze([
@@ -97,9 +101,14 @@
 
   const currentPointers = new Map();
   const currentData = new Map();
-  let channel = null;
+  const channels = [];
   let databaseUnavailable = false;
-  try { if ('BroadcastChannel' in root) channel = new BroadcastChannel(CHANNEL_NAME); } catch (_) {}
+  try {
+    if ('BroadcastChannel' in root) {
+      channels.push(new BroadcastChannel(CHANNEL_NAME));
+      channels.push(new BroadcastChannel(LEGACY_CHANNEL_NAME));
+    }
+  } catch (_) {}
 
   function storageAvailable() {
     try {
@@ -188,6 +197,18 @@
           store.createIndex('datasetType', 'datasetType', { unique: false });
           store.createIndex('importedAt', 'importedAt', { unique: false });
         }
+        if (!db.objectStoreNames.contains(PEOPLE_STORE)) {
+          const store = db.createObjectStore(PEOPLE_STORE, { keyPath: 'personId' });
+          store.createIndex('normalizedName', 'normalizedName', { unique: false });
+          store.createIndex('role', 'role', { unique: false });
+          store.createIndex('department', 'department', { unique: false });
+          store.createIndex('currentCoachId', 'currentCoachId', { unique: false });
+        }
+        if (!db.objectStoreNames.contains(IDENTITY_REVIEW_STORE)) {
+          const store = db.createObjectStore(IDENTITY_REVIEW_STORE, { keyPath: 'id' });
+          store.createIndex('status', 'status', { unique: false });
+          store.createIndex('createdAt', 'createdAt', { unique: false });
+        }
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error || new Error('Could not open CoachTools IndexedDB.'));
@@ -201,7 +222,7 @@
     const detail = { source: type, updatedAt: new Date().toISOString(), ...(details || {}) };
     emitLocal(EVENT_NAME, detail);
     sendToParent({ type: EVENT_NAME, detail });
-    try { if (channel) channel.postMessage({ type: EVENT_NAME, detail }); } catch (_) {}
+    for (const channel of channels) try { channel.postMessage({ type: EVENT_NAME, detail }); } catch (_) {}
     return detail;
   }
   function normalizedPeriod(period, metadata) {
@@ -305,7 +326,8 @@
     if (!datasetType) throw new Error('Unknown CoachTools dataset: ' + type);
     const meta = { ...(metadata || {}) };
     const importedAt = meta.importedAt || new Date().toISOString();
-    const detectedPeriod = normalizedPeriod(meta.detectedPeriod || data && data.meta && data.meta.detectedPeriod, { ...meta, importedAt });
+    const sourcePeriod = meta.detectedPeriod || data && data.meta && data.meta.detectedPeriod;
+    const detectedPeriod = normalizedPeriod(sourcePeriod, { ...meta, importedAt });
     const fingerprint = fingerprintValue(data, meta);
     const periodKey = detectedPeriod.periodKey;
     const db = await openDatabase();
@@ -376,6 +398,40 @@
       return { status: samePeriod ? 'replacement' : 'imported', dataset: compactMetadata(record), current: shouldBecomeCurrent ? compactMetadata(pointerCandidate) : compactMetadata(current) };
     } finally { db.close(); }
   }
+  async function inspectDataset(type, data, metadata) {
+    await readyPromise;
+    const datasetType = canonicalType(type);
+    if (!datasetType) return { status: 'needs-review', reason: 'Unknown CoachTools dataset.', becomesCurrent: false };
+    const meta = { ...(metadata || {}) };
+    const importedAt = meta.importedAt || new Date().toISOString();
+    const detectedPeriod = normalizedPeriod(meta.detectedPeriod || data && data.meta && data.meta.detectedPeriod, { ...meta, importedAt });
+    const candidate = {
+      datasetType,
+      fingerprint: fingerprintValue(data, meta),
+      periodKey: detectedPeriod.periodKey,
+      periodSort: detectedPeriod.sortKey,
+      importedAt
+    };
+    if (['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'compCoaching'].includes(datasetType) && (!sourcePeriod || !sourcePeriod.sortKey || sourcePeriod.periodKey === 'current')) {
+      return { status: 'needs-review', reason: 'The reporting period could not be detected safely.', becomesCurrent: false, candidate };
+    }
+    if (databaseUnavailable) return { status: currentData.has(datasetType) ? 'needs-review' : 'new', reason: databaseUnavailable ? 'IndexedDB comparison history is unavailable.' : '', becomesCurrent: !currentData.has(datasetType), candidate };
+    const db = await openDatabase();
+    try {
+      const tx = db.transaction([DATASET_STORE, CURRENT_STORE], 'readonly');
+      const records = await idbRequest(tx.objectStore(DATASET_STORE).index('datasetType').getAll(datasetType));
+      const current = await idbRequest(tx.objectStore(CURRENT_STORE).get(datasetType));
+      const result = root.CoachToolsSync && root.CoachToolsSync.compareCandidate
+        ? root.CoachToolsSync.compareCandidate(candidate, current, records)
+        : (!current ? { status: 'new', reason: 'No current dataset exists.', becomesCurrent: true }
+          : records.some(record => record.fingerprint === candidate.fingerprint) ? { status: 'current', reason: 'Identical fingerprint already imported.', becomesCurrent: false }
+          : candidate.periodKey === current.periodKey ? { status: 'updated', reason: 'The reporting period matches but contents changed.', becomesCurrent: true }
+          : candidate.periodSort > current.periodSort ? { status: 'new', reason: 'A newer period was detected.', becomesCurrent: true }
+          : candidate.periodSort < current.periodSort ? { status: 'older', reason: 'An older period was detected.', becomesCurrent: false }
+          : { status: 'needs-review', reason: 'The reporting period could not be compared safely.', becomesCurrent: false });
+      return { ...result, candidate, current: compactMetadata(current) };
+    } finally { db.close(); }
+  }
   async function migrateLegacyDocks() {
     const migrated = safeJson(safeGet(MIGRATION_KEY), {}) || {};
     for (const [legacy, type] of Object.entries(LEGACY_TO_DATASET)) {
@@ -402,6 +458,7 @@
   }
   async function initialize() {
     try {
+      if (!safeGet(DATA_META_KEY) && safeGet(LEGACY_DATA_META_KEY)) safeSet(DATA_META_KEY, safeGet(LEGACY_DATA_META_KEY));
       await refreshPointers();
       await migrateLegacyDocks();
       await loadCurrentData();
@@ -512,6 +569,9 @@
     const metadata = {};
     for (const status of centralStatus()) if (status.ready) metadata[status.id] = status;
     safeSet(DATA_META_KEY, JSON.stringify(metadata));
+    // v2 is canonical; the v1 snapshot remains during migration so older tools
+    // continue receiving readiness metadata while they move to subscriptions.
+    safeSet(LEGACY_DATA_META_KEY, JSON.stringify(metadata));
     return metadata;
   }
 
@@ -599,11 +659,11 @@
   }
   function getScope() { return safeJson(safeGet(SCOPE_KEY), null); }
   function setScope(scope) {
-    const next = { mode: 'all', label: 'All available coaches', team: '', coordinator: '', coaches: [], ...(scope || {}), updatedAt: new Date().toISOString() };
+    const next = { mode: 'all', label: 'All people', personId: '', department: '', team: '', coordinator: '', coaches: [], representatives: [], ...(scope || {}), updatedAt: new Date().toISOString() };
     safeSet(SCOPE_KEY, JSON.stringify(next));
     emitLocal(SCOPE_EVENT_NAME, next);
     sendToParent({ type: SCOPE_EVENT_NAME, detail: next });
-    try { if (channel) channel.postMessage({ type: SCOPE_EVENT_NAME, detail: next }); } catch (_) {}
+    for (const channel of channels) try { channel.postMessage({ type: SCOPE_EVENT_NAME, detail: next }); } catch (_) {}
     return next;
   }
   function createBackup(options) {
@@ -649,7 +709,15 @@
     if (event.key === SCOPE_KEY) emitLocal(SCOPE_EVENT_NAME, safeJson(event.newValue, {}));
   });
   root.addEventListener('message', event => relayExternalMessage(event.data));
-  if (channel) channel.onmessage = event => relayExternalMessage(event.data);
+  for (const channel of channels) channel.onmessage = event => relayExternalMessage(event.data);
+
+  function subscribe(listener, options) {
+    if (typeof listener !== 'function') return () => {};
+    const eventName = options && options.scope ? SCOPE_EVENT_NAME : EVENT_NAME;
+    const handler = event => listener(event.detail || {});
+    root.addEventListener(eventName, handler);
+    return () => root.removeEventListener(eventName, handler);
+  }
 
   function mountStatus(element, options) {
     const target = typeof element === 'string' ? root.document && root.document.querySelector(element) : element;
@@ -694,22 +762,22 @@
 
   const CoachToolsData = Object.freeze({
     VERSION, DB_NAME, DB_VERSION, DATASET_TYPES, LABELS, EVENT_NAME, ready: () => readyPromise,
-    importDataset: async (type, data, metadata) => { await readyPromise; if (databaseUnavailable) throw new Error('IndexedDB is unavailable.'); return putDataset(type, data, metadata); },
-    replaceDataset: async (type, data, metadata) => { await readyPromise; return putDataset(type, data, { ...(metadata || {}), replace: true }); },
-    getCurrent, getHistory, getDatasetVersion, getImportHistory, removeDataset,
+    importDataset: async (type, data, metadata) => { await readyPromise; if (databaseUnavailable) throw new Error('IndexedDB is unavailable.'); const result = await putDataset(type, data, metadata); if (root.CoachToolsIdentity && result.status !== 'duplicate') await root.CoachToolsIdentity.ingestDataset(canonicalType(type), data, { ...(metadata || {}), fingerprint: result.dataset && result.dataset.fingerprint || metadata && metadata.fingerprint || '' }).catch(error => console.warn('[CoachToolsData] Identity learning could not finish.', error)); return result; },
+    replaceDataset: async (type, data, metadata) => { await readyPromise; const result = await putDataset(type, data, { ...(metadata || {}), replace: true }); if (root.CoachToolsIdentity) await root.CoachToolsIdentity.ingestDataset(canonicalType(type), data, { ...(metadata || {}), fingerprint: result.dataset && result.dataset.fingerprint || metadata && metadata.fingerprint || '' }).catch(() => {}); return result; },
+    getCurrent, getHistory, getDatasetVersion, getImportHistory, inspectDataset, removeDataset,
     getStatus: async () => { await readyPromise; return centralStatus(); },
     getStatusSync: centralStatus,
-    mountStatus,
+    mountStatus, subscribe: listener => subscribe(listener), subscribeScope: listener => subscribe(listener, { scope: true }),
     notifyDataUpdated
   });
   const CoachToolsStorage = Object.freeze({
-    VERSION, EVENT_NAME, SCOPE_EVENT_NAME, SCOPE_KEY, DATA_META_KEY, DOCK_KEYS, LABELS,
+    VERSION, EVENT_NAME, SCOPE_EVENT_NAME, SCOPE_KEY, DATA_META_KEY, LEGACY_DATA_META_KEY, DOCK_KEYS, LABELS,
     storageAvailable, decodeDockValue, ready: () => readyPromise,
     get, getRaw: source => get(source, { raw: true }), getByCompatibilityKey, listCompatibilityKeys,
     getRetail: () => get('retail'), getReferral: () => get('referral'), getQA: () => get('qa'), getCoaching: () => get('coaching'), getChecklist: () => get('checklist'),
     has, hasRetail: () => has('retail'), hasReferral: () => has('referral'), hasQA: () => has('qa'), hasCoaching: () => has('coaching'), hasChecklist: () => has('checklist'),
     set, remove, markUpdated, notifyDataUpdated, getDataMetadata, getDatasetStatus, getCentralDatasetStatus: centralStatus,
-    getApproximateStorageSize, getScope, setScope, createBackup, restoreBackup
+    getApproximateStorageSize, getScope, setScope, subscribe: listener => subscribe(listener), subscribeScope: listener => subscribe(listener, { scope: true }), createBackup, restoreBackup
   });
   root.CoachToolsData = CoachToolsData;
   root.CoachToolsStorage = CoachToolsStorage;

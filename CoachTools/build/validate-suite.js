@@ -35,6 +35,9 @@ const required = [
   'apps-manifest.js',
   'README.md',
   'shared/coachtools-storage.js',
+  'shared/coachtools-sync.js',
+  'shared/coachtools-identity.js',
+  'shared/coachtools-profile-data.js',
   'shared/coachtools-import.js',
   'shared/coachtools-shell.js',
   'shared/coachtools-theme.css',
@@ -75,6 +78,7 @@ if (manifest) {
     for (const source of app.data || []) if (!validData.has(source)) fail(`${app.id}: unknown data requirement ${source}`);
   }
   if ((manifest.apps || []).length < 7) fail(`Expected at least 7 applications, found ${(manifest.apps || []).length}.`);
+  for (const requiredApp of ['contact-center-checklist', 'people-profiles']) if (!(manifest.apps || []).some(app => app.id === requiredApp)) fail(`Required desktop application is missing from the manifest: ${requiredApp}`);
 }
 
 const vendorFiles = [
@@ -95,7 +99,9 @@ const expectedMarkers = {
   'coach-timeline': ['coachSpeed.columnMap', '.dock.checklist', '.dock.coaching'],
   'kpi-impact': ['impactTool.activeTab', '.dock.coaching'],
   'qa-scores': ['qaOnlyDash.settings.v6', '.dock.qa'],
-  'audit-checklist': ['.dock.checklist', '.dock.coaching']
+  'audit-checklist': ['.dock.checklist', '.dock.coaching'],
+  'people-profiles': ['CoachToolsIdentity', 'CoachToolsProfiles', 'Set as CoachTools Scope'],
+  'contact-center-checklist': ['data-coachtools-remote-app="true"']
 };
 
 if (manifest) {
@@ -138,6 +144,8 @@ for (const supportFile of ['apps/allstar/qualtrics/generator.html']) {
 const index = exists('index.html') ? fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8') : '';
 if (!index.includes('apps-manifest.js')) fail('index.html must load the file://-safe JavaScript manifest.');
 if (!index.includes('shared/coachtools-import.js')) fail('index.html must load the shared Weekly Data importer.');
+for (const script of ['shared/coachtools-sync.js', 'shared/coachtools-identity.js']) if (!index.includes(script)) fail(`index.html must load ${script}.`);
+if (!index.includes('id="globalScopeSelect"')) fail('index.html must expose the global CoachTools scope selector.');
 for (const marker of ['id="startupSplash"', 'id="startupProgressFill"', 'id="startupDatasets"']) {
   if (!index.includes(marker)) fail(`index.html is missing startup readiness marker ${marker}.`);
 }
@@ -179,8 +187,13 @@ const storageScript = exists('shared/coachtools-storage.js') ? fs.readFileSync(p
 for (const key of ['myone2.dock.retail', 'myone2.dock.referral', 'myone2.dock.qa', 'myone2.dock.coaching', 'myone2.dock.checklist']) {
   if (!storageScript.includes(key)) fail(`Shared storage helper is missing compatibility key ${key}`);
 }
-for (const marker of ['CoachToolsData', 'getCurrent', 'getHistory', 'getDatasetVersion', 'getImportHistory', 'coachtoolsDatasets', 'coachtoolsCurrent', 'coachtoolsImports', "DB_VERSION = 5"]) {
+for (const marker of ['CoachToolsData', 'getCurrent', 'getHistory', 'getDatasetVersion', 'getImportHistory', 'inspectDataset', 'subscribeScope', 'coachtoolsDatasets', 'coachtoolsCurrent', 'coachtoolsImports', 'coachtoolsPeople', "DB_VERSION = 6"]) {
   if (!storageScript.includes(marker)) fail(`Shared IndexedDB data API is missing ${marker}`);
+}
+for (const sharedFile of ['shared/coachtools-sync.js', 'shared/coachtools-identity.js', 'shared/coachtools-profile-data.js']) {
+  const source = exists(sharedFile) ? fs.readFileSync(path.join(ROOT, sharedFile), 'utf8') : '';
+  try { if (source) new vm.Script(source, { filename: sharedFile }); }
+  catch (error) { fail(`${sharedFile} does not parse: ${error.message}`); }
 }
 
 const allStarCore = exists('apps/allstar/js/core.js') ? fs.readFileSync(path.join(ROOT, 'apps/allstar/js/core.js'), 'utf8') : '';

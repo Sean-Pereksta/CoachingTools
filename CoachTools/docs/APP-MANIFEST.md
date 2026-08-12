@@ -13,7 +13,7 @@ The generator installs:
 
 1. HTML files directly under `apps/`
 2. `apps/application-name/index.html`
-3. Any deeper HTML file containing `<meta name="coachtools-app" content="true">`
+3. Any deeper HTML file containing CoachTools metadata (including `<meta name="coachtools-app" content="true">`)
 
 Support pages nested inside an application are ignored unless explicitly marked. This keeps `apps/allstar/qualtrics/generator.html` from appearing as a separate desktop app.
 
@@ -36,7 +36,7 @@ Support pages nested inside an application are ignored unless explicitly marked.
 <meta name="coachtools-enabled" content="true">
 ```
 
-Metadata is optional for top-level HTML files. Defaults come from the filename and `<title>`.
+Metadata is optional for top-level HTML files and `apps/name/index.html`. Defaults come from the filename/folder and `<title>`, use `icons/default-app.png`, category `Other`, and enable the app. Validation rejects duplicate IDs/paths and manifest entries whose files no longer exist.
 
 ## Manifest entry
 
@@ -59,7 +59,7 @@ Metadata is optional for top-level HTML files. Defaults come from the filename a
 }
 ```
 
-Only these shared data IDs are valid: `retail`, `referral`, `qa`, `coaching`, and `checklist`. Missing requirements produce a warning, not an app-opening block.
+Valid shared data IDs include `weeklyRetail`, `weeklyReferral`, `monthlyRetail`, `monthlyReferral`, `qa`, `documentedCoaching`, `checklist`, and `compCoaching`; legacy `retail`, `referral`, and `coaching` aliases remain supported. Missing requirements produce a warning, not an app-opening block.
 
 ## Preserve or refresh metadata
 

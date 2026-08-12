@@ -10,6 +10,7 @@ const root = path.resolve(__dirname, '..');
 const desktopScript = fs.readFileSync(path.join(root, 'shared', 'coachtools-desktop.js'), 'utf8');
 const desktopStyles = fs.readFileSync(path.join(root, 'shared', 'coachtools-theme.css'), 'utf8');
 const desktopHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const storageScript = fs.readFileSync(path.join(root, 'shared', 'coachtools-storage.js'), 'utf8');
 const context = { console, TextEncoder, TextDecoder };
 context.window = context;
 vm.createContext(context);
@@ -46,7 +47,7 @@ assert(desktopHtml.includes('data-system-icon="coachtools-home"'), 'Desktop cont
 assert(desktopHtml.includes('data-system-icon="start"'), 'The Start button should use the branded Start graphic role.');
 assert(desktopHtml.includes('data-system-icon="shared-data"'), 'Data controls should use the uploaded shared-data icon.');
 assert(desktopHtml.includes('id="startupSplash"'), 'A startup readiness bar should be present before the desktop opens.');
-for (const script of ['vendor/xlsx.full.min.js', 'vendor/lz-string.min.js', 'shared/coachtools-storage.js', 'shared/coachtools-import.js']) {
+for (const script of ['vendor/xlsx.full.min.js', 'vendor/lz-string.min.js', 'shared/coachtools-sync.js', 'shared/coachtools-storage.js', 'shared/coachtools-identity.js', 'shared/coachtools-import.js']) {
   assert(new RegExp(`<script[^>]+src=["']${script.replace(/\./g, '\\.')}["'][^>]*defer`).test(desktopHtml), `${script} should defer so the startup bar can paint immediately.`);
 }
 assert(desktopScript.includes("image.src = 'graphics/background.png'"), 'The main wallpaper should load from graphics/background.png.');
@@ -56,6 +57,11 @@ assert(/\.desktop-shell\s*\{[\s\S]*?z-index:\s*2;/.test(desktopStyles), 'Desktop
 assert(desktopScript.includes('runStartupSequence'), 'Desktop startup should coordinate readiness and automatic loading.');
 assert(desktopScript.includes("scanStorage({ startup: true })"), 'Startup should safely attempt to load missing data from storage.');
 assert(desktopScript.indexOf('await scanStorage({ startup: true })') < desktopScript.lastIndexOf('restoreOpenWindows();'), 'Remembered app sessions should restore after the startup data check.');
+assert(desktopHtml.includes('id="globalScopeSelect"'), 'The desktop should expose one global person scope selector.');
+assert(storageScript.includes("const SCOPE_KEY = 'coachtools.scope.v1'"), 'The global scope should retain a stable persisted storage key.');
+assert(/function setScope\(scope\)[\s\S]*?safeSet\(SCOPE_KEY/.test(storageScript), 'Changing scope should persist the selection.');
+assert(storageScript.includes('subscribeScope'), 'Applications should be able to subscribe to global scope changes.');
+assert(desktopScript.includes("type: 'coachtools:scope-updated'"), 'The desktop should relay scope changes to open applications.');
 assert(desktopStyles.includes('.startup-progress'), 'Startup readiness should include a visible progress bar.');
 assert(desktopStyles.includes('.app-card:hover .app-icon'), 'Application icons should respond to pointer hover.');
 assert(desktopStyles.includes('scale(1.065)'), 'Application hover should expand icons slightly.');

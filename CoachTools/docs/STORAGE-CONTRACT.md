@@ -5,7 +5,7 @@ This document defines storage names that must remain backward compatible. Filena
 ## 1. Central CoachTools data
 
 The authoritative home for large shared datasets is IndexedDB database
-`allStarImportedDataCache.v1`, schema version 5. `window.CoachToolsData` is the
+`allStarImportedDataCache.v1`, schema version 6. `window.CoachToolsData` is the
 only supported abstraction for new application code.
 
 Recognized dataset types are:
@@ -20,7 +20,7 @@ Recognized dataset types are:
 - `compCoaching`
 
 Use `CoachToolsData.getCurrent(type)`, `getHistory(type)`,
-`getDatasetVersion(type)`, and `getImportHistory()` instead of reading the
+`getDatasetVersion(type)`, `getImportHistory()`, and `inspectDataset()` instead of reading the
 database stores directly. Current pointers never duplicate the source data;
 they reference one canonical record in `coachtoolsDatasets`.
 
@@ -67,23 +67,27 @@ CoachTools uses these same-origin signals after a dock changes:
 - custom event: `coachtools:data-updated`
 - custom event: `coachtools:scope-updated`
 - native browser `storage` event
-- BroadcastChannel: `coachtools-data-v1`, when available
+- BroadcastChannel: `coachtools-data-v2`, when available
+- migration BroadcastChannel: `coachtools-data-v1`, retained for older tools
 - parent-frame `postMessage`, for the desktop shell
 
-New consumers must call `CoachToolsData.getCurrent()` after a signal. Legacy
-consumers may reread the compatibility dock during the transition.
+New consumers should call `CoachToolsData.subscribe()` or
+`CoachToolsData.subscribeScope()`, then reread current data. The shared module
+owns event, BroadcastChannel, storage-event, and parent-frame compatibility.
+Legacy consumers may reread the compatibility dock during the transition.
 
 ### Suite metadata
 
 | Purpose | Key |
 | --- | --- |
 | Current selected scope | `coachtools.scope.v1` |
-| Lightweight update timestamps | `coachtools.data.meta.v1` |
+| Lightweight update timestamps (canonical) | `coachtools.data.meta.v2` |
+| Migration metadata mirror | `coachtools.data.meta.v1` |
 | Desktop favorites | `coachtools.desktop.favorites.v1` |
 | Recently opened tools | `coachtools.desktop.recent.v1` |
 | Future desktop preferences | `coachtools.desktop.preferences.v1` |
 
-`coachtools.scope.v1` describes the current view without changing the meaning of the weekly docks. Its supported fields are `mode`, `label`, `team`, `coordinator`, `coaches`, and `updatedAt`.
+`coachtools.scope.v1` describes the current view without changing the meaning of the weekly docks. Its supported modes are All, Department, Team, Coordinator, Coach, and Representative. Fields include `mode`, `label`, `personId`, `department`, `team`, `coordinator`, `coaches`, `representatives`, and `updatedAt`.
 
 ## 3. Tool-specific preferences
 
@@ -115,7 +119,7 @@ The general CoachTools backup includes definitions and lightweight options where
 
 ## 5. All-Star / CoachTools IndexedDB
 
-### `allStarImportedDataCache.v1`, schema version 5
+### `allStarImportedDataCache.v1`, schema version 6
 
 - `meta`, key path `id`
 - `sourceData`, key path `id`
@@ -124,6 +128,21 @@ The general CoachTools backup includes definitions and lightweight options where
 - `coachtoolsDatasets`, key path `id`; canonical dated dataset records
 - `coachtoolsCurrent`, key path `datasetType`; current record pointers only
 - `coachtoolsImports`, key path `id`; import, duplicate, replacement, and removal audit history
+- `coachtoolsPeople`, key path `personId`; canonical people, aliases, source spellings, roles, teams, departments, and relationships
+- `coachtoolsIdentityReviews`, key path `id`; uncertain-match reviews and reversible merge snapshots
+
+`CoachToolsIdentity` is the supported identity API. Exact normalized full-name
+and known-alias matches can resolve automatically. Partial or last-name-only
+matches are review candidates and must not be silently merged.
+
+### Shared-folder synchronization
+
+Files under `storage/` are synchronized source material. Each browser keeps its
+own IndexedDB cache; IndexedDB is never treated as a OneDrive-shared database.
+Startup compares type, detected period, and fingerprint. Newer periods import,
+identical fingerprints remain current without duplication, same-period changed
+files create retained replacements, and older files cannot replace newer current
+data.
 
 ### `allStarResearchRenderedResults.v1`, schema version 1
 

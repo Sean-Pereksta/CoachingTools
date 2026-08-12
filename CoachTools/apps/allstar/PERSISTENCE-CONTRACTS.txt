@@ -12,7 +12,7 @@ Parent application localStorage keys
 - allStarPdfOptions.v1
 
 Parent application IndexedDB
-- allStarImportedDataCache.v1, schema version 5
+- allStarImportedDataCache.v1, schema version 6
   - meta (keyPath: id)
   - sourceData (keyPath: id)
   - books (keyPath: id)
