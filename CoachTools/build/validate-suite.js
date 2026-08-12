@@ -139,6 +139,10 @@ if (!desktopScript.includes('coachtools.desktop.openApps.v1')) fail('Desktop mus
 if (!desktopScript.includes("fetch('/api/storage'")) fail('Desktop must use the constrained local storage API for automatic loading.');
 if (!desktopScript.includes('runStartupSequence')) fail('Desktop must coordinate startup data readiness before revealing remembered sessions.');
 if (!desktopScript.includes("image.src = 'graphics/background.png'")) fail('Desktop wallpaper path must remain graphics/background.png.');
+const desktopStyles = exists('shared/coachtools-theme.css') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-theme.css'), 'utf8') : '';
+if (!/\.desktop-wallpaper\s*\{[\s\S]*?z-index:\s*0;/.test(desktopStyles)) fail('Desktop wallpaper must render above the body background at z-index 0.');
+if (!/\.desktop-shade\s*\{[\s\S]*?z-index:\s*1;/.test(desktopStyles)) fail('Desktop shade must render above the wallpaper at z-index 1.');
+if (!/\.desktop-shell\s*\{[\s\S]*?z-index:\s*2;/.test(desktopStyles)) fail('Desktop shell must render above the wallpaper layers at z-index 2.');
 
 const importerScript = exists('shared/coachtools-import.js') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-import.js'), 'utf8') : '';
 for (const marker of ['classifyFile', 'prepareDataset', 'packDataset', 'myone2.dock.retail', 'myone2.dock.checklist']) {

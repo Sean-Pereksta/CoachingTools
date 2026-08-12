@@ -50,6 +50,9 @@ for (const script of ['vendor/xlsx.full.min.js', 'vendor/lz-string.min.js', 'sha
   assert(new RegExp(`<script[^>]+src=["']${script.replace(/\./g, '\\.')}["'][^>]*defer`).test(desktopHtml), `${script} should defer so the startup bar can paint immediately.`);
 }
 assert(desktopScript.includes("image.src = 'graphics/background.png'"), 'The main wallpaper should load from graphics/background.png.');
+assert(/\.desktop-wallpaper\s*\{[\s\S]*?z-index:\s*0;/.test(desktopStyles), 'The wallpaper must render above the body background instead of behind the page canvas.');
+assert(/\.desktop-shade\s*\{[\s\S]*?z-index:\s*1;/.test(desktopStyles), 'The readability shade should render directly above the wallpaper.');
+assert(/\.desktop-shell\s*\{[\s\S]*?z-index:\s*2;/.test(desktopStyles), 'Desktop controls should render above the wallpaper and shade.');
 assert(desktopScript.includes('runStartupSequence'), 'Desktop startup should coordinate readiness and automatic loading.');
 assert(desktopScript.includes("scanStorage({ startup: true })"), 'Startup should safely attempt to load missing data from storage.');
 assert(desktopScript.indexOf('await scanStorage({ startup: true })') < desktopScript.lastIndexOf('restoreOpenWindows();'), 'Remembered app sessions should restore after the startup data check.');
