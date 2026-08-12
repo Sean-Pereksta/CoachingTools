@@ -34,6 +34,8 @@ const required = [
   'apps.json',
   'apps-manifest.js',
   'README.md',
+  'graphics/background.png',
+  'graphics/loading.png',
   'shared/coachtools-storage.js',
   'shared/coachtools-sync.js',
   'shared/coachtools-identity.js',
@@ -47,7 +49,9 @@ const required = [
 ];
 for (const file of required) if (!exists(file)) fail(`Missing required suite file: ${file}`);
 for (const directory of ['graphics', 'storage']) if (!isDirectory(directory)) fail(`Missing required suite directory: ${directory}/`);
-if (exists('graphics/background.png') && fs.statSync(path.join(ROOT, 'graphics/background.png')).isDirectory()) fail('graphics/background.png must be a file when present.');
+for (const asset of ['graphics/background.png', 'graphics/loading.png']) {
+  if (exists(asset) && !fs.statSync(path.join(ROOT, asset)).isFile()) fail(`${asset} must be a file.`);
+}
 for (const icon of ['coachtools-home.png', 'shared-data.png', 'backup-restore.png', 'settings.png']) {
   if (!exists(`icons/${icon}`)) fail(`Missing desktop control icon: icons/${icon}`);
 }
@@ -75,10 +79,14 @@ if (manifest) {
     if (/^(?:[a-z]+:|\/|\\)/i.test(app.file)) fail(`${app.id}: application path must be relative: ${app.file}`);
     if (app.icon && /^(?:[a-z]+:|\/|\\)/i.test(app.icon)) fail(`${app.id}: icon path must be relative: ${app.icon}`);
     if (app.icon && !exists(app.icon)) warn(`${app.id}: ${app.icon} is not present; the CSS initials fallback will be used.`);
+    if (app.preload != null && typeof app.preload !== 'boolean') fail(`${app.id}: preload must be true or false when provided.`);
     for (const source of app.data || []) if (!validData.has(source)) fail(`${app.id}: unknown data requirement ${source}`);
   }
   if ((manifest.apps || []).length < 7) fail(`Expected at least 7 applications, found ${(manifest.apps || []).length}.`);
   for (const requiredApp of ['contact-center-checklist', 'people-profiles']) if (!(manifest.apps || []).some(app => app.id === requiredApp)) fail(`Required desktop application is missing from the manifest: ${requiredApp}`);
+  const dynamicsChecklist = (manifest.apps || []).find(app => app.id === 'contact-center-checklist');
+  if (dynamicsChecklist && dynamicsChecklist.preload !== false) fail('contact-center-checklist must remain lazy-loaded so startup does not contact Dynamics.');
+  if (!(manifest.apps || []).some(app => app.preload === true)) fail('At least one local application must be configured for startup warm-loading.');
 }
 
 const vendorFiles = [
@@ -149,6 +157,8 @@ if (!index.includes('id="globalScopeSelect"')) fail('index.html must expose the 
 for (const marker of ['id="startupSplash"', 'id="startupProgressFill"', 'id="startupDatasets"']) {
   if (!index.includes(marker)) fail(`index.html is missing startup readiness marker ${marker}.`);
 }
+if (!/<link\b[^>]*rel=["']preload["'][^>]*href=["']graphics\/loading\.png["'][^>]*>/i.test(index)) fail('index.html must preload graphics/loading.png before deferred startup scripts.');
+if (index.includes('startup-card')) fail('The startup screen must not use the retired popup-style startup-card.');
 if (/fetch\s*\(\s*["']apps\.json/i.test(index)) fail('index.html must not require fetch(apps.json) for local-file startup.');
 const desktopScript = exists('shared/coachtools-desktop.js') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-desktop.js'), 'utf8') : '';
 if (!desktopScript.includes('const openWindows = new Map()')) fail('Desktop must retain one live window state per opened application.');
@@ -157,7 +167,13 @@ if (!desktopScript.includes('coachtools.desktop.openApps.v1')) fail('Desktop mus
 if (!desktopScript.includes("fetch('/api/storage'")) fail('Desktop must use the constrained local storage API for automatic loading.');
 if (!desktopScript.includes('runStartupSequence')) fail('Desktop must coordinate startup data readiness before revealing remembered sessions.');
 if (!desktopScript.includes("image.src = 'graphics/background.png'")) fail('Desktop wallpaper path must remain graphics/background.png.');
+for (const marker of ['warmApplications', 'app.preload === true', 'WARMUP_CONCURRENCY = 2', 'readyPromise', "warmState = success ?", 'userOpened']) {
+  if (!desktopScript.includes(marker)) fail(`Desktop warm-start architecture is missing ${marker}.`);
+}
+if (!(desktopScript.indexOf('await scanStorage({ startup: true })') < desktopScript.indexOf('await refreshGlobalScope();') && desktopScript.indexOf('await refreshGlobalScope();') < desktopScript.indexOf('await warmApplications();') && desktopScript.indexOf('await warmApplications();') < desktopScript.lastIndexOf('restoreOpenWindows();'))) fail('Startup order must remain storage sync, identity/scope, application warm-up, then session restore.');
 const desktopStyles = exists('shared/coachtools-theme.css') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-theme.css'), 'utf8') : '';
+if (!/\.startup-splash\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;[\s\S]*?url\(["']?\.\.\/graphics\/loading\.png["']?\)[\s\S]*?background-size:\s*cover;/.test(desktopStyles)) fail('Startup splash must fill the viewport with graphics/loading.png using background-size: cover.');
+if (desktopStyles.includes('.startup-card')) fail('Desktop styles must not retain the popup-style startup-card.');
 if (!/\.desktop-wallpaper\s*\{[\s\S]*?z-index:\s*0;/.test(desktopStyles)) fail('Desktop wallpaper must render above the body background at z-index 0.');
 if (!/\.desktop-shade\s*\{[\s\S]*?z-index:\s*1;/.test(desktopStyles)) fail('Desktop shade must render above the wallpaper at z-index 1.');
 if (!/\.desktop-shell\s*\{[\s\S]*?z-index:\s*2;/.test(desktopStyles)) fail('Desktop shell must render above the wallpaper layers at z-index 2.');

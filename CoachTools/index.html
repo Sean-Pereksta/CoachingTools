@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0b1420">
   <title>CoachTools — Coaching Intelligence Desktop</title>
+  <link rel="preload" as="image" href="graphics/loading.png">
   <link rel="stylesheet" href="shared/coachtools-theme.css">
   <script src="vendor/xlsx.full.min.js" defer></script>
   <script src="vendor/lz-string.min.js" defer></script>
@@ -17,11 +18,7 @@
 </head>
 <body>
   <section id="startupSplash" class="startup-splash" role="status" aria-live="polite" aria-label="Starting CoachTools">
-    <div class="startup-card">
-      <div class="startup-brand">
-        <span class="system-icon startup-size" data-system-icon="coachtools-home" data-icon-fallback="✦"></span>
-        <div><p class="eyebrow">Coaching Intelligence</p><h1>CoachTools</h1></div>
-      </div>
+    <div class="startup-status">
       <p id="startupSummary" class="startup-summary">Loading the desktop and checking shared data…</p>
       <div class="startup-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="6"><span id="startupProgressFill" style="width:6%"></span></div>
       <div class="startup-meta"><strong id="startupStage">Starting CoachTools</strong><span id="startupCount">Checking data</span></div>
