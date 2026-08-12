@@ -11,7 +11,7 @@
 <meta name="coachtools-icon" content="icons/qa-scores.png" />
 <meta name="coachtools-initials" content="QA" />
 <meta name="coachtools-keywords" content="qa, quality, monitor, reviewer, coaching" />
-<meta name="coachtools-data" content="qa, coaching" />
+<meta name="coachtools-data" content="qa, documentedCoaching" />
 <meta name="coachtools-order" content="60" />
 <meta name="coachtools-version" content="1.0" />
 
@@ -19,6 +19,7 @@
 <script src="../vendor/lz-string.min.js"></script>
 <script src="../vendor/xlsx.full.min.js"></script>
 <script src="../shared/coachtools-storage.js"></script>
+<script src="../shared/coachtools-import.js"></script>
 <script src="../shared/coachtools-shell.js"></script>
 
 <style>
@@ -1048,6 +1049,8 @@ function normHdr(s){
 
 function loadDockObjByKey(key){
   if(!key) return null;
+  const shared=window.CoachToolsStorage?.getByCompatibilityKey?.(key);
+  if(shared) return shared;
   const raw = localStorage.getItem(key);
   if(!raw) return null;
 
@@ -1360,7 +1363,8 @@ function quarterRange(year, quarter){
 }
 
 function findDockKeysBySuffix(suffix){
-  const hits=[];
+  const source=String(suffix||'').split('.').pop();
+  const hits=window.CoachToolsStorage?.listCompatibilityKeys?.(source)||[];
   const suf = String(suffix||"").toLowerCase();
   for(let i=0;i<localStorage.length;i++){
     const k = localStorage.key(i);

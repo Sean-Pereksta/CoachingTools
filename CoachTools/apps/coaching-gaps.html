@@ -11,7 +11,7 @@
 <meta name="coachtools-icon" content="icons/coaching-gaps.png" />
 <meta name="coachtools-initials" content="CG" />
 <meta name="coachtools-keywords" content="coach, performance, opportunities, teams, corrective" />
-<meta name="coachtools-data" content="retail, referral, qa, coaching, checklist" />
+<meta name="coachtools-data" content="weeklyRetail, weeklyReferral, qa, documentedCoaching, checklist" />
 <meta name="coachtools-order" content="30" />
 <meta name="coachtools-version" content="1.0" />
 
@@ -19,6 +19,7 @@
 <script src="../vendor/lz-string.min.js"></script>
 <script src="../vendor/xlsx.full.min.js"></script>
 <script src="../shared/coachtools-storage.js"></script>
+<script src="../shared/coachtools-import.js"></script>
 <script src="../shared/coachtools-shell.js"></script>
 
 <style>
@@ -2356,6 +2357,8 @@ function normalizeReadFlag(v){
 
 function loadDockObjByKey(key){
   if(!key) return null;
+  const shared=window.CoachToolsStorage?.getByCompatibilityKey?.(key);
+  if(shared) return shared;
   const raw = localStorage.getItem(key);
   if(!raw) return null;
   try{
@@ -2883,7 +2886,7 @@ function canonicalizeQA(dockObj){
 
 /* =================== dock key helpers =================== */
 function findDockCandidates(kind){
-  const out=[];
+  const out=window.CoachToolsStorage?.listCompatibilityKeys?.(kind)||[];
   const needle = `.dock.${String(kind).toLowerCase()}`;
   for(let i=0;i<localStorage.length;i++){
     const k = localStorage.key(i);
@@ -2900,7 +2903,7 @@ function pickBestKey(kind){
   return cands[0] || preferred || '';
 }
 function findCoachingCandidates(){
-  const keys=[];
+  const keys=window.CoachToolsStorage?.listCompatibilityKeys?.('coaching')||[];
   for(let i=0;i<localStorage.length;i++){
     const k = localStorage.key(i);
     if(!k) continue;
@@ -2912,7 +2915,7 @@ function findCoachingCandidates(){
   return Array.from(new Set(keys)).sort((a,b)=>a.localeCompare(b));
 }
 function findQADockCandidates(){
-  const preferred = [];
+  const preferred = window.CoachToolsStorage?.listCompatibilityKeys?.('qa')||[];
   const fallback = [];
   for(let i=0;i<localStorage.length;i++){
     const k = localStorage.key(i);

@@ -11,12 +11,13 @@
 <meta name="coachtools-icon" content="icons/audit-checklist.png" />
 <meta name="coachtools-initials" content="AC" />
 <meta name="coachtools-keywords" content="audit, checklist, correctives, addressed, speed" />
-<meta name="coachtools-data" content="coaching, checklist" />
+<meta name="coachtools-data" content="documentedCoaching, checklist" />
 <meta name="coachtools-order" content="70" />
 <meta name="coachtools-version" content="1.0" />
 <script src="../vendor/lz-string.min.js"></script>
 <script src="../vendor/xlsx.full.min.js"></script>
 <script src="../shared/coachtools-storage.js"></script>
+<script src="../shared/coachtools-import.js"></script>
 <script src="../shared/coachtools-shell.js"></script>
 
 <style>
@@ -1134,6 +1135,8 @@
 
   function loadDockObjByKey(key){
     if(!key) return null;
+    const shared=window.CoachToolsStorage?.getByCompatibilityKey?.(key);
+    if(shared) return shared;
     let raw = null;
     try{ raw = localStorage.getItem(key); }catch(e){ return null; }
     if(!raw) return null;
@@ -1226,7 +1229,7 @@
   }
 
   function findDockCandidates(kind){
-    const out = [];
+    const out = window.CoachToolsStorage?.listCompatibilityKeys?.(kind)||[];
     const needle = `.dock.${String(kind).toLowerCase()}`;
     try{
       for(let i=0;i<localStorage.length;i++){

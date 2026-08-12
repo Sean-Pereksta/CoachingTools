@@ -68,20 +68,26 @@ function parsed(fileName, rows) {
   };
 }
 
-assert.strictEqual(imports.classifyFile({ name: 'Retail Weekly.xlsx' }, parsed('Retail Weekly.xlsx', [['Sheet']])).id, 'retail');
-assert.strictEqual(imports.classifyFile({ name: 'Documented Coaching.csv' }, parsed('Documented Coaching.csv', [['Job Coach']])).id, 'coaching');
-assert.strictEqual(imports.classifyFile({ name: 'mystery.xlsx' }, parsed('mystery.xlsx', [['Team'], ['Coach A']])).id, 'qa');
+assert.strictEqual(imports.classifyFile({ name: 'Retail Weekly.xlsx' }, parsed('Retail Weekly.xlsx', [['Sheet']])).id, 'weeklyRetail');
+assert.strictEqual(imports.classifyFile({ name: 'RETAIL-WEEKLY_8-2-8-8 (1).xlsx' }, parsed('RETAIL-WEEKLY_8-2-8-8 (1).xlsx', [['Sheet']])).id, 'weeklyRetail');
+assert.strictEqual(imports.classifyFile({ name: 'Referral Weekly Final.xlsx' }, parsed('Referral Weekly Final.xlsx', [['Sheet']])).id, 'weeklyReferral');
+assert.strictEqual(imports.classifyFile({ name: 'August 2026 Appointment Report.xlsx' }, parsed('August 2026 Appointment Report.xlsx', [['Representative']])).id, 'monthlyRetail');
+assert.strictEqual(imports.classifyFile({ name: 'Aug KPI Report Copy.xlsx' }, parsed('Aug KPI Report Copy.xlsx', [['Representative']])).id, 'monthlyReferral');
+assert.strictEqual(imports.classifyFile({ name: 'All Items 8-11.xlsx' }, parsed('All Items 8-11.xlsx', [['Coach Assigned', 'Associate Name', 'Action']])).id, 'checklist');
+assert.strictEqual(imports.classifyFile({ name: 'Documented Coaching.csv' }, parsed('Documented Coaching.csv', [['Job Coach', 'Associate Name', 'Coaching Date']])).id, 'documentedCoaching');
+assert.strictEqual(imports.classifyFile({ name: 'mystery.xlsx' }, parsed('mystery.xlsx', [['Team', 'Score %'], ['Coach A', 0.9]])).id, 'qa');
+assert.strictEqual(imports.classifyFile({ name: 'QA.xlsx' }, parsed('QA.xlsx', [['Team']])).needsReview, true);
 
 const ambiguous = imports.classifyFile({ name: 'mystery.xlsx' }, parsed('mystery.xlsx', [['Sheet'], ['Coach A']]));
 assert.strictEqual(ambiguous.id, null);
-assert.deepStrictEqual(Array.from(ambiguous.candidates).sort(), ['referral', 'retail']);
+assert.deepStrictEqual(Array.from(ambiguous.candidates).sort(), ['weeklyReferral', 'weeklyRetail']);
 
 const scoped = imports.prepareDataset(parsed('Retail Weekly.xlsx', [
   ['Report title'],
   ['Sheet', 'Metric'],
   ['JOHN DOE', 1],
   ['Jane Doe', 2]
-]), 'retail', { scope: { mode: 'team', coaches: ['John Doe'] } });
+]), 'weeklyRetail', { scope: { mode: 'team', coaches: ['John Doe'] } });
 assert.deepStrictEqual(JSON.parse(JSON.stringify(scoped.workbook.data.Data.aoa)), [
   ['Report title'],
   ['Sheet', 'Metric'],
@@ -91,10 +97,18 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(scoped.workbook.data.Data.aoa))
 const coaching = imports.prepareDataset(parsed('Documented Coaching.xlsx', [
   ['Job Coach', 'Coaching Date'],
   ['John Doe', '2026-08-11']
-]), 'coaching', { scope: { mode: 'all' } });
+]), 'documentedCoaching', { scope: { mode: 'all' } });
 assert.strictEqual(coaching.workbook.data.Data.aoa[0][1], 'Date');
 
+assert.deepStrictEqual(JSON.parse(JSON.stringify(imports.detectPeriod('Retail Weekly 7-19-7-25.xlsx', 'weeklyRetail'))), {
+  startDate: `${new Date().getFullYear()}-07-19`,
+  endDate: `${new Date().getFullYear()}-07-25`,
+  label: `${new Date().getFullYear()}-07-19 – ${new Date().getFullYear()}-07-25`,
+  periodKey: `${new Date().getFullYear()}-07-19`,
+  sortKey: `${new Date().getFullYear()}-07-19`
+});
+
 const packed = imports.packDataset(scoped);
-assert.strictEqual(JSON.parse(context.LZString.decompressFromUTF16(packed)).meta.source, 'retail');
+assert.strictEqual(JSON.parse(context.LZString.decompressFromUTF16(packed)).meta.source, 'weeklyRetail');
 
 console.log('CoachTools desktop/import contract tests passed.');
