@@ -12,6 +12,7 @@ const desktopStyles = fs.readFileSync(path.join(root, 'shared', 'coachtools-them
 const desktopHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'apps.json'), 'utf8'));
 const storageScript = fs.readFileSync(path.join(root, 'shared', 'coachtools-storage.js'), 'utf8');
+const appDataScript = fs.readFileSync(path.join(root, 'shared', 'coachtools-app-data.js'), 'utf8');
 const context = { console, TextEncoder, TextDecoder };
 context.window = context;
 vm.createContext(context);
@@ -43,7 +44,14 @@ for (const icon of expectedIconFiles.slice(0, 11)) {
   assert(fs.existsSync(path.join(root, 'icons', icon)), `Uploaded icon should be available at icons/${icon}.`);
 }
 assert(desktopScript.includes('appendImageWithFallback'), 'Desktop icons should retain a safe default/initials fallback chain.');
-assert(!/function init\(\)[\s\S]*?preloadIconAssets\(\)/.test(desktopScript), 'Desktop startup should not eagerly decode every multi-megabyte icon.');
+assert(desktopScript.includes('preloadDesktopAssets'), 'The startup splash should run one centralized desktop icon preload.');
+assert(/function desktopAssetPaths\(\)[\s\S]*?apps\.map\(app => app\.icon\)/.test(desktopScript), 'Manifest icon paths should join the startup preload automatically.');
+assert(desktopScript.includes('new Set(['), 'Duplicate icon paths should collapse before preloading.');
+assert(desktopScript.includes('ICON_PRELOAD_CONCURRENCY = 4'), 'Icon decoding should use sensible limited concurrency.');
+assert(desktopScript.includes('ICON_PRELOAD_TIMEOUT_MS'), 'One broken image must not hang startup.');
+assert(desktopScript.indexOf('app.icon || APP_ICON_PATHS[app.id]') >= 0, 'Manifest app.icon should be authoritative ahead of legacy overrides.');
+assert(desktopScript.includes("image.loading = 'eager'"), 'Desktop icon elements should consume the startup cache immediately.');
+assert(/Icon diagnostics[\s\S]*?Array\.from\(state\.iconFailures\)/.test(desktopScript), 'Diagnostics should list actual failed icon paths.');
 assert(desktopHtml.includes('data-system-icon="coachtools-home"'), 'Desktop controls should use the uploaded CoachTools home icon.');
 assert(desktopHtml.includes('data-system-icon="start"'), 'The Start button should use the branded Start graphic role.');
 assert(desktopHtml.includes('data-system-icon="shared-data"'), 'Data controls should use the uploaded shared-data icon.');
@@ -63,6 +71,7 @@ assert(/\.desktop-wallpaper\s*\{[\s\S]*?z-index:\s*0;/.test(desktopStyles), 'The
 assert(/\.desktop-shade\s*\{[\s\S]*?z-index:\s*1;/.test(desktopStyles), 'The readability shade should render directly above the wallpaper.');
 assert(/\.desktop-shell\s*\{[\s\S]*?z-index:\s*2;/.test(desktopStyles), 'Desktop controls should render above the wallpaper and shade.');
 assert(desktopScript.includes('runStartupSequence'), 'Desktop startup should coordinate metadata readiness.');
+assert(/runStartupSequence\(\)[\s\S]*?preloadDesktopAssets\(\)[\s\S]*?storage\.ready/.test(desktopScript), 'Icons should decode during the splash before metadata-only IndexedDB readiness completes.');
 assert(desktopScript.includes('scanStorage({ startup: true, background: true })'), 'Storage synchronization should run after the desktop opens.');
 assert(desktopScript.indexOf('dismissStartupSplash()') < desktopScript.indexOf('scanStorage({ startup: true, background: true })'), 'Desktop visibility must precede storage synchronization.');
 assert(!desktopScript.includes('warmApplications'), 'The retired full-suite iframe warm-up must be removed.');
@@ -73,6 +82,13 @@ assert(/function activateWindow\(appId\)[\s\S]*?windowState\.deferred[\s\S]*?cre
 assert(desktopScript.includes('isStorageFileUnchanged'), 'Automatic storage sync should compare lightweight file metadata.');
 assert(desktopScript.includes('no spreadsheets downloaded'), 'Unchanged storage scans should explicitly skip spreadsheet downloads.');
 assert(desktopScript.includes('Changed file parsing'), 'Changed-file parsing should be measured for diagnostics.');
+assert(desktopScript.includes('if (background) await yieldLowPriority()'), 'Background changed-file parsing should yield before heavy work.');
+assert(appDataScript.includes('getManyProgressive'), 'Applications should share a staged data-loading API.');
+assert(appDataScript.includes('loadForApp'), 'Manifest-driven application loading should have a dedicated API.');
+assert(!/async function getMany\([\s\S]*?Promise\.all\(requested/.test(appDataScript), 'Large app hydration must not request every dataset with one Promise.all.');
+assert(appDataScript.includes('requestIdleCallback') && appDataScript.includes('requestAnimationFrame'), 'Progressive reads should yield through browser scheduling APIs.');
+assert(appDataScript.includes('pendingReads'), 'Concurrent requests should retain shared pending-read deduplication.');
+assert(appDataScript.includes('coachtools:cancel-data-loads'), 'Closing an app should stop unnecessary secondary hydration where practical.');
 const dynamicsChecklist = manifest.apps.find(app => app.id === 'contact-center-checklist');
 assert(dynamicsChecklist && dynamicsChecklist.preload === false, 'The Dynamics checklist must never be eagerly warmed.');
 for (const app of manifest.apps) assert.strictEqual(app.preload, false, `${app.name} should remain lazy-loaded.`);
