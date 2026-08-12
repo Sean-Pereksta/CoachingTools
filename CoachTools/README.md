@@ -30,6 +30,8 @@ Browsers do not allow a local HTML file to enumerate a neighboring folder, so au
 
 Place an optional wallpaper at `graphics/background.png`. It is centered and cover-scaled behind a subtle readability overlay. If it is absent or unreadable, the built-in gradient remains fully functional. Application and desktop-control icons stay under `icons/`; the built-in icon set is preloaded on startup and receives a small glow/scale treatment on mouse or keyboard focus.
 
+The compact startup bar appears before the desktop or a remembered app session is revealed. It reports readiness for Retail, Referral, QA, Documented Coaching, and Checklist, then safely scans `storage/` for missing sources when the local launcher is active. Existing datasets are never replaced. Direct `index.html` mode exits the startup check quickly and keeps manual Weekly Data import available.
+
 ## Weekly Data and shared storage
 
 Manual and automatic imports use `shared/coachtools-import.js` for workbook reading, source classification, header inspection, and scoped dataset preparation. Weekly Data retains multi-file detection, manual placement, coach-name corrections, Teams, Coordinators, saved groups, Select All, search, and individual-coach selection.

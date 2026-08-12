@@ -128,12 +128,17 @@ for (const supportFile of ['apps/allstar/qualtrics/generator.html']) {
 const index = exists('index.html') ? fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8') : '';
 if (!index.includes('apps-manifest.js')) fail('index.html must load the file://-safe JavaScript manifest.');
 if (!index.includes('shared/coachtools-import.js')) fail('index.html must load the shared Weekly Data importer.');
+for (const marker of ['id="startupSplash"', 'id="startupProgressFill"', 'id="startupDatasets"']) {
+  if (!index.includes(marker)) fail(`index.html is missing startup readiness marker ${marker}.`);
+}
 if (/fetch\s*\(\s*["']apps\.json/i.test(index)) fail('index.html must not require fetch(apps.json) for local-file startup.');
 const desktopScript = exists('shared/coachtools-desktop.js') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-desktop.js'), 'utf8') : '';
 if (!desktopScript.includes('const openWindows = new Map()')) fail('Desktop must retain one live window state per opened application.');
 if (!desktopScript.includes('iframe.src = app.file')) fail('Desktop app opening must use direct iframe navigation.');
 if (!desktopScript.includes('coachtools.desktop.openApps.v1')) fail('Desktop must persist the lightweight open-application list.');
 if (!desktopScript.includes("fetch('/api/storage'")) fail('Desktop must use the constrained local storage API for automatic loading.');
+if (!desktopScript.includes('runStartupSequence')) fail('Desktop must coordinate startup data readiness before revealing remembered sessions.');
+if (!desktopScript.includes("image.src = 'graphics/background.png'")) fail('Desktop wallpaper path must remain graphics/background.png.');
 
 const importerScript = exists('shared/coachtools-import.js') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-import.js'), 'utf8') : '';
 for (const marker of ['classifyFile', 'prepareDataset', 'packDataset', 'myone2.dock.retail', 'myone2.dock.checklist']) {

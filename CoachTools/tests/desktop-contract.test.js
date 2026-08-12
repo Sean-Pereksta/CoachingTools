@@ -43,7 +43,17 @@ for (const icon of expectedIconFiles.slice(0, 11)) {
 assert(desktopScript.includes('appendImageWithFallback'), 'Desktop icons should retain a safe default/initials fallback chain.');
 assert(desktopScript.includes('preloadIconAssets'), 'Desktop should preload its icon set at startup.');
 assert(desktopHtml.includes('data-system-icon="coachtools-home"'), 'Desktop controls should use the uploaded CoachTools home icon.');
+assert(desktopHtml.includes('data-system-icon="start"'), 'The Start button should use the branded Start graphic role.');
 assert(desktopHtml.includes('data-system-icon="shared-data"'), 'Data controls should use the uploaded shared-data icon.');
+assert(desktopHtml.includes('id="startupSplash"'), 'A startup readiness bar should be present before the desktop opens.');
+for (const script of ['vendor/xlsx.full.min.js', 'vendor/lz-string.min.js', 'shared/coachtools-storage.js', 'shared/coachtools-import.js']) {
+  assert(new RegExp(`<script[^>]+src=["']${script.replace(/\./g, '\\.')}["'][^>]*defer`).test(desktopHtml), `${script} should defer so the startup bar can paint immediately.`);
+}
+assert(desktopScript.includes("image.src = 'graphics/background.png'"), 'The main wallpaper should load from graphics/background.png.');
+assert(desktopScript.includes('runStartupSequence'), 'Desktop startup should coordinate readiness and automatic loading.');
+assert(desktopScript.includes("scanStorage({ startup: true })"), 'Startup should safely attempt to load missing data from storage.');
+assert(desktopScript.indexOf('await scanStorage({ startup: true })') < desktopScript.lastIndexOf('restoreOpenWindows();'), 'Remembered app sessions should restore after the startup data check.');
+assert(desktopStyles.includes('.startup-progress'), 'Startup readiness should include a visible progress bar.');
 assert(desktopStyles.includes('.app-card:hover .app-icon'), 'Application icons should respond to pointer hover.');
 assert(desktopStyles.includes('scale(1.065)'), 'Application hover should expand icons slightly.');
 assert(desktopStyles.includes('drop-shadow(0 0 10px'), 'Application hover should add a visible glow.');

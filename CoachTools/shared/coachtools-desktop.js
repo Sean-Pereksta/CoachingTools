@@ -13,6 +13,7 @@
   });
   const SYSTEM_ICON_PATHS = Object.freeze({
     'coachtools-home': 'icons/coachtools-home.png',
+    start: 'icons/coachtools-home.png',
     'shared-data': 'icons/shared-data.png',
     'backup-restore': 'icons/backup-restore.png',
     settings: 'icons/settings.png',
@@ -47,6 +48,9 @@
     toastTimer: null,
     clockTimer: null,
     autoScanRunning: false,
+    startupScanActive: false,
+    startupStartedAt: 0,
+    startupDismissTimer: null,
     progressSteps: [],
     pendingStageFiles: [],
     pendingStageSent: false,
@@ -182,6 +186,41 @@
       image.decoding = 'async';
       image.src = path;
     }
+  }
+
+  function setStartupProgress(percent, stage, summary, count) {
+    if (!elements.startupSplash || elements.startupSplash.hidden) return;
+    const value = Math.max(0, Math.min(100, Number(percent) || 0));
+    elements.startupProgressFill.style.width = value + '%';
+    elements.startupProgressFill.parentElement.setAttribute('aria-valuenow', String(Math.round(value)));
+    if (stage != null) elements.startupStage.textContent = stage;
+    if (summary != null) elements.startupSummary.textContent = summary;
+    if (count != null) elements.startupCount.textContent = count;
+  }
+
+  function renderStartupDatasets(statuses) {
+    if (!elements.startupDatasets) return;
+    elements.startupDatasets.replaceChildren(...(statuses || []).map(status => {
+      const item = document.createElement('span');
+      item.className = 'startup-dataset' + (status.ready ? ' ready' : '');
+      const label = document.createElement('strong');
+      label.textContent = status.label;
+      const value = document.createElement('small');
+      value.textContent = status.ready ? 'Ready' : 'Missing';
+      item.append(label, value);
+      return item;
+    }));
+  }
+
+  function currentDatasetStatuses() {
+    return storage && storage.getDatasetStatus ? storage.getDatasetStatus() : [];
+  }
+
+  function dismissStartupSplash() {
+    if (!elements.startupSplash || elements.startupSplash.hidden) return;
+    elements.startupSplash.classList.add('is-leaving');
+    clearTimeout(state.startupDismissTimer);
+    state.startupDismissTimer = setTimeout(() => { elements.startupSplash.hidden = true; }, 240);
   }
 
   function missingRequirements(app) {
@@ -790,11 +829,18 @@
     const existing = state.progressSteps.find(step => step.label === label);
     if (existing) existing.status = status;
     else state.progressSteps.push({ label, status });
+    if (state.startupScanActive && status === 'active') {
+      setStartupProgress(Number(elements.startupProgressFill.style.width.replace('%', '')) || 12, label, null, null);
+    }
     renderProgressSteps();
   }
 
   function setImportProgress(percent, currentSource, currentFile, count, summary) {
     const value = Math.max(0, Math.min(100, Number(percent) || 0));
+    if (state.startupScanActive) {
+      setStartupProgress(value, currentSource, summary || currentFile, count);
+      return;
+    }
     elements.importProgressFill.style.width = value + '%';
     elements.importProgressFill.parentElement.setAttribute('aria-valuenow', String(Math.round(value)));
     if (currentSource != null) elements.importCurrentSource.textContent = currentSource;
@@ -803,8 +849,14 @@
     if (summary != null) elements.importSummary.textContent = summary;
   }
 
-  function beginImportProgress() {
+  function beginImportProgress(options) {
+    state.startupScanActive = Boolean(options && options.startup);
     state.progressSteps = [];
+    if (state.startupScanActive) {
+      setStartupProgress(18, 'Scanning storage', 'Recognizable files were found. Checking only the missing shared datasets…', '0 of 5');
+      renderProgressSteps();
+      return;
+    }
     elements.importProgress.hidden = false;
     elements.importClose.hidden = true;
     elements.importReview.hidden = true;
@@ -813,6 +865,11 @@
   }
 
   function finishImportProgress(summary, options) {
+    if (state.startupScanActive) {
+      renderStartupDatasets(currentDatasetStatuses());
+      setStartupProgress(100, options && options.warning ? 'Data review available' : 'Shared data ready', summary, options && options.count || '5 of 5');
+      return;
+    }
     setImportProgress(100, options && options.warning ? 'Review needed' : 'Ready', '', options && options.count || '5 of 5', summary);
     elements.importClose.hidden = false;
     elements.importReview.hidden = !(options && options.review);
@@ -846,27 +903,36 @@
 
   async function scanStorage(options) {
     const manual = Boolean(options && options.manual);
+    const startup = Boolean(options && options.startup);
     if (state.autoScanRunning) {
       if (manual) showToast('A storage scan is already running.');
       return;
     }
-    const statuses = storage && storage.getDatasetStatus ? storage.getDatasetStatus() : [];
+    if (startup) {
+      state.startupScanActive = true;
+      setStartupProgress(14, 'Checking shared data', 'Looking for missing datasets without replacing anything already saved…', null);
+    }
+    const statuses = currentDatasetStatuses();
     const missing = statuses.filter(item => !item.ready).map(item => item.id);
     if (!missing.length) {
+      if (startup) setStartupProgress(100, 'Shared data ready', 'All five shared data sources are already available.', '5 of 5 ready');
       if (manual) showToast('All five shared data sources are already loaded. Nothing was replaced.');
       return;
     }
     if (location.protocol === 'file:') {
       saveScanRecord({ available: false, fileCount: 0, ambiguous: [], summary: 'Direct-file mode · manual import available' });
+      if (startup) setStartupProgress(86, 'Desktop ready', `${statuses.filter(item => item.ready).length} of 5 data sources ready · use START COACHTOOLS for automatic storage loading.`, `${statuses.filter(item => item.ready).length} of 5 ready`);
       if (manual) showToast('Start CoachTools with START COACHTOOLS to scan storage. Manual Weekly Data import is still available.', 5800);
       return;
     }
     if (!importer) {
+      if (startup) setStartupProgress(86, 'Desktop ready', 'Shared import utilities are unavailable. Manual Weekly Data import remains available.', `${statuses.filter(item => item.ready).length} of 5 ready`);
       if (manual) showToast('The shared import utility is unavailable. Use Weekly Data for manual import.', 5600);
       return;
     }
 
     state.autoScanRunning = true;
+    if (startup) setStartupProgress(20, 'Checking storage folder', `Searching for ${missing.length} missing data source${missing.length === 1 ? '' : 's'}…`, `${statuses.filter(item => item.ready).length} of 5 ready`);
     let listing;
     try {
       const response = await fetch('/api/storage', { cache: 'no-store', headers: { Accept: 'application/json' } });
@@ -875,6 +941,7 @@
     } catch (error) {
       state.autoScanRunning = false;
       saveScanRecord({ available: false, fileCount: 0, ambiguous: [], summary: 'Storage API unavailable' });
+      if (startup) setStartupProgress(88, 'Desktop ready', 'Storage scanning is unavailable. Existing data is unchanged and manual import remains available.', `${statuses.filter(item => item.ready).length} of 5 ready`);
       if (manual) showToast('Storage scanning is unavailable. Manual Weekly Data import remains available.', 5600);
       return;
     }
@@ -883,11 +950,12 @@
     if (!listedFiles.length) {
       state.autoScanRunning = false;
       saveScanRecord({ available: true, fileCount: 0, ambiguous: [], summary: 'No supported storage files found' });
+      if (startup) setStartupProgress(92, 'Desktop ready', 'No XLSX, XLS, or CSV files were found in CoachTools/storage. Existing data is unchanged.', `${statuses.filter(item => item.ready).length} of 5 ready`);
       if (manual) showToast('No XLSX, XLS, or CSV files were found in CoachTools/storage.');
       return;
     }
 
-    beginImportProgress();
+    beginImportProgress({ startup });
     setProgressStep('Scanning storage', 'success');
     setProgressStep('Reading files', 'active');
     setImportProgress(8, 'Reading files', '', `0 of ${listedFiles.length}`, `${listedFiles.length} supported file${listedFiles.length === 1 ? '' : 's'} found.`);
@@ -1161,6 +1229,12 @@
   function collectElements() {
     Object.assign(elements, {
       wallpaper: $('wallpaper'),
+      startupSplash: $('startupSplash'),
+      startupProgressFill: $('startupProgressFill'),
+      startupSummary: $('startupSummary'),
+      startupStage: $('startupStage'),
+      startupCount: $('startupCount'),
+      startupDatasets: $('startupDatasets'),
       desktop: $('desktop'),
       workspace: $('workspace'),
       windowLayer: $('windowLayer'),
@@ -1240,6 +1314,48 @@
     }
   }
 
+  async function runStartupSequence() {
+    state.startupStartedAt = Date.now();
+    state.startupScanActive = true;
+    let statuses = currentDatasetStatuses();
+    renderStartupDatasets(statuses);
+    const initialReady = statuses.filter(item => item.ready).length;
+    setStartupProgress(10, 'Checking shared data', `${initialReady} of 5 data sources already available.`, `${initialReady} of 5 ready`);
+    await nextPaint();
+
+    try {
+      if (initialReady === 5) {
+        setStartupProgress(100, 'Shared data ready', 'All five shared data sources are already available. No storage files were scanned or replaced.', '5 of 5 ready');
+      } else {
+        await scanStorage({ startup: true });
+      }
+    } catch (error) {
+      saveScanRecord({ available: false, fileCount: 0, ambiguous: [], summary: 'Startup data check could not finish' });
+      setStartupProgress(92, 'Desktop ready', 'The startup data check could not finish. Existing data is unchanged and manual Weekly Data import remains available.', `${initialReady} of 5 ready`);
+    } finally {
+      renderDataStatus();
+      statuses = currentDatasetStatuses();
+      renderStartupDatasets(statuses);
+      const readyCount = statuses.filter(item => item.ready).length;
+      const scanIsCurrent = Boolean(state.lastScan && Date.parse(state.lastScan.scannedAt) >= state.startupStartedAt);
+      const loadedCount = scanIsCurrent && Array.isArray(state.lastScan.loaded) ? state.lastScan.loaded.length : 0;
+      const fallbackSummary = scanIsCurrent && state.lastScan.summary || `${readyCount} of 5 shared data sources ready.`;
+      const finalSummary = readyCount === 5
+        ? `All five shared data sources are ready${loadedCount ? ` · ${loadedCount} loaded automatically` : ''}.`
+        : `${readyCount} of 5 shared data sources ready · ${fallbackSummary}`;
+      setStartupProgress(100, 'CoachTools ready', finalSummary, `${readyCount} of 5 ready`);
+
+      const remainingDelay = Math.max(0, 520 - (Date.now() - state.startupStartedAt));
+      if (remainingDelay) await new Promise(resolve => setTimeout(resolve, remainingDelay));
+      state.startupScanActive = false;
+      restoreOpenWindows();
+      dismissStartupSplash();
+      if (state.pendingStageFiles.length) {
+        setTimeout(() => showToast('Some storage files need review. Open Weekly Data to place them safely.', 6500), 300);
+      }
+    }
+  }
+
   function init() {
     collectElements();
     preloadIconAssets();
@@ -1259,10 +1375,8 @@
     renderDataStatus();
     updateClock();
     state.clockTimer = setInterval(updateClock, 30000);
-    restoreOpenWindows();
     if (!apps.length) showToast('No applications were found. Run the manifest generator and reload.', 8000);
-    const allReady = storage && storage.getDatasetStatus && storage.getDatasetStatus().every(item => item.ready);
-    if (!allReady) setTimeout(() => scanStorage({ startup: true }), 0);
+    runStartupSequence();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
