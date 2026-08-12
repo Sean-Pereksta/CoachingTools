@@ -257,7 +257,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Training Videos",
       "description": "Browse and watch CoachTools training videos from the Videos folder.",
       "file": "apps/video-library.html",
-      "icon": "icons/default-app.png",
+      "icon": "icons/video-player.png",
       "initials": "TV",
       "category": "Training",
       "keywords": [
