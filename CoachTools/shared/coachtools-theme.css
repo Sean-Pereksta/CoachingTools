@@ -26,6 +26,7 @@ body {
   margin: 0;
   min-width: 320px;
   overflow: hidden;
+  isolation: isolate;
   color: var(--text);
   background:
     radial-gradient(circle at 18% 15%, rgba(72, 126, 202, .32), transparent 34rem),
@@ -93,8 +94,9 @@ button:focus-visible, input:focus-visible {
 
 .desktop-wallpaper {
   position: fixed;
-  z-index: -3;
+  z-index: 0;
   inset: 0;
+  pointer-events: none;
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
@@ -104,7 +106,7 @@ button:focus-visible, input:focus-visible {
 .desktop-wallpaper.has-wallpaper { opacity: 1; }
 .desktop-shade {
   position: fixed;
-  z-index: -2;
+  z-index: 1;
   inset: 0;
   pointer-events: none;
   background:
@@ -114,6 +116,7 @@ button:focus-visible, input:focus-visible {
 
 .desktop-shell {
   position: relative;
+  z-index: 2;
   width: 100%;
   height: calc(100vh - var(--taskbar-height) - 12px);
   padding: 12px 14px 8px;
