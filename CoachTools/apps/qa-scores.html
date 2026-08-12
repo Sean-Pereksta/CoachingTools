@@ -534,30 +534,103 @@
     .reviewerChecklist{grid-template-columns:1fr}
   }
 
+
+
+  /* === QA Scores 2026 command-center modernization === */
+  :root{
+    --surface:#ffffff;
+    --surface-2:#f7f8fa;
+    --surface-3:#f1f3f6;
+    --text:#16181d;
+    --text-2:#5d6470;
+    --border:#e3e6eb;
+    --brand:#d90000;
+    --brand-dark:#aa0000;
+    --success:#16834a;
+    --warning:#b46a00;
+    --danger:#c72c32;
+    --radius-sm:10px;
+    --radius:16px;
+    --radius-lg:22px;
+    --shadow-soft:0 8px 26px rgba(18,24,35,.055);
+    --shadow-float:0 18px 50px rgba(18,24,35,.13);
+  }
+  .srOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  body{background:#f5f6f8;color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+  .commandHeader{padding:0;background:rgba(255,255,255,.96);border-bottom:1px solid var(--border);box-shadow:none;backdrop-filter:blur(16px)}
+  .compactHeader{max-width:1500px;padding:14px 18px 12px;gap:12px}
+  .commandTop{display:flex;align-items:center;justify-content:space-between;gap:18px}
+  .compactBrand{display:flex;align-items:baseline;gap:10px;min-width:0}
+  .compactBrand .eyebrow{font-size:10px;letter-spacing:.14em;color:var(--brand);white-space:nowrap}
+  .compactBrand h1{font-size:25px;line-height:1;font-weight:850;letter-spacing:-.04em}
+  .compactBrand .scopeLine{font-size:12px;font-weight:650;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:720px}
+  .commandActions{flex-wrap:nowrap}.uiIcon{font-size:13px;opacity:.78}.countBubble{display:inline-flex;min-width:25px;height:22px;padding:0 7px;align-items:center;justify-content:center;border-radius:999px;background:var(--surface-3);font-size:11px;margin-left:3px}
+  .reviewerBtn{border-color:#d9dce2;background:#fff}
+  .commandBar{display:grid;grid-template-columns:minmax(280px,1.5fr) minmax(160px,.7fr) minmax(150px,.6fr) auto;gap:8px;align-items:center}
+  .commandSearch{height:42px;border:1px solid var(--border);background:var(--surface-2);border-radius:13px;display:flex;align-items:center;padding:0 12px;gap:8px;transition:.16s ease}
+  .commandSearch:focus-within{background:#fff;border-color:#c7ccd3;box-shadow:0 0 0 4px rgba(18,24,35,.05)}
+  .searchGlyph{font-size:20px;color:#737a85;line-height:1}.commandSearch input{border:0!important;background:transparent!important;box-shadow:none!important;padding:0!important;width:100%;min-width:0;height:40px;font-weight:600}
+  .commandControl{height:42px;border:1px solid var(--border);border-radius:13px;background:#fff;padding:4px 10px;display:grid;grid-template-columns:auto 1fr;align-items:center;gap:8px;color:var(--text-2);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+  .commandControl select{border:0;background:transparent;box-shadow:none;padding:0 22px 0 0;height:32px;min-width:0;width:100%;font-weight:750;color:var(--text);text-transform:none}
+  .moreFilters{position:relative}.moreFilters summary{list-style:none;display:flex;align-items:center;gap:7px;white-space:nowrap;height:42px}.moreFilters summary::-webkit-details-marker{display:none}.moreFilters[open] summary{border-color:#bcc1c9;box-shadow:0 0 0 3px rgba(18,24,35,.05)}
+  .filterPopover{position:absolute;right:0;top:50px;width:min(360px,90vw);z-index:100;background:#fff;border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow-float);padding:14px;display:grid;gap:12px}.filterPopover .headerRangeCard{grid-column:auto}.filterPopover .headerRangeCard.show{display:grid}.filterPopover .controlField{font-size:10px}.filterPopover .checkField{width:100%}
+  .wrap{max-width:1500px;padding:16px 18px 48px}.tabBar{position:sticky;top:103px;z-index:30;border:1px solid var(--border);box-shadow:0 5px 18px rgba(18,24,35,.04);border-radius:14px;padding:5px;background:rgba(255,255,255,.96);backdrop-filter:blur(12px);margin-bottom:16px}.viewTab{border:0!important;background:transparent;padding:9px 14px;border-radius:10px;box-shadow:none!important;color:#5d6470;font-weight:750}.viewTab span{margin-right:5px}.viewTab.active{background:#17191e;color:#fff}.viewTab:hover{transform:none;background:#f1f3f6}.viewTab.active:hover{background:#17191e}
+  .stack{gap:14px}.card,.sectionShell{border:1px solid var(--border);box-shadow:var(--shadow-soft);border-radius:var(--radius-lg);background:#fff}.summaryBox{padding:17px}.secondaryDetails{border:1px solid var(--border);border-radius:16px;background:#fff;overflow:hidden}.secondaryDetails>summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:780;font-size:12px;color:#515864;background:#fafbfc}.secondaryDetails>summary::-webkit-details-marker{display:none}.secondaryDetails>summary:after{content:'+';float:right;font-size:16px}.secondaryDetails[open]>summary:after{content:'–'}.secondaryDetails[open]>summary{border-bottom:1px solid var(--border)}
+  #overviewDetails>.card{border:0;border-radius:0;box-shadow:none}.summaryTbl thead th,thead th{background:#f5f6f8!important;color:#4b525d!important;text-transform:none!important;letter-spacing:0!important;font-weight:760;border-bottom:1px solid var(--border)}tbody td{border-bottom:1px solid #eceef2}.summaryTbl tbody tr:hover td,tbody tr:hover td{background:#fafbfc}.summaryTblWrap,.weeklyTableWrap,.tblWrap{border-color:var(--border);border-radius:13px;box-shadow:none}
+  .commandCenter{display:grid;gap:10px}.kpiGrid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px}.kpiCard{min-width:0;border:1px solid var(--border);border-radius:16px;background:#fff;padding:14px 14px 13px;box-shadow:0 3px 14px rgba(18,24,35,.035);position:relative;overflow:hidden}.kpiCard:before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:#c9cdd3}.kpiCard.good:before,.kpiCard.midgood:before{background:var(--success)}.kpiCard.warn:before{background:var(--warning)}.kpiCard.bad:before{background:var(--danger)}.kpiLabel{font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:#747b86}.kpiValue{font-size:26px;font-weight:850;letter-spacing:-.045em;margin-top:5px;line-height:1.05}.kpiSub{font-size:11px;color:#737a85;font-weight:600;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .attentionStrip{border:1px solid #ead9da;border-radius:14px;background:#fff;padding:11px 13px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;text-align:left;color:#454b55;cursor:pointer;transition:.15s ease}.attentionStrip:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(18,24,35,.06)}.attentionLead{display:flex;align-items:center;gap:7px;color:#23262b}.statusDot{width:8px;height:8px;border-radius:50%;background:#9aa0aa}.hasAttention .statusDot{background:var(--danger);box-shadow:0 0 0 4px rgba(199,44,50,.08)}.clear .statusDot{background:var(--success)}.attentionStrip>span:nth-child(2){font-size:12px;font-weight:620}.attentionArrow{font-size:20px;color:#848a94}
+  .sectionShell{padding:16px 17px}.sectionTitleRow,.repSectionHead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px}.sectionEyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.12em;font-weight:850;color:var(--brand)}.sectionTitleRow h2,.repSectionHead h2{font-size:18px;letter-spacing:-.025em;margin:2px 0 0}.sectionTitleRow p,.repSectionHead p{font-size:12px;color:var(--text-2);margin:4px 0 0}.actionQueue{display:grid;margin-top:13px;border:1px solid var(--border);border-radius:14px;overflow:hidden}.actionItem{display:grid;grid-template-columns:32px minmax(150px,1fr) 100px minmax(200px,1.5fr) 22px;gap:10px;align-items:center;border:0;border-bottom:1px solid #eceef1;background:#fff;padding:10px 12px;text-align:left;cursor:pointer;color:var(--text)}.actionItem:last-child{border-bottom:0}.actionItem:hover{background:#fafbfc}.actionRank{display:flex;width:26px;height:26px;align-items:center;justify-content:center;border-radius:8px;background:#eff1f4;font-weight:800;font-size:11px}.actionItem.attention .actionRank{background:#fff0f0;color:#b51e25}.actionItem.watch .actionRank{background:#fff7e8;color:#976000}.actionMain,.actionScore{display:grid}.actionMain b{font-size:13px}.actionMain small,.actionScore small{color:#7b828c;font-size:10px;margin-top:2px}.actionScore b,.actionScore{font-weight:800;font-size:13px}.actionWhy{display:flex;gap:5px;flex-wrap:wrap}.actionWhy em,.focusDrivers em{font-style:normal;font-size:10px;padding:4px 7px;border-radius:999px;background:#f2f3f5;color:#616873;font-weight:700}.actionItem.attention .actionWhy em{background:#fff1f1;color:#9f292e}.actionOpen{font-size:22px;color:#9aa0aa}.quietEmpty{padding:18px;color:#777e88;font-size:12px;text-align:center}
+  .repSectionHead{margin-top:2px;padding:2px 2px 0}.repStatusLegend{display:flex;gap:10px;flex-wrap:wrap}.legendItem{font-size:10px;font-weight:700;color:#69707a;display:flex;align-items:center;gap:5px}.legendItem i,.healthBadge i{width:7px;height:7px;border-radius:50%;background:#9ca2ab}.legendItem.healthy i,.healthBadge.healthy i{background:var(--success)}.legendItem.watch i,.healthBadge.watch i{background:var(--warning)}.legendItem.attention i,.healthBadge.attention i{background:var(--danger)}
+  .grid{grid-template-columns:repeat(3,minmax(280px,1fr));gap:11px;margin-top:0}.repCard{padding:14px;border:1px solid var(--border)!important;border-top:1px solid var(--border)!important;border-left:4px solid #bfc4cb!important;border-radius:17px;box-shadow:0 4px 18px rgba(18,24,35,.045);transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}.repCard.health-healthy{border-left-color:var(--success)!important}.repCard.health-watch{border-left-color:var(--warning)!important}.repCard.health-attention{border-left-color:var(--danger)!important}.repCard:hover,.repCard:focus-visible{transform:translateY(-2px);box-shadow:0 13px 28px rgba(18,24,35,.09);outline:none}.repCard:focus-visible{box-shadow:0 0 0 4px rgba(22,24,29,.11),0 13px 28px rgba(18,24,35,.09)}.compactRepTop{border-bottom:0;padding-bottom:0}.repName{font-size:15px;font-weight:820}.repMeta{font-size:11px;font-weight:650}.healthBadge{display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border-radius:999px;background:#f4f5f7;font-size:10px;font-weight:780;color:#5f6670;white-space:nowrap}.healthBadge.healthy{background:#ecf7f1;color:#176f43}.healthBadge.watch{background:#fff7e9;color:#986000}.healthBadge.attention{background:#fff0f1;color:#a3262c}.repHeroRow{display:flex;justify-content:space-between;align-items:flex-end;margin-top:13px}.repHeroScore{display:grid}.repHeroScore strong{font-size:31px;font-weight:880;letter-spacing:-.05em;line-height:1}.repHeroScore span{font-size:10px;color:#777e88;margin-top:3px;font-weight:650}.repTrendCompact{display:grid;text-align:right}.repTrendCompact span{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#8a9099;font-weight:800}.repTrendCompact b{font-size:13px;margin-top:2px}.compactSpark{position:relative;margin-top:10px;padding:6px 8px;background:#fafbfc;border:1px solid #eceef1;border-radius:12px;height:65px;overflow:hidden}.compactSpark canvas.spark{height:50px}.goalLine{position:absolute;left:8px;right:8px;top:19%;border-top:1px dashed rgba(90,98,110,.26);z-index:0}.goalLine span{position:absolute;right:0;top:-11px;font-size:8px;color:#969ca5;background:#fafbfc;padding-left:3px}.compactSpark canvas{position:relative;z-index:1}.repQuickStats{display:grid;grid-template-columns:1.35fr .7fr .85fr;gap:6px;margin-top:9px}.repQuickStats>span{display:grid;background:#f7f8fa;border-radius:10px;padding:7px 8px}.repQuickStats small{font-size:9px;color:#818791;font-weight:700}.repQuickStats b{font-size:11px;margin-top:2px}.alertText{background:#fff1f1!important;color:#9e262b}.repCoachingLine{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:#767d87;padding:9px 1px 7px}.repCoachingLine b{color:#333840}.repOpenHint{border-top:1px solid #eceef1;padding-top:8px;font-size:10px;font-weight:780;color:#656c76;display:flex;justify-content:space-between}
+  .focusSummaryGrid{grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.focusMetric{box-shadow:none;border-color:var(--border);border-radius:15px}.focusBoard{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}.focusBoardCard{border:1px solid var(--border);border-left:4px solid #bbc0c8;border-radius:17px;background:#fff;padding:14px;text-align:left;color:var(--text);cursor:pointer;transition:.15s ease}.focusBoardCard:hover{transform:translateY(-2px);box-shadow:var(--shadow-soft)}.focusBoardCard.attention{border-left-color:var(--danger)}.focusBoardCard.watch{border-left-color:var(--warning)}.focusBoardCard.healthy{border-left-color:var(--success)}.focusBoardTop{display:flex;justify-content:space-between;align-items:center}.focusRank{font-size:11px;font-weight:850;color:#737a84}.focusRating{font-size:10px;font-weight:760;background:#f3f4f6;border-radius:999px;padding:5px 8px}.focusBoardCard h3{font-size:16px;margin:9px 0 0;letter-spacing:-.02em}.focusHero{display:flex;align-items:baseline;gap:7px;margin:9px 0}.focusHero b{font-size:26px;letter-spacing:-.05em}.focusHero span{font-size:10px;color:#7b828c}.focusProgress{display:flex;justify-content:space-between;font-size:10px;color:#666d77;margin-bottom:10px}.progressRow{display:grid;grid-template-columns:74px 1fr 44px;gap:8px;align-items:center;margin:6px 0;font-size:10px;color:#69707a}.progressRow i{height:6px;background:#eceef1;border-radius:999px;overflow:hidden}.progressRow i b{display:block;height:100%;background:#6e7681;border-radius:999px}.focusBoardCard.attention .progressRow i b{background:#b94045}.focusBoardCard.watch .progressRow i b{background:#b57a1d}.focusBoardCard.healthy .progressRow i b{background:#27845a}.progressRow strong{text-align:right;font-size:10px;color:#444a53}.focusDrivers{display:flex;gap:5px;flex-wrap:wrap;margin-top:11px}.focusOpen{border-top:1px solid #eceef1;margin-top:11px;padding-top:9px;font-size:10px;font-weight:800;color:#5f6670;display:flex;justify-content:space-between}
+  .overlay{background:rgba(18,20,25,.52);backdrop-filter:blur(4px)}.panel{border:1px solid #dfe2e7;border-radius:22px;box-shadow:0 28px 90px rgba(0,0,0,.25)}.pHead{background:#fff;padding:15px 17px}.pTitle{font-size:19px;font-weight:850;letter-spacing:-.025em}.pSub{font-weight:620}.pBody{padding:15px 17px;gap:13px;background:#f7f8fa}.profileHero{display:grid;gap:11px}.profileIdentity,.profileCompareGrid,.coachingImpactCard,.profileDetails{background:#fff;border:1px solid var(--border);border-radius:17px;padding:14px}.profileIdentity{display:flex;justify-content:space-between;gap:16px;align-items:center}.profileScoreLine{display:flex;align-items:center;gap:10px;margin-top:4px}.profileScoreLine>strong{font-size:38px;letter-spacing:-.055em}.profileMeta{font-size:11px;color:#6e7580;margin-top:3px}.profileMiniStats{display:flex;gap:8px}.profileMiniStats span,.profileMetricGrid span{display:grid;background:#f5f6f8;border-radius:11px;padding:8px 10px;min-width:105px}.profileMiniStats small,.profileMetricGrid small{font-size:9px;color:#7b828b;font-weight:720}.profileMiniStats b,.profileMetricGrid b{font-size:12px;margin-top:2px}.profileCompareGrid{display:grid;grid-template-columns:1fr 1fr .9fr;gap:10px}.compareVisual{display:grid;grid-template-columns:1fr auto;gap:4px 8px;align-items:end}.compareVisual span,.gapVisual span{font-size:10px;color:#737a84;font-weight:720}.compareVisual strong,.gapVisual strong{font-size:21px;letter-spacing:-.03em}.compareVisual i{grid-column:1/-1;height:6px;background:#eceef1;border-radius:999px;overflow:hidden}.compareVisual i b{display:block;height:100%;background:#343941}.gapVisual{display:grid;align-content:center;border-left:1px solid #eceef1;padding-left:12px}.gapVisual small{font-size:9px;color:#7c838d;margin-top:2px}.gapVisual.warn strong{color:#a06408}.coachingImpactCard{display:flex;justify-content:space-between;align-items:center;gap:15px;border-left:4px solid #aeb4bc}.coachingImpactCard.good{border-left-color:var(--success)}.coachingImpactCard.warn{border-left-color:var(--warning)}.coachingImpactCard.bad{border-left-color:var(--danger)}.coachingImpactCard>div:first-child{display:grid}.coachingImpactCard>div:first-child span{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#777e87;font-weight:800}.coachingImpactCard>div:first-child strong{font-size:14px;margin-top:2px}.beforeAfter{display:flex;align-items:center;gap:9px}.beforeAfter>span{display:grid;text-align:center}.beforeAfter small{font-size:9px;color:#838993}.beforeAfter b{font-size:14px}.impactArrow{color:#989ea7}.beforeAfter em{font-style:normal;font-size:11px;font-weight:800;background:#f1f3f5;border-radius:999px;padding:5px 8px}.beforeAfter.muted{font-size:11px;color:#7a818b}.profileDetails{padding:0}.profileMetricGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;padding:12px}.profileDetails .notice{margin:0 12px 12px}.coItem{background:#fff;border-color:var(--border)}.monitorHistoryBox{padding:0!important}.monitorHistoryBox>.secondaryDetails{border:0;border-radius:0}.chartWrap{background:#fff;border-color:var(--border)}
+  .btn{font-weight:720;border-color:var(--border);box-shadow:none}.btn:hover{box-shadow:none;transform:none;background:#f5f6f8}.btn.primary{background:var(--brand);border-color:var(--brand);box-shadow:none}.btn.primary:hover{background:var(--brand-dark)}
+  input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid rgba(30,37,48,.16);outline-offset:2px}
+  @media(max-width:1220px){.kpiGrid{grid-template-columns:repeat(3,1fr)}.commandBar{grid-template-columns:minmax(240px,1fr) 160px 150px auto}.grid{grid-template-columns:repeat(2,minmax(280px,1fr))}}
+  @media(max-width:860px){.compactBrand{display:grid;gap:2px}.compactBrand .scopeLine{max-width:460px}.commandBar{grid-template-columns:1fr 1fr}.commandSearch{grid-column:1/-1}.moreFilters{justify-self:stretch}.moreFilters summary{justify-content:center}.filterPopover{right:auto;left:0}.kpiGrid{grid-template-columns:repeat(2,1fr)}.focusBoard{grid-template-columns:1fr}.profileCompareGrid{grid-template-columns:1fr}.gapVisual{border-left:0;border-top:1px solid #eceef1;padding:10px 0 0}.actionItem{grid-template-columns:28px 1fr auto}.actionWhy{grid-column:2/-1}.actionOpen{display:none}.repStatusLegend{display:none}.tabBar{top:150px}}
+  @media(max-width:620px){.compactHeader{padding:12px}.commandTop{align-items:flex-start}.commandActions{display:grid;grid-template-columns:1fr}.commandActions .btn{font-size:11px;padding:7px}.compactBrand .scopeLine{white-space:normal}.commandBar{grid-template-columns:1fr}.commandSearch{grid-column:auto}.kpiGrid{grid-template-columns:1fr 1fr}.kpiCard{padding:11px}.kpiValue{font-size:22px}.attentionStrip{grid-template-columns:1fr auto}.attentionStrip>span:nth-child(2){grid-column:1/-1;grid-row:2}.grid{grid-template-columns:1fr}.sectionTitleRow{align-items:flex-start}.sectionTitleRow .btn{display:none}.profileIdentity,.coachingImpactCard{align-items:flex-start;display:grid}.profileMiniStats{width:100%}.profileMiniStats span{flex:1}.profileMetricGrid{grid-template-columns:1fr 1fr}.tabBar{top:auto;position:relative;overflow:auto;flex-wrap:nowrap}.viewTab{white-space:nowrap}.wrap{padding:12px}.focusSummaryGrid{grid-template-columns:1fr 1fr}}
+  @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+
+  .sparkGoalLabel{position:absolute;right:8px;top:4px;z-index:2;font-size:8px;text-transform:uppercase;letter-spacing:.06em;font-weight:750;color:#8b929c;background:rgba(250,251,252,.9);padding:1px 3px;border-radius:4px}
+  .comparisonQuickGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:10px 0}.comparisonQuickCard{border:1px solid var(--border);border-radius:14px;padding:12px;background:#fff}.comparisonQuickCard.statusBad{border-left:3px solid var(--danger)}.comparisonQuickCard.statusWarn{border-left:3px solid var(--warning)}.comparisonQuickCard.statusGood{border-left:3px solid var(--success)}.comparisonQuickHead{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:11px;font-weight:780}.comparisonSides{display:grid;grid-template-columns:1fr 1px 1fr;gap:10px;align-items:center;margin-top:11px}.comparisonSides>span{display:grid}.comparisonSides>span:last-child{text-align:right}.comparisonSides small{font-size:9px;color:#7d848e;font-weight:720}.comparisonSides strong{font-size:20px;letter-spacing:-.03em;margin-top:2px}.comparisonSides i{height:30px;background:#eceef1}.comparisonTableDetails{margin-top:10px}.comparisonTableDetails>.summaryTblWrap{border:0;border-radius:0}.comparisonTableDetails>summary{padding:10px 12px}
+  @media(max-width:800px){.comparisonQuickGrid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 
-<header>
-  <div class="appHeader">
-    <div class="headerTop">
-      <div class="brandBlock">
-        <div class="eyebrow">Local QA Review Dashboard</div>
-        <h1>QA Dashboard</h1>
+<header class="commandHeader">
+  <div class="appHeader compactHeader">
+    <div class="commandTop">
+      <div class="brandBlock compactBrand">
+        <div class="eyebrow">Quality Intelligence</div>
+        <h1>QA Scores</h1>
         <div id="scopePill" class="scopeLine">—</div>
       </div>
-      <div class="headerActions">
-        <button class="btn primary" id="reviewersBtn">Reviewers: <span id="reviewersBtnCount">0</span></button>
-        <button class="btn" id="optionsBtn">Additional Options</button>
+      <div class="headerActions commandActions">
+        <button class="btn reviewerBtn" id="reviewersBtn" type="button" aria-label="Choose included QA reviewers">
+          <span class="uiIcon" aria-hidden="true">◉</span> Reviewers <span class="countBubble" id="reviewersBtnCount">0</span>
+        </button>
+        <button class="btn" id="optionsBtn" type="button">
+          <span class="uiIcon" aria-hidden="true">⚙</span> Data &amp; Settings
+        </button>
       </div>
     </div>
 
-    <div class="filterGrid">
-      <label class="controlField">Team / Coach
+    <div class="commandBar" aria-label="QA dashboard filters">
+      <label class="commandSearch">
+        <span class="searchGlyph" aria-hidden="true">⌕</span>
+        <span class="srOnly">Representative search</span>
+        <input id="searchInp" type="text" placeholder="Search representatives…" autocomplete="off"/>
+      </label>
+
+      <label class="commandControl">
+        <span>Team</span>
         <select id="teamSel"></select>
       </label>
 
-      <label class="controlField">Timeframe
+      <label class="commandControl">
+        <span>Timeframe</span>
         <select id="tfSel">
           <option value="all" selected>All</option>
           <option value="last7">Last 7 days</option>
@@ -567,44 +640,41 @@
         </select>
       </label>
 
-      <div id="headerCustomRange" class="headerCustomRange headerRangeCard">
-        <label class="controlField miniField">From
-          <input id="fromInp" type="date"/>
-        </label>
-        <label class="controlField miniField">To
-          <input id="toInp" type="date"/>
-        </label>
-      </div>
+      <details class="moreFilters" id="moreFiltersDetails">
+        <summary class="btn filterSummary"><span class="uiIcon" aria-hidden="true">≡</span> More Filters</summary>
+        <div class="filterPopover">
+          <div id="headerCustomRange" class="headerCustomRange headerRangeCard">
+            <label class="controlField miniField">From
+              <input id="fromInp" type="date"/>
+            </label>
+            <label class="controlField miniField">To
+              <input id="toInp" type="date"/>
+            </label>
+          </div>
+          <label class="controlField">Date basis
+            <select id="dateModeSel">
+              <option value="interaction" selected>Interaction Date</option>
+              <option value="assigned">Assigned Date</option>
+            </select>
+          </label>
+          <label class="controlField">Sort representatives
+            <select id="sortSel">
+              <option value="count">Most evals</option>
+              <option value="avg">Avg score (high→low)</option>
+              <option value="zeros">Most 0s</option>
+              <option value="trend">Trend (negative→positive)</option>
+              <option value="coachings">Coachings (low→high)</option>
+              <option value="coachingsWeighted">Weighted coachings</option>
+              <option value="unreviewed">Most unreviewed</option>
+            </select>
+          </label>
+          <label class="checkField" title="Exclude evaluations with Score % = 0 from averages/charts">
+            <input id="excludeZero" type="checkbox"/>
+            <span>Exclude zero-score calls</span>
+          </label>
+        </div>
+      </details>
 
-      <label class="controlField">Date basis
-        <select id="dateModeSel">
-          <option value="interaction" selected>Interaction Date</option>
-          <option value="assigned">Assigned Date</option>
-        </select>
-      </label>
-
-      <label class="controlField">Sort representatives
-        <select id="sortSel">
-          <option value="count">Most evals</option>
-          <option value="avg">Avg score (high→low)</option>
-          <option value="zeros">Most 0s</option>
-          <option value="trend">Trend (negative→positive)</option>
-          <option value="coachings">Coachings (low→high)</option>
-          <option value="coachingsWeighted">Weighted coachings</option>
-          <option value="unreviewed">Most unreviewed</option>
-        </select>
-      </label>
-
-      <label class="checkField" title="Exclude evaluations with Score % = 0 from averages/charts">
-        <input id="excludeZero" type="checkbox"/>
-        <span>Exclude zero-score calls</span>
-      </label>
-    </div>
-
-    <div class="searchUtilityRow">
-      <label class="controlField searchField">Representative search
-        <input id="searchInp" type="text" placeholder="Search rep name…"/>
-      </label>
       <div class="statusStrip statusStripHidden" aria-hidden="true">
         <span id="qaReviewCountPill"></span>
         <span id="qaSourcePill"></span>
@@ -616,14 +686,33 @@
 
 <div class="wrap">
   <div class="tabBar">
-    <button class="btn tiny viewTab active" data-tab="rep">Representative View</button>
-    <button class="btn tiny viewTab" data-tab="weekly">Weekly Monitor Tracking</button>
-    <button class="btn tiny viewTab" data-tab="focus">Focus Areas</button>
-    <button class="btn tiny viewTab" data-tab="exportAvg">Export Averages</button>
+    <button class="btn tiny viewTab active" data-tab="rep"><span aria-hidden="true">⌂</span> Overview &amp; Reps</button>
+    <button class="btn tiny viewTab" data-tab="focus"><span aria-hidden="true">↗</span> Focus Areas</button>
+    <button class="btn tiny viewTab" data-tab="weekly"><span aria-hidden="true">▤</span> Reviewer Activity</button>
+    <button class="btn tiny viewTab" data-tab="exportAvg"><span aria-hidden="true">⇩</span> Export</button>
   </div>
 
   <section id="repView" class="viewSection active">
   <div class="stack">
+    <div id="commandCenter" class="commandCenter" aria-label="QA overview">
+      <div id="kpiGrid" class="kpiGrid"></div>
+      <button id="attentionStrip" class="attentionStrip" type="button" aria-label="Show representatives needing attention"></button>
+    </div>
+
+    <div class="sectionShell actionShell">
+      <div class="sectionTitleRow">
+        <div>
+          <div class="sectionEyebrow">Priority</div>
+          <h2>Action Queue</h2>
+          <p>Highest-priority representatives based on score, trend, unread monitors, and recent coaching.</p>
+        </div>
+        <button class="btn tiny" id="showAllAttentionBtn" type="button">View representatives</button>
+      </div>
+      <div id="actionQueue" class="actionQueue"></div>
+    </div>
+
+    <details class="secondaryDetails" id="overviewDetails">
+      <summary>Detailed overview &amp; Coach / QA comparison</summary>
     <div class="card summaryBox">
       <div class="summaryHead">
         <div>
@@ -658,6 +747,9 @@
         </div>
       </div>
 
+      <div id="comparisonQuickGrid" class="comparisonQuickGrid"></div>
+      <details class="secondaryDetails comparisonTableDetails">
+        <summary>Full comparison table</summary>
       <div class="summaryTblWrap">
         <table class="summaryTbl comparisonTbl">
           <thead>
@@ -671,9 +763,23 @@
           <tbody id="compareTbody"></tbody>
         </table>
       </div>
-    </div>
+
+      </details>    </div>
+    </details>
   </div>
 
+  <div class="repSectionHead">
+    <div>
+      <div class="sectionEyebrow">Representatives</div>
+      <h2>Representative Health</h2>
+      <p id="repSectionSub">Scan score, direction, unread work, and coaching status. Open a card for the full QA profile.</p>
+    </div>
+    <div id="repStatusLegend" class="repStatusLegend">
+      <span class="legendItem healthy"><i></i> Healthy</span>
+      <span class="legendItem watch"><i></i> Watch</span>
+      <span class="legendItem attention"><i></i> Needs attention</span>
+    </div>
+  </div>
   <div id="cards" class="grid"></div>
   <div id="empty" class="notice" style="display:none;margin-top:12px"></div>
   </section>
@@ -752,6 +858,9 @@
         </div>
       </div>
       <div id="focusSummaryStats" class="focusSummaryGrid"></div>
+      <div id="focusBoard" class="focusBoard"></div>
+      <details class="secondaryDetails focusDetails">
+        <summary>Detailed focus table</summary>
       <div class="summaryTblWrap">
         <table class="summaryTbl focusTbl">
           <thead>
@@ -772,6 +881,7 @@
           <tbody id="focusTbody"></tbody>
         </table>
       </div>
+      </details>
       <div id="focusEmpty" class="notice" style="display:none;margin-top:10px"></div>
     </div>
   </section>
@@ -887,8 +997,8 @@
   <div class="panel medium" role="dialog" aria-modal="true" aria-labelledby="oTitle">
     <div class="pHead">
       <div>
-        <div id="oTitle" class="pTitle">Additional Options</div>
-        <div class="pSub">Load docks, custom date range, and refresh tools.</div>
+        <div id="oTitle" class="pTitle">Data &amp; Settings</div>
+        <div class="pSub">Data sources, QA calculation controls, and maintenance tools.</div>
       </div>
       <div class="pActions">
         <button class="btn" id="optionsClose">Close ✕</button>
@@ -1665,59 +1775,48 @@ function drawSpark(canvas, values){
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
   ctx.clearRect(0,0,w,h);
+  const clean = values.map(v=>(v!==null && Number.isFinite(v)) ? v : null);
+  const vals = clean.filter(v=>v!==null);
+  const padX=8, padY=7;
+  const floor = vals.some(v=>v===0) ? 0 : 0.60;
+  const ceil = 1.0;
+  const yFor = (v)=> padY + (1-((Math.max(floor,Math.min(ceil,v))-floor)/(ceil-floor))) * (h-padY*2);
 
-  const vals = values.filter(v=>v!==null && Number.isFinite(v));
+  // below-goal zone + 85% goal line
+  const goalY=yFor(0.85);
+  ctx.fillStyle='rgba(199,44,50,.035)';
+  ctx.fillRect(0,goalY,w,h-goalY);
+  ctx.setLineDash([5,5]);
+  ctx.strokeStyle='rgba(98,105,116,.32)';
+  ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,goalY); ctx.lineTo(w,goalY); ctx.stroke();
+  ctx.setLineDash([]);
+
   if(vals.length < 2){
-    ctx.globalAlpha = 0.6;
-    ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(6, h/2);
-    ctx.lineTo(w-6, h/2);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+    ctx.strokeStyle='#a6acb5'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(padX,h/2); ctx.lineTo(w-padX,h/2); ctx.stroke();
     return;
   }
 
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
-  const pad = 6;
-  const range = Math.max(0.00001, max-min);
-
-  ctx.globalAlpha = 0.35;
-  ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 1;
+  ctx.strokeStyle='#363c45';
+  ctx.lineWidth=2.25;
+  ctx.lineJoin='round'; ctx.lineCap='round';
   ctx.beginPath();
-  ctx.moveTo(0, h-1);
-  ctx.lineTo(w, h-1);
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-
-  ctx.strokeStyle = '#2563eb';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-
-  const n = values.length;
-  let started=false;
-  for(let i=0;i<n;i++){
-    const v = values[i];
-    if(v===null || !Number.isFinite(v)){ started=false; continue; }
-    const x = pad + (i/(Math.max(1,n-1))) * (w - pad*2);
-    const y = pad + (1 - ((v-min)/range)) * (h - pad*2);
-    if(!started){ ctx.moveTo(x,y); started=true; }
-    else ctx.lineTo(x,y);
+  let started=false, lastPoint=null;
+  for(let i=0;i<clean.length;i++){
+    const v=clean[i];
+    if(v===null){started=false;continue;}
+    const x=padX+(i/Math.max(1,clean.length-1))*(w-padX*2);
+    const y=yFor(v);
+    if(!started){ctx.moveTo(x,y);started=true;}else ctx.lineTo(x,y);
+    lastPoint={x,y,v};
   }
   ctx.stroke();
 
-  ctx.fillStyle = '#0f172a';
-  for(let i=0;i<n;i++){
-    const v=values[i];
-    if(v===null || !Number.isFinite(v)) continue;
-    const x = pad + (i/(Math.max(1,n-1))) * (w - pad*2);
-    const y = pad + (1 - ((v-min)/range)) * (h - pad*2);
-    ctx.beginPath();
-    ctx.arc(x,y,2.4,0,Math.PI*2);
-    ctx.fill();
+  if(lastPoint){
+    ctx.fillStyle=lastPoint.v>=0.85?'#16834a':'#c72c32';
+    ctx.beginPath();ctx.arc(lastPoint.x,lastPoint.y,4.2,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(lastPoint.x,lastPoint.y,1.6,0,Math.PI*2);ctx.fill();
   }
 }
 
@@ -1896,9 +1995,17 @@ const el = {
   qaSourceSel: document.getElementById('qaSourceSel'),
   uploadNote: document.getElementById('uploadNote'),
 
+  kpiGrid: document.getElementById('kpiGrid'),
+  attentionStrip: document.getElementById('attentionStrip'),
+  actionQueue: document.getElementById('actionQueue'),
+  showAllAttentionBtn: document.getElementById('showAllAttentionBtn'),
+  repSectionSub: document.getElementById('repSectionSub'),
+  focusBoard: document.getElementById('focusBoard'),
+
   summarySub: document.getElementById('summarySub'),
   summaryTbody: document.getElementById('summaryTbody'),
   compareTbody: document.getElementById('compareTbody'),
+  comparisonQuickGrid: document.getElementById('comparisonQuickGrid'),
   teamTrendPill: document.getElementById('teamTrendPill'),
 
   sortPill: document.getElementById('sortPill'),
@@ -1981,6 +2088,7 @@ let coLoaded = false;
 let coRowsAll = [];
 
 let chartMain = null;
+let lastModalTrigger = null;
 
 let activeQaReviewers = [];
 let canonicalQaReviewers = [];
@@ -2285,6 +2393,89 @@ function paintReviewerControls(){
       `).join('')
     : `<span class="notice">No QA reviewers currently included for this team scope.</span>`;
 }
+
+function scoreHealth(avg, trendPP){
+  if(!Number.isFinite(avg)) return {key:'neutral', label:'Insufficient data'};
+  if(avg < 0.70 || (avg < 0.85 && Number.isFinite(trendPP) && trendPP <= -10)) return {key:'attention', label:'Needs attention'};
+  if(avg < 0.85 || (Number.isFinite(trendPP) && trendPP < -2)) return {key:'watch', label:'Watch'};
+  return {key:'healthy', label:'Healthy'};
+}
+
+function buildRepHealthRows(rows){
+  const excludeZero = el.excludeZero.checked;
+  const tf = el.tfSel.value;
+  const range = (tf==='all') ? {from:null,to:null} : timeframeRange(tf);
+  const byRep = groupBy(rows, r=>r.agentKey);
+  return Array.from(byRep.entries()).map(([pk, arr])=>{
+    const total = avgScore(arr, excludeZero);
+    const trendPP = repTrendlineDeltaPP(arr, excludeZero);
+    const unreadCount = countUnreviewed(arr);
+    const coRows = coachingForRep(pk, range);
+    const outcome = coachingOutcomeForRep(arr, coRows, excludeZero);
+    const health = scoreHealth(total.avg, trendPP);
+    let priority = 0;
+    const reasons=[];
+    if(Number.isFinite(total.avg) && total.avg < 0.70){ priority += 12; reasons.push('Below 70%'); }
+    else if(Number.isFinite(total.avg) && total.avg < 0.85){ priority += 7; reasons.push('Below 85%'); }
+    if(Number.isFinite(trendPP) && trendPP <= -10){ priority += 8; reasons.push(`Declining ${Math.abs(trendPP).toFixed(1)} pp`); }
+    else if(Number.isFinite(trendPP) && trendPP < -2){ priority += 3; reasons.push(`Down ${Math.abs(trendPP).toFixed(1)} pp`); }
+    if(unreadCount){ priority += Math.min(6, unreadCount * 1.5); reasons.push(`${unreadCount} unread`); }
+    if((Number.isFinite(total.avg) && total.avg < 0.85) && !coRows.length){ priority += 5; reasons.push('No recent CQ coaching'); }
+    if((Number.isFinite(total.avg) && total.avg < 0.85) && outcome.coached && !outcome.improved){ priority += 2; reasons.push('No improvement yet'); }
+    return {
+      pk, arr, name:arr[0]?.agent || pk, team:String(arr[0]?.team||'').trim() || '—',
+      avg:total.avg, monitors:total.n, trendPP, unreadCount, coRows, outcome, health, priority, reasons
+    };
+  }).sort((a,b)=>b.priority-a.priority || (a.avg||1)-(b.avg||1) || a.name.localeCompare(b.name));
+}
+
+function renderCommandCenter(rows, sum, trendPP, scoreGapPP){
+  if(!el.kpiGrid || !el.attentionStrip || !el.actionQueue) return;
+  const reps = buildRepHealthRows(rows);
+  const below = reps.filter(r=>Number.isFinite(r.avg) && r.avg < 0.85);
+  const attention = reps.filter(r=>r.health.key==='attention');
+  const watch = reps.filter(r=>r.health.key==='watch');
+  const impacted = reps.filter(r=>Number.isFinite(r.avg) && r.avg < 0.85);
+  const coachedImpact = impacted.filter(r=>r.coRows.length);
+  const improvingImpact = impacted.filter(r=>r.outcome.improved);
+  const coachingReach = impacted.length ? coachedImpact.length/impacted.length : 1;
+  const improvingPct = impacted.length ? improvingImpact.length/impacted.length : 0;
+  const trendClass = Number.isFinite(trendPP) ? (trendPP > .1 ? 'good' : (trendPP < -.1 ? 'bad' : 'neutral')) : 'neutral';
+  const gapClass = Number.isFinite(scoreGapPP) && Math.abs(scoreGapPP) >= DIFF_ALERT_PCTPTS ? 'warn' : 'neutral';
+
+  const cards=[
+    ['Overall QA', fmtPct1(sum.all.avg), `${fmtInt(sum.all.n)} monitors`, getScoreColorClass(sum.all.avg)||'neutral'],
+    ['Trend', Number.isFinite(trendPP)?`${trendPP>=0?'+':''}${trendPP.toFixed(1)} pp`:'—', 'Selected timeframe', trendClass],
+    ['Below Goal', fmtInt(below.length), `${reps.length?Math.round(below.length/reps.length*100):0}% of representatives`, below.length?'warn':'good'],
+    ['Unreviewed', fmtInt(sum.unreviewedAll), 'Agent Has Read = 0', sum.unreviewedAll?'bad':'good'],
+    ['Coach / QA Gap', Number.isFinite(scoreGapPP)?`${scoreGapPP>=0?'+':''}${scoreGapPP.toFixed(1)} pp`:'—', Math.abs(scoreGapPP||0) < DIFF_ALERT_PCTPTS?'Within tolerance':'Review alignment', gapClass],
+    ['Coaching Reach', impacted.length ? fmtPct1(coachingReach) : '—', impacted.length ? `${coachedImpact.length}/${impacted.length} impact reps` : 'No impact reps', !impacted.length?'neutral':(coachingReach>=.7?'good':(coachingReach>=.5?'warn':'bad'))]
+  ];
+  el.kpiGrid.innerHTML = cards.map(([label,value,sub,cls])=>`
+    <div class="kpiCard ${cls}">
+      <div class="kpiLabel">${label}</div>
+      <div class="kpiValue">${value}</div>
+      <div class="kpiSub">${sub}</div>
+    </div>`).join('');
+
+  const noCoaching = impacted.filter(r=>!r.coRows.length).length;
+  el.attentionStrip.className = `attentionStrip ${attention.length?'hasAttention':'clear'}`;
+  el.attentionStrip.innerHTML = attention.length || watch.length || sum.unreviewedAll
+    ? `<span class="attentionLead"><span class="statusDot"></span><b>Needs Attention</b></span><span>${attention.length} urgent · ${watch.length} watch · ${noCoaching} impact reps without recent coaching · ${sum.unreviewedAll} unread</span><span class="attentionArrow">→</span>`
+    : `<span class="attentionLead"><span class="statusDot"></span><b>Clear</b></span><span>No immediate QA attention flags in the current scope.</span>`;
+
+  const queue = reps.filter(r=>r.priority>0).slice(0,6);
+  el.actionQueue.innerHTML = queue.length ? queue.map((r,i)=>`
+    <button class="actionItem ${r.health.key}" type="button" data-rep-action="${String(r.pk).replace(/"/g,'&quot;')}">
+      <span class="actionRank">${i+1}</span>
+      <span class="actionMain"><b>${r.name}</b><small>${r.team}</small></span>
+      <span class="actionScore">${fmtPct1(r.avg)}<small>${Number.isFinite(r.trendPP)?`${r.trendPP>=0?'+':''}${r.trendPP.toFixed(1)} pp`:'No trend'}</small></span>
+      <span class="actionWhy">${r.reasons.slice(0,3).map(x=>`<em>${x}</em>`).join('')}</span>
+      <span class="actionOpen" aria-hidden="true">›</span>
+    </button>`).join('') : `<div class="quietEmpty">No representatives currently need attention in this scope.</div>`;
+  if(el.repSectionSub) el.repSectionSub.textContent = `${reps.length} representatives · ${attention.length} need attention · ${watch.length} watch`;
+}
+
 function paintSummary(rows){
   const excludeZero = el.excludeZero.checked;
 
@@ -2320,6 +2511,8 @@ function paintSummary(rows){
   const ttrTxt = Number.isFinite(trendPP) ? `${trendPP>=0?'+':''}${trendPP.toFixed(1)} pp` : '—';
   el.teamTrendPill.className = `pill mono ${Number.isFinite(trendPP) ? (trendPP>0.1?'good':(trendPP<-0.1?'bad':'')) : ''}`;
   el.teamTrendPill.textContent = `Trend: ${ttrTxt}`;
+
+  renderCommandCenter(rows, sum, trendPP, scoreGapPP);
 
   el.summarySub.textContent = `Overall reflects the selected team/timeframe (${dateBasisLabel}), coach monitors, and only the QA reviewers currently included in the popup. Unreviewed monitors come from Agent Has Read = 0.`;
 
@@ -2426,6 +2619,18 @@ function paintSummary(rows){
       note:'Coach none - QA none'
     }
   ];
+
+  if(el.comparisonQuickGrid){
+    const quickRows = compRows.filter(r=>['Average score','Monitor count','Avg call duration'].includes(r.category));
+    el.comparisonQuickGrid.innerHTML = quickRows.map(r=>{
+      const status=compareStatusClass(r.diffNum,r.diffType);
+      return `<div class="comparisonQuickCard ${status}">
+        <div class="comparisonQuickHead"><span>${r.category}</span><b class="compareBadge ${status}">${r.diff}</b></div>
+        <div class="comparisonSides"><span><small>Coach</small><strong>${r.coach}</strong></span><i></i><span><small>QA</small><strong>${r.qa}</strong></span></div>
+        <div class="compareRule">${compareShortStatus(status)} · ${compareRuleText(r.diffType)}</div>
+      </div>`;
+    }).join('');
+  }
 
   el.compareTbody.innerHTML = compRows.map(r=>{
     const status = compareStatusClass(r.diffNum, r.diffType);
@@ -2649,6 +2854,32 @@ function renderFocusAreas(){
     <div class="focusMetric"><div class="label">Highest focus score</div><div class="value">${topScore.toFixed(1)}</div><div class="sub">Alarming teams: ${fmtInt(alarming)}</div></div>
   `;
 
+  if(el.focusBoard){
+    el.focusBoard.innerHTML = teams.slice(0,8).map(t=>{
+      const statusKey = t.rating==='Alarming Performance' || t.rating==='Concerning Performance' ? 'attention' : (t.rating==='Below expectations' ? 'watch' : 'healthy');
+      const drivers=[];
+      const veryLow=t.reps.filter(r=>r.veryLow).length;
+      const declining=t.reps.filter(r=>r.heavyNegative).length;
+      const uncoached=t.reps.filter(r=>r.impactor && !r.outcome.coached).length;
+      if(veryLow) drivers.push(`${veryLow} below 70%`);
+      if(declining) drivers.push(`${declining} steep decline${declining===1?'':'s'}`);
+      if(uncoached) drivers.push(`${uncoached} need coaching`);
+      if(!drivers.length) drivers.push('No major risk driver');
+      return `<button class="focusBoardCard ${statusKey}" type="button" data-focus-team-card="${String(t.team).replace(/"/g,'&quot;')}">
+        <div class="focusBoardTop"><span class="focusRank">#${t.rank}</span><span class="focusRating">${t.rating}</span></div>
+        <h3>${t.team}</h3>
+        <div class="focusHero"><b>${t.focusScore.toFixed(1)}</b><span>Focus score</span></div>
+        <div class="focusProgress"><span><b>${fmtInt(t.impactReps)}</b> impact reps</span><span>${fmtPct1(t.avgScore)} avg QA</span></div>
+        <div class="progressRow"><span>Below goal</span><i><b style="width:${Math.min(100,t.belowGoalPct*100).toFixed(0)}%"></b></i><strong>${fmtPct1(t.belowGoalPct)}</strong></div>
+        <div class="progressRow"><span>Reached</span><i><b style="width:${Math.min(100,t.reachedPct*100).toFixed(0)}%"></b></i><strong>${fmtPct1(t.reachedPct)}</strong></div>
+        <div class="progressRow"><span>Improving</span><i><b style="width:${Math.min(100,t.improvingPct*100).toFixed(0)}%"></b></i><strong>${fmtPct1(t.improvingPct)}</strong></div>
+        <div class="focusDrivers">${drivers.map(d=>`<em>${d}</em>`).join('')}</div>
+        <div class="focusOpen">View team <span>→</span></div>
+      </button>`;
+    }).join('');
+  }
+
+
   if(!teams.length){
     el.focusTbody.innerHTML = '';
     el.focusEmpty.style.display = '';
@@ -2790,7 +3021,7 @@ function paintCards(rows){
     const weightedCoachings = coCount * coachingWeightFactor(total.avg);
 
     return {
-      pk, name, arr, total, totalIncl0, wkSeries,
+      pk, name, team:String(arr[0]?.team||'').trim() || '', arr, total, totalIncl0, wkSeries,
       trPP, zeros, noZero, unreadCount, reviewedCount,
       coachAvg, qaAvg, gapStatus,
       durAll, durCoach, durQa, durGapStatus,
@@ -2869,60 +3100,43 @@ function paintCards(rows){
     card.className = 'card repCard';
     card.dataset.rep = c.pk;
 
+    const health = scoreHealth(c.total.avg, c.trPP);
+    card.classList.add(`health-${health.key}`);
+    card.setAttribute('role','button');
+    card.setAttribute('tabindex','0');
+    card.setAttribute('aria-label', `${c.name}, ${fmtPct1(c.total.avg)}, ${health.label}. Open QA profile.`);
+    const recentText = coLoaded ? (c.coRecent ? fmtDateOnly(c.coRecent) : 'None') : 'Not loaded';
     card.innerHTML = `
-      <div class="repTop">
+      <div class="repTop compactRepTop">
         <div>
           <div class="repName">${c.name}</div>
-          <div class="repMeta">${c.wkSeries.weeks.length ? `${c.wkSeries.weeks[0]} → ${c.wkSeries.weeks[c.wkSeries.weeks.length-1]}` : 'No weekly trend yet'}</div>
+          <div class="repMeta">${String(c.team||'').trim() || 'Team unavailable'}</div>
         </div>
-        <span class="coachFlag ${c.monitoredByCoach ? 'good' : 'bad'}">
-          <span class="coachMark">${c.monitoredByCoach ? '✔' : '✖'}</span>
-          Monitored by Coach
-        </span>
+        <span class="healthBadge ${health.key}"><i></i>${health.label}</span>
       </div>
 
-      <div class="trendBanner">
-        <span>Trend</span>
-        <strong class="${trendCls}">${trendTxt}</strong>
+      <div class="repHeroRow">
+        <div class="repHeroScore">
+          <strong>${fmtPct1(c.total.avg)}</strong>
+          <span>${fmtInt(c.total.n)} monitor${c.total.n===1?'':'s'}</span>
+        </div>
+        <div class="repTrendCompact ${trendCls}">
+          <span>Trend</span><b>${trendTxt}</b>
+        </div>
       </div>
 
-      <div class="sparkWrap">
-        <canvas class="spark" width="520" height="110"></canvas>
+      <div class="sparkWrap compactSpark" title="Weekly QA trend. Dashed line marks the 85% goal.">
+        <span class="sparkGoalLabel" aria-hidden="true">85 goal</span>
+        <canvas class="spark" width="520" height="94"></canvas>
       </div>
 
-      <div class="repScoreBand">
-        <div>
-          <div class="label">Total Score</div>
-          <div class="value">${fmtPct1(c.total.avg)}</div>
-        </div>
-        <div class="sub">${fmtInt(c.total.n)} monitor${c.total.n===1?'':'s'}</div>
+      <div class="repQuickStats">
+        <span><small>Coach / QA</small><b>${fmtPct1(c.coachAvg)} / ${fmtPct1(c.qaAvg)}</b></span>
+        <span class="${c.unreadCount?'alertText':''}"><small>Unread</small><b>${fmtInt(c.unreadCount)}</b></span>
+        <span><small>CQ Coaching</small><b>${coLoaded ? fmtInt(c.coCount) : '—'}</b></span>
       </div>
-
-      <div class="repDataRows">
-        <div class="repDataRow split ${scoreStatusClass}">
-          <span class="label">Coach monitors</span><b>${fmtInt(c.coachCount)} • ${fmtPct1(c.coachAvg)}</b>
-          <span class="label2">QA monitors</span><b>${fmtInt(c.qaCount)} • ${fmtPct1(c.qaAvg)}</b>
-        </div>
-        <div class="repDataRow">
-          <span class="label">Average call length</span><b>${fmtHMS(c.durAll.avgSec)} • ${fmtInt(c.durAll.n)} call${c.durAll.n===1?'':'s'}</b>
-        </div>
-        <div class="repDataRow split ${durStatusClass}">
-          <span class="label">Coach call length</span><b>${fmtHMS(c.durCoach.avgSec)}</b>
-          <span class="label2">QA call length</span><b>${fmtHMS(c.durQa.avgSec)}</b>
-        </div>
-        <div class="repDataRow split ${c.unreadCount > 1 ? 'alert' : ''}">
-          <span class="label">Reviewed calls</span><b>${fmtInt(c.reviewedCount)}</b>
-          <span class="label2">Unread calls</span><b>${fmtInt(c.unreadCount)}</b>
-        </div>
-        <div class="repDataRow split">
-          <span class="label">Zero-score calls</span><b>${fmtInt(c.zeros)}</b>
-          <span class="label2">CQ coachings</span><b>${coLoaded ? fmtInt(c.coCount) : '—'}</b>
-        </div>
-        <div class="repDataRow">
-          <span class="label">Most recent CQ coaching</span><b>${coLoaded ? coRecentTxt : '—'}</b>
-        </div>
-      </div>
-      <div class="repBottomNote">Coach / QA score split: ${scoreGapLabel}. Coach / QA call-length split: ${durationGapLabel}.</div>
+      <div class="repCoachingLine"><span>Most recent coaching</span><b>${recentText}</b></div>
+      <div class="repOpenHint">Open QA profile <span aria-hidden="true">→</span></div>
     `;
 
     el.cards.appendChild(card);
@@ -2952,6 +3166,7 @@ function linearTrend(values){
 }
 
 function openModal(repKey){
+  lastModalTrigger = document.activeElement;
   const rowsScoped = filterRows();
   const byRep = groupBy(rowsScoped, r=>r.agentKey);
   const arr = byRep.get(repKey) || [];
@@ -2998,51 +3213,61 @@ function openModal(repKey){
   const coRows = coachingForRep(repKey, range);
   const coCount = coRows.length;
   const coRecent = coRows[0]?.date || null;
+  const profileTrendPP = repTrendlineDeltaPP(arr, excludeZero);
+  const profileHealth = scoreHealth(total.avg, profileTrendPP);
+  const coachingOutcome = coachingOutcomeForRep(arr, coRows, excludeZero);
   const dateBasisLabel = currentDateMode() === 'assigned' ? 'Assigned Date' : 'Interaction Start Time';
 
-  el.mTitle.textContent = `${name} — QA Details`;
-  el.mSub.textContent = `${teamLabel} • ${tfLabel} • Rows: ${arr.length} • Team/Coach: ${coachName}`;
+  el.mTitle.textContent = `${name}`;
+  el.mSub.textContent = `${coachName} • ${tfLabel} • ${dateBasisLabel}`;
 
   destroyModalChart();
   el.mBody.innerHTML = '';
 
   const stats = document.createElement('div');
-  stats.className = 'box';
+  stats.className = 'profileHero';
+  const beforeAfterAvailable = Number.isFinite(coachingOutcome.beforeAvg) && Number.isFinite(coachingOutcome.afterAvg);
+  const impactDelta = beforeAfterAvailable ? (coachingOutcome.afterAvg - coachingOutcome.beforeAvg) * 100 : NaN;
   stats.innerHTML = `
-    <div class="boxHead">
-      <span>Summary</span>
-      <span class="pill mono ${gapBad?'warn':''}">Coach vs QA gap: ${Number.isFinite(gap)? ((gap>=0?'+':'')+(gap*100).toFixed(1)+' pp') : '—'}</span>
+    <div class="profileIdentity">
+      <div>
+        <div class="sectionEyebrow">Representative QA Profile</div>
+        <div class="profileScoreLine"><strong>${fmtPct1(total.avg)}</strong><span class="healthBadge ${profileHealth.key}"><i></i>${profileHealth.label}</span></div>
+        <div class="profileMeta">${fmtInt(total.n)} monitors · ${Number.isFinite(profileTrendPP)?`${profileTrendPP>=0?'+':''}${profileTrendPP.toFixed(1)} pp trend`:'No trend yet'} · ${fmtInt(unreadCount)} unread</div>
+      </div>
+      <div class="profileMiniStats">
+        <span><small>CQ Coachings</small><b>${fmtInt(coCount)}</b></span>
+        <span><small>Last Coaching</small><b>${coRecent ? fmtDateOnly(coRecent) : 'None'}</b></span>
+      </div>
     </div>
 
-    <div class="row" style="gap:10px">
-      <span class="coachFlag ${monitoredByCoach ? 'good' : 'bad'}">
-        <span class="coachMark">${monitoredByCoach ? '✔' : '✖'}</span>
-        Monitored by Coach
-      </span>
-
-      <span class="pill mono ${unreadCount>0 ? 'bad' : 'good'}"><b>Unreviewed</b> ${fmtInt(unreadCount)}</span>
-      <span class="pill mono"><b>Total</b> ${fmtPct1(total.avg)} • n ${fmtInt(total.n)}</span>
-      <span class="pill mono"><b>Total (incl 0s)</b> ${fmtPct1(incl0.avg)} • n ${fmtInt(incl0.n)}</span>
-      <span class="pill mono"><b>Zeros</b> ${fmtInt(zeros)} • <b>Avg w/o 0s</b> ${fmtPct1(noZero.avg)}</span>
-
-      <span class="pill mono ${gapBad?'warn':''}"><b>Coach</b> ${fmtPct1(coachAvg.avg)} • n ${fmtInt(coachAvg.n)}</span>
-      <span class="pill mono ${gapBad?'warn':''}"><b>QA</b> ${fmtPct1(qaAvg.avg)} • n ${fmtInt(qaAvg.n)}</span>
-
-      <span class="pill mono"><b>Avg call</b> ${fmtHMS(durAll.avgSec)} • n ${fmtInt(durAll.n)}</span>
-      <span class="pill mono ${durGapBad?'warn':''}"><b>Dur coach</b> ${fmtHMS(durCoach.avgSec)} • n ${fmtInt(durCoach.n)}</span>
-      <span class="pill mono ${durGapBad?'warn':''}"><b>Dur QA</b> ${fmtHMS(durQa.avgSec)} • n ${fmtInt(durQa.n)}</span>
-      <span class="pill mono ${durGapBad?'warn':''}"><b>Dur gap</b> ${
-        Number.isFinite(durGapSec) ? `${durGapSec>=0?'+':''}${fmtHMS(Math.abs(durGapSec))}` : '—'
-      }</span>
-
-      <span class="pill mono" title="Documented Coachings filtered to Call Quality only (in selected timeframe)">
-        <b>CQ Coachings</b> ${fmtInt(coCount)} • <b>Most recent</b> ${coRecent ? fmtDateOnly(coRecent) : '—'}
-      </span>
+    <div class="profileCompareGrid">
+      <div class="compareVisual">
+        <span>Coach score</span><strong>${fmtPct1(coachAvg.avg)}</strong><i><b style="width:${Number.isFinite(coachAvg.avg)?Math.max(0,Math.min(100,coachAvg.avg*100)):0}%"></b></i>
+      </div>
+      <div class="compareVisual">
+        <span>QA score</span><strong>${fmtPct1(qaAvg.avg)}</strong><i><b style="width:${Number.isFinite(qaAvg.avg)?Math.max(0,Math.min(100,qaAvg.avg*100)):0}%"></b></i>
+      </div>
+      <div class="gapVisual ${gapBad?'warn':''}"><span>Coach / QA gap</span><strong>${Number.isFinite(gap)?`${gap>=0?'+':''}${(gap*100).toFixed(1)} pp`:'—'}</strong><small>${gapBad?'Review scoring alignment':'Within normal tolerance'}</small></div>
     </div>
 
-    <div style="margin-top:10px" class="notice">
-      <b>Top evaluators</b> (count): ${evalTop.map(([e,c])=>`${e} (${c})`).join(' • ') || '—'}
+    <div class="coachingImpactCard ${coachingOutcome.improved?'good':(coRows.length?'warn':'bad')}">
+      <div><span>Coaching Impact</span><strong>${coachingOutcome.status}</strong></div>
+      ${beforeAfterAvailable ? `<div class="beforeAfter"><span><small>Before</small><b>${fmtPct1(coachingOutcome.beforeAvg)}</b></span><span class="impactArrow">→</span><span><small>After</small><b>${fmtPct1(coachingOutcome.afterAvg)}</b></span><em>${impactDelta>=0?'+':''}${impactDelta.toFixed(1)} pp</em></div>` : `<div class="beforeAfter muted">More post-coaching QA is needed for a before/after read.</div>`}
     </div>
+
+    <details class="secondaryDetails profileDetails">
+      <summary>More QA metrics</summary>
+      <div class="profileMetricGrid">
+        <span><small>Total incl. 0s</small><b>${fmtPct1(incl0.avg)}</b></span>
+        <span><small>Zeros</small><b>${fmtInt(zeros)}</b></span>
+        <span><small>Avg without 0s</small><b>${fmtPct1(noZero.avg)}</b></span>
+        <span><small>Avg call</small><b>${fmtHMS(durAll.avgSec)}</b></span>
+        <span><small>Coach call</small><b>${fmtHMS(durCoach.avgSec)}</b></span>
+        <span><small>QA call</small><b>${fmtHMS(durQa.avgSec)}</b></span>
+      </div>
+      <div class="notice"><b>Top evaluators:</b> ${evalTop.map(([e,c])=>`${e} (${c})`).join(' • ') || '—'}</div>
+    </details>
   `;
   el.mBody.appendChild(stats);
 
@@ -3050,12 +3275,12 @@ function openModal(repKey){
   coBox.className = 'box';
   coBox.innerHTML = `
     <div class="boxHead">
-      <span>Documented Coachings — Call Quality</span>
+      <span>Coaching Timeline — Call Quality</span>
       <span class="pill mono">In timeframe: ${tfLabel}</span>
     </div>
     ${
       !coLoaded
-        ? `<div class="notice">No documented coaching data loaded. Pick a Doc coaching key in Additional Options.</div>`
+        ? `<div class="notice">No documented coaching data loaded. Pick a Doc coaching key in Data & Settings.</div>`
         : (coRows.length
           ? `<div class="coList">
               ${coRows.slice(0, 50).map(c=>`
@@ -3110,7 +3335,8 @@ function openModal(repKey){
       labels,
       datasets:[
         { label:'Score %', data: points, tension:.25, pointRadius:3, pointHoverRadius:5, borderWidth:2 },
-        { label:'Trend', data: trendLine, tension:0, pointRadius:0, borderWidth:2, borderDash:[6,6] }
+        { label:'Trend', data: trendLine, tension:0, pointRadius:0, borderWidth:2, borderDash:[6,6] },
+        { label:'85% goal', data: points.map(()=>0.85), tension:0, pointRadius:0, borderWidth:1, borderDash:[3,5] }
       ]
     },
     options:{
@@ -3132,8 +3358,10 @@ function openModal(repKey){
   });
 
   const tbl = document.createElement('div');
-  tbl.className = 'box';
+  tbl.className = 'box monitorHistoryBox';
   tbl.innerHTML = `
+    <details class="secondaryDetails">
+      <summary>Monitor History — ${fmtInt(sortedDesc.length)} evaluations</summary>
     <div class="boxHead">
       <span>All Monitors (Most recent → oldest)</span>
       <span class="pill mono">Includes Agent Has Read</span>
@@ -3170,11 +3398,13 @@ function openModal(repKey){
         </tbody>
       </table>
     </div>
+    </details>
   `;
   el.mBody.appendChild(tbl);
 
   el.overlay.classList.add('show');
   el.overlay.setAttribute('aria-hidden','false');
+  setTimeout(()=>el.mClose?.focus(),0);
 }
 
 function closeModal(){
@@ -3182,6 +3412,8 @@ function closeModal(){
   el.overlay.classList.remove('show');
   el.overlay.setAttribute('aria-hidden','true');
   el.mBody.innerHTML = '';
+  if(lastModalTrigger && typeof lastModalTrigger.focus==='function') lastModalTrigger.focus();
+  lastModalTrigger = null;
 }
 
 function openReviewerPopup(){
@@ -3875,17 +4107,60 @@ el.resetReviewersBtn.addEventListener('click', ()=>{
   render();
 });
 
+if(el.actionQueue){
+  el.actionQueue.addEventListener('click', (e)=>{
+    const btn=e.target.closest('[data-rep-action]');
+    if(btn) openModal(btn.getAttribute('data-rep-action'));
+  });
+}
+if(el.attentionStrip){
+  el.attentionStrip.addEventListener('click', ()=>{
+    setSortMode('trend');
+    document.getElementById('cards')?.scrollIntoView({behavior:'smooth', block:'start'});
+  });
+}
+if(el.showAllAttentionBtn){
+  el.showAllAttentionBtn.addEventListener('click', ()=>{
+    setSortMode('trend');
+    document.getElementById('cards')?.scrollIntoView({behavior:'smooth', block:'start'});
+  });
+}
+if(el.focusBoard){
+  el.focusBoard.addEventListener('click', (e)=>{
+    const btn=e.target.closest('[data-focus-team-card]');
+    if(btn) openFocusTeamDetails(btn.getAttribute('data-focus-team-card')||'');
+  });
+}
+
 el.cards.addEventListener('click', (e)=>{
   const card = e.target.closest('.repCard');
   if(!card) return;
   const pk = card.dataset.rep;
   if(pk) openModal(pk);
 });
+el.cards.addEventListener('keydown', (e)=>{
+  if(e.key!=='Enter' && e.key!==' ') return;
+  const card=e.target.closest('.repCard');
+  if(!card) return;
+  e.preventDefault();
+  if(card.dataset.rep) openModal(card.dataset.rep);
+});
 
 el.mClose.addEventListener('click', closeModal);
 el.overlay.addEventListener('click', (e)=>{ if(e.target === el.overlay) closeModal(); });
 
 document.addEventListener('keydown', (e)=>{
+  if(e.key==='Tab'){
+    const activeOverlay=[el.overlay,el.reviewerOverlay,el.optionsOverlay,el.unreadOverlay,el.weeklyOverlay,el.focusOverlay].find(x=>x?.classList.contains('show'));
+    if(activeOverlay){
+      const focusable=[...activeOverlay.querySelectorAll('button,[href],input,select,textarea,summary,[tabindex]:not([tabindex="-1"])')].filter(x=>!x.disabled && x.offsetParent!==null);
+      if(focusable.length){
+        const first=focusable[0], last=focusable[focusable.length-1];
+        if(e.shiftKey && document.activeElement===first){e.preventDefault();last.focus();}
+        else if(!e.shiftKey && document.activeElement===last){e.preventDefault();first.focus();}
+      }
+    }
+  }
   if(e.key==='Escape' && el.overlay.classList.contains('show')) closeModal();
   if(e.key==='Escape' && el.reviewerOverlay.classList.contains('show')) closeReviewerPopup();
   if(e.key==='Escape' && el.optionsOverlay.classList.contains('show')) closeOptionsPopup();
