@@ -17,6 +17,7 @@
 <script src="../vendor/lz-string.min.js"></script>
 <script src="../vendor/xlsx.full.min.js"></script>
 <script src="../shared/coachtools-storage.js"></script>
+<script src="../shared/coachtools-app-data.js"></script>
 <script src="../shared/coachtools-import.js"></script>
 <script src="../shared/coachtools-shell.js"></script>
 
@@ -878,28 +879,11 @@
 <div class="toast" id="toast"><b id="toastT">—</b><div class="s" id="toastS">—</div></div>
 
 <script>
-(function(){
+(async function(){
+  await window.CoachToolsAppData.getMany(['checklist','documentedCoaching']);
   const $ = id => document.getElementById(id);
 
-  let APP_NS = "myone2";
-  (function autodetectNs(){
-    const counts = new Map();
-    try{
-      for(let i=0;i<localStorage.length;i++){
-        const k = localStorage.key(i);
-        if(!k) continue;
-        const m = k.match(/^(.*)\.dock\.(retail|referral|qa|coaching|checklist)$/i);
-        if(!m) continue;
-        const ns = m[1];
-        counts.set(ns, (counts.get(ns)||0)+1);
-      }
-      let best=null, bestN=0;
-      for(const [ns,n] of counts.entries()){
-        if(n>bestN){ bestN=n; best=ns; }
-      }
-      if(best) APP_NS = best;
-    }catch(e){}
-  })();
+  const APP_NS = "myone2";
 
   const S = {
     rawItems:[],
@@ -1442,18 +1426,8 @@
 
   function loadDockObjByKey(key){
     if(!key) return null;
-    const shared=window.CoachToolsStorage?.getByCompatibilityKey?.(key);
-    if(shared) return shared;
-    let raw = null;
-    try{ raw = localStorage.getItem(key); }catch(e){ return null; }
-    if(!raw) return null;
-
-    try{
-      const json = LZString.decompressFromUTF16(raw);
-      if(json) return JSON.parse(json);
-    }catch(e){}
-    try{ return JSON.parse(raw); }catch(e){}
-    return null;
+    const type=key==='coachtools:indexeddb:checklist'?'checklist':key==='coachtools:indexeddb:documentedCoaching'?'documentedCoaching':'';
+    return type ? window.CoachToolsAppData?.peek(type) || null : null;
   }
 
   function aoaToRows(aoa){
@@ -1624,68 +1598,19 @@
   }
 
   function findDockCandidates(kind){
-    const out = window.CoachToolsStorage?.listCompatibilityKeys?.(kind)||[];
-    const needle = `.dock.${String(kind).toLowerCase()}`;
-    try{
-      for(let i=0;i<localStorage.length;i++){
-        const k = localStorage.key(i);
-        if(!k) continue;
-        if(k.toLowerCase().includes(needle)) out.push(k);
-      }
-    }catch(e){}
-    out.sort((a,b)=>a.localeCompare(b));
-    return out;
+    return kind==='checklist' ? ['coachtools:indexeddb:checklist'] : kind==='coaching' ? ['coachtools:indexeddb:documentedCoaching'] : [];
   }
 
   function pickBestKey(kind){
-    const preferred = `${APP_NS}.dock.${kind}`;
-    try{
-      if(preferred && localStorage.getItem(preferred)) return preferred;
-    }catch(e){}
-    const cands = findDockCandidates(kind);
-    return cands[0] || preferred || "";
+    return findDockCandidates(kind)[0] || "";
   }
 
   function findChecklistCandidates(){
-    const keys = [];
-    try{
-      for(let i=0;i<localStorage.length;i++){
-        const k = localStorage.key(i);
-        if(!k) continue;
-        const lk = k.toLowerCase();
-        if(!lk.includes(".dock.")) continue;
-        let sc = 0;
-        if(lk.includes("checklist")) sc += 80;
-        if(lk.endsWith(".dock.checklist")) sc += 20;
-        if(lk.includes(APP_NS.toLowerCase())) sc += 10;
-        if(sc > 0) keys.push({k, sc});
-      }
-    }catch(e){}
-    keys.sort((a,b)=> b.sc - a.sc || a.k.localeCompare(b.k));
-    return keys.map(x=>x.k);
+    return ['coachtools:indexeddb:checklist'];
   }
 
   function findDocCoachingCandidates(){
-    const keys = [];
-    try{
-      for(let i=0;i<localStorage.length;i++){
-        const k = localStorage.key(i);
-        if(!k) continue;
-        const lk = k.toLowerCase();
-        if(!lk.includes(".dock.")) continue;
-        let sc = 0;
-        if(lk.includes("documented")) sc += 60;
-        if(lk.includes("document")) sc += 50;
-        if(lk.includes("coaching")) sc += 45;
-        if(lk.includes("coachings")) sc += 35;
-        if(lk.includes("coach")) sc += 20;
-        if(lk.endsWith(".dock.coaching")) sc += 20;
-        if(lk.includes(APP_NS.toLowerCase())) sc += 10;
-        if(sc > 0) keys.push({k, sc});
-      }
-    }catch(e){}
-    keys.sort((a,b)=> b.sc - a.sc || a.k.localeCompare(b.k));
-    return keys.map(x=>x.k);
+    return ['coachtools:indexeddb:documentedCoaching'];
   }
 
   function looksLikeChecklistSpeedRow(obj){
@@ -4171,7 +4096,11 @@
   setCoordinatorSubTab("visual");
   setCoachSummaryExpanded(false);
   autoLoadAll(true);
-})();
+  window.CoachToolsAppData.subscribe(['checklist','documentedCoaching'],async()=>{
+    await window.CoachToolsAppData.getMany(['checklist','documentedCoaching']);
+    autoLoadAll(true);
+  });
+})().catch(error=>console.error('[Coach Timeline] Shared data startup failed.',error));
 </script>
 </body>
 </html>

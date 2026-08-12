@@ -1,7 +1,7 @@
 (function attachCoachToolsData(root) {
   'use strict';
 
-  const VERSION = '2.0.0';
+  const VERSION = '2.1.0';
   const EVENT_NAME = 'coachtools:data-updated';
   const SCOPE_EVENT_NAME = 'coachtools:scope-updated';
   const CHANNEL_NAME = 'coachtools-data-v2';
@@ -100,6 +100,8 @@
   ]);
 
   const currentPointers = new Map();
+  // Full records are loaded only when requested. Entries are keyed by the
+  // current dataset pointer so a replacement invalidates just one dataset.
   const currentData = new Map();
   const channels = [];
   let databaseUnavailable = false;
@@ -155,6 +157,12 @@
       } catch (_) {}
     }
     return raw;
+  }
+  async function ensureLegacyDecoder(raw) {
+    if (!raw || safeJson(raw, undefined) !== undefined || root.LZString) return;
+    if (root.CoachToolsDependencies && root.CoachToolsDependencies.ensureLzString) {
+      try { await root.CoachToolsDependencies.ensureLzString(); } catch (_) {}
+    }
   }
   function encodeDockValue(value) {
     const json = JSON.stringify(value);
@@ -288,13 +296,11 @@
     if (candidate.periodSort !== current.periodSort) return candidate.periodSort > current.periodSort;
     return candidate.importedAt >= current.importedAt;
   }
-  function hydrateCompatibility(type, data) {
-    currentData.set(type, data);
-    const legacy = DATASET_TO_LEGACY[type];
-    if (!legacy || !DOCK_KEYS[legacy] || data == null) return;
-    // Transitional adapter only: IndexedDB is authoritative; legacy apps receive
-    // one current compressed view until their internal dock readers are retired.
-    safeSet(DOCK_KEYS[legacy], encodeDockValue(data));
+  function cacheCurrentRecord(type, record) {
+    if (!record) { currentData.delete(type); return; }
+    const pointer = currentPointers.get(type) || record;
+    const key = `${pointer.datasetId || record.id || ''}:${Number(pointer.version || record.version) || 0}`;
+    currentData.set(type, { key, record });
   }
   async function refreshPointers() {
     if (databaseUnavailable) return [];
@@ -304,21 +310,6 @@
       currentPointers.clear();
       for (const pointer of pointers || []) currentPointers.set(pointer.datasetType, pointer);
       return pointers || [];
-    } finally { db.close(); }
-  }
-  async function loadCurrentData() {
-    if (databaseUnavailable) return;
-    const db = await openDatabase();
-    try {
-      const transaction = db.transaction([CURRENT_STORE, DATASET_STORE], 'readonly');
-      const pointers = await idbRequest(transaction.objectStore(CURRENT_STORE).getAll());
-      currentPointers.clear();
-      currentData.clear();
-      for (const pointer of pointers || []) {
-        currentPointers.set(pointer.datasetType, pointer);
-        const record = await idbRequest(transaction.objectStore(DATASET_STORE).get(pointer.datasetId));
-        if (record) hydrateCompatibility(pointer.datasetType, record.data);
-      }
     } finally { db.close(); }
   }
   async function putDataset(type, data, metadata) {
@@ -391,7 +382,7 @@
       await transactionDone(tx);
       if (shouldBecomeCurrent) {
         currentPointers.set(datasetType, pointerCandidate);
-        hydrateCompatibility(datasetType, data);
+        cacheCurrentRecord(datasetType, record);
       }
       persistMetadataSnapshot();
       notifyDataUpdated(datasetType, { reason: samePeriod ? 'replacement' : 'imported', datasetId: id, version });
@@ -416,7 +407,7 @@
     if (['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'compCoaching'].includes(datasetType) && (!sourcePeriod || !sourcePeriod.sortKey || sourcePeriod.periodKey === 'current')) {
       return { status: 'needs-review', reason: 'The reporting period could not be detected safely.', becomesCurrent: false, candidate };
     }
-    if (databaseUnavailable) return { status: currentData.has(datasetType) ? 'needs-review' : 'new', reason: databaseUnavailable ? 'IndexedDB comparison history is unavailable.' : '', becomesCurrent: !currentData.has(datasetType), candidate };
+    if (databaseUnavailable) return { status: currentData.has(datasetType) ? 'needs-review' : 'new', reason: 'IndexedDB comparison history is unavailable.', becomesCurrent: !currentData.has(datasetType), candidate };
     const db = await openDatabase();
     try {
       const tx = db.transaction([DATASET_STORE, CURRENT_STORE], 'readonly');
@@ -433,12 +424,18 @@
       return { ...result, candidate, current: compactMetadata(current) };
     } finally { db.close(); }
   }
-  async function migrateLegacyDocks() {
+  async function migrateLegacyDocks(onlyTypes) {
     const migrated = safeJson(safeGet(MIGRATION_KEY), {}) || {};
     for (const [legacy, type] of Object.entries(LEGACY_TO_DATASET)) {
-      if (currentPointers.has(type)) continue;
+      if (onlyTypes && !onlyTypes.includes(type)) continue;
       const raw = safeGet(DOCK_KEYS[legacy]);
       if (!raw) continue;
+      if (currentPointers.has(type)) {
+        safeRemove(DOCK_KEYS[legacy]);
+        migrated[type] = migrated[type] || new Date().toISOString();
+        continue;
+      }
+      await ensureLegacyDecoder(raw);
       const data = decodeDockValue(raw);
       if (!data || typeof data !== 'object') continue;
       const fileName = data.meta && data.meta.fileName || `${LABELS[type]} legacy dock`;
@@ -453,38 +450,68 @@
           fingerprint: `legacy-${type}-${fingerprintValue(data, {})}`
         });
         migrated[type] = new Date().toISOString();
+        // The one-time source has served its purpose. Reclaim localStorage so
+        // IndexedDB remains the only persisted large-data copy.
+        safeRemove(DOCK_KEYS[legacy]);
       } catch (error) { console.warn('[CoachToolsData] Legacy migration failed for ' + type, error); }
     }
     safeSet(MIGRATION_KEY, JSON.stringify(migrated));
   }
   async function initialize() {
+    const diagnostics = root.CoachToolsDiagnostics;
+    if (diagnostics) diagnostics.start('IndexedDB metadata initialization');
     try {
       if (!safeGet(DATA_META_KEY) && safeGet(LEGACY_DATA_META_KEY)) safeSet(DATA_META_KEY, safeGet(LEGACY_DATA_META_KEY));
       await refreshPointers();
-      await migrateLegacyDocks();
-      await loadCurrentData();
       persistMetadataSnapshot();
       notifyDataUpdated('all', { reason: 'indexeddb-ready' });
+      const migrate = () => migrateLegacyDocks().catch(error => console.warn('[CoachToolsData] Background legacy migration failed.', error));
+      if (typeof root.requestIdleCallback === 'function') root.requestIdleCallback(migrate, { timeout: 1800 });
+      else root.setTimeout(migrate, 0);
       return true;
     } catch (error) {
       databaseUnavailable = true;
       console.warn('[CoachToolsData] IndexedDB unavailable; legacy compatibility is active.', error);
       return false;
-    }
+    } finally { if (diagnostics) diagnostics.end('IndexedDB metadata initialization'); }
   }
   const readyPromise = initialize();
 
   async function getCurrent(type, options) {
     await readyPromise;
     const datasetType = canonicalType(type);
-    if (!datasetType || databaseUnavailable) return currentData.get(datasetType) || null;
-    const pointer = currentPointers.get(datasetType);
+    if (!datasetType) return null;
+    if (databaseUnavailable) {
+      const cached = currentData.get(datasetType);
+      if (cached && cached.record) return options && options.includeRecord ? cached.record : cached.record.data;
+      const legacy = DATASET_TO_LEGACY[datasetType];
+      const raw = legacy && safeGet(DOCK_KEYS[legacy]);
+      if (!raw) return null;
+      await ensureLegacyDecoder(raw);
+      const legacyData = decodeDockValue(raw);
+      return options && options.includeRecord ? { id: `legacy:${datasetType}`, datasetType, version: 0, data: legacyData } : legacyData;
+    }
+    let pointer = currentPointers.get(datasetType);
+    if (!pointer) {
+      await migrateLegacyDocks([datasetType]);
+      pointer = currentPointers.get(datasetType);
+    }
     if (!pointer) return null;
+    if (options && options.metadataOnly) return compactMetadata(pointer);
+    const cacheKey = `${pointer.datasetId || ''}:${Number(pointer.version) || 0}`;
+    const cached = currentData.get(datasetType);
+    if (cached && cached.key === cacheKey) return options && options.includeRecord ? cached.record : cached.record.data || null;
+    const diagnostics = root.CoachToolsDiagnostics;
+    if (diagnostics) diagnostics.start(`${datasetType} IndexedDB read`);
     const db = await openDatabase();
     try {
       const record = await idbRequest(db.transaction(DATASET_STORE, 'readonly').objectStore(DATASET_STORE).get(pointer.datasetId));
+      if (record) cacheCurrentRecord(datasetType, record);
       return options && options.includeRecord ? record || null : record && record.data || null;
-    } finally { db.close(); }
+    } finally {
+      db.close();
+      if (diagnostics) diagnostics.end(`${datasetType} IndexedDB read`);
+    }
   }
   async function getHistory(type, options) {
     await readyPromise;
@@ -537,12 +564,10 @@
       else tx.objectStore(CURRENT_STORE).delete(datasetType);
       tx.objectStore(IMPORT_STORE).put({ id: `import_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, datasetType, datasetId: datasetId || '*', action: 'removed', importedAt: new Date().toISOString() });
       await transactionDone(tx);
-      await loadCurrentData();
-      if (!remaining[0]) {
+      currentData.delete(datasetType);
+      if (remaining[0]) currentPointers.set(datasetType, { ...compactMetadata(remaining[0]), datasetId: remaining[0].id, updatedAt: new Date().toISOString() });
+      else {
         currentPointers.delete(datasetType);
-        currentData.delete(datasetType);
-        const legacy = DATASET_TO_LEGACY[datasetType];
-        if (legacy) safeRemove(DOCK_KEYS[legacy]);
       }
       persistMetadataSnapshot();
       notifyDataUpdated(datasetType, { reason: 'removed' });
@@ -582,7 +607,7 @@
     const legacy = legacySource(source);
     if (!legacy || legacy === 'all') return null;
     const type = LEGACY_TO_DATASET[legacy];
-    if (currentData.has(type) && !(options && options.raw)) return currentData.get(type);
+    if (currentData.has(type) && !(options && options.raw)) return currentData.get(type).record.data;
     const raw = safeGet(DOCK_KEYS[legacy]);
     return options && options.raw ? raw : decodeDockValue(raw);
   }
@@ -594,6 +619,18 @@
     const legacy = legacySource(source);
     if (legacy && legacy !== 'all') return has(legacy) ? [DOCK_KEYS[legacy]] : [];
     return Object.keys(DOCK_KEYS).filter(id => has(id)).map(id => DOCK_KEYS[id]);
+  }
+  async function materializeLegacyCompatibility(types) {
+    const requested = Array.isArray(types) && types.length ? types.map(canonicalType).filter(Boolean) : Object.keys(DATASET_TO_LEGACY);
+    const written = [];
+    for (const type of requested) {
+      const legacy = DATASET_TO_LEGACY[type];
+      if (!legacy) continue;
+      const value = await getCurrent(type);
+      if (value == null) continue;
+      if (safeSet(DOCK_KEYS[legacy], encodeDockValue(value))) written.push(DOCK_KEYS[legacy]);
+    }
+    return written;
   }
   function has(source) {
     if (String(source || '').toLowerCase() === 'all') return centralStatus().every(status => status.ready);
@@ -614,10 +651,22 @@
     if (!legacy || legacy === 'all') throw new Error('Unknown CoachTools dataset: ' + source);
     const type = LEGACY_TO_DATASET[legacy];
     const data = options && options.raw ? decodeDockValue(String(value)) : value;
-    safeSet(DOCK_KEYS[legacy], options && options.raw ? String(value) : encodeDockValue(value));
-    currentData.set(type, data);
+    const compatibilityValue = options && options.raw ? String(value) : encodeDockValue(value);
+    currentData.set(type, {
+      key: `pending:${Date.now()}`,
+      record: { id: `pending:${type}`, datasetType: type, version: 0, data: clone(data) }
+    });
     const metadata = { ...(options && options.metadata || {}), originalFileName: options && options.metadata && (options.metadata.originalFileName || options.metadata.fileName) || data && data.meta && data.meta.fileName || '' };
-    readyPromise.then(ok => ok && putDataset(type, data, metadata)).catch(error => console.warn('[CoachToolsData] Compatibility write could not reach IndexedDB.', error));
+    readyPromise.then(ok => {
+      if (!ok) {
+        safeSet(DOCK_KEYS[legacy], compatibilityValue);
+        return null;
+      }
+      return putDataset(type, data, metadata);
+    }).catch(error => {
+      safeSet(DOCK_KEYS[legacy], compatibilityValue);
+      console.warn('[CoachToolsData] Compatibility write could not reach IndexedDB.', error);
+    });
     markUpdated(type, metadata);
     notifyDataUpdated(type, { reason: 'compatibility-set' });
     return value;
@@ -630,17 +679,7 @@
     return true;
   }
   function getDatasetStatus() {
-    return centralStatus().map(status => {
-      const legacy = DATASET_TO_LEGACY[status.id] || '';
-      const raw = legacy ? safeGet(DOCK_KEYS[legacy]) : null;
-      return {
-        ...status,
-        datasetType: status.id,
-        key: legacy ? DOCK_KEYS[legacy] : '',
-        ready: Boolean(status.ready || raw),
-        bytes: status.bytes || (raw ? raw.length * 2 : 0)
-      };
-    });
+    return centralStatus().map(status => ({ ...status, datasetType: status.id, key: '' }));
   }
   function getDataMetadata() { return safeJson(safeGet(DATA_META_KEY), {}) || {}; }
   function getApproximateStorageSize() {
@@ -662,15 +701,17 @@
     for (const channel of channels) try { channel.postMessage({ type: SCOPE_EVENT_NAME, detail: next }); } catch (_) {}
     return next;
   }
-  function createBackup(options) {
+  async function createBackup(options) {
     const maxBytes = Number(options && options.maxBytes) || 60 * 1024 * 1024;
-    const backup = { packageType: 'coachtools-backup', schemaVersion: 2, exportedAt: new Date().toISOString(), compatibilityDocks: {}, scope: getScope(), preferences: {}, skipped: [], notes: ['IndexedDB is authoritative. Current compatibility views are included; full dated history remains in IndexedDB.'] };
+    const backup = { packageType: 'coachtools-backup', schemaVersion: 3, exportedAt: new Date().toISOString(), datasets: {}, scope: getScope(), preferences: {}, skipped: [], notes: ['IndexedDB is authoritative. Current shared datasets are exported directly without creating localStorage docks; dated history remains in IndexedDB.'] };
     let includedBytes = 0;
-    for (const [source, key] of Object.entries(DOCK_KEYS)) {
-      const value = safeGet(key); if (value == null) continue;
-      const bytes = value.length * 2;
-      if (includedBytes + bytes > maxBytes) { backup.skipped.push({ key, reason: 'backup size limit', bytes }); continue; }
-      backup.compatibilityDocks[source] = value; includedBytes += bytes;
+    for (const type of DATASET_TYPES) {
+      const record = await getCurrent(type, { includeRecord: true });
+      if (!record) continue;
+      const value = { metadata: compactMetadata(record), data: record.data };
+      const bytes = JSON.stringify(value).length * 2;
+      if (includedBytes + bytes > maxBytes) { backup.skipped.push({ datasetType: type, reason: 'backup size limit', bytes }); continue; }
+      backup.datasets[type] = value; includedBytes += bytes;
     }
     for (const key of LIGHTWEIGHT_KEYS) {
       const value = safeGet(key); if (value == null) continue;
@@ -681,18 +722,27 @@
     backup.approximateBytes = includedBytes;
     return backup;
   }
-  function restoreBackup(backup) {
-    if (!backup || backup.packageType !== 'coachtools-backup' || ![1, 2].includes(Number(backup.schemaVersion))) throw new Error('This is not a supported CoachTools backup.');
+  async function restoreBackup(backup) {
+    if (!backup || backup.packageType !== 'coachtools-backup' || ![1, 2, 3].includes(Number(backup.schemaVersion))) throw new Error('This is not a supported CoachTools backup.');
     const docks = backup.compatibilityDocks || backup.sharedDocks || {};
     const writes = [];
-    for (const [source, value] of Object.entries(docks)) if (DOCK_KEYS[source] && typeof value === 'string') writes.push([DOCK_KEYS[source], value]);
     for (const [key, value] of Object.entries(backup.preferences || {})) if (LIGHTWEIGHT_KEYS.includes(key) && typeof value === 'string') writes.push([key, value]);
     if (backup.scope) writes.push([SCOPE_KEY, JSON.stringify(backup.scope)]);
     for (const [key, value] of writes) root.localStorage.setItem(key, value);
-    safeRemove(MIGRATION_KEY);
-    readyPromise.then(() => migrateLegacyDocks()).catch(() => {});
+    for (const [type, entry] of Object.entries(backup.datasets || {})) {
+      if (!DATASET_TYPES.includes(type) || !entry || !entry.data) continue;
+      const metadata = entry.metadata || {};
+      await putDataset(type, entry.data, { ...metadata, importedAt: new Date().toISOString(), classificationMethod: 'coachtools-backup-restore' });
+    }
+    for (const [source, value] of Object.entries(docks)) {
+      const type = LEGACY_TO_DATASET[source];
+      if (!type || typeof value !== 'string') continue;
+      await ensureLegacyDecoder(value);
+      const decoded = decodeDockValue(value);
+      if (decoded && typeof decoded === 'object') await putDataset(type, decoded, { importedAt: new Date().toISOString(), classificationMethod: 'legacy-backup-restore', originalFileName: decoded.meta && decoded.meta.fileName || `${LABELS[type]} backup` });
+    }
     notifyDataUpdated('all', { reason: 'backup-restored' });
-    return { restoredKeys: writes.map(([key]) => key) };
+    return { restoredKeys: writes.map(([key]) => key), restoredDatasets: Array.from(new Set([...Object.keys(backup.datasets || {}), ...Object.keys(docks).map(source => LEGACY_TO_DATASET[source]).filter(Boolean)])) };
   }
   function relayExternalMessage(message) {
     if (!message || !message.type || !message.detail) return;
@@ -769,7 +819,7 @@
   const CoachToolsStorage = Object.freeze({
     VERSION, EVENT_NAME, SCOPE_EVENT_NAME, SCOPE_KEY, DATA_META_KEY, LEGACY_DATA_META_KEY, DOCK_KEYS, LABELS,
     storageAvailable, decodeDockValue, ready: () => readyPromise,
-    get, getRaw: source => get(source, { raw: true }), getByCompatibilityKey, listCompatibilityKeys,
+    get, getRaw: source => get(source, { raw: true }), getByCompatibilityKey, listCompatibilityKeys, materializeLegacyCompatibility,
     getRetail: () => get('retail'), getReferral: () => get('referral'), getQA: () => get('qa'), getCoaching: () => get('coaching'), getChecklist: () => get('checklist'),
     has, hasRetail: () => has('retail'), hasReferral: () => has('referral'), hasQA: () => has('qa'), hasCoaching: () => has('coaching'), hasChecklist: () => has('checklist'),
     set, remove, markUpdated, notifyDataUpdated, getDataMetadata, getDatasetStatus, getCentralDatasetStatus: centralStatus,

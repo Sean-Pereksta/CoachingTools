@@ -19,10 +19,15 @@ Recognized dataset types are:
 - `checklist`
 - `compCoaching`
 
-Use `CoachToolsData.getCurrent(type)`, `getHistory(type)`,
+Use `CoachToolsAppData.get(type)`, `getMany(types)`, `getVersion(type)`, and
+`subscribe(types, listener)` in applications. The adapter delegates to
+`CoachToolsData.getCurrent(type)`, `getHistory(type)`,
 `getDatasetVersion(type)`, `getImportHistory()`, and `inspectDataset()` instead of reading the
 database stores directly. Current pointers never duplicate the source data;
 they reference one canonical record in `coachtoolsDatasets`.
+
+`CoachToolsData.ready()` initializes current pointers and metadata only. Full
+dataset records are read on demand and cached in memory by dataset ID/version.
 
 ## 2. Temporary legacy compatibility
 
@@ -34,10 +39,11 @@ they reference one canonical record in `coachtoolsDatasets`.
 | Documented Coaching | `myone2.dock.coaching` |
 | Checklist / Correctives | `myone2.dock.checklist` |
 
-The shared API hydrates these keys as a transitional current-data view for the
-existing reports. IndexedDB remains authoritative and retains all history. New
-code must not treat these keys as a database or create additional per-app
-copies. The decoded compatibility view retains the established shape:
+These keys are migration inputs and an explicit standalone-compatibility
+output only. Normal startup and imports do not recreate them. IndexedDB remains
+authoritative and retains all history. New code must not treat these keys as a
+database or create additional per-app copies. The decoded compatibility view
+retains the established shape:
 
 ```json
 {
@@ -56,9 +62,10 @@ copies. The decoded compatibility view retains the established shape:
 }
 ```
 
-`shared/coachtools-storage.js` migrates an existing dock into IndexedDB on first
-startup, then maintains the compatibility view from the current IndexedDB
-record. Lightweight UI settings remain in localStorage.
+`shared/coachtools-storage.js` migrates an existing dock into IndexedDB in the
+background or on first request. `materializeLegacyCompatibility()` is the only
+approved way to intentionally recreate a dock for an old standalone tool.
+Lightweight UI settings remain in localStorage.
 
 ### Dataset notifications
 
@@ -71,8 +78,9 @@ CoachTools uses these same-origin signals after a dock changes:
 - migration BroadcastChannel: `coachtools-data-v1`, retained for older tools
 - parent-frame `postMessage`, for the desktop shell
 
-New consumers should call `CoachToolsData.subscribe()` or
-`CoachToolsData.subscribeScope()`, then reread current data. The shared module
+New consumers should call `CoachToolsAppData.subscribe()` or
+`CoachToolsAppData.subscribeScope()`. The adapter compares dataset versions,
+invalidates only changed records, and then rereads current data. The shared module
 owns event, BroadcastChannel, storage-event, and parent-frame compatibility.
 Legacy consumers may reread the compatibility dock during the transition.
 
@@ -85,6 +93,7 @@ Legacy consumers may reread the compatibility dock during the transition.
 | Migration metadata mirror | `coachtools.data.meta.v1` |
 | Desktop favorites | `coachtools.desktop.favorites.v1` |
 | Recently opened tools | `coachtools.desktop.recent.v1` |
+| Processed storage-file metadata | `coachtools.storage.processed.v1` |
 | Future desktop preferences | `coachtools.desktop.preferences.v1` |
 
 `coachtools.scope.v1` describes the current view without changing the meaning of the weekly docks. Its supported modes are All, Department, Team, Coordinator, Coach, and Representative. Fields include `mode`, `label`, `personId`, `department`, `team`, `coordinator`, `coaches`, `representatives`, and `updatedAt`.
@@ -99,7 +108,7 @@ These stay separate from shared weekly data:
 - KPI Impact: `impactTool.activeTab`
 - Weekly Data setup: `myone.master.v2.setup`
 
-Some supplied tools detect the active MyOne namespace by scanning existing `.dock.*` keys. Keep that behavior so older stored datasets remain discoverable.
+Shared application data must not be stored in tool-specific preference keys.
 
 ## 4. All-Star localStorage
 
@@ -139,10 +148,13 @@ matches are review candidates and must not be silently merged.
 
 Files under `storage/` are synchronized source material. Each browser keeps its
 own IndexedDB cache; IndexedDB is never treated as a OneDrive-shared database.
-Startup compares type, detected period, and fingerprint. Newer periods import,
+After the desktop is visible, startup requests only the `/api/storage` listing
+and compares path, filename, size, modified timestamp, and the server's cheap
+fingerprint with `coachtools.storage.processed.v1`. Unchanged files are not
+downloaded or parsed. New or changed files are downloaded lazily, classified,
+and saved through `CoachToolsData.importDataset()`. Newer periods import,
 identical fingerprints remain current without duplication, same-period changed
-files create retained replacements, and older files cannot replace newer current
-data.
+files create retained replacements, and older files cannot replace newer current data.
 
 ### `allStarResearchRenderedResults.v1`, schema version 1
 
@@ -193,5 +205,5 @@ Before changing persistence, validate this sequence:
 2. Open Weekly Data and load a scope.
 3. Return to the desktop and confirm all eight readiness values update.
 4. Open Coaching Gaps, QA Scores, Coach Timeline, and KPI Impact.
-5. Confirm each detects the same selected dock data.
+5. Confirm each reports the same IndexedDB dataset IDs/versions and refreshes after an import.
 6. Reopen All-Star and confirm models, research, organizations, aliases, run settings, PDF options, Qualtrics rules, and IndexedDB caches remain intact.

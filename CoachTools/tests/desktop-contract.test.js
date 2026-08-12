@@ -43,7 +43,7 @@ for (const icon of expectedIconFiles.slice(0, 11)) {
   assert(fs.existsSync(path.join(root, 'icons', icon)), `Uploaded icon should be available at icons/${icon}.`);
 }
 assert(desktopScript.includes('appendImageWithFallback'), 'Desktop icons should retain a safe default/initials fallback chain.');
-assert(desktopScript.includes('preloadIconAssets'), 'Desktop should preload its icon set at startup.');
+assert(!/function init\(\)[\s\S]*?preloadIconAssets\(\)/.test(desktopScript), 'Desktop startup should not eagerly decode every multi-megabyte icon.');
 assert(desktopHtml.includes('data-system-icon="coachtools-home"'), 'Desktop controls should use the uploaded CoachTools home icon.');
 assert(desktopHtml.includes('data-system-icon="start"'), 'The Start button should use the branded Start graphic role.');
 assert(desktopHtml.includes('data-system-icon="shared-data"'), 'Data controls should use the uploaded shared-data icon.');
@@ -52,37 +52,39 @@ assert(desktopHtml.includes('data-action="quick-upload-data"'), 'The desktop sho
 assert(desktopHtml.includes('id="startupSplash"'), 'A startup readiness bar should be present before the desktop opens.');
 assert(desktopHtml.includes('rel="preload" as="image" href="graphics/loading.png"'), 'The loading artwork should be requested immediately from index.html.');
 assert(!desktopHtml.includes('startup-card'), 'The startup screen should not use a popup-style card.');
-for (const script of ['vendor/xlsx.full.min.js', 'vendor/lz-string.min.js', 'shared/coachtools-sync.js', 'shared/coachtools-storage.js', 'shared/coachtools-identity.js', 'shared/coachtools-import.js']) {
+for (const script of ['shared/coachtools-dependencies.js', 'shared/coachtools-performance.js', 'shared/coachtools-sync.js', 'shared/coachtools-storage.js', 'shared/coachtools-identity.js', 'shared/coachtools-import.js', 'shared/coachtools-app-data.js']) {
   assert(new RegExp(`<script[^>]+src=["']${script.replace(/\./g, '\\.')}["'][^>]*defer`).test(desktopHtml), `${script} should defer so the startup bar can paint immediately.`);
 }
+assert(!desktopHtml.includes('vendor/xlsx.full.min.js'), 'The desktop critical path should not load SheetJS.');
 assert(desktopScript.includes("image.src = 'graphics/background.png'"), 'The main wallpaper should load from graphics/background.png.');
 assert(/\.startup-splash\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;[\s\S]*?url\(["']?\.\.\/graphics\/loading\.png["']?\)[\s\S]*?background-size:\s*cover;/.test(desktopStyles), 'The full-screen splash should use graphics/loading.png as a cover background.');
 assert(!desktopStyles.includes('.startup-card'), 'Startup CSS should not retain the old floating card treatment.');
 assert(/\.desktop-wallpaper\s*\{[\s\S]*?z-index:\s*0;/.test(desktopStyles), 'The wallpaper must render above the body background instead of behind the page canvas.');
 assert(/\.desktop-shade\s*\{[\s\S]*?z-index:\s*1;/.test(desktopStyles), 'The readability shade should render directly above the wallpaper.');
 assert(/\.desktop-shell\s*\{[\s\S]*?z-index:\s*2;/.test(desktopStyles), 'Desktop controls should render above the wallpaper and shade.');
-assert(desktopScript.includes('runStartupSequence'), 'Desktop startup should coordinate readiness and automatic loading.');
-assert(desktopScript.includes("scanStorage({ startup: true })"), 'Startup should safely attempt to load missing data from storage.');
-assert(desktopScript.indexOf('await scanStorage({ startup: true })') < desktopScript.indexOf('await refreshGlobalScope();'), 'Identity and scope should refresh after the startup data check.');
-assert(desktopScript.indexOf('await refreshGlobalScope();') < desktopScript.indexOf('await warmApplications();'), 'Applications should warm only after identity and scope are ready.');
-assert(desktopScript.indexOf('await warmApplications();') < desktopScript.lastIndexOf('restoreOpenWindows();'), 'Remembered app sessions should restore after application warm-up.');
-assert(desktopScript.includes('const WARMUP_CONCURRENCY = 2'), 'Application warming should use a controlled two-app concurrency pool.');
-assert(desktopScript.includes('apps.filter(app => app.preload === true)'), 'Warm-up eligibility should come from the application manifest.');
-assert(desktopScript.includes('readyPromise'), 'Warm-up should wait for an actual iframe readiness signal or timeout.');
-assert(desktopScript.includes("windowState.warmState = success ? (windowState.userOpened ? 'ready' : 'warmed') : 'failed'"), 'Live windows should distinguish warmed and user-opened lifecycle states.');
-assert(/function persistOpenWindows\(\)[\s\S]*?filter\(item => item\.userOpened\)[\s\S]*?ids: userOpened\.map/.test(desktopScript), 'Warmed applications must not be persisted as user-opened sessions.');
-assert(/function renderTaskbar\(\)[\s\S]*?filter\(windowState => windowState\.userOpened\)/.test(desktopScript), 'Warmed applications must not appear on the taskbar.');
-assert(/function openApp\(app\)[\s\S]*?const existing = openWindows\.get\(app\.id\);[\s\S]*?promoteWindowState\(existing\)[\s\S]*?else createWindow\(app\)/.test(desktopScript), 'Opening a warmed app should promote its existing iframe and only lazy-load when none exists.');
-assert(/function createWindow\(app, options\)[\s\S]*?if \(openWindows\.has\(app\.id\)\)[\s\S]*?return preload \? existing : promoteWindowState\(existing, options\)/.test(desktopScript), 'Window creation and session restoration should reuse one live iframe per app ID.');
-assert(/!success && !windowState\.userOpened[\s\S]*?openWindows\.delete\(windowState\.app\.id\)/.test(desktopScript), 'Failed warm-ups should be discarded so a later open can use normal lazy loading.');
+assert(desktopScript.includes('runStartupSequence'), 'Desktop startup should coordinate metadata readiness.');
+assert(desktopScript.includes('scanStorage({ startup: true, background: true })'), 'Storage synchronization should run after the desktop opens.');
+assert(desktopScript.indexOf('dismissStartupSplash()') < desktopScript.indexOf('scanStorage({ startup: true, background: true })'), 'Desktop visibility must precede storage synchronization.');
+assert(!desktopScript.includes('warmApplications'), 'The retired full-suite iframe warm-up must be removed.');
+assert(!desktopScript.includes('WARMUP_CONCURRENCY'), 'Startup must not keep a hidden iframe worker pool.');
+assert(desktopScript.includes('createDeferredWindow'), 'Remembered windows should restore as lightweight metadata.');
+assert(/function restoreOpenWindows\(\)[\s\S]*?createDeferredWindow/.test(desktopScript), 'Restoring taskbar entries must not instantiate every iframe.');
+assert(/function activateWindow\(appId\)[\s\S]*?windowState\.deferred[\s\S]*?createWindow/.test(desktopScript), 'A deferred window should create its iframe only when activated.');
+assert(desktopScript.includes('isStorageFileUnchanged'), 'Automatic storage sync should compare lightweight file metadata.');
+assert(desktopScript.includes('no spreadsheets downloaded'), 'Unchanged storage scans should explicitly skip spreadsheet downloads.');
+assert(desktopScript.includes('Changed file parsing'), 'Changed-file parsing should be measured for diagnostics.');
 const dynamicsChecklist = manifest.apps.find(app => app.id === 'contact-center-checklist');
 assert(dynamicsChecklist && dynamicsChecklist.preload === false, 'The Dynamics checklist must never be eagerly warmed.');
-for (const app of manifest.apps.filter(app => app.id !== 'contact-center-checklist')) assert.strictEqual(app.preload, true, `${app.name} should be explicitly eligible for startup warming.`);
+for (const app of manifest.apps) assert.strictEqual(app.preload, false, `${app.name} should remain lazy-loaded.`);
 assert(!/fetch\s*\(\s*["']apps\.json/i.test(desktopHtml), 'Direct-file startup should keep using the generated JavaScript manifest.');
 assert(desktopHtml.includes('id="globalScopeSelect"'), 'The desktop should expose one global person scope selector.');
 assert(storageScript.includes("const SCOPE_KEY = 'coachtools.scope.v1'"), 'The global scope should retain a stable persisted storage key.');
 assert(/function setScope\(scope\)[\s\S]*?safeSet\(SCOPE_KEY/.test(storageScript), 'Changing scope should persist the selection.');
 assert(storageScript.includes('subscribeScope'), 'Applications should be able to subscribe to global scope changes.');
+assert(!storageScript.includes('function loadCurrentData'), 'IndexedDB readiness should not hydrate all current datasets.');
+assert(storageScript.includes('cacheCurrentRecord'), 'Requested datasets should use the version-aware in-memory cache.');
+assert(storageScript.includes('materializeLegacyCompatibility'), 'Legacy localStorage docks should require an explicit compatibility request.');
+assert(imports.readWorkbook || fs.readFileSync(path.join(root, 'shared', 'coachtools-import.js'), 'utf8').includes('ensureXlsx'), 'SheetJS should load only when a workbook is actually read.');
 assert(desktopScript.includes("type: 'coachtools:scope-updated'"), 'The desktop should relay scope changes to open applications.');
 assert(desktopStyles.includes('.startup-progress'), 'Startup readiness should include a visible progress bar.');
 assert(desktopStyles.includes('.app-card:hover .app-icon'), 'Application icons should respond to pointer hover.');

@@ -386,10 +386,10 @@
   }
 
   async function loadProfile(personId) {
-    if (!root.CoachToolsData || !root.CoachToolsIdentity) throw new Error('CoachTools shared data is unavailable.');
-    await Promise.all([root.CoachToolsData.ready(), root.CoachToolsIdentity.ready()]);
-    const people = await root.CoachToolsIdentity.getAllPeople(), records = {}, historyRecords = {};
-    for (const type of root.CoachToolsData.DATASET_TYPES || []) records[type] = await root.CoachToolsData.getCurrent(type, { includeRecord: true });
+    if (!root.CoachToolsData || !root.CoachToolsAppData || !root.CoachToolsIdentity) throw new Error('CoachTools shared data is unavailable.');
+    await Promise.all([root.CoachToolsAppData.ready(), root.CoachToolsIdentity.ready()]);
+    const people = await root.CoachToolsIdentity.getAllPeople(), historyRecords = {};
+    const records = await root.CoachToolsAppData.getMany(['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'qa', 'documentedCoaching', 'checklist'], { includeRecord: true });
     for (const type of ['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'qa']) historyRecords[type] = (await root.CoachToolsData.getHistory(type, { activeOnly: true })).slice(0, 13);
     return buildProfile(personId, people, records, historyRecords);
   }

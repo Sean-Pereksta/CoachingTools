@@ -19,6 +19,7 @@
 <script src="../vendor/lz-string.min.js"></script>
 <script src="../vendor/xlsx.full.min.js"></script>
 <script src="../shared/coachtools-storage.js"></script>
+<script src="../shared/coachtools-app-data.js"></script>
 <script src="../shared/coachtools-import.js"></script>
 <script src="../shared/coachtools-shell.js"></script>
 
@@ -1159,18 +1160,8 @@ function normHdr(s){
 
 function loadDockObjByKey(key){
   if(!key) return null;
-  const shared=window.CoachToolsStorage?.getByCompatibilityKey?.(key);
-  if(shared) return shared;
-  const raw = localStorage.getItem(key);
-  if(!raw) return null;
-
-  try{
-    const json = LZString.decompressFromUTF16(raw);
-    if(json) return JSON.parse(json);
-  }catch{}
-
-  try{ return JSON.parse(raw); }catch{}
-  return null;
+  const type=key==='coachtools:indexeddb:qa'?'qa':key==='coachtools:indexeddb:documentedCoaching'?'documentedCoaching':'';
+  return type ? window.CoachToolsAppData?.peek(type) || null : null;
 }
 
 function aoaToRows(aoa){
@@ -1473,28 +1464,7 @@ function quarterRange(year, quarter){
 }
 
 function findDockKeysBySuffix(suffix){
-  const source=String(suffix||'').split('.').pop();
-  const hits=window.CoachToolsStorage?.listCompatibilityKeys?.(source)||[];
-  const suf = String(suffix||"").toLowerCase();
-  for(let i=0;i<localStorage.length;i++){
-    const k = localStorage.key(i);
-    if(!k) continue;
-    const lk = k.toLowerCase();
-    if(lk.endsWith(suf) || lk.includes(suf)) hits.push(k);
-  }
-  hits.sort((a,b)=>{
-    const score = (s)=>{
-      let x=0;
-      const ls = s.toLowerCase();
-      if(ls.endsWith(suf)) x+=100;
-      if(ls.includes(".dock.qa")) x+=50;
-      if(ls.includes("myone")) x+=10;
-      x -= Math.min(20, ls.length/20);
-      return x;
-    };
-    return score(b)-score(a);
-  });
-  return hits;
+  return String(suffix||'').toLowerCase().includes('qa') ? ['coachtools:indexeddb:qa'] : [];
 }
 
 function looksLikeQARow(obj){
@@ -1606,33 +1576,7 @@ async function parseUploadedQaWorkbook(file){
 }
 
 function findCoachingKeys(){
-  const keys=[];
-  for(let i=0;i<localStorage.length;i++){
-    const k = localStorage.key(i);
-    if(!k) continue;
-    const lk = k.toLowerCase();
-    if(!lk.includes(".dock.")) continue;
-    const looks = lk.includes("coach") || lk.includes("coaching") || lk.includes("document") || lk.includes("myone2");
-    if(looks) keys.push(k);
-  }
-  keys.sort((a,b)=>{
-    const score = (s)=>{
-      const lk = s.toLowerCase();
-      let x=0;
-      if(lk.includes("documented")) x+=80;
-      if(lk.includes("document")) x+=40;
-      if(lk.includes("coaching")) x+=35;
-      if(lk.includes("coachings")) x+=35;
-      if(lk.includes("coach")) x+=20;
-      if(lk.includes("myone2")) x+=10;
-      if(lk.endsWith(".dock.coaching")) x+=15;
-      if(lk.endsWith(".dock.coachings")) x+=15;
-      x -= Math.min(20, lk.length/20);
-      return x;
-    };
-    return score(b)-score(a);
-  });
-  return keys;
+  return ['coachtools:indexeddb:documentedCoaching'];
 }
 
 function splitTypes(val){
@@ -2969,7 +2913,7 @@ function paintCards(rows){
     el.empty.style.display = '';
     el.empty.textContent = qaDataSource === 'uploaded'
       ? 'Uploaded source selected, but no uploaded QA data is available.'
-      : 'QA: Upload needed. (No QA data detected in localStorage dock.)';
+      : 'QA: Upload needed. (No QA data is available in IndexedDB.)';
     return;
   }
   if(!rows.length){
@@ -3507,12 +3451,12 @@ function closeUnreadPopup(){
 }
 
 function buildDockKeyOptions(){
-  const keys = findDockKeysBySuffix(".dock.qa");
+  const keys = findDockKeysBySuffix("qa");
   el.qaKeySel.innerHTML = '';
   if(!keys.length){
     const o = document.createElement('option');
     o.value = '';
-    o.textContent = '(no .dock.qa found in localStorage)';
+    o.textContent = '(QA is missing from CoachTools IndexedDB)';
     el.qaKeySel.appendChild(o);
     return;
   }
@@ -3618,7 +3562,7 @@ function render(){
     el.empty.style.display = '';
     el.empty.textContent = qaDataSource === 'uploaded'
       ? 'Uploaded source selected, but no uploaded QA data is available.'
-      : 'QA: Upload needed. (No QA data detected in localStorage dock.)';
+      : 'QA: Upload needed. (No QA data detected in CoachTools IndexedDB.)';
   } else if(!filterRows().length){
     el.empty.style.display = '';
     el.empty.textContent = 'No evaluations match the current filters or active QA reviewer list.';
@@ -4169,7 +4113,8 @@ document.addEventListener('keydown', (e)=>{
   if(e.key==='Escape' && el.focusOverlay.classList.contains('show')) closeFocusOverlay();
 });
 
-(function boot(){
+(async function boot(){
+  await window.CoachToolsAppData.getMany(['qa','documentedCoaching']);
   buildDockKeyOptions();
   buildCoKeyOptions();
 
@@ -4204,7 +4149,11 @@ document.addEventListener('keydown', (e)=>{
   document.querySelectorAll('.weeklySortBtn').forEach(btn=>btn.classList.toggle('active', btn.dataset.weeklySort===weeklySortMode));
   setActiveTab(activeTab);
   setSortMode(sortMode || "count");
-})();
+  window.CoachToolsAppData.subscribe(['qa','documentedCoaching'],async()=>{
+    await window.CoachToolsAppData.getMany(['qa','documentedCoaching']);
+    buildDockKeyOptions(); buildCoKeyOptions(); loadQA(); loadCoachings(); render();
+  });
+})().catch(error=>console.error('[QA Scores] Shared data startup failed.',error));
 </script>
 
 </body>
