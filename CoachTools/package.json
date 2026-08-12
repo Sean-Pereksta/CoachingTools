@@ -7,7 +7,7 @@
     "manifest": "node build/generate-app-manifest.js",
     "manifest:check": "node build/generate-app-manifest.js --check",
     "test": "npm run manifest:check && npm run validate-suite && npm run test:desktop && npm run test:allstar",
-    "test:desktop": "node tests/desktop-contract.test.js && node tests/app-data-adapter.test.js && node tests/identity-profile-sync.test.js && node tests/manifest-discovery.test.js && node tests/storage-server.test.js",
+    "test:desktop": "node tests/desktop-contract.test.js && node tests/app-data-adapter.test.js && node tests/storage-chunks.test.js && node tests/identity-profile-sync.test.js && node tests/manifest-discovery.test.js && node tests/storage-server.test.js",
     "test:allstar": "node apps/allstar/build/build-portable.js && node apps/allstar/tests/verify-package.js && node apps/allstar/tests/qualtrics-insights.test.js",
     "validate-suite": "node build/validate-suite.js",
     "package-suite": "node build/package-suite.js",

@@ -177,6 +177,9 @@ if (!desktopScript.includes('iframe.src = app.file')) fail('Desktop app opening 
 if (!desktopScript.includes('coachtools.desktop.openApps.v1')) fail('Desktop must persist the lightweight open-application list.');
 if (!desktopScript.includes("fetch('/api/storage'")) fail('Desktop must use the constrained local storage API for automatic loading.');
 if (!desktopScript.includes('runStartupSequence')) fail('Desktop must coordinate metadata readiness before revealing remembered sessions.');
+for (const marker of ['preloadDesktopAssets', 'desktopAssetPaths', 'ICON_PRELOAD_CONCURRENCY', 'ICON_PRELOAD_TIMEOUT_MS']) {
+  if (!desktopScript.includes(marker)) fail(`Desktop icon startup is missing ${marker}.`);
+}
 if (!desktopScript.includes("image.src = 'graphics/background.png'")) fail('Desktop wallpaper path must remain graphics/background.png.');
 for (const marker of ['createDeferredWindow', 'deferred: true', 'restoreOpenWindows', 'dismissStartupSplash()', 'scanStorage({ startup: true, background: true })']) {
   if (!desktopScript.includes(marker)) fail(`Desktop-first lazy startup is missing ${marker}.`);
@@ -207,7 +210,7 @@ for (const sharedFile of ['shared/coachtools-app-data.js', 'shared/coachtools-de
   catch (error) { fail(`${sharedFile} does not parse: ${error.message}`); }
 }
 const appDataScript = exists('shared/coachtools-app-data.js') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-app-data.js'), 'utf8') : '';
-for (const marker of ['getMany', 'getVersion', 'subscribe', 'trackedVersions', 'cache.delete']) if (!appDataScript.includes(marker)) fail(`Shared app data adapter is missing ${marker}.`);
+for (const marker of ['getMany', 'getManyProgressive', 'loadForApp', 'getVersion', 'subscribe', 'trackedVersions', 'pendingReads', 'cache.delete', 'requestAnimationFrame']) if (!appDataScript.includes(marker)) fail(`Shared app data adapter is missing ${marker}.`);
 
 const weeklyData = exists('apps/weekly-data.html') ? fs.readFileSync(path.join(ROOT, 'apps/weekly-data.html'), 'utf8') : '';
 if (!weeklyData.includes('../shared/coachtools-import.js') || !weeklyData.includes('IMPORT.classifyFile')) fail('Weekly Data must reuse the shared import and classification utility.');
@@ -228,7 +231,7 @@ const storageScript = exists('shared/coachtools-storage.js') ? fs.readFileSync(p
 for (const key of ['myone2.dock.retail', 'myone2.dock.referral', 'myone2.dock.qa', 'myone2.dock.coaching', 'myone2.dock.checklist']) {
   if (!storageScript.includes(key)) fail(`Shared storage helper is missing compatibility key ${key}`);
 }
-for (const marker of ['CoachToolsData', 'getCurrent', 'getHistory', 'getDatasetVersion', 'getImportHistory', 'inspectDataset', 'subscribeScope', 'coachtoolsDatasets', 'coachtoolsCurrent', 'coachtoolsImports', 'coachtoolsPeople', "DB_VERSION = 6"]) {
+for (const marker of ['CoachToolsData', 'getCurrent', 'getHistory', 'getDatasetVersion', 'getImportHistory', 'inspectDataset', 'subscribeScope', 'coachtoolsDatasets', 'coachtoolsDatasetChunks', 'coachtoolsCurrent', 'coachtoolsImports', 'coachtoolsPeople', "DB_VERSION = 7", 'materializeDatasetRecord']) {
   if (!storageScript.includes(marker)) fail(`Shared IndexedDB data API is missing ${marker}`);
 }
 if (!/function getDatasetStatus\(\)[\s\S]*?centralStatus\(\)\.map/.test(storageScript)) fail('Desktop readiness must report every central IndexedDB dataset.');
