@@ -2,7 +2,28 @@
   'use strict';
 
   const manifest = root.COACHTOOLS_MANIFEST || { schemaVersion: 1, suite: { name: 'CoachTools', version: '2.0' }, apps: [] };
-  const apps = (manifest.apps || []).filter(app => app && app.enabled !== false);
+  const APP_ICON_PATHS = Object.freeze({
+    allstar: 'icons/allstar.png',
+    'weekly-data': 'icons/weekly-data.png',
+    'coaching-gaps': 'icons/coaching-gaps.png',
+    'coach-timeline': 'icons/coach-timeline.png',
+    'kpi-impact': 'icons/kpi-impact.png',
+    'qa-scores': 'icons/qa-scores.png',
+    'audit-checklist': 'icons/audit-checklist.png'
+  });
+  const SYSTEM_ICON_PATHS = Object.freeze({
+    'coachtools-home': 'icons/coachtools-home.png',
+    'shared-data': 'icons/shared-data.png',
+    'backup-restore': 'icons/backup-restore.png',
+    settings: 'icons/settings.png',
+    'all-apps': 'icons/all-apps.png',
+    'default-app': 'icons/default-app.png',
+    'weekly-data': 'icons/weekly-data.png'
+  });
+  const DEFAULT_APP_ICON = SYSTEM_ICON_PATHS['default-app'];
+  const apps = (manifest.apps || [])
+    .filter(app => app && app.enabled !== false)
+    .map(app => ({ ...app, icon: APP_ICON_PATHS[app.id] || app.icon || DEFAULT_APP_ICON }));
   const byId = new Map(apps.map(app => [app.id, app]));
   const storage = root.CoachToolsStorage;
   const importer = root.CoachToolsImport;
@@ -87,6 +108,35 @@
     return new Promise(resolve => root.requestAnimationFrame(() => resolve()));
   }
 
+  function appendImageWithFallback(wrap, primaryPath, failureKey) {
+    const paths = Array.from(new Set([primaryPath, DEFAULT_APP_ICON].filter(Boolean)));
+    if (!paths.length) return;
+    const image = document.createElement('img');
+    image.alt = '';
+    image.loading = 'eager';
+    image.decoding = 'async';
+    let pathIndex = 0;
+
+    const loadNextPath = () => {
+      const path = paths[pathIndex];
+      pathIndex += 1;
+      if (!path) {
+        image.remove();
+        return;
+      }
+      image.src = path;
+    };
+
+    image.addEventListener('load', () => wrap.classList.add('loaded'));
+    image.addEventListener('error', () => {
+      wrap.classList.remove('loaded');
+      if (failureKey) state.iconFailures.add(failureKey);
+      loadNextPath();
+    });
+    wrap.appendChild(image);
+    loadNextPath();
+  }
+
   function createIcon(app, compact) {
     const wrap = document.createElement('span');
     wrap.className = 'app-icon' + (compact ? ' compact' : '');
@@ -94,19 +144,44 @@
     fallback.className = 'fallback-initials';
     fallback.textContent = initials(app);
     wrap.appendChild(fallback);
-    if (app.icon) {
-      const image = document.createElement('img');
-      image.alt = '';
-      image.loading = compact ? 'eager' : 'lazy';
-      image.addEventListener('load', () => wrap.classList.add('loaded'));
-      image.addEventListener('error', () => {
-        state.iconFailures.add(app.id);
-        image.remove();
-      });
-      image.src = app.icon;
-      wrap.appendChild(image);
-    }
+    appendImageWithFallback(wrap, app.icon, app.id);
     return wrap;
+  }
+
+  function createSystemIcon(name, fallbackText, className) {
+    const wrap = document.createElement('span');
+    wrap.className = ['system-icon', className || ''].filter(Boolean).join(' ');
+    wrap.setAttribute('aria-hidden', 'true');
+    const fallback = document.createElement('span');
+    fallback.className = 'system-icon-fallback';
+    fallback.textContent = fallbackText || '✦';
+    wrap.appendChild(fallback);
+    appendImageWithFallback(wrap, SYSTEM_ICON_PATHS[name] || DEFAULT_APP_ICON, `system:${name}`);
+    return wrap;
+  }
+
+  function hydrateSystemIcons() {
+    for (const placeholder of document.querySelectorAll('[data-system-icon]')) {
+      const icon = createSystemIcon(
+        placeholder.dataset.systemIcon,
+        placeholder.dataset.iconFallback,
+        Array.from(placeholder.classList).filter(name => name !== 'system-icon').join(' ')
+      );
+      placeholder.replaceWith(icon);
+    }
+  }
+
+  function preloadIconAssets() {
+    if (typeof root.Image !== 'function') return;
+    const paths = new Set([
+      ...Object.values(APP_ICON_PATHS),
+      ...Object.values(SYSTEM_ICON_PATHS)
+    ]);
+    for (const path of paths) {
+      const image = new root.Image();
+      image.decoding = 'async';
+      image.src = path;
+    }
   }
 
   function missingRequirements(app) {
@@ -225,7 +300,15 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'category-filter' + (state.filter === filter ? ' active' : '');
-      button.textContent = filter;
+      if (filter === 'All') {
+        button.classList.add('with-icon');
+        button.appendChild(createSystemIcon('all-apps', '▦', 'inline'));
+        const label = document.createElement('span');
+        label.textContent = filter;
+        button.appendChild(label);
+      } else {
+        button.textContent = filter;
+      }
       button.addEventListener('click', () => {
         state.filter = filter;
         state.selectedAppId = null;
@@ -1159,6 +1242,8 @@
 
   function init() {
     collectElements();
+    preloadIconAssets();
+    hydrateSystemIcons();
     const savedFavorites = readJson(FAVORITES_KEY, null);
     if (Array.isArray(savedFavorites)) state.favorites = new Set(savedFavorites.filter(id => byId.has(id)));
     else {
