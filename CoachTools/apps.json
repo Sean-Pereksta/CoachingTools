@@ -33,8 +33,8 @@
     },
     {
       "id": "weekly-data",
-      "name": "Weekly Data",
-      "description": "Import weekly files, correct coach names, save groups, choose scope, and rebuild shared data.",
+      "name": "Data Manager",
+      "description": "Import current and historical CoachTools data, review status, correct coach names, and manage weekly scope.",
       "file": "apps/weekly-data.html",
       "icon": "icons/weekly-data.png",
       "initials": "WD",
@@ -71,10 +71,10 @@
         "corrective"
       ],
       "data": [
-        "retail",
-        "referral",
+        "weeklyRetail",
+        "weeklyReferral",
         "qa",
-        "coaching",
+        "documentedCoaching",
         "checklist"
       ],
       "favorite": false,
@@ -99,7 +99,7 @@
         "coordinator"
       ],
       "data": [
-        "coaching",
+        "documentedCoaching",
         "checklist"
       ],
       "favorite": false,
@@ -125,9 +125,9 @@
         "trend"
       ],
       "data": [
-        "retail",
-        "referral",
-        "coaching"
+        "weeklyRetail",
+        "weeklyReferral",
+        "documentedCoaching"
       ],
       "favorite": false,
       "featured": false,
@@ -152,7 +152,7 @@
       ],
       "data": [
         "qa",
-        "coaching"
+        "documentedCoaching"
       ],
       "favorite": false,
       "featured": false,
@@ -176,7 +176,7 @@
         "speed"
       ],
       "data": [
-        "coaching",
+        "documentedCoaching",
         "checklist"
       ],
       "favorite": false,

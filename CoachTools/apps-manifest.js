@@ -34,8 +34,8 @@ window.COACHTOOLS_MANIFEST = {
     },
     {
       "id": "weekly-data",
-      "name": "Weekly Data",
-      "description": "Import weekly files, correct coach names, save groups, choose scope, and rebuild shared data.",
+      "name": "Data Manager",
+      "description": "Import current and historical CoachTools data, review status, correct coach names, and manage weekly scope.",
       "file": "apps/weekly-data.html",
       "icon": "icons/weekly-data.png",
       "initials": "WD",
@@ -72,10 +72,10 @@ window.COACHTOOLS_MANIFEST = {
         "corrective"
       ],
       "data": [
-        "retail",
-        "referral",
+        "weeklyRetail",
+        "weeklyReferral",
         "qa",
-        "coaching",
+        "documentedCoaching",
         "checklist"
       ],
       "favorite": false,
@@ -100,7 +100,7 @@ window.COACHTOOLS_MANIFEST = {
         "coordinator"
       ],
       "data": [
-        "coaching",
+        "documentedCoaching",
         "checklist"
       ],
       "favorite": false,
@@ -126,9 +126,9 @@ window.COACHTOOLS_MANIFEST = {
         "trend"
       ],
       "data": [
-        "retail",
-        "referral",
-        "coaching"
+        "weeklyRetail",
+        "weeklyReferral",
+        "documentedCoaching"
       ],
       "favorite": false,
       "featured": false,
@@ -153,7 +153,7 @@ window.COACHTOOLS_MANIFEST = {
       ],
       "data": [
         "qa",
-        "coaching"
+        "documentedCoaching"
       ],
       "favorite": false,
       "featured": false,
@@ -177,7 +177,7 @@ window.COACHTOOLS_MANIFEST = {
         "speed"
       ],
       "data": [
-        "coaching",
+        "documentedCoaching",
         "checklist"
       ],
       "favorite": false,

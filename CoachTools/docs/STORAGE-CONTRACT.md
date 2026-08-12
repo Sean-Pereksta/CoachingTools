@@ -2,9 +2,31 @@
 
 This document defines storage names that must remain backward compatible. Filename and interface changes do not authorize renaming these records.
 
-## 1. Shared weekly data
+## 1. Central CoachTools data
 
-| Dataset | Required localStorage key |
+The authoritative home for large shared datasets is IndexedDB database
+`allStarImportedDataCache.v1`, schema version 5. `window.CoachToolsData` is the
+only supported abstraction for new application code.
+
+Recognized dataset types are:
+
+- `weeklyRetail`
+- `weeklyReferral`
+- `monthlyRetail`
+- `monthlyReferral`
+- `qa`
+- `documentedCoaching`
+- `checklist`
+- `compCoaching`
+
+Use `CoachToolsData.getCurrent(type)`, `getHistory(type)`,
+`getDatasetVersion(type)`, and `getImportHistory()` instead of reading the
+database stores directly. Current pointers never duplicate the source data;
+they reference one canonical record in `coachtoolsDatasets`.
+
+## 2. Temporary legacy compatibility
+
+| Dataset | Compatibility localStorage key |
 | --- | --- |
 | Retail | `myone2.dock.retail` |
 | Referral | `myone2.dock.referral` |
@@ -12,7 +34,10 @@ This document defines storage names that must remain backward compatible. Filena
 | Documented Coaching | `myone2.dock.coaching` |
 | Checklist / Correctives | `myone2.dock.checklist` |
 
-The Master Loader writes each value as LZ-String `compressToUTF16(JSON.stringify(dock))`. The decoded dock retains the established shape:
+The shared API hydrates these keys as a transitional current-data view for the
+existing reports. IndexedDB remains authoritative and retains all history. New
+code must not treat these keys as a database or create additional per-app
+copies. The decoded compatibility view retains the established shape:
 
 ```json
 {
@@ -31,7 +56,9 @@ The Master Loader writes each value as LZ-String `compressToUTF16(JSON.stringify
 }
 ```
 
-Do not duplicate these datasets under CoachTools-specific keys. `shared/coachtools-storage.js` is an abstraction around the same five values.
+`shared/coachtools-storage.js` migrates an existing dock into IndexedDB on first
+startup, then maintains the compatibility view from the current IndexedDB
+record. Lightweight UI settings remain in localStorage.
 
 ### Dataset notifications
 
@@ -43,7 +70,8 @@ CoachTools uses these same-origin signals after a dock changes:
 - BroadcastChannel: `coachtools-data-v1`, when available
 - parent-frame `postMessage`, for the desktop shell
 
-Consumers must still read the authoritative `myone2.dock.*` key after a signal. Events are invalidation notices, not another data store.
+New consumers must call `CoachToolsData.getCurrent()` after a signal. Legacy
+consumers may reread the compatibility dock during the transition.
 
 ### Suite metadata
 
@@ -57,7 +85,7 @@ Consumers must still read the authoritative `myone2.dock.*` key after a signal. 
 
 `coachtools.scope.v1` describes the current view without changing the meaning of the weekly docks. Its supported fields are `mode`, `label`, `team`, `coordinator`, `coaches`, and `updatedAt`.
 
-## 2. Tool-specific preferences
+## 3. Tool-specific preferences
 
 These stay separate from shared weekly data:
 
@@ -69,7 +97,7 @@ These stay separate from shared weekly data:
 
 Some supplied tools detect the active MyOne namespace by scanning existing `.dock.*` keys. Keep that behavior so older stored datasets remain discoverable.
 
-## 3. All-Star localStorage
+## 4. All-Star localStorage
 
 The following names and stored structures are preserved:
 
@@ -85,14 +113,17 @@ The following names and stored structures are preserved:
 
 The general CoachTools backup includes definitions and lightweight options where practical. It deliberately excludes `allStarResearchResultCache.v3`; All-Star remains the authority for its own full data package and exports.
 
-## 4. All-Star IndexedDB
+## 5. All-Star / CoachTools IndexedDB
 
-### `allStarImportedDataCache.v1`, schema version 4
+### `allStarImportedDataCache.v1`, schema version 5
 
 - `meta`, key path `id`
 - `sourceData`, key path `id`
 - `books`, key path `id`
 - `misc`, key path `id`
+- `coachtoolsDatasets`, key path `id`; canonical dated dataset records
+- `coachtoolsCurrent`, key path `datasetType`; current record pointers only
+- `coachtoolsImports`, key path `id`; import, duplicate, replacement, and removal audit history
 
 ### `allStarResearchRenderedResults.v1`, schema version 1
 
@@ -109,7 +140,7 @@ The general CoachTools backup includes definitions and lightweight options where
 
 Do not include these potentially large caches and snapshots in automatic localStorage backups.
 
-## 5. All-Star Qualtrics generator
+## 6. All-Star Qualtrics generator
 
 Preserved localStorage keys:
 
@@ -133,7 +164,7 @@ Preserved IndexedDB database: `coachingEmailGeneratorDB`, schema version 1.
 
 All-Star's generated Qualtrics carrier continues to use `srcdoc`; this retains the parent application's storage origin and therefore keeps existing rules and settings visible.
 
-## 6. Origin and launch behavior
+## 7. Origin and launch behavior
 
 All suite apps live below the same `CoachTools/` directory and open by direct iframe URL. Under `http://127.0.0.1`, the desktop and apps have a conventional shared origin. Browser treatment of `file://` storage and local frames is implementation-dependent, so the optional local launcher is the cross-browser reliability path. Direct file opening remains available and is not built around `fetch()` or runtime directory enumeration.
 

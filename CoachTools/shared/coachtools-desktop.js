@@ -33,7 +33,6 @@
   const OPEN_APPS_KEY = 'coachtools.desktop.openApps.v1';
   const STORAGE_SCAN_KEY = 'coachtools.desktop.storageScan.v1';
   const MAX_RECENT = 8;
-  const MAX_UNSCOPED_AUTO_BYTES = 4 * 1024 * 1024;
   const FILTERS = Object.freeze(['All', 'Favorites', 'Core', 'Data', 'Coaching', 'Performance', 'Quality', 'Needs Data']);
   const elements = {};
   const openWindows = new Map();
@@ -913,7 +912,7 @@
       setStartupProgress(14, 'Checking shared data', 'Looking for missing datasets without replacing anything already saved…', null);
     }
     const statuses = currentDatasetStatuses();
-    const missing = statuses.filter(item => !item.ready).map(item => item.id);
+    const missing = statuses.filter(item => !item.ready).map(item => item.datasetType || item.id);
     if (!missing.length) {
       if (startup) setStartupProgress(100, 'Shared data ready', 'All five shared data sources are already available.', '5 of 5 ready');
       if (manual) showToast('All five shared data sources are already loaded. Nothing was replaced.');
@@ -1038,23 +1037,9 @@
       setImportProgress(52 + ((index + 1) / selected.length) * 23, `Parsing ${label}`, entry.metadata.filename, `${index + 1} of ${selected.length}`);
       await nextPaint();
       const dataset = importer.prepareDataset(entry.parsed, entry.id, { scope: reusableScope ? scope : null });
-      const packed = importer.packDataset(dataset);
-      prepared.push({ ...entry, dataset, packed, packedBytes: packed.length * 2 });
+      prepared.push({ ...entry, dataset });
     }
     setProgressStep('Building selected data', 'success');
-
-    const proposedBytes = prepared.reduce((sum, entry) => sum + entry.packedBytes, 0);
-    const currentBytes = storage && storage.getApproximateStorageSize ? storage.getApproximateStorageSize().bytes : 0;
-    if (!reusableScope && (proposedBytes > MAX_UNSCOPED_AUTO_BYTES || currentBytes + proposedBytes > MAX_UNSCOPED_AUTO_BYTES)) {
-      state.pendingStageFiles = parsedEntries.map(entry => entry.file);
-      state.pendingStageSent = false;
-      setProgressStep('Saving shared data', 'warning');
-      const summary = `Files were identified, but the full unscoped build may exceed safe browser storage. Choose a scope in Weekly Data.`;
-      saveScanRecord({ available: true, fileCount: listedFiles.length, ambiguous, skipped, loaded: [], staged: prepared.map(entry => entry.id), summary });
-      finishImportProgress(summary, { warning: true, review: true, count: `${statuses.filter(item => item.ready).length} of 5` });
-      state.autoScanRunning = false;
-      return;
-    }
 
     setProgressStep('Saving shared data', 'active');
     const written = [];
@@ -1065,15 +1050,15 @@
       try {
         setImportProgress(77 + ((index + 1) / prepared.length) * 20, `Saving ${importer.SOURCES[entry.id].label}`, entry.metadata.filename, `${index + 1} of ${prepared.length}`);
         await nextPaint();
-        storage.set(entry.id, entry.packed, {
-          raw: true,
-          metadata: {
-            fileName: entry.metadata.filename,
-            fileSize: entry.metadata.size,
-            modifiedTime: entry.metadata.modifiedTime,
-            automaticImport: true,
-            scopeLabel: reusableScope && scope && scope.label || 'All available coaches'
-          }
+        await root.CoachToolsData.importDataset(entry.id, entry.dataset, {
+          originalFileName: entry.metadata.filename,
+          fileSize: entry.metadata.size,
+          fileModifiedDate: entry.metadata.modifiedTime,
+          rowCount: entry.dataset.meta && entry.dataset.meta.totalRows || 0,
+          detectedPeriod: entry.classification.detectedPeriod,
+          classificationMethod: entry.classification.classificationMethod || entry.classification.reason,
+          automaticImport: true,
+          scopeLabel: reusableScope && scope && scope.label || 'All available coaches'
         });
         written.push(entry.id);
       } catch (error) {
@@ -1083,7 +1068,7 @@
     }
 
     if (writeError) {
-      for (const id of written) storage.remove(id);
+      for (const id of written) await root.CoachToolsData.removeDataset(id);
       state.pendingStageFiles = parsedEntries.map(entry => entry.file);
       state.pendingStageSent = false;
       setProgressStep('Saving shared data', 'error');
@@ -1317,6 +1302,7 @@
   async function runStartupSequence() {
     state.startupStartedAt = Date.now();
     state.startupScanActive = true;
+    if (storage && storage.ready) await storage.ready();
     let statuses = currentDatasetStatuses();
     renderStartupDatasets(statuses);
     const initialReady = statuses.filter(item => item.ready).length;

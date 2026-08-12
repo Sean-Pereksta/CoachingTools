@@ -11,7 +11,7 @@
 <meta name="coachtools-icon" content="icons/kpi-impact.png" />
 <meta name="coachtools-initials" content="KI" />
 <meta name="coachtools-keywords" content="kpi, impact, retail, referral, coaching, trend" />
-<meta name="coachtools-data" content="retail, referral, coaching" />
+<meta name="coachtools-data" content="weeklyRetail, weeklyReferral, documentedCoaching" />
 <meta name="coachtools-order" content="50" />
 <meta name="coachtools-version" content="1.0" />
 
@@ -21,7 +21,9 @@
 
 <!-- LZ-String (for dock decompression) -->
 <script src="../vendor/lz-string.min.js"></script>
+<script src="../vendor/xlsx.full.min.js"></script>
 <script src="../shared/coachtools-storage.js"></script>
+<script src="../shared/coachtools-import.js"></script>
 <script src="../shared/coachtools-shell.js"></script>
 
 <style>
@@ -1546,6 +1548,8 @@ function toNumber(v){
   return Number.isFinite(n) ? n : null;
 }
 function findDockKey(suffix){
+  const shared=window.CoachToolsStorage?.listCompatibilityKeys?.(suffix)||[];
+  if(shared.length) return shared[0];
   const want = `.dock.${suffix}`;
   for(let i=0;i<localStorage.length;i++){
     const k = localStorage.key(i);
@@ -1556,6 +1560,8 @@ function findDockKey(suffix){
 }
 function loadDockObjByKey(key){
   if(!key) return null;
+  const shared=window.CoachToolsStorage?.getByCompatibilityKey?.(key);
+  if(shared) return shared;
   const raw = localStorage.getItem(key);
   if(!raw) return null;
 
@@ -1736,7 +1742,7 @@ function mergeRetailReferral(rows, includeRetail, includeReferral){
    Documented Coaching
    ========================= */
 function findCoachingCandidates(){
-  const keys=[];
+  const keys=window.CoachToolsStorage?.listCompatibilityKeys?.('coaching')||[];
   for(let i=0;i<localStorage.length;i++){
     const k = localStorage.key(i);
     if(!k) continue;

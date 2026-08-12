@@ -595,8 +595,134 @@ async function processImportedSource(source, file, options={}){
     commitImportedSource(source,file,pack,rows,cfg,meta,{diagnostics:{counts}});
     const nameEl=sourceNameElement(source); if(nameEl) nameEl.textContent=`${file.name} · ${sn}${source===QA_DIRECT_SOURCE?' · direct mode source':''}`;
     await finishSingleSourceIntake(source,`${label} import`,timing,counts);
-  }catch(err){ console.error(err); alert(`${label} import failed. Check the console for details.`); }
+    if(!options.fromCentral) await saveAllStarWorkbookToCoachTools(sharedDatasetTypeForAllStarSource(source),file,wb,`allstar-${source}`);
+    return true;
+  }catch(err){ console.error(err); alert(`${label} import failed. Check the console for details.`); return false; }
   finally{ state.dataUpdateBatch=null; hideProgress(); }
+}
+
+function sharedDatasetTypeForAllStarSource(source){
+  return ({qa:'qa',checklist:'checklist',documented_coaching:'documentedCoaching',comp_calls:'compCoaching'})[source]||'';
+}
+function coachToolsParsedFromWorkbook(file,wb){
+  const sheets=[...(wb?.SheetNames||[])], data={}; let totalRows=0;
+  sheets.forEach(name=>{
+    const raw=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:''});
+    const aoa=window.CoachToolsImport?.trimAOA?window.CoachToolsImport.trimAOA(raw):raw;
+    data[name]={aoa}; totalRows+=aoa.length;
+  });
+  return {meta:{fileName:file?.name||'',fileSize:Number(file?.size)||0,fileModifiedDate:file?.lastModified?new Date(file.lastModified).toISOString():'',loadedAt:new Date().toISOString(),sheetsCount:sheets.length,totalRows},workbook:{sheets,data}};
+}
+async function saveAllStarWorkbookToCoachTools(datasetType,file,wb,method='allstar-import'){
+  if(!datasetType||!window.CoachToolsData||!window.CoachToolsImport) return null;
+  try{
+    const parsed=coachToolsParsedFromWorkbook(file,wb);
+    const period=window.CoachToolsImport.detectPeriod(file,datasetType);
+    return await window.CoachToolsData.importDataset(datasetType,parsed,{originalFileName:file?.name||'',fileSize:Number(file?.size)||0,fileModifiedDate:file?.lastModified?new Date(file.lastModified).toISOString():'',rowCount:parsed.meta.totalRows,detectedPeriod:period,classificationMethod:method,validationStatus:'ready'});
+  }catch(error){ console.warn('[All-Star] Shared CoachTools save failed; All-Star import remains available.',error); return null; }
+}
+function sheetJsWorkbookFromCoachToolsDataset(dataset){
+  const workbook=XLSX.utils.book_new();
+  for(const name of dataset?.workbook?.sheets||[]){
+    const aoa=dataset.workbook.data?.[name]?.aoa||[];
+    XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet(aoa),String(name).slice(0,31)||'Data');
+  }
+  return workbook;
+}
+async function coachToolsDatasetFromAllStarBook(bookKey,datasetType){
+  const book=state.books?.[bookKey]||{}, names=[...new Set(book.sheetNames||[])], data={}; let totalRows=0;
+  for(const name of names){ const aoa=await ensureSheetLoaded(bookKey,name); if(aoa?.length){ data[name]={aoa}; totalRows+=aoa.length; } }
+  const fallbacks={
+    monthlyRetail:[['Retail SV2',state.data.retail.sv2Aoa],['Retail Wiper',state.data.retail.wiperAoa]],
+    monthlyReferral:[['Referral SV2',state.data.referral.sv2Aoa],['Referral Wiper',state.data.referral.wiperAoa],['Referral ITAC',state.data.referral.itacAoa]],
+    qa:[['QA',state.data.qa.aoa]],checklist:[['Checklist',state.data.checklist.aoa]],documentedCoaching:[['Documented Coaching',state.data.documented_coaching.aoa]],compCoaching:[['Comp Coaching',state.data.comp_calls.aoa]]
+  };
+  if(!Object.keys(data).length){ for(const [name,aoa] of fallbacks[datasetType]||[]){ if(aoa?.length){ data[name]={aoa}; totalRows+=aoa.length; } } }
+  const sheets=Object.keys(data), fileName=book.fileName||({monthlyRetail:state.data.retail.fileName,monthlyReferral:state.data.referral.fileName,qa:state.data.qa.fileName,checklist:state.data.checklist.fileName,documentedCoaching:state.data.documented_coaching.fileName,compCoaching:state.data.comp_calls.fileName})[datasetType]||'';
+  return sheets.length?{meta:{fileName,totalRows,sheetsCount:sheets.length,loadedAt:new Date().toISOString()},workbook:{sheets,data}}:null;
+}
+async function backfillCoachToolsDataFromAllStar(){
+  if(!window.CoachToolsData||!window.CoachToolsImport) return {};
+  const mappings=[['monthlyRetail','retail'],['monthlyReferral','referral'],['qa','qa'],['documentedCoaching','documented_coaching'],['checklist','checklist'],['compCoaching','comp_calls']], synced={};
+  for(const [datasetType,bookKey] of mappings){
+    if(await window.CoachToolsData.getCurrent(datasetType,{includeRecord:true})) continue;
+    const dataset=await coachToolsDatasetFromAllStarBook(bookKey,datasetType);
+    if(!dataset) continue;
+    const period=window.CoachToolsImport.detectPeriod(dataset.meta.fileName,datasetType);
+    const result=await window.CoachToolsData.importDataset(datasetType,dataset,{originalFileName:dataset.meta.fileName,rowCount:dataset.meta.totalRows,detectedPeriod:period,classificationMethod:'allstar-cache-migration',validationStatus:'ready'});
+    if(result?.dataset?.id) synced[datasetType]=result.dataset.id;
+  }
+  return synced;
+}
+async function syncAllStarFromCoachToolsData(){
+  if(!window.CoachToolsData) return false;
+  await window.CoachToolsData.ready();
+  const mappings=[
+    ['monthlyRetail',(file,wb)=>loadRetailFile(file,{workbook:wb,fromCentral:true})],
+    ['monthlyReferral',(file,wb)=>loadReferralFile(file,{workbook:wb,fromCentral:true})],
+    ['qa',(file,wb)=>processImportedSource('qa',file,{label:'QA Stats',bookKey:'qa',workbook:wb,fromCentral:true})],
+    ['documentedCoaching',(file,wb)=>processImportedSource('documented_coaching',file,{label:'Documented Coaching',bookKey:'documented_coaching',workbook:wb,fromCentral:true})],
+    ['checklist',(file,wb)=>processImportedSource('checklist',file,{label:'Checklist',bookKey:'checklist',workbook:wb,fromCentral:true})],
+    ['compCoaching',(file,wb)=>processImportedSource('comp_calls',file,{label:'Comp Coaching',bookKey:'comp_calls',workbook:wb,fromCentral:true})]
+  ];
+  const syncKey='allStarCoachToolsSync.v1';
+  let synced={}; try{ synced=JSON.parse(localStorage.getItem(syncKey)||'{}')||{}; }catch(_){ synced={}; }
+  Object.assign(synced,await backfillCoachToolsDataFromAllStar());
+  let loaded=0;
+  for(const [datasetType,loader] of mappings){
+    const record=await window.CoachToolsData.getCurrent(datasetType,{includeRecord:true});
+    if(!record?.data?.workbook?.sheets?.length) continue;
+    if(synced[datasetType]===record.id) continue;
+    const wb=sheetJsWorkbookFromCoachToolsDataset(record.data);
+    const file={name:record.originalFileName||`${datasetType}.xlsx`,size:record.fileSize||0,lastModified:Date.parse(record.fileModifiedDate||record.importedAt)||Date.now()};
+    const ok=await loader(file,wb); if(ok===false) continue; synced[datasetType]=record.id; loaded++;
+  }
+  try{ localStorage.setItem(syncKey,JSON.stringify(synced)); }catch(_){}
+  return loaded>0;
+}
+
+function renderCoachToolsImportReview(){
+  if(!els.coachtoolsImportReview) return;
+  const batch=state.coachToolsImportBatch||{recognized:[],needsReview:[],errors:[]};
+  const rows=[];
+  batch.recognized.forEach((entry,index)=>rows.push(`<div class="checkResultRow" data-shared-import-row="${index}"><strong>✓ ${esc(entry.classification.id&&window.CoachToolsImport.SOURCES[entry.classification.id]?.label||entry.classification.id)}</strong><div class="checkResultMeta">${esc(entry.file.name)} · ${esc(entry.classification.detectedPeriod?.label||'Current')} · Ready</div></div>`));
+  batch.needsReview.forEach(entry=>rows.push(`<div class="checkResultRow"><strong>Needs Review · ${esc(entry.classification.predictedId&&window.CoachToolsImport.SOURCES[entry.classification.predictedId]?.label||'Unknown source')}</strong><div class="checkResultMeta">${esc(entry.file.name)} · ${esc(entry.classification.validation?.reason||'No compatible dataset structure was found.')}</div></div>`));
+  batch.errors.forEach(entry=>rows.push(`<div class="checkResultRow"><strong>Could not read</strong><div class="checkResultMeta">${esc(entry.file?.name||'File')} · ${esc(entry.error?.message||String(entry.error))}</div></div>`));
+  els.coachtoolsImportReview.innerHTML=rows.join('')||'<div class="checkResultMeta">No files staged.</div>';
+  if(els.coachtoolsImportAllBtn) els.coachtoolsImportAllBtn.disabled=!batch.recognized.length;
+  if(els.coachtoolsImportSummary) els.coachtoolsImportSummary.textContent=batch.recognized.length?`${batch.recognized.length} file${batch.recognized.length===1?'':'s'} recognized${batch.needsReview.length?` · ${batch.needsReview.length} need review`:''}.`:'Choose weekly, monthly, QA, MyOne, Checklist, and Comp Coaching files together.';
+}
+async function stageCoachToolsImportFiles(files){
+  if(!window.CoachToolsImport) return alert('Shared CoachTools import utilities are unavailable.');
+  showProgress('Analyzing CoachTools files...',5);
+  try{
+    state.coachToolsImportBatch=await window.CoachToolsImport.analyzeFiles(files,{onProgress:progress=>updateProgress(`Reading ${progress.fileName||'file'}${progress.sheetName?' · '+progress.sheetName:''}`,10+Math.round(70*((progress.fileIndex+(progress.total?progress.current/progress.total:0))/Math.max(1,progress.fileCount))))});
+    renderCoachToolsImportReview(); updateProgress('Files analyzed',100,{force:true});
+  }finally{ hideProgress(); }
+}
+async function importCoachToolsBatch(){
+  const batch=state.coachToolsImportBatch;
+  if(!batch?.recognized?.length) return;
+  els.coachtoolsImportAllBtn.disabled=true;
+  let imported=0, failed=0;
+  for(let index=0;index<batch.recognized.length;index++){
+    const entry=batch.recognized[index], type=entry.classification.id;
+    showProgress(`Importing ${window.CoachToolsImport.SOURCES[type]?.label||type}...`,Math.round(index/batch.recognized.length*100));
+    try{
+      let ok=true;
+      if(type==='weeklyRetail'||type==='weeklyReferral') ok=!!(await window.CoachToolsImport.saveRecognizedEntry(entry));
+      else if(type==='monthlyRetail') ok=await loadRetailFile(entry.file);
+      else if(type==='monthlyReferral') ok=await loadReferralFile(entry.file);
+      else if(type==='qa') ok=await loadQAFile(entry.file);
+      else if(type==='documentedCoaching') ok=await loadChecklistLikeFile(entry.file,'documented_coaching');
+      else if(type==='checklist') ok=await loadChecklistFile(entry.file);
+      else if(type==='compCoaching') ok=await loadChecklistLikeFile(entry.file,'comp_calls');
+      if(ok===false) failed++; else imported++;
+    }catch(error){ console.error('[All-Star] Shared batch import failed',entry.file?.name,error); failed++; }
+  }
+  hideProgress();
+  els.coachtoolsImportAllBtn.disabled=false;
+  if(els.coachtoolsImportSummary) els.coachtoolsImportSummary.textContent=`CoachTools Data Ready · ${imported} source${imported===1?'':'s'} updated${failed?` · ${failed} failed`:''}.`;
 }
 function setSourceRowsAndHeaders(source, headers, rows, model){
   if(source===NONDATED_SOURCE || source===DATED_SOURCE){
@@ -1672,11 +1798,11 @@ function applyModelSourceSettings(model){
   markDataIndexDirty('source settings applied');
 }
 
-async function loadRetailFile(file){
+async function loadRetailFile(file,options={}){
   showProgress('Reading retail file...',3);
   try{
     await yieldToBrowser();
-    const wb=await readFileWorkbook(file);
+    const wb=options.workbook||await readFileWorkbook(file);
     updateProgress('Preparing retail workbook...',18); await yieldToBrowser();
     const sv2Name=pickBestSheetForSource(wb,'retail_sv2',activeModelForImport(),SOURCE_SHEET_HINTS.retail_sv2);
     const wiperName=pickBestSheetForSource(wb,'retail_wiper',activeModelForImport(),SOURCE_SHEET_HINTS.retail_wiper);
@@ -1698,7 +1824,9 @@ async function loadRetailFile(file){
     await finishDataChanged('retail import',55);
     updateProgress('Saving retail import to IndexedDB...',97,{force:true});
     await flushImportCacheSave('retail import complete');
-  }catch(err){ console.error(err); alert('Retail import failed. Check the console for details.'); }
+    if(!options.fromCentral) await saveAllStarWorkbookToCoachTools('monthlyRetail',file,wb,'allstar-retail');
+    return true;
+  }catch(err){ console.error(err); alert('Retail import failed. Check the console for details.'); return false; }
   finally{ hideProgress(); }
 }
 
@@ -1764,11 +1892,11 @@ function attachItacToReferralSv2(sv2Rows,itacRows,sv2Headers){
   return {matched,unmatched:Math.max(0,byPhone.size-matched),phoneHeader,rows:sv2Rows};
 }
 
-async function loadReferralFile(file){
+async function loadReferralFile(file,options={}){
   showProgress('Reading referral file...',3);
   try{
     await yieldToBrowser();
-    const wb=await readFileWorkbook(file);
+    const wb=options.workbook||await readFileWorkbook(file);
     updateProgress('Preparing referral workbook...',18); await yieldToBrowser();
     const sv2Name=pickBestSheetForSource(wb,'referral_sv2',activeModelForImport(),SOURCE_SHEET_HINTS.referral_sv2);
     const wiperName=pickBestSheetForSource(wb,'referral_wiper',activeModelForImport(),SOURCE_SHEET_HINTS.referral_wiper);
@@ -1797,7 +1925,9 @@ async function loadReferralFile(file){
     await finishDataChanged('referral import',55);
     updateProgress('Saving referral import to IndexedDB...',97,{force:true});
     await flushImportCacheSave('referral import complete');
-  }catch(err){ console.error(err); alert('Referral import failed. Check the console for details.'); }
+    if(!options.fromCentral) await saveAllStarWorkbookToCoachTools('monthlyReferral',file,wb,'allstar-referral');
+    return true;
+  }catch(err){ console.error(err); alert('Referral import failed. Check the console for details.'); return false; }
   finally{ hideProgress(); }
 }
 function findHeaderFromExpected(headers, preferred, fallbacks){

@@ -20,6 +20,7 @@
 <script src="../../vendor/html2pdf.bundle.min.js"></script>
 <script src="../../vendor/jspdf.umd.min.js"></script>
 <script src="../../shared/coachtools-storage.js"></script>
+<script src="../../shared/coachtools-import.js"></script>
 <script src="../../shared/coachtools-shell.js"></script>
 <link rel="stylesheet" href="css/allstar.css">
 </head>
@@ -97,6 +98,19 @@
     <div class="modalBody">
       <div class="panel workflowSourceHealthPanel"><div id="sourceHealthOverview"><div class="hint">Source health will appear when Import opens.</div></div></div>
       <div class="panel">
+        <div class="panelTitle">Import CoachTools Data Once</div>
+        <div class="row">
+          <input id="coachtoolsFiles" type="file" accept=".xlsx,.xls,.csv" multiple data-coachtools-auto-import="false">
+          <button id="coachtoolsImportAllBtn" class="green" type="button" disabled>Import All Recognized</button>
+          <span id="coachtoolsImportSummary" class="checkResultMeta">Choose weekly, monthly, QA, MyOne, Checklist, and Comp Coaching files together.</span>
+        </div>
+        <div id="coachtoolsImportReview" class="checkResultList"></div>
+      </div>
+      <div class="panel">
+        <div class="panelTitle">CoachTools Data Status</div>
+        <div data-coachtools-data-status></div>
+      </div>
+      <div class="panel">
         <div class="panelTitle">Troubleshoot / Categorize Imports</div>
         <div class="row">
           <button id="openTroubleshootBtn" class="dark" type="button">Troubleshoot / Update Sheet + Headers</button>
@@ -130,7 +144,7 @@
           <button id="saveImportCacheBtn" class="green" type="button">Save Imported Data Locally</button>
           <button id="loadImportCacheBtn" class="dark" type="button">Load Local Data</button>
           <button id="persistImportCacheBtn" class="dark" type="button">Protect Local Storage</button>
-          <button id="clearImportCacheBtn" class="red" type="button">Clear Local Data</button>
+          <button id="clearImportCacheBtn" class="red" type="button">Clear All-Star Cache</button>
           <span class="checkResultMeta">Uploads now save to IndexedDB automatically. This lets the report reopen with the last imported workbooks, rows, teams, headers, categorized data, and custom sources already loaded.</span>
         </div>
         <div id="importCacheStatus" class="checkResultMeta">Checking local cache...</div>

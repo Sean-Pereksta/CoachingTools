@@ -60,7 +60,7 @@ if (manifest) {
   if (Number(manifest.schemaVersion) !== 1) fail(`Unsupported manifest schema: ${manifest.schemaVersion}`);
   const ids = new Set();
   const files = new Set();
-  const validData = new Set(['retail', 'referral', 'qa', 'coaching', 'checklist']);
+  const validData = new Set(['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'qa', 'documentedCoaching', 'checklist', 'compCoaching', 'retail', 'referral', 'coaching']);
   for (const app of manifest.apps || []) {
     if (!app.id) fail('An application is missing its id.');
     if (ids.has(app.id)) fail(`Duplicate application id: ${app.id}`);
@@ -106,6 +106,10 @@ if (manifest) {
     validateInlineScripts(filePath, html);
     if (/\/(?:workspace|mnt\/data)\/|[A-Z]:\\Users\\/i.test(html)) fail(`${app.file}: contains an absolute developer-machine path.`);
     for (const marker of expectedMarkers[app.id] || []) if (!html.includes(marker)) fail(`${app.id}: expected capability marker is missing: ${marker}`);
+    if (['coaching-gaps', 'coach-timeline', 'kpi-impact', 'qa-scores', 'audit-checklist'].includes(app.id)) {
+      if (!html.includes('../shared/coachtools-import.js')) fail(`${app.id}: must route spreadsheet uploads through the shared classifier.`);
+      if (!html.includes('getByCompatibilityKey')) fail(`${app.id}: must read shared current data through CoachToolsStorage before legacy fallback.`);
+    }
     const attributes = [...html.matchAll(/<(?:script|link|iframe)\b[^>]*?\b(?:src|href|data-src)=(?:"([^"]+)"|'([^']+)')/gi)].map(match => match[1] || match[2]);
     for (const target of attributes) {
       if (!target || /^(?:https?:|data:|blob:|about:|#)/i.test(target)) {
@@ -145,7 +149,7 @@ if (!/\.desktop-shade\s*\{[\s\S]*?z-index:\s*1;/.test(desktopStyles)) fail('Desk
 if (!/\.desktop-shell\s*\{[\s\S]*?z-index:\s*2;/.test(desktopStyles)) fail('Desktop shell must render above the wallpaper layers at z-index 2.');
 
 const importerScript = exists('shared/coachtools-import.js') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-import.js'), 'utf8') : '';
-for (const marker of ['classifyFile', 'prepareDataset', 'packDataset', 'myone2.dock.retail', 'myone2.dock.checklist']) {
+for (const marker of ['classifyFile', 'prepareDataset', 'packDataset', 'weeklyRetail', 'weeklyReferral', 'validateClassification', 'detectPeriod', 'myone2.dock.retail', 'myone2.dock.checklist']) {
   if (!importerScript.includes(marker)) fail(`Shared importer is missing capability marker ${marker}`);
 }
 try { if (importerScript) new vm.Script(importerScript, { filename: 'shared/coachtools-import.js' }); }
@@ -168,6 +172,9 @@ for (const directory of ['CoachTools/graphics/', 'CoachTools/storage/']) {
 const storageScript = exists('shared/coachtools-storage.js') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-storage.js'), 'utf8') : '';
 for (const key of ['myone2.dock.retail', 'myone2.dock.referral', 'myone2.dock.qa', 'myone2.dock.coaching', 'myone2.dock.checklist']) {
   if (!storageScript.includes(key)) fail(`Shared storage helper is missing compatibility key ${key}`);
+}
+for (const marker of ['CoachToolsData', 'getCurrent', 'getHistory', 'getDatasetVersion', 'getImportHistory', 'coachtoolsDatasets', 'coachtoolsCurrent', 'coachtoolsImports', "DB_VERSION = 5"]) {
+  if (!storageScript.includes(marker)) fail(`Shared IndexedDB data API is missing ${marker}`);
 }
 
 const allStarCore = exists('apps/allstar/js/core.js') ? fs.readFileSync(path.join(ROOT, 'apps/allstar/js/core.js'), 'utf8') : '';

@@ -12,11 +12,14 @@ Parent application localStorage keys
 - allStarPdfOptions.v1
 
 Parent application IndexedDB
-- allStarImportedDataCache.v1, schema version 4
+- allStarImportedDataCache.v1, schema version 5
   - meta (keyPath: id)
   - sourceData (keyPath: id)
   - books (keyPath: id)
   - misc (keyPath: id)
+  - coachtoolsDatasets (keyPath: id)
+  - coachtoolsCurrent (keyPath: datasetType)
+  - coachtoolsImports (keyPath: id)
 - allStarResearchRenderedResults.v1, schema version 1
   - renderMeta (keyPath: itemId)
   - renderChunks (keyPath: id)
@@ -43,7 +46,7 @@ Qualtrics generator IndexedDB
   - settings (keyPath: key)
 
 Compatibility policy
-These names, versions, key paths, and stored object structures are deliberately unchanged. The modular Qualtrics carrier uses srcdoc so its saved data remains on the same parent-document storage origin used by the previous embedded generator.
+Existing names and stored object structures remain compatible. Schema version 5 only adds the central CoachTools dataset/history stores to All-Star's import database. The modular Qualtrics carrier uses srcdoc so its saved data remains on the same parent-document storage origin used by the previous embedded generator.
 
 Portable imported-data package
 - Preferred filename: All_Star_Data_Package.json
