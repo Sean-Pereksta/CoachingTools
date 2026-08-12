@@ -30,11 +30,11 @@ Browsers do not allow a local HTML file to enumerate a neighboring folder, so au
 
 Place an optional wallpaper at `graphics/background.png`. It is centered and cover-scaled behind a subtle readability overlay. If it is absent or unreadable, the built-in gradient remains fully functional. Application and desktop-control icons stay under `icons/`; the built-in icon set is preloaded on startup and receives a small glow/scale treatment on mouse or keyboard focus.
 
-The compact startup bar appears before the desktop or a remembered app session is revealed. It reports readiness for Retail, Referral, QA, Documented Coaching, Checklist, and the People Registry, then compares `storage/` with local IndexedDB history when the launcher is active. Direct `index.html` mode exits the startup check quickly and keeps manual Data Manager import available.
+The compact startup bar appears before the desktop or a remembered app session is revealed. It reports all eight shared datasets—Retail/Referral weekly and monthly, QA, Documented Coaching, Checklist, and Comp Coaching—plus the People Registry, then compares `storage/` with local IndexedDB history when the launcher is active. Direct `index.html` mode exits the startup check quickly and keeps manual Data Manager import available.
 
 ## Data Manager and shared storage
 
-Manual and automatic imports use `shared/coachtools-import.js` for workbook reading, filename classification, header validation, period detection, and scoped dataset preparation. Data Manager retains the prior Weekly Data grouping and scope workflow while adding a central current-data status view.
+Manual and automatic imports use `shared/coachtools-import.js` for workbook reading, filename classification, header validation, period detection, and scoped dataset preparation. **Update Data**, the desktop readiness popup, Data Manager, and All-Star all accept multi-file batches and save recognized sources through the same IndexedDB API. Data Manager retains the prior Weekly Data grouping and scope workflow while adding loaders and current-data cards for every shared dataset.
 
 Large shared data and canonical people are authoritative in `allStarImportedDataCache.v1`, schema version 6. The central API stores dated history once and keeps a pointer to the newest current record for each of these logical datasets:
 

@@ -465,12 +465,14 @@ button:focus-visible, input:focus-visible {
   width: min(390px, calc(100vw - 26px));
   border-radius: 17px;
   padding: 15px;
+  max-height: calc(100vh - var(--taskbar-height) - 42px);
+  overflow-y: auto;
 }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .panel-heading h2 { margin: 0; font-size: 15px; }
 .panel-heading button { width: 29px; height: 29px; color: var(--muted); }
 .scope-label { margin: 10px 0; padding: 8px 9px; border-radius: 9px; background: rgba(255, 255, 255, .055); color: #dbe8f3; font-size: 10px; }
-.dataset-status { display: grid; gap: 5px; }
+.dataset-status { display: grid; gap: 5px; max-height: 340px; overflow-y: auto; padding-right: 2px; }
 .dataset-item { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 8px 9px; border: 1px solid var(--line); border-radius: 9px; background: rgba(255, 255, 255, .035); }
 .dataset-item > div { min-width: 0; }
 .dataset-item span, .dataset-item small { display: block; }

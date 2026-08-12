@@ -148,7 +148,7 @@
 
   function inspectSourceHeaders(parsed) {
     const found = new Set();
-    for (const source of SOURCE_ORDER) {
+    for (const source of DATASET_ORDER) {
       const header = SOURCES[source].header;
       for (const sheetName of parsed && parsed.workbook && parsed.workbook.sheets || []) {
         if (findHeader(parsed.workbook.data[sheetName] && parsed.workbook.data[sheetName].aoa, header)) {
@@ -239,8 +239,8 @@
     const filenameHints = [
       ['weeklyRetail', /\bretail\b.*\bweekly\b|\bweekly\b.*\bretail\b/],
       ['weeklyReferral', /\breferral\b.*\bweekly\b|\bweekly\b.*\breferral\b/],
-      ['monthlyRetail', /\bappointment\b.*\breport\b/],
-      ['monthlyReferral', /\bkpi\b.*\breport\b/],
+      ['monthlyRetail', /\bappointment\b.*\breport\b|\bretail\b.*\bmonthly\b|\bmonthly\b.*\bretail\b/],
+      ['monthlyReferral', /\bkpi\b.*\breport\b|\breferral\b.*\bmonthly\b|\bmonthly\b.*\breferral\b/],
       ['compCoaching', /\bcomp\s*(?:calls?|coaching)\b|\bcomp(?:liment)?\b.*\bcoach(?:ing)?\b|\bcompliments?\b/],
       ['documentedCoaching', /\bmyone\b|\bdocumented\b.*\bcoach(?:ing)?\b|\bcoach(?:ing)?\b.*\bdocumented\b|\bcoaching\b/],
       ['checklist', /\bcheck\s*list\b|\bchecklist\b|\ball\s+items\b/],
@@ -267,7 +267,8 @@
     if (found.has('qa') && !found.has('weeklyRetail') && !found.has('weeklyReferral')) {
       return headerClassification('qa');
     }
-    const candidates = SOURCE_ORDER.filter(id => found.has(id));
+    const candidates = DATASET_ORDER.filter(id => found.has(id));
+    if (candidates.length === 1) return headerClassification(candidates[0]);
     return {
       id: null,
       confidence: candidates.length ? 'ambiguous' : 'unknown',
@@ -390,7 +391,7 @@
   }
 
   root.CoachToolsImport = Object.freeze({
-    VERSION: '1.0.0',
+    VERSION: '1.1.0',
     SOURCE_ORDER,
     DATASET_ORDER,
     SOURCES,

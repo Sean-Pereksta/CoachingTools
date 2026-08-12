@@ -47,6 +47,8 @@ assert(desktopScript.includes('preloadIconAssets'), 'Desktop should preload its 
 assert(desktopHtml.includes('data-system-icon="coachtools-home"'), 'Desktop controls should use the uploaded CoachTools home icon.');
 assert(desktopHtml.includes('data-system-icon="start"'), 'The Start button should use the branded Start graphic role.');
 assert(desktopHtml.includes('data-system-icon="shared-data"'), 'Data controls should use the uploaded shared-data icon.');
+assert(desktopHtml.includes('id="quickDataInput"'), 'The desktop readiness panel should expose one multi-file data picker.');
+assert(desktopHtml.includes('data-action="quick-upload-data"'), 'The desktop should offer rapid all-data upload from Update Data and readiness controls.');
 assert(desktopHtml.includes('id="startupSplash"'), 'A startup readiness bar should be present before the desktop opens.');
 assert(desktopHtml.includes('rel="preload" as="image" href="graphics/loading.png"'), 'The loading artwork should be requested immediately from index.html.');
 assert(!desktopHtml.includes('startup-card'), 'The startup screen should not use a popup-style card.');
@@ -99,10 +101,14 @@ assert.strictEqual(imports.classifyFile({ name: 'RETAIL-WEEKLY_8-2-8-8 (1).xlsx'
 assert.strictEqual(imports.classifyFile({ name: 'Referral Weekly Final.xlsx' }, parsed('Referral Weekly Final.xlsx', [['Sheet']])).id, 'weeklyReferral');
 assert.strictEqual(imports.classifyFile({ name: 'August 2026 Appointment Report.xlsx' }, parsed('August 2026 Appointment Report.xlsx', [['Representative']])).id, 'monthlyRetail');
 assert.strictEqual(imports.classifyFile({ name: 'Aug KPI Report Copy.xlsx' }, parsed('Aug KPI Report Copy.xlsx', [['Representative']])).id, 'monthlyReferral');
+assert.strictEqual(imports.classifyFile({ name: 'Retail Monthly August 2026.xlsx' }, parsed('Retail Monthly August 2026.xlsx', [['Representative']])).id, 'monthlyRetail');
+assert.strictEqual(imports.classifyFile({ name: 'Referral Monthly August 2026.xlsx' }, parsed('Referral Monthly August 2026.xlsx', [['Representative']])).id, 'monthlyReferral');
+assert.strictEqual(imports.classifyFile({ name: 'Comp Coaching August 2026.xlsx' }, parsed('Comp Coaching August 2026.xlsx', [['CSR/SSR Name', 'Compliment']])).id, 'compCoaching');
 assert.strictEqual(imports.classifyFile({ name: 'All Items 8-11.xlsx' }, parsed('All Items 8-11.xlsx', [['Coach Assigned', 'Associate Name', 'Action']])).id, 'checklist');
 assert.strictEqual(imports.classifyFile({ name: 'Documented Coaching.csv' }, parsed('Documented Coaching.csv', [['Job Coach', 'Associate Name', 'Coaching Date']])).id, 'documentedCoaching');
 assert.strictEqual(imports.classifyFile({ name: 'mystery.xlsx' }, parsed('mystery.xlsx', [['Team', 'Score %'], ['Coach A', 0.9]])).id, 'qa');
 assert.strictEqual(imports.classifyFile({ name: 'QA.xlsx' }, parsed('QA.xlsx', [['Team']])).needsReview, true);
+assert.deepStrictEqual(Array.from(imports.DATASET_ORDER), ['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'qa', 'documentedCoaching', 'checklist', 'compCoaching']);
 
 const ambiguous = imports.classifyFile({ name: 'mystery.xlsx' }, parsed('mystery.xlsx', [['Sheet'], ['Coach A']]));
 assert.strictEqual(ambiguous.id, null);

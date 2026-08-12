@@ -189,6 +189,9 @@ catch (error) { fail(`shared/coachtools-desktop.js does not parse: ${error.messa
 
 const weeklyData = exists('apps/weekly-data.html') ? fs.readFileSync(path.join(ROOT, 'apps/weekly-data.html'), 'utf8') : '';
 if (!weeklyData.includes('../shared/coachtools-import.js') || !weeklyData.includes('IMPORT.classifyFile')) fail('Weekly Data must reuse the shared import and classification utility.');
+for (const marker of ['IMPORT.DATASET_ORDER', 'storedStatus', 'CoachToolsData.importDataset', 'Load All Data Files']) {
+  if (!weeklyData.includes(marker)) fail(`Data Manager is missing all-data import marker ${marker}.`);
+}
 
 const localServer = exists('build/start-local-server.js') ? fs.readFileSync(path.join(ROOT, 'build/start-local-server.js'), 'utf8') : '';
 for (const marker of ["url.pathname === '/api/storage'", "path.join(ROOT, 'storage')", "new Set(['.xlsx', '.xls', '.csv'])", "rawPath.startsWith('/storage/')", "fileName.includes('/')"]) {
@@ -206,6 +209,9 @@ for (const key of ['myone2.dock.retail', 'myone2.dock.referral', 'myone2.dock.qa
 for (const marker of ['CoachToolsData', 'getCurrent', 'getHistory', 'getDatasetVersion', 'getImportHistory', 'inspectDataset', 'subscribeScope', 'coachtoolsDatasets', 'coachtoolsCurrent', 'coachtoolsImports', 'coachtoolsPeople', "DB_VERSION = 6"]) {
   if (!storageScript.includes(marker)) fail(`Shared IndexedDB data API is missing ${marker}`);
 }
+if (!/function getDatasetStatus\(\)[\s\S]*?centralStatus\(\)\.map/.test(storageScript)) fail('Desktop readiness must report every central IndexedDB dataset.');
+if (!storageScript.includes('const sourcePeriod = meta.detectedPeriod')) fail('IndexedDB candidate inspection must retain the detected source period.');
+for (const marker of ['quickDataInput', 'importSelectedFiles', 'saveRecognizedEntry']) if (!desktopScript.includes(marker)) fail(`Desktop rapid upload is missing ${marker}.`);
 for (const sharedFile of ['shared/coachtools-sync.js', 'shared/coachtools-identity.js', 'shared/coachtools-profile-data.js']) {
   const source = exists(sharedFile) ? fs.readFileSync(path.join(ROOT, sharedFile), 'utf8') : '';
   try { if (source) new vm.Script(source, { filename: sharedFile }); }
