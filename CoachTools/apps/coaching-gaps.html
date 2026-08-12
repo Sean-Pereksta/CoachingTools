@@ -19,6 +19,7 @@
 <script src="../vendor/lz-string.min.js"></script>
 <script src="../vendor/xlsx.full.min.js"></script>
 <script src="../shared/coachtools-storage.js"></script>
+<script src="../shared/coachtools-app-data.js"></script>
 <script src="../shared/coachtools-import.js"></script>
 <script src="../shared/coachtools-shell.js"></script>
 
@@ -2351,30 +2352,14 @@
 /* =========================================================
    Shared helpers
    ========================================================= */
-let APP_NS = 'myone2';
-(function autodetectNs(){
-  const counts = new Map();
-  for(let i=0;i<localStorage.length;i++){
-    const k = localStorage.key(i);
-    if(!k) continue;
-    const m = k.match(/^(.*)\.dock\.(retail|referral|qa|coaching|checklist)$/i);
-    if(!m) continue;
-    const ns = m[1];
-    counts.set(ns, (counts.get(ns)||0) + 1);
-  }
-  let best=null, bestN=0;
-  for(const [ns,n] of counts.entries()){
-    if(n>bestN){ bestN=n; best=ns; }
-  }
-  if(best) APP_NS = best;
-})();
+const APP_NS = 'myone2';
 
 const DOCKS = {
-  coaching:  { label:"Documented Coaching", key:`${APP_NS}.dock.coaching` },
-  retail:    { label:"Retail Stats",        key:`${APP_NS}.dock.retail` },
-  referral:  { label:"Referral Stats",      key:`${APP_NS}.dock.referral` },
-  qa:        { label:"QA",                  key:`${APP_NS}.dock.qa` },
-  checklist: { label:"Checklist",           key:`${APP_NS}.dock.checklist` }
+  coaching:  { label:"Documented Coaching", key:'coachtools:indexeddb:documentedCoaching', datasetType:'documentedCoaching' },
+  retail:    { label:"Retail Stats",        key:'coachtools:indexeddb:weeklyRetail', datasetType:'weeklyRetail' },
+  referral:  { label:"Referral Stats",      key:'coachtools:indexeddb:weeklyReferral', datasetType:'weeklyReferral' },
+  qa:        { label:"QA",                  key:'coachtools:indexeddb:qa', datasetType:'qa' },
+  checklist: { label:"Checklist",           key:'coachtools:indexeddb:checklist', datasetType:'checklist' }
 };
 
 const PREF_KEY = `${APP_NS}.gaps.prefs`;
@@ -2576,16 +2561,8 @@ function normalizeReadFlag(v){
 
 function loadDockObjByKey(key){
   if(!key) return null;
-  const shared=window.CoachToolsStorage?.getByCompatibilityKey?.(key);
-  if(shared) return shared;
-  const raw = localStorage.getItem(key);
-  if(!raw) return null;
-  try{
-    const json = LZString.decompressFromUTF16(raw);
-    if(json) return JSON.parse(json);
-  }catch(e){}
-  try{ return JSON.parse(raw); }catch(e){}
-  return null;
+  const match=Object.values(DOCKS).find(item=>item.key===key);
+  return match ? window.CoachToolsAppData?.peek(match.datasetType) || null : null;
 }
 
 function aoaToRows(aoa){
@@ -3105,46 +3082,16 @@ function canonicalizeQA(dockObj){
 
 /* =================== dock key helpers =================== */
 function findDockCandidates(kind){
-  const out=window.CoachToolsStorage?.listCompatibilityKeys?.(kind)||[];
-  const needle = `.dock.${String(kind).toLowerCase()}`;
-  for(let i=0;i<localStorage.length;i++){
-    const k = localStorage.key(i);
-    if(!k) continue;
-    if(k.toLowerCase().includes(needle)) out.push(k);
-  }
-  out.sort((a,b)=>a.localeCompare(b));
-  return out;
+  return DOCKS[kind] ? [DOCKS[kind].key] : [];
 }
 function pickBestKey(kind){
-  const preferred = DOCKS[kind]?.key;
-  if(preferred && localStorage.getItem(preferred)) return preferred;
-  const cands = findDockCandidates(kind);
-  return cands[0] || preferred || '';
+  return DOCKS[kind]?.key || '';
 }
 function findCoachingCandidates(){
-  const keys=window.CoachToolsStorage?.listCompatibilityKeys?.('coaching')||[];
-  for(let i=0;i<localStorage.length;i++){
-    const k = localStorage.key(i);
-    if(!k) continue;
-    const lk = k.toLowerCase();
-    if(!lk.includes(".dock.")) continue;
-    if(lk.includes("coach")) keys.push(k);
-    if(lk.endsWith(".dock.coaching")) keys.push(k);
-  }
-  return Array.from(new Set(keys)).sort((a,b)=>a.localeCompare(b));
+  return [DOCKS.coaching.key];
 }
 function findQADockCandidates(){
-  const preferred = window.CoachToolsStorage?.listCompatibilityKeys?.('qa')||[];
-  const fallback = [];
-  for(let i=0;i<localStorage.length;i++){
-    const k = localStorage.key(i);
-    if(!k) continue;
-    const lk = k.toLowerCase();
-    if(!lk.includes('.dock.')) continue;
-    if(lk.includes('.dock.qa')) preferred.push(k);
-    else if(lk.includes('qa') && (lk.includes('quality') || lk.includes('monitor') || lk.includes('score'))) fallback.push(k);
-  }
-  return Array.from(new Set([...preferred, ...fallback])).sort((a,b)=>a.localeCompare(b));
+  return [DOCKS.qa.key];
 }
 
 /* =========================================================
@@ -9124,7 +9071,8 @@ els.loadDocksBtn.addEventListener('click', ()=>{
 els.repSearch.addEventListener('input', ()=> render());
 
 /* =================== Boot =================== */
-(function boot(){
+(async function boot(){
+  await window.CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','qa','documentedCoaching','checklist']);
   mode = els.modeSel.value;
   paintModeButtons();
   paintCoachingActionButtons();
@@ -9168,7 +9116,14 @@ els.repSearch.addEventListener('input', ()=> render());
   els.dockHint.textContent = `Loaded • Stats: ${allRows.length.toLocaleString()} rows • Coachings: ${coachings.length.toLocaleString()} • Checklist: ${checklistRows.length.toLocaleString()} • QA: ${qaHint} • APP_NS: ${APP_NS}`;
 
   render();
-})();
+  window.CoachToolsAppData.subscribe(['weeklyRetail','weeklyReferral','qa','documentedCoaching','checklist'], async ()=>{
+    await window.CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','qa','documentedCoaching','checklist']);
+    const currentTeam=selectedTeam;
+    loadCoachings(); loadStats(); loadChecklist(); loadQA(); buildKpiUI(); rebuildTeamIndex();
+    if(currentTeam&&teams.includes(currentTeam)){selectedTeam=currentTeam;els.teamSel.value=currentTeam;}
+    render();
+  });
+})().catch(error=>{console.error('[Coaching Gaps] Shared data startup failed.',error);render();});
 </script>
 
 </body>

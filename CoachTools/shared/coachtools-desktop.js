@@ -32,8 +32,8 @@
   const RECENT_KEY = 'coachtools.desktop.recent.v1';
   const OPEN_APPS_KEY = 'coachtools.desktop.openApps.v1';
   const STORAGE_SCAN_KEY = 'coachtools.desktop.storageScan.v1';
+  const STORAGE_FILES_KEY = 'coachtools.storage.processed.v1';
   const MAX_RECENT = 8;
-  const WARMUP_CONCURRENCY = 2;
   const APP_LOAD_TIMEOUT_MS = 12000;
   const FILTERS = Object.freeze(['All', 'Favorites', 'Core', 'People', 'Data', 'Coaching', 'Performance', 'Quality', 'Other', 'Needs Data']);
   const elements = {};
@@ -58,7 +58,11 @@
     lastScan: null,
     iconFailures: new Set(),
     scopeOptions: new Map(),
-    wallpaperReady: Promise.resolve(false)
+    wallpaperReady: Promise.resolve(false),
+    pendingRestoreActiveId: '',
+    firstAppOpened: false,
+    firstAppOpenStarted: false,
+    storageCheckLabel: ''
   };
 
   function $(id) { return document.getElementById(id); }
@@ -120,7 +124,7 @@
     if (!paths.length) return;
     const image = document.createElement('img');
     image.alt = '';
-    image.loading = 'eager';
+    image.loading = 'lazy';
     image.decoding = 'async';
     let pathIndex = 0;
 
@@ -175,19 +179,6 @@
         Array.from(placeholder.classList).filter(name => name !== 'system-icon').join(' ')
       );
       placeholder.replaceWith(icon);
-    }
-  }
-
-  function preloadIconAssets() {
-    if (typeof root.Image !== 'function') return;
-    const paths = new Set([
-      ...Object.values(APP_ICON_PATHS),
-      ...Object.values(SYSTEM_ICON_PATHS)
-    ]);
-    for (const path of paths) {
-      const image = new root.Image();
-      image.decoding = 'async';
-      image.src = path;
     }
   }
 
@@ -438,9 +429,9 @@
       const value = scopeValue(storage && storage.getScope ? storage.getScope() : null);
       if (state.scopeOptions.has(value)) elements.globalScopeSelect.value = value;
     }
-    elements.storageAvailability.textContent = location.protocol === 'file:'
+    elements.storageAvailability.textContent = state.storageCheckLabel || (location.protocol === 'file:'
       ? 'Automatic storage-folder loading is available when CoachTools is started with START COACHTOOLS. Manual Data Manager import remains available.'
-      : 'Storage scanning is available from the local CoachTools launcher.';
+      : 'Storage scanning is available from the local CoachTools launcher.');
     renderApps();
   }
 
@@ -467,20 +458,16 @@
     windowState.readySettled = true;
     clearTimeout(windowState.loadTimer);
     windowState.loaded = Boolean(success);
-    windowState.warmState = success ? (windowState.userOpened ? 'ready' : 'warmed') : 'failed';
-    if (!success && !windowState.userOpened) {
-      windowState.pane.remove();
-      if (openWindows.get(windowState.app.id) === windowState) openWindows.delete(windowState.app.id);
+    windowState.warmState = success ? 'ready' : 'failed';
+    if (state.firstAppOpenStarted && !state.firstAppOpened) {
+      state.firstAppOpened = true;
+      if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end('First application open', { appId: windowState.app.id, success: Boolean(success) });
     }
     windowState.resolveReady(Boolean(success));
   }
 
   function showUnavailable(windowState) {
     if (!windowState) return;
-    if (!windowState.userOpened) {
-      settleWindowLoad(windowState, false);
-      return;
-    }
     windowState.loading.hidden = true;
     windowState.unavailable.hidden = false;
     windowState.unavailablePath.textContent = `Missing or unreadable: ${windowState.app.file}`;
@@ -496,16 +483,41 @@
     return windowState;
   }
 
+  function createDeferredWindow(app, options) {
+    const existing = openWindows.get(app.id);
+    if (existing) return existing;
+    const windowState = {
+      app,
+      pane: null,
+      iframe: null,
+      loading: null,
+      unavailable: null,
+      unavailablePath: null,
+      minimized: Boolean(options && options.minimized),
+      userOpened: true,
+      deferred: true,
+      warmState: 'deferred',
+      loaded: false,
+      loadTimer: null,
+      lastActivated: 0,
+      readySettled: true,
+      readyPromise: Promise.resolve(false),
+      resolveReady: null
+    };
+    openWindows.set(app.id, windowState);
+    return windowState;
+  }
+
   function createWindow(app, options) {
-    const preload = Boolean(options && options.preload);
     if (openWindows.has(app.id)) {
       const existing = openWindows.get(app.id);
-      return preload ? existing : promoteWindowState(existing, options);
+      if (!existing.deferred) return promoteWindowState(existing, options);
+      openWindows.delete(app.id);
     }
     const pane = document.createElement('section');
     pane.className = 'window-pane';
     pane.dataset.appId = app.id;
-    pane.dataset.lifecycle = preload ? 'preloaded' : 'opened';
+    pane.dataset.lifecycle = 'opened';
     pane.hidden = true;
 
     const iframe = document.createElement('iframe');
@@ -545,8 +557,9 @@
       unavailable,
       unavailablePath,
       minimized: Boolean(options && options.minimized),
-      userOpened: !preload,
-      warmState: preload ? 'preloading' : 'loading',
+      userOpened: true,
+      deferred: false,
+      warmState: 'loading',
       loaded: false,
       loadTimer: null,
       lastActivated: 0,
@@ -580,11 +593,13 @@
       windowState.loading.hidden = true;
       settleWindowLoad(windowState, false);
     }, APP_LOAD_TIMEOUT_MS);
-    iframe.src = app.file;
-    if (windowState.userOpened) {
-      renderTaskbar();
-      persistOpenWindows();
+    if (!state.firstAppOpened && !state.firstAppOpenStarted && root.CoachToolsDiagnostics) {
+      state.firstAppOpenStarted = true;
+      root.CoachToolsDiagnostics.start('First application open', { appId: app.id });
     }
+    iframe.src = app.file;
+    renderTaskbar();
+    persistOpenWindows();
     return windowState;
   }
 
@@ -615,13 +630,16 @@
   }
 
   function activateWindow(appId) {
-    const windowState = openWindows.get(appId);
+    let windowState = openWindows.get(appId);
     if (!windowState) return;
+    if (windowState.deferred) {
+      windowState = createWindow(windowState.app, { minimized: false });
+    }
     promoteWindowState(windowState);
     state.activeAppId = appId;
     windowState.minimized = false;
     windowState.lastActivated = Date.now();
-    for (const [id, candidate] of openWindows) candidate.pane.hidden = id !== appId;
+    for (const [id, candidate] of openWindows) if (candidate.pane) candidate.pane.hidden = id !== appId;
     elements.desktop.hidden = true;
     elements.workspace.hidden = false;
     elements.workspaceTitle.textContent = windowState.app.name;
@@ -647,7 +665,7 @@
     const wasActive = state.activeAppId === id;
     if (windowState) {
       windowState.minimized = true;
-      windowState.pane.hidden = true;
+      if (windowState.pane) windowState.pane.hidden = true;
     }
     if (wasActive) {
       state.activeAppId = null;
@@ -669,7 +687,7 @@
     const windowState = id && openWindows.get(id);
     if (!windowState) return;
     clearTimeout(windowState.loadTimer);
-    windowState.pane.remove();
+    if (windowState.pane) windowState.pane.remove();
     openWindows.delete(id);
     if (state.activeAppId === id) {
       state.activeAppId = null;
@@ -688,7 +706,7 @@
 
   function reloadActive() {
     const windowState = state.activeAppId && openWindows.get(state.activeAppId);
-    if (!windowState) return;
+    if (!windowState || windowState.deferred || !windowState.iframe) return;
     windowState.unavailable.hidden = true;
     windowState.loading.hidden = false;
     windowState.loaded = false;
@@ -821,6 +839,7 @@
     const scan = state.lastScan || readJson(STORAGE_SCAN_KEY, null) || {};
     const content = document.createElement('div');
     content.className = 'diagnostics-grid';
+    const timings = root.CoachToolsDiagnostics && root.CoachToolsDiagnostics.getEntries ? root.CoachToolsDiagnostics.getEntries() : [];
     content.appendChild(diagnosticSection('Desktop', [
       ['Open applications', String(userOpened.length)],
       ['Active application', state.activeAppId && byId.get(state.activeAppId) ? byId.get(state.activeAppId).name : 'Desktop'],
@@ -835,6 +854,9 @@
       ['Ambiguous files', scan.ambiguous && scan.ambiguous.length ? scan.ambiguous.join(', ') : 'None'],
       ['Most recent result', scan.summary || 'No automatic import attempted']
     ]));
+    content.appendChild(diagnosticSection('Performance', timings.length
+      ? timings.slice(0, 14).map(entry => [entry.name, `${Math.round(entry.duration).toLocaleString()} ms`])
+      : [['Timings', 'No measurements recorded yet']]));
     content.appendChild(diagnosticSection('Shared datasets', statuses.map(item => [
       item.label,
       item.ready ? `Ready · ${formatBytes(item.bytes)}${item.fileName ? ` · ${item.fileName}` : ''}${item.updatedAt ? ` · ${formatDate(item.updatedAt)}` : ''}` : 'Missing'
@@ -854,7 +876,7 @@
     const version = manifest.suite && manifest.suite.version || '2.0';
     elements.aboutSummary.textContent = manifest.suite && manifest.suite.description || 'A portable desktop for your coaching analytics tools.';
     const ready = storage && storage.getDatasetStatus ? storage.getDatasetStatus().filter(item => item.ready).length : 0;
-    const facts = [[version, 'Version'], [String(apps.length), 'Applications'], [`${ready}/5`, 'Data ready']];
+    const facts = [[version, 'Version'], [String(apps.length), 'Applications'], [`${ready}/${datasetTotal()}`, 'Data ready']];
     elements.aboutFacts.replaceChildren(...facts.map(([value, label]) => {
       const item = document.createElement('div');
       item.className = 'about-fact';
@@ -868,9 +890,9 @@
     openDialog(elements.aboutDialog);
   }
 
-  function downloadBackup() {
+  async function downloadBackup() {
     try {
-      const backup = storage.createBackup();
+      const backup = await storage.createBackup();
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -892,9 +914,10 @@
       const backup = JSON.parse(await file.text());
       const approved = root.confirm('Restore this CoachTools backup? Shared weekly data and included settings will replace current values.');
       if (!approved) return;
-      const result = storage.restoreBackup(backup);
+      const result = await storage.restoreBackup(backup);
       renderDataStatus();
-      showToast(`Backup restored · ${result.restoredKeys.length} storage item${result.restoredKeys.length === 1 ? '' : 's'}.`);
+      const restoredCount = result.restoredKeys.length + (result.restoredDatasets && result.restoredDatasets.length || 0);
+      showToast(`Backup restored · ${restoredCount} item${restoredCount === 1 ? '' : 's'}.`);
     } catch (error) {
       showToast('Restore failed: ' + (error && error.message || error), 6500);
     } finally {
@@ -976,6 +999,44 @@
   function saveScanRecord(record) {
     state.lastScan = { ...record, scannedAt: new Date().toISOString() };
     writeJson(STORAGE_SCAN_KEY, state.lastScan);
+  }
+
+  function storageFileKey(metadata) {
+    return String(metadata && (metadata.path || metadata.filename) || '').replace(/\\/g, '/');
+  }
+
+  function storageFileSignature(metadata) {
+    if (!metadata) return '';
+    return metadata.fingerprint
+      ? `fingerprint:${metadata.fingerprint}`
+      : `metadata:${Number(metadata.size) || 0}:${metadata.modifiedTime || ''}`;
+  }
+
+  function processedStorageFiles() {
+    const value = readJson(STORAGE_FILES_KEY, {});
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  }
+
+  function isStorageFileUnchanged(metadata, processed) {
+    const key = storageFileKey(metadata);
+    const previous = key && processed[key];
+    return Boolean(previous && previous.signature === storageFileSignature(metadata));
+  }
+
+  function rememberStorageFile(processed, metadata, details) {
+    const key = storageFileKey(metadata);
+    if (!key) return;
+    processed[key] = {
+      path: key,
+      filename: metadata.filename || '',
+      size: Number(metadata.size) || 0,
+      modifiedTime: metadata.modifiedTime || '',
+      fingerprint: metadata.fingerprint || '',
+      signature: storageFileSignature(metadata),
+      datasetType: details && details.datasetType || '',
+      datasetId: details && details.datasetId || '',
+      lastCheckedAt: new Date().toISOString()
+    };
   }
 
   function safelyNamedFile(blob, metadata) {
@@ -1103,6 +1164,7 @@
     if (startup) setStartupProgress(20, 'Checking storage folder', 'Looking for new, updated, duplicate, and older shared files…', `${readyBefore} of ${totalSources} ready`);
     let listing;
     try {
+      if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.start('Storage listing');
       const response = await fetch('/api/storage', { cache: 'no-store', headers: { Accept: 'application/json' } });
       if (!response.ok) throw new Error(`Storage scan returned ${response.status}`);
       listing = await response.json();
@@ -1112,14 +1174,26 @@
       if (startup) setStartupProgress(50, 'Shared data ready', 'Storage scanning is unavailable. Existing data is unchanged and manual import remains available.', `${readyBefore} of ${totalSources} ready`);
       if (manual) showToast('Storage scanning is unavailable. Manual Data Manager import remains available.', 5600);
       return;
+    } finally {
+      if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end('Storage listing');
     }
 
-    const listedFiles = Array.isArray(listing && listing.files) ? listing.files : [];
-    if (!listedFiles.length) {
+    const allListedFiles = Array.isArray(listing && listing.files) ? listing.files : [];
+    const processedFiles = processedStorageFiles();
+    const unchangedFiles = manual ? [] : allListedFiles.filter(metadata => isStorageFileUnchanged(metadata, processedFiles));
+    const listedFiles = manual ? allListedFiles : allListedFiles.filter(metadata => !isStorageFileUnchanged(metadata, processedFiles));
+    if (!allListedFiles.length) {
       state.autoScanRunning = false;
       saveScanRecord({ available: true, fileCount: 0, ambiguous: [], summary: 'No supported storage files found' });
       if (startup) setStartupProgress(50, 'Shared data ready', 'No XLSX, XLS, or CSV files were found in CoachTools/storage. Existing data is unchanged.', `${readyBefore} of ${totalSources} ready`);
       if (manual) showToast('No XLSX, XLS, or CSV files were found in CoachTools/storage.');
+      return;
+    }
+    if (!listedFiles.length) {
+      state.autoScanRunning = false;
+      const summary = `Shared storage unchanged · ${unchangedFiles.length} file${unchangedFiles.length === 1 ? '' : 's'} checked · no spreadsheets downloaded.`;
+      saveScanRecord({ available: true, fileCount: allListedFiles.length, unchanged: unchangedFiles.length, ambiguous: [], loaded: [], summary });
+      if (manual) showToast(summary);
       return;
     }
 
@@ -1133,6 +1207,7 @@
     const ambiguous = [];
     const skipped = [];
     const scanResults = [];
+    if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.start('Changed file parsing', { files: listedFiles.length });
     for (let index = 0; index < listedFiles.length; index += 1) {
       const metadata = listedFiles[index];
       try {
@@ -1153,6 +1228,7 @@
         ambiguous.push(`${metadata.filename} (${error && error.message || error})`);
       }
     }
+    if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end('Changed file parsing', { parsed: parsedEntries.length, files: listedFiles.length });
 
     setProgressStep('Reading files', 'success');
     setProgressStep('Identifying sources', 'active');
@@ -1182,6 +1258,9 @@
       if (!candidatesBySource.has(id)) candidatesBySource.set(id, []);
       candidatesBySource.get(id).push(inspected);
       scanResults.push({ id, fileName: entry.metadata.filename, status: inspection.status, reason: inspection.reason, period: inspection.candidate && inspection.candidate.periodKey || '' });
+      if (!['new', 'updated', 'needs-review'].includes(inspection.status)) {
+        rememberStorageFile(processedFiles, entry.metadata, { datasetType: id, datasetId: inspection.current && inspection.current.datasetId || '' });
+      }
     }
 
     const selected = [];
@@ -1202,7 +1281,8 @@
       state.pendingStageSent = false;
       setProgressStep('Saving shared data', ambiguous.length ? 'warning' : 'success');
       const summary = ambiguous.length ? `Shared data is unchanged · ${ambiguous.length} file${ambiguous.length === 1 ? '' : 's'} need review.` : 'Shared data is current · no new or updated files were imported.';
-      saveScanRecord({ available: true, fileCount: listedFiles.length, ambiguous, skipped, results: scanResults, loaded: [], summary });
+      writeJson(STORAGE_FILES_KEY, processedFiles);
+      saveScanRecord({ available: true, fileCount: allListedFiles.length, unchanged: unchangedFiles.length, ambiguous, skipped, results: scanResults, loaded: [], summary });
       finishImportProgress(summary, { warning: Boolean(ambiguous.length), review: state.pendingStageFiles.length > 0, count: `${readyBefore} of ${totalSources}` });
       state.autoScanRunning = false;
       return;
@@ -1229,6 +1309,7 @@
           scopeLabel: reusableScope && scope && scope.label || 'All people'
         });
         written.push({ id: entry.id, fileName: entry.metadata.filename, status: entry.inspection.status, datasetId: result.dataset && result.dataset.id || '' });
+        rememberStorageFile(processedFiles, entry.metadata, { datasetType: entry.id, datasetId: result.dataset && (result.dataset.datasetId || result.dataset.id) || '' });
       } catch (error) {
         writeErrors.push(`${entry.metadata.filename}: ${error && error.message || error}`);
       }
@@ -1245,7 +1326,8 @@
     const summary = `${readyCount} of ${totalSources} data sources ready${actions ? ` · ${actions} imported` : ''}${missingLabels.length ? ` · ${missingLabels.join(', ')} require manual selection` : ''}${writeErrors.length ? ` · ${writeErrors.length} save error${writeErrors.length === 1 ? '' : 's'}` : ''}.`;
     state.pendingStageFiles = parsedEntries.filter(entry => ambiguous.some(label => label.startsWith(entry.metadata.filename)) || writeErrors.some(label => label.startsWith(entry.metadata.filename))).map(entry => entry.file);
     state.pendingStageSent = false;
-    saveScanRecord({ available: true, fileCount: listedFiles.length, ambiguous, skipped, results: scanResults, loaded: written, errors: writeErrors, summary });
+    writeJson(STORAGE_FILES_KEY, processedFiles);
+    saveScanRecord({ available: true, fileCount: allListedFiles.length, unchanged: unchangedFiles.length, ambiguous, skipped, results: scanResults, loaded: written, errors: writeErrors, summary });
     finishImportProgress(summary, { warning: Boolean(missingLabels.length || ambiguous.length || writeErrors.length), review: state.pendingStageFiles.length > 0, count: `${readyCount} of ${totalSources}` });
     state.autoScanRunning = false;
   }
@@ -1466,100 +1548,56 @@
     if (!saved || Number(saved.version) !== 1 || !Array.isArray(saved.ids)) return;
     const minimized = new Set(Array.isArray(saved.minimized) ? saved.minimized : []);
     for (const id of saved.ids.filter(id => byId.has(id)).slice(0, apps.length)) {
-      createWindow(byId.get(id), { minimized: minimized.has(id) || id !== saved.activeId });
+      createDeferredWindow(byId.get(id), { minimized: minimized.has(id) || id !== saved.activeId });
     }
-    if (saved.activeId && openWindows.has(saved.activeId) && !minimized.has(saved.activeId)) activateWindow(saved.activeId);
-    else {
-      elements.workspace.hidden = true;
-      elements.desktop.hidden = false;
-      renderTaskbar();
-    }
-  }
-
-  async function warmApplications() {
-    const eligible = sortedApps(apps.filter(app => app.preload === true));
-    if (!eligible.length) {
-      setStartupProgress(90, 'Applications ready', 'No applications are configured for startup preparation.', '0 prepared');
-      return { completed: 0, failed: 0, total: 0 };
-    }
-
-    let nextIndex = 0;
-    let completed = 0;
-    let failed = 0;
-    setStartupProgress(52, 'Preparing applications', `Starting ${eligible[0].name}…`, `0 of ${eligible.length}`);
-
-    async function worker() {
-      while (nextIndex < eligible.length) {
-        const app = eligible[nextIndex];
-        nextIndex += 1;
-        const windowState = createWindow(app, { preload: true });
-        const success = await windowState.readyPromise;
-        completed += 1;
-        if (!success) failed += 1;
-        const progress = 52 + (completed / eligible.length) * 38;
-        const summary = success ? `${app.name} is ready.` : `${app.name} will load normally when opened.`;
-        setStartupProgress(progress, 'Preparing applications', summary, `${completed} of ${eligible.length}`);
-      }
-    }
-
-    const workers = Array.from({ length: Math.min(WARMUP_CONCURRENCY, eligible.length) }, () => worker());
-    await Promise.all(workers);
-    return { completed, failed, total: eligible.length };
+    state.pendingRestoreActiveId = saved.activeId && openWindows.has(saved.activeId) && !minimized.has(saved.activeId) ? saved.activeId : '';
+    elements.workspace.hidden = true;
+    elements.desktop.hidden = false;
+    renderTaskbar();
   }
 
   async function runStartupSequence() {
     state.startupStartedAt = Date.now();
-    state.startupScanActive = true;
-    setStartupProgress(6, 'Starting CoachTools', 'Opening shared storage…', 'Starting');
+    if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.start('Desktop boot');
+    setStartupProgress(18, 'Starting CoachTools', 'Reading shared data readiness…', 'Starting');
     try { if (storage && storage.ready) await storage.ready(); } catch (_) {}
-    let statuses = currentDatasetStatuses();
+    const statuses = currentDatasetStatuses();
     const totalSources = datasetTotal(statuses);
     renderStartupDatasets(statuses);
-    const initialReady = statuses.filter(item => item.ready).length;
-    setStartupProgress(10, 'Checking shared data', `${initialReady} of ${totalSources} data sources already available.`, `${initialReady} of ${totalSources} ready`);
-    await nextPaint();
-
-    try {
-      await scanStorage({ startup: true });
-    } catch (error) {
-      saveScanRecord({ available: false, fileCount: 0, ambiguous: [], summary: 'Startup data check could not finish' });
-      setStartupProgress(50, 'Shared data ready', 'The startup data check could not finish. Existing data is unchanged and manual Data Manager import remains available.', `${initialReady} of ${totalSources} ready`);
-    }
-
-    renderDataStatus();
-    statuses = currentDatasetStatuses();
-    setStartupProgress(51, 'Refreshing identity and scope', 'Preparing the current people, team, and department scope…', 'Shared data checked');
-    await refreshGlobalScope();
-    let peopleCount = 0;
-    try { if (root.CoachToolsIdentity) peopleCount = (await root.CoachToolsIdentity.getAllPeople()).length; } catch (_) {}
-    renderStartupDatasets(peopleCount ? [...statuses, { id: 'people-registry', label: 'People Registry', ready: true, display: `${peopleCount.toLocaleString()} people` }] : statuses);
-
-    const warmup = await warmApplications();
-    setStartupProgress(93, 'Restoring workspace', 'Reconnecting remembered applications without duplicating prepared instances…', 'Workspace');
-    restoreOpenWindows();
-    setStartupProgress(97, 'Preparing desktop', 'Waiting for the CoachTools workspace background…', 'Almost ready');
-    await state.wallpaperReady;
-
     const readyCount = statuses.filter(item => item.ready).length;
-    const scanIsCurrent = Boolean(state.lastScan && Date.parse(state.lastScan.scannedAt) >= state.startupStartedAt);
-    const loadedCount = scanIsCurrent && Array.isArray(state.lastScan.loaded) ? state.lastScan.loaded.length : 0;
-    const warmSummary = warmup.total ? `${warmup.completed - warmup.failed} of ${warmup.total} applications prepared` : 'Applications will load on demand';
-    const finalSummary = readyCount === totalSources
-      ? `Shared data ready${loadedCount ? ` · ${loadedCount} updated` : ''} · ${warmSummary}.`
-      : `${readyCount} of ${totalSources} shared data sources ready · ${warmSummary}.`;
-    setStartupProgress(100, 'CoachTools ready', finalSummary, 'Ready');
+    setStartupProgress(72, 'Rendering desktop', `${readyCount} of ${totalSources} data sources available from IndexedDB metadata.`, `${readyCount} of ${totalSources} ready`);
     await nextPaint();
-
-    state.startupScanActive = false;
+    renderDataStatus();
+    restoreOpenWindows();
+    setStartupProgress(100, 'CoachTools ready', `${readyCount} of ${totalSources} shared data sources ready · applications load on demand.`, 'Ready');
+    await nextPaint();
     dismissStartupSplash();
-    if (state.pendingStageFiles.length) {
-      setTimeout(() => showToast('Some storage files need review. Open Data Manager to place them safely.', 6500), 300);
-    }
+    if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end('Desktop boot', { readyDatasets: readyCount });
+
+    root.setTimeout(async () => {
+      if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.start('People registry initialization');
+      try { await refreshGlobalScope(); }
+      finally { if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end('People registry initialization'); }
+    }, 0);
+
+    root.setTimeout(async () => {
+      state.storageCheckLabel = location.protocol === 'file:' ? '' : 'Checking shared storage…';
+      renderDataStatus();
+      try { await scanStorage({ startup: true, background: true }); }
+      catch (error) { saveScanRecord({ available: false, fileCount: 0, ambiguous: [], summary: 'Background storage check could not finish' }); }
+      finally {
+        state.startupScanActive = false;
+        state.storageCheckLabel = state.lastScan && state.lastScan.summary || '';
+        renderDataStatus();
+      }
+      if (state.pendingStageFiles.length) showToast('Some storage files need review. Open Data Manager to place them safely.', 6500);
+    }, 50);
+
+    if (state.pendingRestoreActiveId) root.setTimeout(() => activateWindow(state.pendingRestoreActiveId), 90);
   }
 
   function init() {
     collectElements();
-    preloadIconAssets();
     hydrateSystemIcons();
     const savedFavorites = readJson(FAVORITES_KEY, null);
     if (Array.isArray(savedFavorites)) state.favorites = new Set(savedFavorites.filter(id => byId.has(id)));
@@ -1571,7 +1609,6 @@
     state.lastScan = readJson(STORAGE_SCAN_KEY, null);
     $('startVersion').textContent = `Version ${manifest.suite && manifest.suite.version || '2.0'}`;
     bind();
-    refreshGlobalScope();
     state.wallpaperReady = detectWallpaper();
     renderCategories();
     renderDataStatus();

@@ -56,6 +56,10 @@ function waitForServer() {
       assert(['.csv', '.xls', '.xlsx'].includes(file.extension));
       assert(/^\/storage\/[^/]+$/.test(file.url));
       assert(!file.url.includes('..'));
+      assert.strictEqual(file.path, file.filename);
+      assert.strictEqual(typeof file.size, 'number');
+      assert(file.modifiedTime && !Number.isNaN(Date.parse(file.modifiedTime)));
+      assert(/^\d+:\d+$/.test(file.fingerprint));
     }
     assert.strictEqual((await request('/api/storage', 'POST')).status, 405);
     assert.strictEqual((await request('/storage/../README.md')).status, 404);

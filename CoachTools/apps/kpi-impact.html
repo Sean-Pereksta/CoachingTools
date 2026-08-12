@@ -22,6 +22,7 @@
 <script src="../vendor/lz-string.min.js"></script>
 <script src="../vendor/xlsx.full.min.js"></script>
 <script src="../shared/coachtools-storage.js"></script>
+<script src="../shared/coachtools-app-data.js"></script>
 <script src="../shared/coachtools-import.js"></script>
 <script src="../shared/coachtools-shell.js"></script>
 
@@ -563,30 +564,16 @@ function toNumber(v){
   return Number.isFinite(n) ? n : null;
 }
 function findDockKey(suffix){
-  const shared=window.CoachToolsStorage?.listCompatibilityKeys?.(suffix)||[];
-  if(shared.length) return shared[0];
-  const want = `.dock.${suffix}`;
-  for(let i=0;i<localStorage.length;i++){
-    const k = localStorage.key(i);
-    if(!k) continue;
-    if(k.toLowerCase().endsWith(want)) return k;
-  }
-  return null;
+  return suffix==='retail' ? 'coachtools:indexeddb:weeklyRetail' : suffix==='referral' ? 'coachtools:indexeddb:weeklyReferral' : null;
 }
 function loadDockObjByKey(key){
   if(!key) return null;
-  const shared=window.CoachToolsStorage?.getByCompatibilityKey?.(key);
-  if(shared) return shared;
-  const raw = localStorage.getItem(key);
-  if(!raw) return null;
-
-  try{
-    const json = LZString.decompressFromUTF16(raw);
-    if(json) return JSON.parse(json);
-  }catch(e){}
-
-  try{ return JSON.parse(raw); }catch(e){}
-  return null;
+  const types={
+    'coachtools:indexeddb:weeklyRetail':'weeklyRetail',
+    'coachtools:indexeddb:weeklyReferral':'weeklyReferral',
+    'coachtools:indexeddb:documentedCoaching':'documentedCoaching'
+  };
+  return types[key] ? window.CoachToolsAppData?.peek(types[key]) || null : null;
 }
 function aoaToRows(aoa){
   if(!Array.isArray(aoa) || aoa.length<2) return [];
@@ -757,28 +744,7 @@ function mergeRetailReferral(rows, includeRetail, includeReferral){
    Documented Coaching
    ========================= */
 function findCoachingCandidates(){
-  const keys=window.CoachToolsStorage?.listCompatibilityKeys?.('coaching')||[];
-  for(let i=0;i<localStorage.length;i++){
-    const k = localStorage.key(i);
-    if(!k) continue;
-    const lk = k.toLowerCase();
-    if(!lk.includes(".dock.")) continue;
-    if(lk.includes("coach")) keys.push(k);
-  }
-  keys.sort((a,b)=>{
-    const A=a.toLowerCase(), B=b.toLowerCase();
-    const score = (s)=>{
-      let x=0;
-      if(s.includes("document")) x+=50;
-      if(s.includes("documented")) x+=50;
-      if(s.includes("coaching")) x+=30;
-      if(s.endsWith(".dock.coaching")) x+=10;
-      if(s.includes("myone2")) x+=5;
-      return x;
-    };
-    return score(B)-score(A);
-  });
-  return keys;
+  return ['coachtools:indexeddb:documentedCoaching'];
 }
 function looksLikeCoachingRow(obj){
   if(!obj || typeof obj!=="object") return false;
@@ -2994,11 +2960,16 @@ document.getElementById('exportPdf').addEventListener('click', async ()=>{
 /* =========================
    Boot
    ========================= */
-(function boot(){
+(async function boot(){
+  await window.CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','documentedCoaching']);
   restoreStaticWorkspace();
   setHeaderH();
   refreshFromCache(); // refresh also populates coaching keys and auto-loads coachings if possible
-})();
+  window.CoachToolsAppData.subscribe(['weeklyRetail','weeklyReferral','documentedCoaching'],async()=>{
+    await window.CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','documentedCoaching']);
+    refreshFromCache();
+  });
+})().catch(error=>console.error('[KPI Impact] Shared data startup failed.',error));
 </script>
 </body>
 </html>

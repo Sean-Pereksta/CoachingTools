@@ -98,6 +98,7 @@
   }
 
   async function readWorkbook(file) {
+    if (!root.XLSX && root.CoachToolsDependencies) await root.CoachToolsDependencies.ensureXlsx();
     if (!root.XLSX) throw new Error('SheetJS could not load.');
     if (!file || !isSupportedFile(file)) throw new Error('Choose an XLSX, XLS, or CSV file.');
     const extension = extensionOf(file);

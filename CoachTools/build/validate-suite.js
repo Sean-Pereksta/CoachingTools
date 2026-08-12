@@ -37,6 +37,9 @@ const required = [
   'graphics/background.png',
   'graphics/loading.png',
   'shared/coachtools-storage.js',
+  'shared/coachtools-app-data.js',
+  'shared/coachtools-dependencies.js',
+  'shared/coachtools-performance.js',
   'shared/coachtools-sync.js',
   'shared/coachtools-identity.js',
   'shared/coachtools-profile-data.js',
@@ -86,7 +89,8 @@ if (manifest) {
   for (const requiredApp of ['contact-center-checklist', 'people-profiles']) if (!(manifest.apps || []).some(app => app.id === requiredApp)) fail(`Required desktop application is missing from the manifest: ${requiredApp}`);
   const dynamicsChecklist = (manifest.apps || []).find(app => app.id === 'contact-center-checklist');
   if (dynamicsChecklist && dynamicsChecklist.preload !== false) fail('contact-center-checklist must remain lazy-loaded so startup does not contact Dynamics.');
-  if (!(manifest.apps || []).some(app => app.preload === true)) fail('At least one local application must be configured for startup warm-loading.');
+  const blockingPreloads = (manifest.apps || []).filter(app => app.preload === true);
+  if (blockingPreloads.length) fail(`Applications must be lazy-loaded; preload:true remains on ${blockingPreloads.map(app => app.id).join(', ')}.`);
 }
 
 const vendorFiles = [
@@ -103,12 +107,12 @@ for (const file of vendorFiles) if (!exists(file)) fail(`Missing vendored browse
 const expectedMarkers = {
   'allstar': ['id="runBtn"', 'id="packagedFile"', 'js/core.js'],
   'weekly-data': ['id="btnImportMany"', 'id="btnGenerate"', 'IMPORT.SOURCES'],
-  'coaching-gaps': ['myone2', '.dock.coaching', '.dock.retail'],
-  'coach-timeline': ['coachSpeed.columnMap', '.dock.checklist', '.dock.coaching'],
-  'kpi-impact': ['impactTool.activeTab', '.dock.coaching'],
-  'qa-scores': ['qaOnlyDash.settings.v6', '.dock.qa'],
-  'audit-checklist': ['.dock.checklist', '.dock.coaching'],
-  'people-profiles': ['CoachToolsIdentity', 'CoachToolsProfiles', 'Set as CoachTools Scope'],
+  'coaching-gaps': ['gaps.prefs', 'CoachToolsAppData', 'weeklyRetail', 'weeklyReferral', 'documentedCoaching', 'checklist', 'qa'],
+  'coach-timeline': ['coachSpeed.columnMap', 'CoachToolsAppData', 'checklist', 'documentedCoaching'],
+  'kpi-impact': ['impactTool.activeTab', 'CoachToolsAppData', 'weeklyRetail', 'weeklyReferral', 'documentedCoaching'],
+  'qa-scores': ['qaOnlyDash.settings.v6', 'CoachToolsAppData', 'qa', 'documentedCoaching'],
+  'audit-checklist': ['CoachToolsAppData', 'checklist', 'documentedCoaching'],
+  'people-profiles': ['CoachToolsIdentity', 'CoachToolsProfiles', 'CoachToolsAppData', 'Set as CoachTools Scope'],
   'contact-center-checklist': ['data-coachtools-remote-app="true"']
 };
 
@@ -122,7 +126,12 @@ if (manifest) {
     for (const marker of expectedMarkers[app.id] || []) if (!html.includes(marker)) fail(`${app.id}: expected capability marker is missing: ${marker}`);
     if (['coaching-gaps', 'coach-timeline', 'kpi-impact', 'qa-scores', 'audit-checklist'].includes(app.id)) {
       if (!html.includes('../shared/coachtools-import.js')) fail(`${app.id}: must route spreadsheet uploads through the shared classifier.`);
-      if (!html.includes('getByCompatibilityKey')) fail(`${app.id}: must read shared current data through CoachToolsStorage before legacy fallback.`);
+      if (!html.includes('../shared/coachtools-app-data.js')) fail(`${app.id}: must load the shared IndexedDB application adapter.`);
+      if (/getByCompatibilityKey|listCompatibilityKeys|CoachToolsStorage\.(?:getRetail|getReferral|getQA|getCoaching|getChecklist)|\.dock\./.test(html)) fail(`${app.id}: still contains a legacy compatibility-dock reader.`);
+    }
+    if ((app.data || []).length) {
+      if (!html.includes('CoachToolsAppData')) fail(`${app.id}: declares shared datasets but does not use CoachToolsAppData.`);
+      for (const datasetType of app.data) if (!html.includes(datasetType)) fail(`${app.id}: manifest requires ${datasetType}, but the app does not declare it to the shared adapter.`);
     }
     const dependencies = [...html.matchAll(/<(script|link|iframe)\b([^>]*?)\b(?:src|href|data-src)=(?:"([^"]+)"|'([^']+)')([^>]*)>/gi)].map(match => ({
       tag: match[1].toLowerCase(),
@@ -153,6 +162,8 @@ const index = exists('index.html') ? fs.readFileSync(path.join(ROOT, 'index.html
 if (!index.includes('apps-manifest.js')) fail('index.html must load the file://-safe JavaScript manifest.');
 if (!index.includes('shared/coachtools-import.js')) fail('index.html must load the shared Weekly Data importer.');
 for (const script of ['shared/coachtools-sync.js', 'shared/coachtools-identity.js']) if (!index.includes(script)) fail(`index.html must load ${script}.`);
+for (const script of ['shared/coachtools-dependencies.js', 'shared/coachtools-performance.js', 'shared/coachtools-app-data.js']) if (!index.includes(script)) fail(`index.html must load ${script}.`);
+if (index.includes('vendor/xlsx.full.min.js')) fail('index.html must not load SheetJS on the desktop critical path.');
 if (!index.includes('id="globalScopeSelect"')) fail('index.html must expose the global CoachTools scope selector.');
 for (const marker of ['id="startupSplash"', 'id="startupProgressFill"', 'id="startupDatasets"']) {
   if (!index.includes(marker)) fail(`index.html is missing startup readiness marker ${marker}.`);
@@ -165,12 +176,16 @@ if (!desktopScript.includes('const openWindows = new Map()')) fail('Desktop must
 if (!desktopScript.includes('iframe.src = app.file')) fail('Desktop app opening must use direct iframe navigation.');
 if (!desktopScript.includes('coachtools.desktop.openApps.v1')) fail('Desktop must persist the lightweight open-application list.');
 if (!desktopScript.includes("fetch('/api/storage'")) fail('Desktop must use the constrained local storage API for automatic loading.');
-if (!desktopScript.includes('runStartupSequence')) fail('Desktop must coordinate startup data readiness before revealing remembered sessions.');
+if (!desktopScript.includes('runStartupSequence')) fail('Desktop must coordinate metadata readiness before revealing remembered sessions.');
 if (!desktopScript.includes("image.src = 'graphics/background.png'")) fail('Desktop wallpaper path must remain graphics/background.png.');
-for (const marker of ['warmApplications', 'app.preload === true', 'WARMUP_CONCURRENCY = 2', 'readyPromise', "warmState = success ?", 'userOpened']) {
-  if (!desktopScript.includes(marker)) fail(`Desktop warm-start architecture is missing ${marker}.`);
+for (const marker of ['createDeferredWindow', 'deferred: true', 'restoreOpenWindows', 'dismissStartupSplash()', 'scanStorage({ startup: true, background: true })']) {
+  if (!desktopScript.includes(marker)) fail(`Desktop-first lazy startup is missing ${marker}.`);
 }
-if (!(desktopScript.indexOf('await scanStorage({ startup: true })') < desktopScript.indexOf('await refreshGlobalScope();') && desktopScript.indexOf('await refreshGlobalScope();') < desktopScript.indexOf('await warmApplications();') && desktopScript.indexOf('await warmApplications();') < desktopScript.lastIndexOf('restoreOpenWindows();'))) fail('Startup order must remain storage sync, identity/scope, application warm-up, then session restore.');
+for (const retired of ['warmApplications', 'WARMUP_CONCURRENCY', 'app.preload === true', 'await state.wallpaperReady']) {
+  if (desktopScript.includes(retired)) fail(`Desktop still contains retired blocking startup behavior: ${retired}.`);
+}
+if (!(desktopScript.indexOf('dismissStartupSplash()') < desktopScript.indexOf('scanStorage({ startup: true, background: true })'))) fail('The desktop must be visible before background storage synchronization starts.');
+if (!desktopScript.includes('STORAGE_FILES_KEY') || !desktopScript.includes('isStorageFileUnchanged') || !desktopScript.includes('no spreadsheets downloaded')) fail('Storage synchronization must skip unchanged spreadsheet bodies using lightweight file metadata.');
 const desktopStyles = exists('shared/coachtools-theme.css') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-theme.css'), 'utf8') : '';
 if (!/\.startup-splash\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;[\s\S]*?url\(["']?\.\.\/graphics\/loading\.png["']?\)[\s\S]*?background-size:\s*cover;/.test(desktopStyles)) fail('Startup splash must fill the viewport with graphics/loading.png using background-size: cover.');
 if (desktopStyles.includes('.startup-card')) fail('Desktop styles must not retain the popup-style startup-card.');
@@ -186,6 +201,13 @@ try { if (importerScript) new vm.Script(importerScript, { filename: 'shared/coac
 catch (error) { fail(`shared/coachtools-import.js does not parse: ${error.message}`); }
 try { if (desktopScript) new vm.Script(desktopScript, { filename: 'shared/coachtools-desktop.js' }); }
 catch (error) { fail(`shared/coachtools-desktop.js does not parse: ${error.message}`); }
+for (const sharedFile of ['shared/coachtools-app-data.js', 'shared/coachtools-dependencies.js', 'shared/coachtools-performance.js']) {
+  const source = exists(sharedFile) ? fs.readFileSync(path.join(ROOT, sharedFile), 'utf8') : '';
+  try { if (source) new vm.Script(source, { filename: sharedFile }); }
+  catch (error) { fail(`${sharedFile} does not parse: ${error.message}`); }
+}
+const appDataScript = exists('shared/coachtools-app-data.js') ? fs.readFileSync(path.join(ROOT, 'shared/coachtools-app-data.js'), 'utf8') : '';
+for (const marker of ['getMany', 'getVersion', 'subscribe', 'trackedVersions', 'cache.delete']) if (!appDataScript.includes(marker)) fail(`Shared app data adapter is missing ${marker}.`);
 
 const weeklyData = exists('apps/weekly-data.html') ? fs.readFileSync(path.join(ROOT, 'apps/weekly-data.html'), 'utf8') : '';
 if (!weeklyData.includes('../shared/coachtools-import.js') || !weeklyData.includes('IMPORT.classifyFile')) fail('Weekly Data must reuse the shared import and classification utility.');
@@ -194,7 +216,7 @@ for (const marker of ['IMPORT.DATASET_ORDER', 'storedStatus', 'CoachToolsData.im
 }
 
 const localServer = exists('build/start-local-server.js') ? fs.readFileSync(path.join(ROOT, 'build/start-local-server.js'), 'utf8') : '';
-for (const marker of ["url.pathname === '/api/storage'", "path.join(ROOT, 'storage')", "new Set(['.xlsx', '.xls', '.csv'])", "rawPath.startsWith('/storage/')", "fileName.includes('/')"]) {
+for (const marker of ["url.pathname === '/api/storage'", "path.join(ROOT, 'storage')", "new Set(['.xlsx', '.xls', '.csv'])", "rawPath.startsWith('/storage/')", "fileName.includes('/')", 'path: entry.name', 'fingerprint:']) {
   if (!localServer.includes(marker)) fail(`Local server storage endpoint is missing safety marker ${marker}`);
 }
 const packageScript = exists('build/package-suite.js') ? fs.readFileSync(path.join(ROOT, 'build/package-suite.js'), 'utf8') : '';
@@ -211,6 +233,9 @@ for (const marker of ['CoachToolsData', 'getCurrent', 'getHistory', 'getDatasetV
 }
 if (!/function getDatasetStatus\(\)[\s\S]*?centralStatus\(\)\.map/.test(storageScript)) fail('Desktop readiness must report every central IndexedDB dataset.');
 if (!storageScript.includes('const sourcePeriod = meta.detectedPeriod')) fail('IndexedDB candidate inspection must retain the detected source period.');
+if (storageScript.includes('function loadCurrentData')) fail('IndexedDB startup must not hydrate every current dataset.');
+if (!storageScript.includes('cacheCurrentRecord') || !storageScript.includes('metadataOnly')) fail('IndexedDB storage must expose metadata-first, on-demand record loading.');
+if (!storageScript.includes('materializeLegacyCompatibility')) fail('Legacy docks must remain available only through the explicit compatibility bridge.');
 for (const marker of ['quickDataInput', 'importSelectedFiles', 'saveRecognizedEntry']) if (!desktopScript.includes(marker)) fail(`Desktop rapid upload is missing ${marker}.`);
 for (const sharedFile of ['shared/coachtools-sync.js', 'shared/coachtools-identity.js', 'shared/coachtools-profile-data.js']) {
   const source = exists(sharedFile) ? fs.readFileSync(path.join(ROOT, sharedFile), 'utf8') : '';

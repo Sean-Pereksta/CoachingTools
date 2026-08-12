@@ -54,9 +54,11 @@ function supportedStorageFiles() {
       const stat = fs.statSync(filePath);
       return {
         filename: entry.name,
+        path: entry.name,
         extension: path.extname(entry.name).toLowerCase(),
         size: stat.size,
         modifiedTime: stat.mtime.toISOString(),
+        fingerprint: `${stat.size}:${Math.trunc(stat.mtimeMs)}`,
         url: '/storage/' + encodeURIComponent(entry.name)
       };
     })
