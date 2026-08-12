@@ -6,14 +6,27 @@
   <meta name="theme-color" content="#0b1420">
   <title>CoachTools — Coaching Intelligence Desktop</title>
   <link rel="stylesheet" href="shared/coachtools-theme.css">
-  <script src="vendor/xlsx.full.min.js"></script>
-  <script src="vendor/lz-string.min.js"></script>
-  <script src="shared/coachtools-storage.js"></script>
-  <script src="shared/coachtools-import.js"></script>
+  <script src="vendor/xlsx.full.min.js" defer></script>
+  <script src="vendor/lz-string.min.js" defer></script>
+  <script src="shared/coachtools-storage.js" defer></script>
+  <script src="shared/coachtools-import.js" defer></script>
   <script src="apps-manifest.js" defer></script>
   <script src="shared/coachtools-desktop.js" defer></script>
 </head>
 <body>
+  <section id="startupSplash" class="startup-splash" role="status" aria-live="polite" aria-label="Starting CoachTools">
+    <div class="startup-card">
+      <div class="startup-brand">
+        <span class="system-icon startup-size" data-system-icon="coachtools-home" data-icon-fallback="✦"></span>
+        <div><p class="eyebrow">Coaching Intelligence</p><h1>CoachTools</h1></div>
+      </div>
+      <p id="startupSummary" class="startup-summary">Loading the desktop and checking shared data…</p>
+      <div class="startup-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="6"><span id="startupProgressFill" style="width:6%"></span></div>
+      <div class="startup-meta"><strong id="startupStage">Starting CoachTools</strong><span id="startupCount">Checking data</span></div>
+      <div id="startupDatasets" class="startup-datasets" aria-label="Shared dataset readiness"></div>
+    </div>
+  </section>
+
   <div id="wallpaper" class="desktop-wallpaper" aria-hidden="true"></div>
   <div class="desktop-shade" aria-hidden="true"></div>
 
@@ -70,7 +83,7 @@
   </section>
 
   <footer id="taskbar" class="taskbar">
-    <button id="startButton" class="start-button" type="button" aria-expanded="false" aria-controls="startMenu"><span class="system-icon taskbar-size" data-system-icon="coachtools-home" data-icon-fallback="✦"></span><span>Start</span></button>
+    <button id="startButton" class="start-button" type="button" aria-expanded="false" aria-controls="startMenu"><span class="system-icon taskbar-size" data-system-icon="start" data-icon-fallback="✦"></span><span>Start</span></button>
     <div id="taskbarOpen" class="taskbar-open" aria-label="Open applications"></div>
     <button class="taskbar-data" type="button" data-action="toggle-data-panel" title="Data readiness"><span class="system-icon small" data-system-icon="shared-data" data-icon-fallback="◫"></span><span class="status-dot"></span><span id="taskbarReadyCount">0/5</span></button>
     <time id="taskbarClock" class="taskbar-clock"></time>
