@@ -9,6 +9,8 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 let listener = null;
 let reads = 0;
+let activeReads = 0;
+let peakReads = 0;
 const versions = {
   qa: { datasetId: 'qa:1', version: 1, fingerprint: 'one' },
   documentedCoaching: { datasetId: 'coaching:1', version: 1, fingerprint: 'one' }
@@ -20,13 +22,24 @@ const records = {
 
 const context = {
   console,
+  setTimeout,
+  clearTimeout,
+  AbortController,
   window: null,
   parent: null,
   CoachToolsData: {
     DATASET_TYPES: ['qa', 'documentedCoaching'],
     ready: async () => true,
     getDatasetVersion: type => versions[type] || null,
-    getCurrent: async type => { reads += 1; return records[type] || null; },
+    getCurrent: async type => {
+      reads += 1;
+      activeReads += 1;
+      peakReads = Math.max(peakReads, activeReads);
+      await new Promise(resolve => setTimeout(resolve, 3));
+      activeReads -= 1;
+      if (type === 'broken') throw new Error('broken dataset');
+      return records[type] || null;
+    },
     subscribe: callback => { listener = callback; return () => { listener = null; }; },
     subscribeScope: () => () => {}
   },
@@ -43,9 +56,12 @@ vm.runInContext(fs.readFileSync(path.join(root, 'shared', 'coachtools-app-data.j
   await adapter.ready();
   assert.strictEqual(reads, 0, 'Metadata readiness must not read a full dataset.');
 
-  const first = await adapter.getMany(['qa', 'documentedCoaching'], { includeRecord: true });
+  const progress = [];
+  const first = await adapter.getMany(['qa', 'documentedCoaching'], { includeRecord: true, onProgress: detail => progress.push(`${detail.type}:${detail.status}`) });
   assert.strictEqual(first.qa.id, 'qa:1');
   assert.strictEqual(reads, 2);
+  assert.strictEqual(peakReads, 1, 'Several large datasets should be staged instead of read simultaneously.');
+  assert(progress.indexOf('qa:ready') < progress.indexOf('documentedCoaching:loading'), 'The first dataset should finish before the next begins.');
   await adapter.get('qa', { includeRecord: true });
   assert.strictEqual(reads, 2, 'An unchanged dataset version should reuse memory.');
   adapter.invalidate('qa');
@@ -61,6 +77,14 @@ vm.runInContext(fs.readFileSync(path.join(root, 'shared', 'coachtools-app-data.j
   const replacement = await adapter.get('qa', { includeRecord: true });
   assert.strictEqual(replacement.id, 'qa:2');
   assert.strictEqual(reads, 4, 'Only the changed dataset should be re-read.');
+  versions.broken = { datasetId: 'broken:1', version: 1, fingerprint: 'broken' };
+  context.CoachToolsData.DATASET_TYPES.push('broken');
+  const isolated = await adapter.loadForApp({ id: 'isolation-test', data: ['qa', 'broken'] });
+  assert.strictEqual(isolated.qa.workbook.data.QA.aoa[1][0], 95);
+  assert.strictEqual(isolated.broken, null, 'loadForApp should isolate a secondary dataset failure.');
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(() => adapter.getManyProgressive(['documentedCoaching'], { signal: controller.signal }), error => error && error.name === 'AbortError');
   assert.strictEqual(adapter.getScope().mode, 'all');
   console.log('CoachTools app data adapter tests passed.');
 })().catch(error => { console.error(error); process.exit(1); });
