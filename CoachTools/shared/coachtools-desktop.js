@@ -1,23 +1,36 @@
 (function startCoachToolsDesktop(root) {
   'use strict';
 
-  const manifest = root.COACHTOOLS_MANIFEST || { schemaVersion: 1, suite: { name: 'CoachTools', version: '1.0' }, apps: [] };
+  const manifest = root.COACHTOOLS_MANIFEST || { schemaVersion: 1, suite: { name: 'CoachTools', version: '2.0' }, apps: [] };
   const apps = (manifest.apps || []).filter(app => app && app.enabled !== false);
   const byId = new Map(apps.map(app => [app.id, app]));
   const storage = root.CoachToolsStorage;
+  const importer = root.CoachToolsImport;
   const FAVORITES_KEY = 'coachtools.desktop.favorites.v1';
   const RECENT_KEY = 'coachtools.desktop.recent.v1';
+  const OPEN_APPS_KEY = 'coachtools.desktop.openApps.v1';
+  const STORAGE_SCAN_KEY = 'coachtools.desktop.storageScan.v1';
   const MAX_RECENT = 8;
+  const MAX_UNSCOPED_AUTO_BYTES = 4 * 1024 * 1024;
+  const FILTERS = Object.freeze(['All', 'Favorites', 'Core', 'Data', 'Coaching', 'Performance', 'Quality', 'Needs Data']);
   const elements = {};
+  const openWindows = new Map();
   const state = {
     query: '',
-    category: 'All Tools',
+    filter: 'All',
     favorites: new Set(),
     recent: [],
-    activeApp: null,
+    selectedAppId: null,
+    activeAppId: null,
     contextApp: null,
-    loadTimer: null,
-    toastTimer: null
+    toastTimer: null,
+    clockTimer: null,
+    autoScanRunning: false,
+    progressSteps: [],
+    pendingStageFiles: [],
+    pendingStageSent: false,
+    lastScan: null,
+    iconFailures: new Set()
   };
 
   function $(id) { return document.getElementById(id); }
@@ -61,13 +74,17 @@
     clearTimeout(state.toastTimer);
     elements.toast.textContent = message;
     elements.toast.hidden = false;
-    state.toastTimer = setTimeout(() => { elements.toast.hidden = true; }, duration || 3600);
+    state.toastTimer = setTimeout(() => { elements.toast.hidden = true; }, duration || 3800);
   }
 
   function openDialog(dialog) {
     if (!dialog) return;
     if (typeof dialog.showModal === 'function') dialog.showModal();
     else dialog.setAttribute('open', '');
+  }
+
+  function nextPaint() {
+    return new Promise(resolve => root.requestAnimationFrame(() => resolve()));
   }
 
   function createIcon(app, compact) {
@@ -80,9 +97,12 @@
     if (app.icon) {
       const image = document.createElement('img');
       image.alt = '';
-      image.loading = 'lazy';
+      image.loading = compact ? 'eager' : 'lazy';
       image.addEventListener('load', () => wrap.classList.add('loaded'));
-      image.addEventListener('error', () => image.remove());
+      image.addEventListener('error', () => {
+        state.iconFailures.add(app.id);
+        image.remove();
+      });
       image.src = app.icon;
       wrap.appendChild(image);
     }
@@ -91,7 +111,7 @@
 
   function missingRequirements(app) {
     const required = Array.isArray(app.data) ? app.data : [];
-    return required.filter(source => !storage?.has(source));
+    return required.filter(source => !storage || !storage.has(source));
   }
 
   function appSearchText(app) {
@@ -99,20 +119,24 @@
   }
 
   function sortedApps(list) {
-    return list.slice().sort((a, b) => {
-      const favoriteDifference = Number(state.favorites.has(b.id)) - Number(state.favorites.has(a.id));
-      if (favoriteDifference) return favoriteDifference;
-      const orderDifference = (Number(a.order) || 9999) - (Number(b.order) || 9999);
-      return orderDifference || String(a.name).localeCompare(String(b.name));
+    return list.slice().sort((left, right) => {
+      const orderDifference = (Number(left.order) || 9999) - (Number(right.order) || 9999);
+      return orderDifference || String(left.name).localeCompare(String(right.name));
     });
   }
 
   function filteredApps() {
     const query = state.query.trim().toLowerCase();
     return sortedApps(apps.filter(app => {
-      if (state.category !== 'All Tools' && app.category !== state.category) return false;
+      if (state.filter === 'Favorites' && !state.favorites.has(app.id)) return false;
+      if (state.filter === 'Needs Data' && !missingRequirements(app).length) return false;
+      if (!['All', 'Favorites', 'Needs Data'].includes(state.filter) && app.category !== state.filter) return false;
       return !query || appSearchText(app).includes(query);
     }));
+  }
+
+  function isTouchMode() {
+    return Boolean(root.matchMedia && root.matchMedia('(hover: none), (pointer: coarse)').matches);
   }
 
   function toggleFavorite(app) {
@@ -121,114 +145,100 @@
     else state.favorites.add(app.id);
     writeJson(FAVORITES_KEY, Array.from(state.favorites));
     renderApps();
-    renderRecent();
+  }
+
+  function selectApp(app) {
+    state.selectedAppId = app ? app.id : null;
+    for (const tile of elements.appGrid.querySelectorAll('[data-app-id]')) {
+      const selected = tile.dataset.appId === state.selectedAppId;
+      tile.classList.toggle('selected', selected);
+      tile.setAttribute('aria-selected', String(selected));
+    }
   }
 
   function createAppCard(app) {
-    const article = document.createElement('article');
-    article.className = 'app-card' + (app.featured ? ' featured' : '');
-    article.dataset.appId = app.id;
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'app-card' + (state.selectedAppId === app.id ? ' selected' : '');
+    tile.dataset.appId = app.id;
+    tile.setAttribute('role', 'option');
+    tile.setAttribute('aria-selected', String(state.selectedAppId === app.id));
+    tile.setAttribute('aria-label', `${app.name}. ${missingRequirements(app).length ? 'Needs data.' : 'Ready.'}`);
 
-    const main = document.createElement('button');
-    main.type = 'button';
+    const main = document.createElement('span');
     main.className = 'app-card-main';
-    main.setAttribute('aria-label', `Open ${app.name}`);
     main.appendChild(createIcon(app));
-
     const name = document.createElement('span');
     name.className = 'app-name';
     name.textContent = app.name;
     main.appendChild(name);
+    tile.appendChild(main);
 
-    const category = document.createElement('span');
-    category.className = 'app-category';
-    category.textContent = app.category || 'Other';
-    main.appendChild(category);
-
-    const missing = missingRequirements(app);
-    if (missing.length) {
-      const warning = document.createElement('span');
-      warning.className = 'app-warning';
-      warning.textContent = `△ ${missing.length} data source${missing.length === 1 ? '' : 's'} not loaded`;
-      main.appendChild(warning);
+    const status = document.createElement('span');
+    status.className = 'app-status' + (missingRequirements(app).length ? '' : ' ready');
+    status.title = missingRequirements(app).length ? 'Needs shared data' : 'Data requirements ready';
+    tile.appendChild(status);
+    if (state.favorites.has(app.id)) {
+      const favorite = document.createElement('span');
+      favorite.className = 'favorite-badge';
+      favorite.textContent = '★';
+      favorite.title = 'Favorite';
+      tile.appendChild(favorite);
     }
-    main.addEventListener('click', () => openApp(app));
-    article.appendChild(main);
 
-    const details = document.createElement('button');
-    details.type = 'button';
-    details.className = 'details-button';
-    details.textContent = 'i';
-    details.title = 'App details';
-    details.setAttribute('aria-label', `Details for ${app.name}`);
-    details.addEventListener('click', event => { event.stopPropagation(); showAppDetails(app); });
-    article.appendChild(details);
-
-    const favorite = document.createElement('button');
-    favorite.type = 'button';
-    favorite.className = 'favorite-button' + (state.favorites.has(app.id) ? ' active' : '');
-    favorite.textContent = state.favorites.has(app.id) ? '★' : '☆';
-    favorite.title = state.favorites.has(app.id) ? 'Remove favorite' : 'Favorite';
-    favorite.setAttribute('aria-label', favorite.title + ' ' + app.name);
-    favorite.addEventListener('click', event => { event.stopPropagation(); toggleFavorite(app); });
-    article.appendChild(favorite);
-
-    article.addEventListener('contextmenu', event => {
+    tile.addEventListener('click', () => {
+      if (isTouchMode()) openApp(app);
+      else selectApp(app);
+    });
+    tile.addEventListener('dblclick', event => {
       event.preventDefault();
+      openApp(app);
+    });
+    tile.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        openApp(app);
+      }
+    });
+    tile.addEventListener('contextmenu', event => {
+      event.preventDefault();
+      selectApp(app);
       showContextMenu(app, event.clientX, event.clientY);
     });
-    return article;
+    return tile;
   }
 
   function renderApps() {
     const visible = filteredApps();
     elements.appGrid.replaceChildren(...visible.map(createAppCard));
     elements.emptyState.hidden = visible.length > 0;
+    const labels = {
+      All: 'All applications',
+      Favorites: 'Favorite applications',
+      'Needs Data': 'Applications needing data'
+    };
+    elements.desktopTitle.textContent = labels[state.filter] || state.filter;
   }
 
   function renderCategories() {
-    const categories = ['All Tools', ...new Set(apps.map(app => app.category || 'Other'))];
-    const buttons = categories.map(category => {
+    elements.categoryFilters.replaceChildren(...FILTERS.map(filter => {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'category-filter' + (state.category === category ? ' active' : '');
-      button.textContent = category;
+      button.className = 'category-filter' + (state.filter === filter ? ' active' : '');
+      button.textContent = filter;
       button.addEventListener('click', () => {
-        state.category = category;
+        state.filter = filter;
+        state.selectedAppId = null;
         renderCategories();
         renderApps();
       });
       return button;
-    });
-    elements.categoryFilters.replaceChildren(...buttons);
+    }));
   }
 
   function pushRecent(app) {
     state.recent = [app.id, ...state.recent.filter(id => id !== app.id && byId.has(id))].slice(0, MAX_RECENT);
     writeJson(RECENT_KEY, state.recent);
-    renderRecent();
-  }
-
-  function renderRecent() {
-    const recentApps = state.recent.map(id => byId.get(id)).filter(Boolean).slice(0, 5);
-    elements.recentSection.hidden = recentApps.length === 0;
-    elements.recentApps.replaceChildren(...recentApps.map(app => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'recent-chip';
-      button.textContent = app.name;
-      button.addEventListener('click', () => openApp(app));
-      return button;
-    }));
-    elements.taskbarRecent.replaceChildren(...recentApps.slice(0, 3).map(app => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'taskbar-app';
-      button.textContent = app.name;
-      button.title = app.name;
-      button.addEventListener('click', () => openApp(app));
-      return button;
-    }));
   }
 
   function scopeText(scope) {
@@ -242,92 +252,270 @@
   }
 
   function renderDataStatus() {
-    const statuses = storage?.getDatasetStatus?.() || [];
+    const statuses = storage && storage.getDatasetStatus ? storage.getDatasetStatus() : [];
     elements.datasetStatus.replaceChildren(...statuses.map(item => {
-      const box = document.createElement('div');
-      box.className = 'dataset-item' + (item.ready ? ' ready' : '');
-      box.title = item.ready ? `${item.label} data is available${item.updatedAt ? ` — updated ${formatDate(item.updatedAt)}` : ''}` : `${item.label} data is not loaded`;
+      const row = document.createElement('div');
+      row.className = 'dataset-item' + (item.ready ? ' ready' : '');
+      const copy = document.createElement('div');
       const label = document.createElement('span');
       label.textContent = item.label;
+      const meta = document.createElement('small');
+      meta.textContent = item.ready
+        ? [item.fileName, item.updatedAt ? formatDate(item.updatedAt) : ''].filter(Boolean).join(' · ') || formatBytes(item.bytes)
+        : 'No shared dataset loaded';
+      copy.append(label, meta);
       const value = document.createElement('strong');
-      value.textContent = item.ready ? 'Ready' : 'Needed';
-      box.append(label, value);
-      return box;
+      value.textContent = item.ready ? 'Ready' : 'Missing';
+      row.append(copy, value);
+      return row;
     }));
     const ready = statuses.filter(item => item.ready).length;
-    elements.readyCount.textContent = `${ready}/${statuses.length || 5} data sources`;
-    elements.readyCount.parentElement.classList.toggle('ready', ready === statuses.length && ready > 0);
-    elements.scopeLabel.textContent = scopeText(storage?.getScope?.());
+    const total = statuses.length || 5;
+    elements.readyCount.textContent = `${ready}/${total} Data`;
+    elements.taskbarReadyCount.textContent = `${ready}/${total}`;
+    elements.readinessButton.classList.toggle('ready', ready === total && ready > 0);
+    elements.taskbarData.classList.toggle('ready', ready === total && ready > 0);
+    elements.scopeLabel.textContent = scopeText(storage && storage.getScope ? storage.getScope() : null);
+    elements.storageAvailability.textContent = location.protocol === 'file:'
+      ? 'Automatic storage-folder loading is available when CoachTools is started with START COACHTOOLS. Manual Weekly Data import remains available.'
+      : 'Storage scanning is available from the local CoachTools launcher.';
     renderApps();
   }
 
   function requirementNotice(app) {
     const missing = missingRequirements(app);
     if (!missing.length) return '';
-    const labels = missing.map(id => storage?.LABELS?.[id] || id).join(', ');
+    const labels = missing.map(id => storage && storage.LABELS && storage.LABELS[id] || id).join(', ');
     return `Missing data: ${labels}. The app can still open.`;
   }
 
-  function showUnavailable(app) {
-    elements.frameLoading.hidden = true;
-    elements.frameUnavailable.hidden = false;
-    elements.frameUnavailablePath.textContent = `Missing or unreadable: ${app.file}`;
+  function persistOpenWindows() {
+    const payload = {
+      version: 1,
+      ids: Array.from(openWindows.keys()),
+      activeId: state.activeAppId,
+      minimized: Array.from(openWindows.values()).filter(item => item.minimized).map(item => item.app.id)
+    };
+    writeJson(OPEN_APPS_KEY, payload);
+  }
+
+  function showUnavailable(windowState) {
+    if (!windowState) return;
+    clearTimeout(windowState.loadTimer);
+    windowState.loading.hidden = true;
+    windowState.unavailable.hidden = false;
+    windowState.unavailablePath.textContent = `Missing or unreadable: ${windowState.app.file}`;
+  }
+
+  function createWindow(app, options) {
+    if (openWindows.has(app.id)) return openWindows.get(app.id);
+    const pane = document.createElement('section');
+    pane.className = 'window-pane';
+    pane.dataset.appId = app.id;
+    pane.hidden = true;
+
+    const iframe = document.createElement('iframe');
+    iframe.title = app.name;
+    iframe.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen');
+
+    const loading = document.createElement('div');
+    loading.className = 'frame-message';
+    const ring = document.createElement('span');
+    ring.className = 'loader-ring';
+    const loadingText = document.createElement('strong');
+    loadingText.textContent = `Opening ${app.name}…`;
+    loading.append(ring, loadingText);
+
+    const unavailable = document.createElement('div');
+    unavailable.className = 'frame-message error';
+    unavailable.hidden = true;
+    const errorMark = document.createElement('span');
+    errorMark.textContent = '!';
+    const errorTitle = document.createElement('strong');
+    errorTitle.textContent = 'App unavailable';
+    const unavailablePath = document.createElement('p');
+    const desktopButton = document.createElement('button');
+    desktopButton.type = 'button';
+    desktopButton.className = 'command-button';
+    desktopButton.textContent = 'Return to desktop';
+    desktopButton.addEventListener('click', () => minimizeWindow(app.id));
+    unavailable.append(errorMark, errorTitle, unavailablePath, desktopButton);
+
+    pane.append(iframe, loading, unavailable);
+    elements.windowLayer.appendChild(pane);
+    const windowState = {
+      app,
+      pane,
+      iframe,
+      loading,
+      unavailable,
+      unavailablePath,
+      minimized: Boolean(options && options.minimized),
+      loaded: false,
+      loadTimer: null,
+      lastActivated: 0
+    };
+    openWindows.set(app.id, windowState);
+
+    iframe.addEventListener('load', () => {
+      clearTimeout(windowState.loadTimer);
+      windowState.loaded = true;
+      windowState.loading.hidden = true;
+      windowState.unavailable.hidden = true;
+      if (app.id === 'weekly-data') {
+        state.pendingStageSent = false;
+        deliverPendingStageFiles(windowState);
+      }
+      try {
+        const doc = iframe.contentDocument;
+        if (doc && doc.URL === 'about:blank' && app.file !== 'about:blank') showUnavailable(windowState);
+      } catch (_) {
+        // Local file iframe isolation differs between browsers; a load event is sufficient.
+      }
+    });
+    iframe.addEventListener('error', () => showUnavailable(windowState));
+    windowState.loadTimer = setTimeout(() => { windowState.loading.hidden = true; }, 12000);
+    iframe.src = app.file;
+    renderTaskbar();
+    persistOpenWindows();
+    return windowState;
+  }
+
+  function renderTaskbar() {
+    elements.taskbarOpen.replaceChildren(...Array.from(openWindows.values()).map(windowState => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'taskbar-app';
+      if (state.activeAppId === windowState.app.id) button.classList.add('active');
+      if (windowState.minimized) button.classList.add('minimized');
+      button.title = `${windowState.app.name}${windowState.minimized ? ' · minimized' : ''}`;
+      button.appendChild(createIcon(windowState.app, true));
+      const name = document.createElement('span');
+      name.className = 'taskbar-app-name';
+      name.textContent = windowState.app.name;
+      button.appendChild(name);
+      button.addEventListener('click', () => {
+        if (state.activeAppId === windowState.app.id) minimizeWindow(windowState.app.id);
+        else activateWindow(windowState.app.id);
+      });
+      button.addEventListener('contextmenu', event => {
+        event.preventDefault();
+        showContextMenu(windowState.app, event.clientX, event.clientY);
+      });
+      return button;
+    }));
+  }
+
+  function activateWindow(appId) {
+    const windowState = openWindows.get(appId);
+    if (!windowState) return;
+    state.activeAppId = appId;
+    windowState.minimized = false;
+    windowState.lastActivated = Date.now();
+    for (const [id, candidate] of openWindows) candidate.pane.hidden = id !== appId;
+    elements.desktop.hidden = true;
+    elements.workspace.hidden = false;
+    elements.workspaceTitle.textContent = windowState.app.name;
+    elements.workspaceNotice.textContent = requirementNotice(windowState.app);
+    pushRecent(windowState.app);
+    closeMenus();
+    renderTaskbar();
+    persistOpenWindows();
+    deliverPendingStageFiles(windowState);
   }
 
   function openApp(app) {
     if (!app || !app.file) return;
-    state.activeApp = app;
-    pushRecent(app);
+    if (!openWindows.has(app.id)) createWindow(app);
+    activateWindow(app.id);
+  }
+
+  function minimizeWindow(appId) {
+    const id = appId || state.activeAppId;
+    const windowState = id && openWindows.get(id);
+    const wasActive = state.activeAppId === id;
+    if (windowState) {
+      windowState.minimized = true;
+      windowState.pane.hidden = true;
+    }
+    if (wasActive) {
+      state.activeAppId = null;
+      elements.workspace.hidden = true;
+      elements.desktop.hidden = false;
+    }
     closeMenus();
-    elements.workspaceTitle.textContent = app.name;
-    elements.workspaceNotice.textContent = requirementNotice(app);
-    elements.desktop.hidden = true;
-    elements.workspace.hidden = false;
-    elements.frameUnavailable.hidden = true;
-    elements.frameLoading.hidden = false;
-    clearTimeout(state.loadTimer);
-    elements.appFrame.title = app.name;
-    elements.appFrame.src = app.file;
-    state.loadTimer = setTimeout(() => { elements.frameLoading.hidden = true; }, 10000);
+    renderTaskbar();
+    renderDataStatus();
+    persistOpenWindows();
   }
 
   function showDesktop() {
-    clearTimeout(state.loadTimer);
-    elements.workspace.hidden = true;
-    elements.desktop.hidden = false;
-    renderDataStatus();
+    minimizeWindow(state.activeAppId);
+  }
+
+  function closeWindow(appId) {
+    const id = appId || state.activeAppId;
+    const windowState = id && openWindows.get(id);
+    if (!windowState) return;
+    clearTimeout(windowState.loadTimer);
+    windowState.pane.remove();
+    openWindows.delete(id);
+    if (state.activeAppId === id) {
+      state.activeAppId = null;
+      elements.workspace.hidden = true;
+      elements.desktop.hidden = false;
+    }
+    renderTaskbar();
+    persistOpenWindows();
   }
 
   function popOut(app) {
     if (!app || !app.file) return;
     const opened = root.open(app.file, `coachtools_${app.id}`);
-    if (!opened) showToast('Your browser blocked the new window. Allow pop-ups for this file and try again.');
+    if (!opened) showToast('Your browser blocked the new window. Allow pop-ups for CoachTools and try again.');
   }
 
   function reloadActive() {
-    if (!state.activeApp) return;
-    elements.frameUnavailable.hidden = true;
-    elements.frameLoading.hidden = false;
-    const current = state.activeApp.file;
-    elements.appFrame.src = 'about:blank';
-    setTimeout(() => { elements.appFrame.src = current; }, 0);
+    const windowState = state.activeAppId && openWindows.get(state.activeAppId);
+    if (!windowState) return;
+    windowState.unavailable.hidden = true;
+    windowState.loading.hidden = false;
+    windowState.loaded = false;
+    state.pendingStageSent = false;
+    clearTimeout(windowState.loadTimer);
+    windowState.loadTimer = setTimeout(() => { windowState.loading.hidden = true; }, 12000);
+    try { windowState.iframe.contentWindow.location.reload(); }
+    catch (_) { windowState.iframe.src = windowState.app.file; }
   }
 
   function showContextMenu(app, x, y) {
     state.contextApp = app;
     const favoriteAction = elements.contextMenu.querySelector('[data-context-action="favorite"]');
-    favoriteAction.textContent = state.favorites.has(app.id) ? 'Remove favorite' : 'Favorite';
+    const closeAction = elements.contextMenu.querySelector('[data-context-action="close"]');
+    favoriteAction.textContent = state.favorites.has(app.id) ? 'Unfavorite' : 'Favorite';
+    closeAction.hidden = !openWindows.has(app.id);
     elements.contextMenu.hidden = false;
-    const width = 200;
-    const height = 170;
-    elements.contextMenu.style.left = Math.max(8, Math.min(x, root.innerWidth - width - 8)) + 'px';
-    elements.contextMenu.style.top = Math.max(8, Math.min(y, root.innerHeight - height - 8)) + 'px';
+    const bounds = elements.contextMenu.getBoundingClientRect();
+    elements.contextMenu.style.left = Math.max(7, Math.min(x, root.innerWidth - bounds.width - 7)) + 'px';
+    elements.contextMenu.style.top = Math.max(7, Math.min(y, root.innerHeight - bounds.height - 7)) + 'px';
   }
 
-  function closeMenus() {
+  function closeMenus(options) {
     elements.startMenu.hidden = true;
     elements.startButton.setAttribute('aria-expanded', 'false');
     elements.contextMenu.hidden = true;
+    if (!options || !options.keepDataPanel) {
+      elements.dataPanel.hidden = true;
+      elements.readinessButton.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  function toggleDataPanel() {
+    const opening = elements.dataPanel.hidden;
+    closeMenus({ keepDataPanel: true });
+    elements.dataPanel.hidden = !opening;
+    elements.readinessButton.setAttribute('aria-expanded', String(opening));
+    if (opening) renderDataStatus();
   }
 
   function showAppDetails(app) {
@@ -347,14 +535,15 @@
 
     const grid = document.createElement('div');
     grid.className = 'details-grid';
-    const data = Array.isArray(app.data) && app.data.length ? app.data.map(id => storage?.LABELS?.[id] || id).join(', ') : 'No shared dataset required';
+    const data = Array.isArray(app.data) && app.data.length ? app.data.map(id => storage && storage.LABELS && storage.LABELS[id] || id).join(', ') : 'No shared dataset required';
     const rows = [
       ['Category', app.category || 'Other'],
       ['Version', app.version || '1.0'],
       ['HTML file', app.file],
-      ['Icon file', app.icon || 'CSS initials fallback'],
+      ['Icon file', app.icon || 'Initials fallback'],
       ['Data sources', data],
-      ['Status', missingRequirements(app).length ? 'Opens with a data warning' : 'Ready to open']
+      ['Session', openWindows.has(app.id) ? (openWindows.get(app.id).minimized ? 'Open · minimized' : 'Open') : 'Closed'],
+      ['Data status', missingRequirements(app).length ? 'Opens with a data warning' : 'Ready']
     ];
     for (const [label, value] of rows) {
       const row = document.createElement('div');
@@ -372,12 +561,12 @@
     actions.className = 'dialog-actions';
     const open = document.createElement('button');
     open.type = 'button';
-    open.className = 'quiet-button';
+    open.className = 'command-button';
     open.textContent = 'Open';
-    open.addEventListener('click', () => { elements.detailsDialog.close?.(); openApp(app); });
+    open.addEventListener('click', () => { elements.detailsDialog.close && elements.detailsDialog.close(); openApp(app); });
     const newWindow = document.createElement('button');
     newWindow.type = 'button';
-    newWindow.className = 'quiet-button';
+    newWindow.className = 'command-button secondary';
     newWindow.textContent = 'Open in new window';
     newWindow.addEventListener('click', () => popOut(app));
     actions.append(open, newWindow);
@@ -386,95 +575,68 @@
     openDialog(elements.detailsDialog);
   }
 
-  function showDiagnostics() {
-    const status = storage?.getDatasetStatus?.() || [];
-    const size = storage?.getApproximateStorageSize?.() || { bytes: 0, entries: 0 };
-    const missingIcons = apps.filter(app => app.icon).length;
-    const content = document.createElement('div');
-    content.className = 'diagnostics-grid';
-
-    const summary = document.createElement('section');
-    summary.className = 'diagnostic-card';
-    const summaryHeading = document.createElement('h3');
-    summaryHeading.textContent = 'Suite';
-    summary.appendChild(summaryHeading);
-    const summaryList = document.createElement('ul');
-    summaryList.className = 'diagnostic-list';
-    const summaryRows = [
-      ['Manifest schema', String(manifest.schemaVersion || 1)],
-      ['Suite version', String(manifest.suite?.version || '1.0')],
-      ['Applications', String(apps.length)],
-      ['Icon fallbacks available', String(missingIcons)],
-      ['Storage entries', String(size.entries)],
-      ['Approximate storage', formatBytes(size.bytes)]
-    ];
-    for (const [label, value] of summaryRows) {
+  function diagnosticSection(title, rows) {
+    const section = document.createElement('section');
+    section.className = 'diagnostic-card';
+    const heading = document.createElement('h3');
+    heading.textContent = title;
+    section.appendChild(heading);
+    const list = document.createElement('ul');
+    list.className = 'diagnostic-list';
+    for (const [label, value] of rows) {
       const item = document.createElement('li');
       const labelElement = document.createElement('span');
       labelElement.textContent = label;
       const valueElement = document.createElement('strong');
       valueElement.textContent = value;
       item.append(labelElement, valueElement);
-      summaryList.appendChild(item);
+      list.appendChild(item);
     }
-    summary.appendChild(summaryList);
-    content.appendChild(summary);
+    section.appendChild(list);
+    return section;
+  }
 
-    const datasets = document.createElement('section');
-    datasets.className = 'diagnostic-card';
-    const datasetHeading = document.createElement('h3');
-    datasetHeading.textContent = 'Shared weekly data';
-    datasets.appendChild(datasetHeading);
-    const datasetList = document.createElement('ul');
-    datasetList.className = 'diagnostic-list';
-    for (const item of status) {
-      const row = document.createElement('li');
-      const label = document.createElement('span');
-      label.textContent = item.label;
-      const value = document.createElement('strong');
-      value.textContent = item.ready ? `Ready · ${formatBytes(item.bytes)}` : 'Not loaded';
-      row.append(label, value);
-      datasetList.appendChild(row);
-    }
-    datasets.appendChild(datasetList);
-    content.appendChild(datasets);
-
-    const files = document.createElement('section');
-    files.className = 'diagnostic-card';
-    files.style.gridColumn = '1 / -1';
-    const filesHeading = document.createElement('h3');
-    filesHeading.textContent = 'Installed applications';
-    files.appendChild(filesHeading);
-    const filesList = document.createElement('ul');
-    filesList.className = 'diagnostic-list';
-    for (const app of sortedApps(apps)) {
-      const row = document.createElement('li');
-      const label = document.createElement('span');
-      label.textContent = app.name;
-      const value = document.createElement('code');
-      value.textContent = app.file;
-      row.append(label, value);
-      filesList.appendChild(row);
-    }
-    files.appendChild(filesList);
-    const note = document.createElement('p');
-    note.textContent = 'Application paths and manifest integrity are verified by build/validate-suite.js. Missing custom images automatically use initials.';
-    files.appendChild(note);
-    content.appendChild(files);
-
+  function showDiagnostics() {
+    const statuses = storage && storage.getDatasetStatus ? storage.getDatasetStatus() : [];
+    const size = storage && storage.getApproximateStorageSize ? storage.getApproximateStorageSize() : { bytes: 0, entries: 0 };
+    const minimized = Array.from(openWindows.values()).filter(item => item.minimized).map(item => item.app.name);
+    const scan = state.lastScan || readJson(STORAGE_SCAN_KEY, null) || {};
+    const content = document.createElement('div');
+    content.className = 'diagnostics-grid';
+    content.appendChild(diagnosticSection('Desktop', [
+      ['Open applications', String(openWindows.size)],
+      ['Active application', state.activeAppId && byId.get(state.activeAppId) ? byId.get(state.activeAppId).name : 'Desktop'],
+      ['Minimized', minimized.length ? minimized.join(', ') : 'None'],
+      ['Remembered on refresh', 'Yes · app list only'],
+      ['Icon fallbacks in use', String(state.iconFailures.size)]
+    ]));
+    content.appendChild(diagnosticSection('Storage folder', [
+      ['Automatic scanning', location.protocol === 'file:' ? 'No · direct-file mode' : (scan.available === false ? 'Unavailable' : 'Yes')],
+      ['Supported files found', String(scan.fileCount || 0)],
+      ['Last scan', scan.scannedAt ? formatDate(scan.scannedAt) : 'Not scanned'],
+      ['Ambiguous files', scan.ambiguous && scan.ambiguous.length ? scan.ambiguous.join(', ') : 'None'],
+      ['Most recent result', scan.summary || 'No automatic import attempted']
+    ]));
+    content.appendChild(diagnosticSection('Shared datasets', statuses.map(item => [
+      item.label,
+      item.ready ? `Ready · ${formatBytes(item.bytes)}${item.fileName ? ` · ${item.fileName}` : ''}${item.updatedAt ? ` · ${formatDate(item.updatedAt)}` : ''}` : 'Missing'
+    ])));
+    content.appendChild(diagnosticSection('Suite', [
+      ['Manifest schema', String(manifest.schemaVersion || 1)],
+      ['Suite version', String(manifest.suite && manifest.suite.version || '2.0')],
+      ['Applications', String(apps.length)],
+      ['Storage entries', String(size.entries)],
+      ['Approximate browser storage', formatBytes(size.bytes)]
+    ]));
     elements.diagnosticsContent.replaceChildren(content);
     openDialog(elements.diagnosticsDialog);
   }
 
   function showAbout() {
-    const version = manifest.suite?.version || '1.0';
-    elements.aboutSummary.textContent = manifest.suite?.description || 'A portable desktop for your coaching analytics tools.';
-    const ready = storage?.getDatasetStatus?.().filter(item => item.ready).length || 0;
-    const facts = [
-      [version, 'Version'],
-      [String(apps.length), 'Applications'],
-      [`${ready}/5`, 'Data ready']
-    ];
+    const version = manifest.suite && manifest.suite.version || '2.0';
+    elements.aboutSummary.textContent = manifest.suite && manifest.suite.description || 'A portable desktop for your coaching analytics tools.';
+    const ready = storage && storage.getDatasetStatus ? storage.getDatasetStatus().filter(item => item.ready).length : 0;
+    const facts = [[version, 'Version'], [String(apps.length), 'Applications'], [`${ready}/5`, 'Data ready']];
     elements.aboutFacts.replaceChildren(...facts.map(([value, label]) => {
       const item = document.createElement('div');
       item.className = 'about-fact';
@@ -499,10 +661,10 @@
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(link.href), 3000);
-      const skipped = backup.skipped?.length || 0;
+      const skipped = backup.skipped && backup.skipped.length || 0;
       showToast(`Backup created${skipped ? ` · ${skipped} oversized item${skipped === 1 ? '' : 's'} skipped` : ''}.`);
     } catch (error) {
-      showToast('Backup failed: ' + (error?.message || error), 6000);
+      showToast('Backup failed: ' + (error && error.message || error), 6000);
     }
   }
 
@@ -516,51 +678,341 @@
       renderDataStatus();
       showToast(`Backup restored · ${result.restoredKeys.length} storage item${result.restoredKeys.length === 1 ? '' : 's'}.`);
     } catch (error) {
-      showToast('Restore failed: ' + (error?.message || error), 6500);
+      showToast('Restore failed: ' + (error && error.message || error), 6500);
     } finally {
       elements.restoreInput.value = '';
     }
   }
 
+  function weeklyDataApp() {
+    return byId.get('weekly-data') || apps.find(item => /weekly|loader|data builder/i.test(item.name));
+  }
+
   function openWeeklyData() {
-    const app = byId.get('weekly-data') || apps.find(item => /weekly|loader|data builder/i.test(item.name));
+    const app = weeklyDataApp();
     if (app) openApp(app);
     else showToast('Weekly Data is not present in the application manifest.');
   }
 
+  function renderProgressSteps() {
+    elements.importSteps.replaceChildren(...state.progressSteps.map(step => {
+      const item = document.createElement('li');
+      item.className = 'progress-step ' + step.status;
+      item.textContent = step.label;
+      return item;
+    }));
+  }
+
+  function setProgressStep(label, status) {
+    const existing = state.progressSteps.find(step => step.label === label);
+    if (existing) existing.status = status;
+    else state.progressSteps.push({ label, status });
+    renderProgressSteps();
+  }
+
+  function setImportProgress(percent, currentSource, currentFile, count, summary) {
+    const value = Math.max(0, Math.min(100, Number(percent) || 0));
+    elements.importProgressFill.style.width = value + '%';
+    elements.importProgressFill.parentElement.setAttribute('aria-valuenow', String(Math.round(value)));
+    if (currentSource != null) elements.importCurrentSource.textContent = currentSource;
+    if (currentFile != null) elements.importCurrentFile.textContent = currentFile;
+    if (count != null) elements.importCount.textContent = count;
+    if (summary != null) elements.importSummary.textContent = summary;
+  }
+
+  function beginImportProgress() {
+    state.progressSteps = [];
+    elements.importProgress.hidden = false;
+    elements.importClose.hidden = true;
+    elements.importReview.hidden = true;
+    setImportProgress(0, 'Scanning storage', '', '0 of 5', 'Looking for recognizable weekly files…');
+    renderProgressSteps();
+  }
+
+  function finishImportProgress(summary, options) {
+    setImportProgress(100, options && options.warning ? 'Review needed' : 'Ready', '', options && options.count || '5 of 5', summary);
+    elements.importClose.hidden = false;
+    elements.importReview.hidden = !(options && options.review);
+  }
+
+  function saveScanRecord(record) {
+    state.lastScan = { ...record, scannedAt: new Date().toISOString() };
+    writeJson(STORAGE_SCAN_KEY, state.lastScan);
+  }
+
+  function safelyNamedFile(blob, metadata) {
+    return new File([blob], metadata.filename, {
+      type: blob.type || (metadata.extension === '.csv' ? 'text/csv' : 'application/octet-stream'),
+      lastModified: Date.parse(metadata.modifiedTime) || Date.now()
+    });
+  }
+
+  function hasReusableScope(scope) {
+    return Boolean(scope && (scope.mode === 'all' || Array.isArray(scope.coaches) && scope.coaches.length > 0));
+  }
+
+  function deliverPendingStageFiles(windowState) {
+    if (!windowState || windowState.app.id !== 'weekly-data' || !windowState.loaded || !state.pendingStageFiles.length || state.pendingStageSent) return;
+    try {
+      windowState.iframe.contentWindow.postMessage({ type: 'coachtools:stage-files', files: state.pendingStageFiles }, '*');
+      state.pendingStageSent = true;
+    } catch (_) {
+      state.pendingStageSent = false;
+    }
+  }
+
+  async function scanStorage(options) {
+    const manual = Boolean(options && options.manual);
+    if (state.autoScanRunning) {
+      if (manual) showToast('A storage scan is already running.');
+      return;
+    }
+    const statuses = storage && storage.getDatasetStatus ? storage.getDatasetStatus() : [];
+    const missing = statuses.filter(item => !item.ready).map(item => item.id);
+    if (!missing.length) {
+      if (manual) showToast('All five shared data sources are already loaded. Nothing was replaced.');
+      return;
+    }
+    if (location.protocol === 'file:') {
+      saveScanRecord({ available: false, fileCount: 0, ambiguous: [], summary: 'Direct-file mode · manual import available' });
+      if (manual) showToast('Start CoachTools with START COACHTOOLS to scan storage. Manual Weekly Data import is still available.', 5800);
+      return;
+    }
+    if (!importer) {
+      if (manual) showToast('The shared import utility is unavailable. Use Weekly Data for manual import.', 5600);
+      return;
+    }
+
+    state.autoScanRunning = true;
+    let listing;
+    try {
+      const response = await fetch('/api/storage', { cache: 'no-store', headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error(`Storage scan returned ${response.status}`);
+      listing = await response.json();
+    } catch (error) {
+      state.autoScanRunning = false;
+      saveScanRecord({ available: false, fileCount: 0, ambiguous: [], summary: 'Storage API unavailable' });
+      if (manual) showToast('Storage scanning is unavailable. Manual Weekly Data import remains available.', 5600);
+      return;
+    }
+
+    const listedFiles = Array.isArray(listing && listing.files) ? listing.files : [];
+    if (!listedFiles.length) {
+      state.autoScanRunning = false;
+      saveScanRecord({ available: true, fileCount: 0, ambiguous: [], summary: 'No supported storage files found' });
+      if (manual) showToast('No XLSX, XLS, or CSV files were found in CoachTools/storage.');
+      return;
+    }
+
+    beginImportProgress();
+    setProgressStep('Scanning storage', 'success');
+    setProgressStep('Reading files', 'active');
+    setImportProgress(8, 'Reading files', '', `0 of ${listedFiles.length}`, `${listedFiles.length} supported file${listedFiles.length === 1 ? '' : 's'} found.`);
+    await nextPaint();
+
+    const missingSet = new Set(missing);
+    const parsedEntries = [];
+    const ambiguous = [];
+    const skipped = [];
+    for (let index = 0; index < listedFiles.length; index += 1) {
+      const metadata = listedFiles[index];
+      const preview = importer.classifyFile({ name: metadata.filename }, { workbook: { sheets: [], data: {} } });
+      if (preview.id && !missingSet.has(preview.id)) {
+        skipped.push(metadata.filename);
+        setImportProgress(8 + ((index + 1) / listedFiles.length) * 37, 'Checking existing data', metadata.filename, `${index + 1} of ${listedFiles.length}`);
+        continue;
+      }
+      try {
+        setImportProgress(8 + (index / listedFiles.length) * 37, 'Reading files', metadata.filename, `${index + 1} of ${listedFiles.length}`);
+        await nextPaint();
+        const response = await fetch(metadata.url, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`File returned ${response.status}`);
+        const file = safelyNamedFile(await response.blob(), metadata);
+        const parsed = await importer.parseFile(file, {
+          onProgress(progress) {
+            const fraction = progress.total ? progress.current / progress.total : 0;
+            setImportProgress(8 + ((index + fraction) / listedFiles.length) * 37, 'Reading files', `${metadata.filename} · ${progress.sheetName || ''}`, `${index + 1} of ${listedFiles.length}`);
+          }
+        });
+        const classification = importer.classifyFile(file, parsed);
+        parsedEntries.push({ metadata, file, parsed, classification });
+      } catch (error) {
+        ambiguous.push(`${metadata.filename} (${error && error.message || error})`);
+      }
+    }
+
+    setProgressStep('Reading files', 'success');
+    setProgressStep('Identifying sources', 'active');
+    setImportProgress(48, 'Identifying sources', '', `0 of ${missing.length}`, 'Matching files to missing CoachTools datasets…');
+    await nextPaint();
+
+    const candidatesBySource = new Map();
+    for (const entry of parsedEntries) {
+      const id = entry.classification.id;
+      if (!id || !missingSet.has(id)) {
+        if (!id) ambiguous.push(entry.metadata.filename);
+        else skipped.push(entry.metadata.filename);
+        continue;
+      }
+      if (!candidatesBySource.has(id)) candidatesBySource.set(id, []);
+      candidatesBySource.get(id).push(entry);
+    }
+
+    const selected = [];
+    for (const id of missing) {
+      const candidates = candidatesBySource.get(id) || [];
+      if (candidates.length === 1) selected.push({ id, ...candidates[0] });
+      else if (candidates.length > 1) ambiguous.push(...candidates.map(entry => `${entry.metadata.filename} (${importer.SOURCES[id].label} duplicate)`));
+    }
+    setProgressStep('Identifying sources', selected.length ? 'success' : 'warning');
+
+    if (!selected.length) {
+      state.pendingStageFiles = parsedEntries.map(entry => entry.file);
+      state.pendingStageSent = false;
+      setProgressStep('Saving shared data', 'warning');
+      const summary = `No missing source could be classified safely. ${ambiguous.length} file${ambiguous.length === 1 ? '' : 's'} need manual placement.`;
+      saveScanRecord({ available: true, fileCount: listedFiles.length, ambiguous, skipped, loaded: [], summary });
+      finishImportProgress(summary, { warning: true, review: state.pendingStageFiles.length > 0, count: `${statuses.filter(item => item.ready).length} of 5` });
+      state.autoScanRunning = false;
+      return;
+    }
+
+    setProgressStep('Building selected data', 'active');
+    const scope = storage && storage.getScope ? storage.getScope() : null;
+    const reusableScope = hasReusableScope(scope);
+    const prepared = [];
+    for (let index = 0; index < selected.length; index += 1) {
+      const entry = selected[index];
+      const label = importer.SOURCES[entry.id].label;
+      setImportProgress(52 + ((index + 1) / selected.length) * 23, `Parsing ${label}`, entry.metadata.filename, `${index + 1} of ${selected.length}`);
+      await nextPaint();
+      const dataset = importer.prepareDataset(entry.parsed, entry.id, { scope: reusableScope ? scope : null });
+      const packed = importer.packDataset(dataset);
+      prepared.push({ ...entry, dataset, packed, packedBytes: packed.length * 2 });
+    }
+    setProgressStep('Building selected data', 'success');
+
+    const proposedBytes = prepared.reduce((sum, entry) => sum + entry.packedBytes, 0);
+    const currentBytes = storage && storage.getApproximateStorageSize ? storage.getApproximateStorageSize().bytes : 0;
+    if (!reusableScope && (proposedBytes > MAX_UNSCOPED_AUTO_BYTES || currentBytes + proposedBytes > MAX_UNSCOPED_AUTO_BYTES)) {
+      state.pendingStageFiles = parsedEntries.map(entry => entry.file);
+      state.pendingStageSent = false;
+      setProgressStep('Saving shared data', 'warning');
+      const summary = `Files were identified, but the full unscoped build may exceed safe browser storage. Choose a scope in Weekly Data.`;
+      saveScanRecord({ available: true, fileCount: listedFiles.length, ambiguous, skipped, loaded: [], staged: prepared.map(entry => entry.id), summary });
+      finishImportProgress(summary, { warning: true, review: true, count: `${statuses.filter(item => item.ready).length} of 5` });
+      state.autoScanRunning = false;
+      return;
+    }
+
+    setProgressStep('Saving shared data', 'active');
+    const written = [];
+    let writeError = null;
+    for (let index = 0; index < prepared.length; index += 1) {
+      const entry = prepared[index];
+      if (storage.has(entry.id)) continue;
+      try {
+        setImportProgress(77 + ((index + 1) / prepared.length) * 20, `Saving ${importer.SOURCES[entry.id].label}`, entry.metadata.filename, `${index + 1} of ${prepared.length}`);
+        await nextPaint();
+        storage.set(entry.id, entry.packed, {
+          raw: true,
+          metadata: {
+            fileName: entry.metadata.filename,
+            fileSize: entry.metadata.size,
+            modifiedTime: entry.metadata.modifiedTime,
+            automaticImport: true,
+            scopeLabel: reusableScope && scope && scope.label || 'All available coaches'
+          }
+        });
+        written.push(entry.id);
+      } catch (error) {
+        writeError = error;
+        break;
+      }
+    }
+
+    if (writeError) {
+      for (const id of written) storage.remove(id);
+      state.pendingStageFiles = parsedEntries.map(entry => entry.file);
+      state.pendingStageSent = false;
+      setProgressStep('Saving shared data', 'error');
+      const summary = 'Automatic storage could not fit safely. No existing dataset was replaced; choose a smaller scope in Weekly Data.';
+      saveScanRecord({ available: true, fileCount: listedFiles.length, ambiguous, skipped, loaded: [], error: String(writeError && writeError.message || writeError), summary });
+      finishImportProgress(summary, { warning: true, review: true, count: `${statuses.filter(item => item.ready).length} of 5` });
+      state.autoScanRunning = false;
+      renderDataStatus();
+      return;
+    }
+
+    setProgressStep('Saving shared data', 'success');
+    setProgressStep('Ready', ambiguous.length ? 'warning' : 'success');
+    renderDataStatus();
+    const after = storage.getDatasetStatus();
+    const readyCount = after.filter(item => item.ready).length;
+    const missingLabels = after.filter(item => !item.ready).map(item => item.label);
+    const summary = `${readyCount} of 5 data sources ready${written.length ? ` · ${written.length} loaded automatically` : ''}${missingLabels.length ? ` · ${missingLabels.join(', ')} require manual selection` : ''}.`;
+    state.pendingStageFiles = ambiguous.length ? parsedEntries.filter(entry => !written.includes(entry.classification.id)).map(entry => entry.file) : [];
+    state.pendingStageSent = false;
+    saveScanRecord({ available: true, fileCount: listedFiles.length, ambiguous, skipped, loaded: written, summary });
+    finishImportProgress(summary, { warning: Boolean(missingLabels.length || ambiguous.length), review: state.pendingStageFiles.length > 0, count: `${readyCount} of 5` });
+    state.autoScanRunning = false;
+  }
+
+  function reviewStagedFiles() {
+    elements.importProgress.hidden = true;
+    openWeeklyData();
+    const windowState = openWindows.get('weekly-data');
+    deliverPendingStageFiles(windowState);
+  }
+
   function handleAction(action) {
     if (action === 'open-weekly-data') openWeeklyData();
+    if (action === 'scan-storage') scanStorage({ manual: true });
     if (action === 'diagnostics') showDiagnostics();
     if (action === 'about') showAbout();
     if (action === 'backup') downloadBackup();
     if (action === 'restore') elements.restoreInput.click();
-    if (action === 'show-desktop') showDesktop();
+    if (action === 'show-desktop' || action === 'minimize-app') showDesktop();
     if (action === 'reload-app') reloadActive();
-    if (action === 'popout-active') popOut(state.activeApp);
-    if (action === 'clear-recent') {
-      state.recent = [];
-      writeJson(RECENT_KEY, []);
-      renderRecent();
-    }
+    if (action === 'popout-active') popOut(state.activeAppId && byId.get(state.activeAppId));
+    if (action === 'close-active') closeWindow(state.activeAppId);
+    if (action === 'toggle-data-panel') toggleDataPanel();
+    if (action === 'close-data-panel') closeMenus();
+    if (action === 'dismiss-import') elements.importProgress.hidden = true;
+    if (action === 'review-staged-files') reviewStagedFiles();
     if (action === 'clear-search') {
       state.query = '';
-      state.category = 'All Tools';
+      state.filter = 'All';
+      state.selectedAppId = null;
       elements.appSearch.value = '';
       renderCategories();
       renderApps();
     }
-    closeMenus();
   }
 
   function bind() {
     document.addEventListener('click', event => {
-      const action = event.target.closest('[data-action]')?.dataset.action;
+      const action = event.target.closest('[data-action]') && event.target.closest('[data-action]').dataset.action;
       if (action) {
         event.preventDefault();
         handleAction(action);
+        if (action !== 'toggle-data-panel') {
+          elements.startMenu.hidden = true;
+          elements.startButton.setAttribute('aria-expanded', 'false');
+          elements.contextMenu.hidden = true;
+        }
         return;
       }
-      if (!event.target.closest('#startMenu') && !event.target.closest('#startButton') && !event.target.closest('#appContextMenu')) closeMenus();
+      if (!event.target.closest('#startMenu') && !event.target.closest('#startButton') && !event.target.closest('#appContextMenu')) {
+        elements.startMenu.hidden = true;
+        elements.startButton.setAttribute('aria-expanded', 'false');
+        elements.contextMenu.hidden = true;
+      }
+      if (!event.target.closest('#dataPanel') && !event.target.closest('[data-action="toggle-data-panel"]')) {
+        elements.dataPanel.hidden = true;
+        elements.readinessButton.setAttribute('aria-expanded', 'false');
+      }
+      if (!event.target.closest('[data-app-id]')) selectApp(null);
     });
 
     elements.startButton.addEventListener('click', event => {
@@ -572,48 +1024,51 @@
     });
 
     elements.contextMenu.addEventListener('click', event => {
-      const action = event.target.closest('[data-context-action]')?.dataset.contextAction;
+      const action = event.target.closest('[data-context-action]') && event.target.closest('[data-context-action]').dataset.contextAction;
       const app = state.contextApp;
       if (!action || !app) return;
       if (action === 'open') openApp(app);
       if (action === 'popout') popOut(app);
       if (action === 'favorite') toggleFavorite(app);
       if (action === 'details') showAppDetails(app);
+      if (action === 'close') closeWindow(app.id);
       closeMenus();
     });
 
     elements.appSearch.addEventListener('input', event => {
       state.query = event.target.value;
+      state.selectedAppId = null;
       renderApps();
     });
 
     document.addEventListener('keydown', event => {
-      if (event.key === '/' && !/input|textarea|select/i.test(document.activeElement?.tagName || '')) {
+      if (event.key === '/' && !/input|textarea|select/i.test(document.activeElement && document.activeElement.tagName || '')) {
         event.preventDefault();
         elements.appSearch.focus();
       }
       if (event.key === 'Escape') closeMenus();
     });
 
-    elements.appFrame.addEventListener('load', () => {
-      clearTimeout(state.loadTimer);
-      elements.frameLoading.hidden = true;
-      if (!state.activeApp || elements.appFrame.src === 'about:blank') return;
-      try {
-        const doc = elements.appFrame.contentDocument;
-        if (doc?.URL === 'about:blank' && state.activeApp.file !== 'about:blank') showUnavailable(state.activeApp);
-      } catch (_) {
-        // Some file:// browser policies isolate local frames even when they loaded correctly.
-      }
-    });
-    elements.appFrame.addEventListener('error', () => state.activeApp && showUnavailable(state.activeApp));
-    elements.restoreInput.addEventListener('change', event => restoreBackup(event.target.files?.[0]));
+    elements.restoreInput.addEventListener('change', event => restoreBackup(event.target.files && event.target.files[0]));
 
     root.addEventListener('message', event => {
-      const type = event.data?.type;
-      if (type === 'coachtools:app-ready') elements.frameLoading.hidden = true;
-      if (type === 'coachtools:show-desktop') showDesktop();
-      if (type === 'coachtools:pop-out') popOut(state.activeApp);
+      const type = event.data && event.data.type;
+      const windowState = Array.from(openWindows.values()).find(item => item.iframe.contentWindow === event.source) || null;
+      if (type === 'coachtools:app-ready' && windowState) {
+        clearTimeout(windowState.loadTimer);
+        windowState.loaded = true;
+        windowState.loading.hidden = true;
+        deliverPendingStageFiles(windowState);
+      }
+      if (type === 'coachtools:show-desktop' && windowState) minimizeWindow(windowState.app.id);
+      if (type === 'coachtools:pop-out' && windowState) popOut(windowState.app);
+      if (type === 'coachtools:app-error' && windowState && state.activeAppId === windowState.app.id) {
+        elements.workspaceNotice.textContent = String(event.data.detail && event.data.detail.message || 'Application error');
+      }
+      if (type === 'coachtools:storage-stage-result' && windowState && windowState.app.id === 'weekly-data') {
+        state.pendingStageFiles = [];
+        state.pendingStageSent = false;
+      }
       if (type === 'coachtools:data-updated' || type === 'coachtools:scope-updated') renderDataStatus();
     });
     root.addEventListener('coachtools:data-updated', renderDataStatus);
@@ -622,27 +1077,39 @@
 
   function collectElements() {
     Object.assign(elements, {
+      wallpaper: $('wallpaper'),
       desktop: $('desktop'),
       workspace: $('workspace'),
+      windowLayer: $('windowLayer'),
+      workspaceTitle: $('workspaceTitle'),
+      workspaceNotice: $('workspaceNotice'),
       appGrid: $('appGrid'),
       emptyState: $('emptyState'),
+      desktopTitle: $('desktopTitle'),
       appSearch: $('appSearch'),
       categoryFilters: $('categoryFilters'),
-      recentSection: $('recentSection'),
-      recentApps: $('recentApps'),
-      taskbarRecent: $('taskbarRecent'),
+      taskbarOpen: $('taskbarOpen'),
+      taskbarData: document.querySelector('.taskbar-data'),
       readyCount: $('readyCount'),
+      taskbarReadyCount: $('taskbarReadyCount'),
+      taskbarClock: $('taskbarClock'),
+      readinessButton: $('readinessButton'),
+      dataPanel: $('dataPanel'),
       datasetStatus: $('datasetStatus'),
       scopeLabel: $('scopeLabel'),
+      storageAvailability: $('storageAvailability'),
       startButton: $('startButton'),
       startMenu: $('startMenu'),
       contextMenu: $('appContextMenu'),
-      workspaceTitle: $('workspaceTitle'),
-      workspaceNotice: $('workspaceNotice'),
-      appFrame: $('appFrame'),
-      frameLoading: $('frameLoading'),
-      frameUnavailable: $('frameUnavailable'),
-      frameUnavailablePath: $('frameUnavailablePath'),
+      importProgress: $('importProgress'),
+      importProgressFill: $('importProgressFill'),
+      importSummary: $('importSummary'),
+      importCurrentSource: $('importCurrentSource'),
+      importCurrentFile: $('importCurrentFile'),
+      importCount: $('importCount'),
+      importSteps: $('importSteps'),
+      importClose: $('importClose'),
+      importReview: $('importReview'),
       detailsDialog: $('detailsDialog'),
       detailsContent: $('detailsContent'),
       diagnosticsDialog: $('diagnosticsDialog'),
@@ -655,6 +1122,41 @@
     });
   }
 
+  function detectWallpaper() {
+    const image = new Image();
+    image.addEventListener('load', () => {
+      elements.wallpaper.style.backgroundImage = 'url("graphics/background.png")';
+      elements.wallpaper.classList.add('has-wallpaper');
+    }, { once: true });
+    image.addEventListener('error', () => {
+      elements.wallpaper.classList.remove('has-wallpaper');
+      elements.wallpaper.style.backgroundImage = '';
+    }, { once: true });
+    image.src = 'graphics/background.png';
+  }
+
+  function updateClock() {
+    const now = new Date();
+    elements.taskbarClock.textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    elements.taskbarClock.dateTime = now.toISOString();
+    elements.taskbarClock.title = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  }
+
+  function restoreOpenWindows() {
+    const saved = readJson(OPEN_APPS_KEY, null);
+    if (!saved || Number(saved.version) !== 1 || !Array.isArray(saved.ids)) return;
+    const minimized = new Set(Array.isArray(saved.minimized) ? saved.minimized : []);
+    for (const id of saved.ids.filter(id => byId.has(id)).slice(0, apps.length)) {
+      createWindow(byId.get(id), { minimized: minimized.has(id) || id !== saved.activeId });
+    }
+    if (saved.activeId && openWindows.has(saved.activeId) && !minimized.has(saved.activeId)) activateWindow(saved.activeId);
+    else {
+      elements.workspace.hidden = true;
+      elements.desktop.hidden = false;
+      renderTaskbar();
+    }
+  }
+
   function init() {
     collectElements();
     const savedFavorites = readJson(FAVORITES_KEY, null);
@@ -664,12 +1166,18 @@
       writeJson(FAVORITES_KEY, Array.from(state.favorites));
     }
     state.recent = readJson(RECENT_KEY, []).filter(id => byId.has(id)).slice(0, MAX_RECENT);
-    $('startVersion').textContent = `Version ${manifest.suite?.version || '1.0'}`;
+    state.lastScan = readJson(STORAGE_SCAN_KEY, null);
+    $('startVersion').textContent = `Version ${manifest.suite && manifest.suite.version || '2.0'}`;
     bind();
+    detectWallpaper();
     renderCategories();
-    renderRecent();
     renderDataStatus();
+    updateClock();
+    state.clockTimer = setInterval(updateClock, 30000);
+    restoreOpenWindows();
     if (!apps.length) showToast('No applications were found. Run the manifest generator and reload.', 8000);
+    const allReady = storage && storage.getDatasetStatus && storage.getDatasetStatus().every(item => item.ready);
+    if (!allReady) setTimeout(() => scanStorage({ startup: true }), 0);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

@@ -24,6 +24,8 @@
   const LIGHTWEIGHT_KEYS = Object.freeze([
     'coachtools.desktop.favorites.v1',
     'coachtools.desktop.recent.v1',
+    'coachtools.desktop.openApps.v1',
+    'coachtools.desktop.storageScan.v1',
     'coachtools.desktop.preferences.v1',
     'myone2.gaps.prefs',
     'myone2.gaps.panelCollapsed',

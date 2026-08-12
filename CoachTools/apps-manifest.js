@@ -5,7 +5,7 @@ window.COACHTOOLS_MANIFEST = {
     "name": "CoachTools",
     "subtitle": "All-Star Coaching Intelligence",
     "description": "A portable desktop for coaching analytics and reporting.",
-    "version": "1.0",
+    "version": "2.0",
     "storageContract": "docs/STORAGE-CONTRACT.md"
   },
   "apps": [
