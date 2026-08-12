@@ -251,6 +251,29 @@ window.COACHTOOLS_MANIFEST = {
       "order": 80,
       "version": "1.0",
       "enabled": true
+    },
+    {
+      "id": "video-library",
+      "name": "Training Videos",
+      "description": "Browse and watch CoachTools training videos from the Videos folder.",
+      "file": "apps/video-library.html",
+      "icon": "icons/default-app.png",
+      "initials": "TV",
+      "category": "Training",
+      "keywords": [
+        "video",
+        "training",
+        "coaching",
+        "mp4",
+        "library"
+      ],
+      "data": [],
+      "favorite": false,
+      "featured": false,
+      "preload": false,
+      "order": 90,
+      "version": "1.0",
+      "enabled": true
     }
   ]
 };
