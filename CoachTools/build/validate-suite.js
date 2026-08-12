@@ -45,6 +45,12 @@ const required = [
 for (const file of required) if (!exists(file)) fail(`Missing required suite file: ${file}`);
 for (const directory of ['graphics', 'storage']) if (!isDirectory(directory)) fail(`Missing required suite directory: ${directory}/`);
 if (exists('graphics/background.png') && fs.statSync(path.join(ROOT, 'graphics/background.png')).isDirectory()) fail('graphics/background.png must be a file when present.');
+for (const icon of ['coachtools-home.png', 'shared-data.png', 'backup-restore.png', 'settings.png']) {
+  if (!exists(`icons/${icon}`)) fail(`Missing desktop control icon: icons/${icon}`);
+}
+for (const icon of ['all-apps.png', 'default-app.png']) {
+  if (!exists(`icons/${icon}`)) warn(`icons/${icon} is not present; the built-in symbol fallback will be used.`);
+}
 
 let manifest = null;
 try { manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps.json'), 'utf8')); }

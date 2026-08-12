@@ -28,7 +28,7 @@ Browsers do not allow a local HTML file to enumerate a neighboring folder, so au
 - **Close** destroys that application session. **Reload** intentionally reloads only the active application. **Pop Out** opens the application in its own browser window.
 - The lightweight open-app list is remembered across a desktop refresh. Applications reopen, but arbitrary unsaved in-memory browser state is not claimed to survive a full refresh.
 
-Place an optional wallpaper at `graphics/background.png`. It is centered and cover-scaled behind a subtle readability overlay. If it is absent or unreadable, the built-in gradient remains fully functional. Application icons stay under `icons/`.
+Place an optional wallpaper at `graphics/background.png`. It is centered and cover-scaled behind a subtle readability overlay. If it is absent or unreadable, the built-in gradient remains fully functional. Application and desktop-control icons stay under `icons/`; the built-in icon set is preloaded on startup and receives a small glow/scale treatment on mouse or keyboard focus.
 
 ## Weekly Data and shared storage
 
@@ -70,7 +70,7 @@ Use **Scan Storage Folder** from the Start menu, data-readiness panel, or top co
 4. Run `npm run manifest`.
 5. Run `npm run validate-suite`.
 
-The generator preserves customized entries already present in `apps.json`. Use `node build/generate-app-manifest.js --refresh-metadata` when HTML metadata should replace existing manifest values. A missing icon automatically uses initials.
+The generator preserves customized entries already present in `apps.json`. Use `node build/generate-app-manifest.js --refresh-metadata` when HTML metadata should replace existing manifest values. Built-in app IDs are normalized to the standard icon filenames. A missing app icon tries `icons/default-app.png` before automatically using initials.
 
 ## Validate and create a ZIP
 

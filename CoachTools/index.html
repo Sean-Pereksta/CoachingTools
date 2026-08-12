@@ -19,7 +19,7 @@
 
   <main id="desktop" class="desktop-shell">
     <header class="command-bar">
-      <button class="suite-mark" type="button" data-action="about" aria-label="About CoachTools"><span>✦</span></button>
+      <button class="suite-mark" type="button" data-action="about" aria-label="About CoachTools"><span class="system-icon" data-system-icon="coachtools-home" data-icon-fallback="✦"></span></button>
       <div class="suite-name"><strong>CoachTools</strong><small>Coaching Intelligence</small></div>
 
       <nav id="categoryFilters" class="category-filters" aria-label="Application filters"></nav>
@@ -32,10 +32,10 @@
       </label>
 
       <button id="readinessButton" class="readiness-button" type="button" data-action="toggle-data-panel" aria-expanded="false" aria-controls="dataPanel">
-        <span class="status-dot"></span><span id="readyCount">0/5 Data</span>
+        <span class="system-icon small" data-system-icon="shared-data" data-icon-fallback="◫"></span><span class="status-dot"></span><span id="readyCount">0/5 Data</span>
       </button>
       <button class="command-button" type="button" data-action="open-weekly-data">Update Data</button>
-      <button class="command-more" type="button" data-action="diagnostics" aria-label="Open diagnostics" title="Diagnostics">•••</button>
+      <button class="command-more" type="button" data-action="diagnostics" aria-label="Open diagnostics" title="Diagnostics"><span class="system-icon small" data-system-icon="settings" data-icon-fallback="•••"></span></button>
     </header>
 
     <section class="desktop-surface" aria-labelledby="desktopTitle">
@@ -54,7 +54,7 @@
 
   <section id="workspace" class="app-workspace" hidden aria-label="Application workspace">
     <header class="workspace-bar">
-      <button class="workspace-home" type="button" data-action="show-desktop" title="Return to desktop"><span>⌂</span><span>Desktop</span></button>
+      <button class="workspace-home" type="button" data-action="show-desktop" title="Return to desktop"><span class="system-icon small" data-system-icon="coachtools-home" data-icon-fallback="⌂"></span><span>Desktop</span></button>
       <div class="workspace-title">
         <strong id="workspaceTitle">Application</strong>
         <small id="workspaceNotice"></small>
@@ -70,22 +70,22 @@
   </section>
 
   <footer id="taskbar" class="taskbar">
-    <button id="startButton" class="start-button" type="button" aria-expanded="false" aria-controls="startMenu"><span>✦</span><span>Start</span></button>
+    <button id="startButton" class="start-button" type="button" aria-expanded="false" aria-controls="startMenu"><span class="system-icon taskbar-size" data-system-icon="coachtools-home" data-icon-fallback="✦"></span><span>Start</span></button>
     <div id="taskbarOpen" class="taskbar-open" aria-label="Open applications"></div>
-    <button class="taskbar-data" type="button" data-action="toggle-data-panel" title="Data readiness"><span class="status-dot"></span><span id="taskbarReadyCount">0/5</span></button>
+    <button class="taskbar-data" type="button" data-action="toggle-data-panel" title="Data readiness"><span class="system-icon small" data-system-icon="shared-data" data-icon-fallback="◫"></span><span class="status-dot"></span><span id="taskbarReadyCount">0/5</span></button>
     <time id="taskbarClock" class="taskbar-clock"></time>
   </footer>
 
   <section id="startMenu" class="start-menu" hidden>
-    <div class="start-heading"><span class="mini-mark">✦</span><div><strong>CoachTools</strong><small id="startVersion">Version 2.0</small></div></div>
-    <button type="button" data-action="open-weekly-data"><span>↥</span><div><strong>Weekly Data / Update Data</strong><small>Import files and choose the current scope</small></div></button>
-    <button type="button" data-action="scan-storage"><span>⌕</span><div><strong>Scan Storage Folder</strong><small>Load recognizable missing weekly files</small></div></button>
+    <div class="start-heading"><span class="mini-mark"><span class="system-icon menu-size" data-system-icon="coachtools-home" data-icon-fallback="✦"></span></span><div><strong>CoachTools</strong><small id="startVersion">Version 2.0</small></div></div>
+    <button type="button" data-action="open-weekly-data"><span><span class="system-icon menu-size" data-system-icon="weekly-data" data-icon-fallback="↥"></span></span><div><strong>Weekly Data / Update Data</strong><small>Import files and choose the current scope</small></div></button>
+    <button type="button" data-action="scan-storage"><span><span class="system-icon menu-size" data-system-icon="shared-data" data-icon-fallback="⌕"></span></span><div><strong>Scan Storage Folder</strong><small>Load recognizable missing weekly files</small></div></button>
     <div class="menu-divider"></div>
-    <button type="button" data-action="backup"><span>⇩</span><div><strong>Backup CoachTools</strong><small>Shared data and lightweight settings</small></div></button>
-    <button type="button" data-action="restore"><span>⇧</span><div><strong>Restore CoachTools</strong><small>Load a CoachTools backup</small></div></button>
+    <button type="button" data-action="backup"><span><span class="system-icon menu-size" data-system-icon="backup-restore" data-icon-fallback="⇩"></span></span><div><strong>Backup CoachTools</strong><small>Shared data and lightweight settings</small></div></button>
+    <button type="button" data-action="restore"><span><span class="system-icon menu-size" data-system-icon="backup-restore" data-icon-fallback="⇧"></span></span><div><strong>Restore CoachTools</strong><small>Load a CoachTools backup</small></div></button>
     <div class="menu-divider"></div>
-    <button type="button" data-action="diagnostics"><span>◇</span><div><strong>Diagnostics</strong><small>Desktop, storage folder, and shared data</small></div></button>
-    <button type="button" data-action="about"><span>i</span><div><strong>About</strong><small>Suite version and local-use notes</small></div></button>
+    <button type="button" data-action="diagnostics"><span><span class="system-icon menu-size" data-system-icon="settings" data-icon-fallback="◇"></span></span><div><strong>Diagnostics</strong><small>Desktop, storage folder, and shared data</small></div></button>
+    <button type="button" data-action="about"><span><span class="system-icon menu-size" data-system-icon="coachtools-home" data-icon-fallback="i"></span></span><div><strong>About</strong><small>Suite version and local-use notes</small></div></button>
   </section>
 
   <section id="dataPanel" class="data-panel" hidden aria-label="Data readiness">
@@ -133,7 +133,7 @@
 
   <dialog id="aboutDialog" class="suite-dialog">
     <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
-    <div class="about-mark">✦</div>
+    <div class="about-mark"><span class="system-icon about-size" data-system-icon="coachtools-home" data-icon-fallback="✦"></span></div>
     <p class="eyebrow">Coaching Intelligence Desktop</p>
     <h2>CoachTools</h2>
     <p id="aboutSummary">A portable desktop for your coaching analytics tools.</p>
