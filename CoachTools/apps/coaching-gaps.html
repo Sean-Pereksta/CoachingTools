@@ -1380,6 +1380,191 @@
     .summaryMetrics{ grid-template-columns:1fr 1fr; min-width:0; }
     .filterGrid{ grid-template-columns:1fr; }
   }
+
+
+  /* =================== 2026 modern workflow shell =================== */
+  :root{
+    --bg:#f4f7fb;
+    --card:#ffffff;
+    --ink:#122033;
+    --muted:#6b7a90;
+    --line:#dfe6ef;
+    --soft:#f7f9fc;
+    --accent:#2563eb;
+    --shadow:0 8px 28px rgba(15,23,42,.06);
+  }
+  body{ background:var(--bg); }
+  #topBar{
+    position:sticky;
+    top:0;
+    z-index:500;
+    min-height:66px;
+    padding:10px 18px;
+    gap:14px;
+    background:rgba(248,250,252,.94);
+    backdrop-filter:blur(18px) saturate(1.25);
+    border-bottom:1px solid rgba(148,163,184,.22);
+    box-shadow:0 8px 30px rgba(15,23,42,.045);
+  }
+  .topIdentity{ gap:10px; min-width:185px; }
+  .brandMark{
+    width:38px;height:38px;border-radius:12px;
+    display:grid;place-items:center;
+    color:#fff;font-weight:900;font-size:14px;
+    background:linear-gradient(145deg,#1d4ed8,#60a5fa);
+    box-shadow:0 8px 20px rgba(37,99,235,.20);
+  }
+  .brandText{ min-width:0; }
+  .brandTitle{ font-size:14px;font-weight:850;letter-spacing:-.01em;white-space:nowrap; }
+  .brandSub{ color:var(--muted);font-size:10px;font-weight:750;margin-top:2px;white-space:nowrap; }
+  .topControls{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    min-width:0;
+    flex:1;
+  }
+  .topControls .topControl{ min-width:155px; }
+  .topControls #teamSelLabel{ min-width:190px; flex:1 1 220px; max-width:300px; }
+  .topControls .kpiTopControl{ min-width:210px; flex:1 1 230px; max-width:310px; }
+  .topControls .dateRangeControl{ min-width:290px; flex:0 1 340px; }
+  .dateRangeBox{ display:grid;grid-template-columns:1fr 1fr;gap:6px; }
+  .topControl span,.settingLabel{ font-weight:800;letter-spacing:.055em; }
+  .topControl select,.topControl input{
+    height:36px;border-radius:10px;border-color:#dbe3ee;
+    background:#fff;font-weight:750;
+  }
+  .modeSegment,.compactTabs,.segToggle{
+    border-color:#dbe3ee;background:#edf2f7;border-radius:11px;padding:3px;
+  }
+  .modeBtn,.compactTab,.segBtn{ font-weight:800;border-radius:8px; }
+  .modeBtn.active,.compactTab.active,.segBtn.active{ box-shadow:0 2px 7px rgba(15,23,42,.08); }
+  .headerActions{ display:flex;align-items:center;gap:6px;margin-left:auto; }
+  .iconBtn,.filterToggleBtn{
+    height:36px;border-radius:10px;border:1px solid #dbe3ee;background:#fff;
+    color:var(--ink);font-weight:800;box-shadow:0 1px 3px rgba(15,23,42,.04);
+  }
+  .filterToggleBtn{ padding:0 11px;display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-size:12px; }
+  .filterCountBadge{
+    min-width:20px;height:20px;padding:0 6px;border-radius:999px;display:inline-grid;place-items:center;
+    background:#e8efff;color:#1d4ed8;font-size:10px;font-weight:900;
+  }
+  .presetStrip{
+    position:sticky;top:66px;z-index:430;
+    display:flex;align-items:center;gap:8px;
+    padding:9px 18px 8px;
+    background:rgba(244,247,251,.94);backdrop-filter:blur(14px);
+    border-bottom:1px solid rgba(148,163,184,.16);
+  }
+  .presetLabel{ color:var(--muted);font-size:10px;font-weight:850;letter-spacing:.07em;text-transform:uppercase;margin-right:2px; }
+  .presetBtn{
+    border:1px solid #dbe3ee;background:#fff;color:#334155;border-radius:999px;
+    padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;
+    transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease;
+  }
+  .presetBtn:hover{ transform:translateY(-1px);box-shadow:0 6px 16px rgba(15,23,42,.07); }
+  .presetBtn.active{ color:#1d4ed8;border-color:#93b4ff;background:#edf4ff;box-shadow:0 0 0 3px rgba(37,99,235,.08); }
+  .presetSpacer{ flex:1; }
+  .viewTabs{ display:flex;align-items:center;gap:5px; }
+  .scopeShell{ max-width:1600px;margin:0 auto;padding:12px 20px 0; }
+  .scopeRibbon{
+    display:grid;grid-template-columns:minmax(260px,1.4fr) repeat(3,minmax(190px,1fr));
+    gap:8px;padding:10px;background:rgba(255,255,255,.78);border:1px solid rgba(203,213,225,.72);
+    border-radius:14px;box-shadow:0 5px 18px rgba(15,23,42,.035);
+  }
+  .scopeCell{ min-width:0;padding:7px 9px;border-radius:10px; }
+  #scopeCoaching,#scopeChecklist{ cursor:pointer; }
+  .scopeCell + .scopeCell{ border-left:1px solid #e7edf4;border-radius:0; }
+  .scopeK{ color:var(--muted);font-size:9px;font-weight:850;letter-spacing:.07em;text-transform:uppercase;margin-bottom:3px; }
+  .scopeV{ color:#24364d;font-size:11.5px;font-weight:800;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+  .scopeV strong{ color:#0f172a; }
+  .activePresetBadge{ display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:999px;background:#edf4ff;color:#1d4ed8;font-size:10px;font-weight:900;margin-left:5px; }
+  #topPanel.hidden{ display:block; }
+  #topPanel{ display:block; }
+  .controlGrid{
+    position:fixed;right:14px;top:78px;bottom:14px;z-index:1000;
+    width:min(720px,calc(100vw - 28px));
+    overflow:auto;align-content:start;
+    padding:54px 14px 14px;
+    border:1px solid #dbe3ee;border-radius:18px;background:rgba(248,250,252,.985);
+    box-shadow:0 26px 70px rgba(15,23,42,.24);
+    transform:translateX(calc(100% + 42px));opacity:0;pointer-events:none;
+    transition:transform .20s ease,opacity .18s ease;
+  }
+  #topPanel.filtersOpen .controlGrid{ transform:translateX(0);opacity:1;pointer-events:auto; }
+  .filterDrawerHead{
+    position:absolute;left:14px;right:14px;top:10px;height:38px;
+    display:flex;align-items:center;gap:8px;border-bottom:1px solid #e5ebf2;padding-bottom:9px;
+  }
+  .filterDrawerTitle{ font-size:15px;font-weight:900; }
+  .filterDrawerSub{ color:var(--muted);font-size:10px;font-weight:750; }
+  .filterDrawerClose{ margin-left:auto;width:31px;height:31px;border:1px solid #dbe3ee;border-radius:9px;background:#fff;cursor:pointer;font-size:16px; }
+  #filterBackdrop{
+    position:fixed;inset:0;z-index:900;background:rgba(15,23,42,.24);backdrop-filter:blur(2px);
+    opacity:0;pointer-events:none;transition:opacity .18s ease;
+  }
+  body.filtersOpen #filterBackdrop{ opacity:1;pointer-events:auto; }
+  .filterPanel{ border:1px solid #e0e7f0;border-radius:14px;padding:14px;box-shadow:none;background:#fff; }
+  .filterPanelTitle{ font-size:13px;font-weight:900; }
+  .filterPanelSub{ font-size:10.5px;font-weight:700; }
+  .filterPanel details{ border-radius:11px;background:#f8fafc; }
+  .filterStateCard{
+    grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;
+    border:1px solid #dfe7f1;background:#f8fbff;border-radius:12px;padding:9px;
+  }
+  .filterStateItem{ min-width:0; }
+  .filterStateK{ color:var(--muted);font-size:9px;font-weight:850;text-transform:uppercase;letter-spacing:.05em; }
+  .filterStateV{ margin-top:2px;font-size:11px;font-weight:850;color:#24364d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+  .filterAdvanced{ grid-column:1/-1; }
+  .card{ border-color:#e2e8f0;border-radius:16px;padding:15px;box-shadow:var(--shadow); }
+  .wrap{ max-width:1600px;margin:0 auto;padding:14px 20px;gap:14px; }
+  .grade,.stat,.intelCard,.mCard,.repRow,.timelineWrap{ border-radius:14px; }
+  .stat{ background:linear-gradient(180deg,#fff,#fafcff); }
+  .stat .k{ font-weight:800; }
+  .stat .v{ font-size:20px;font-weight:900;letter-spacing:-.02em; }
+  .weekOrb{ width:11px;height:11px;border:2px solid #fff;box-shadow:0 3px 8px rgba(15,23,42,.18); }
+  .weekOrb.coaching{ background:#2563eb;border-radius:999px; }
+  .weekOrb.incident{ background:var(--orb-color,#f59e0b);border-radius:2px;transform:rotate(45deg); }
+  .weekOrb.incident:hover{ transform:rotate(45deg) scale(1.18); }
+  .weekOrb.monitor{ background:#475569;border-radius:2px; }
+  .coachbar{ height:8px;background:#eef2f7;border-color:#e2e8f0; }
+  .timeline{ height:10px;background:#eef2f7;border-color:#e2e8f0; }
+  .cbseg{ border-right-color:rgba(100,116,139,.28);background:#e8edf4; }
+  .cbseg.coach{ background:#7ea6f7; }
+  .seg{ border-right-color:rgba(100,116,139,.28); }
+  .seg.good{ background:#53b678; }
+  .seg.bad{ background:#e16a6a; }
+  .seg.na{ background:#dbe3ec; }
+  .seg.coached{ box-shadow:inset 0 -3px 0 #2563eb; }
+  .seg.coached::after,.cbseg.coach::after{ display:none; }
+  .seg.incident{ box-shadow:inset 0 0 0 2px var(--incident-color,#f59e0b); }
+  .seg.incident::before,.cbseg.incident::before{ opacity:.25; }
+  .timelineLegend{ display:flex;gap:10px;flex-wrap:wrap;align-items:center;color:var(--muted);font-size:10px;font-weight:800; }
+  .legendItem{ display:inline-flex;align-items:center;gap:5px; }
+  .legendDot{ width:8px;height:8px;display:inline-block;background:#2563eb;border-radius:999px; }
+  .legendDiamond{ width:8px;height:8px;display:inline-block;background:#f59e0b;border-radius:1px;transform:rotate(45deg); }
+  .legendSquare{ width:8px;height:8px;display:inline-block;background:#475569;border-radius:1px; }
+  .coachingVisibilityNote{ margin:0 0 9px;padding:8px 10px;border-radius:10px;background:#f4f7fb;border:1px solid #e2e8f0;color:#4b5f78;font-size:11px;font-weight:750; }
+  .coachingVisibilityNote strong{ color:#17243a; }
+  @media (max-width:1180px){
+    #topBar{ flex-wrap:wrap; }
+    .topIdentity{ min-width:auto; }
+    .topControls{ width:100%;flex-wrap:wrap; }
+    .presetStrip{ top:116px;overflow-x:auto; }
+    .scopeRibbon{ grid-template-columns:1fr 1fr; }
+    .scopeCell + .scopeCell{ border-left:0; }
+  }
+  @media (max-width:760px){
+    .brandSub{ display:none; }
+    .topControls .topControl,.topControls #teamSelLabel,.topControls .kpiTopControl,.topControls .dateRangeControl{ min-width:calc(50% - 6px);max-width:none;flex:1 1 calc(50% - 6px); }
+    .presetStrip{ position:relative;top:0;padding-inline:12px; }
+    .scopeShell{ padding:10px 12px 0; }
+    .scopeRibbon{ grid-template-columns:1fr; }
+    .scopeCell + .scopeCell{ border-top:1px solid #e7edf4; }
+    .wrap{ padding-inline:12px; }
+    .filterStateCard{ grid-template-columns:1fr; }
+  }
+
 </style>
 </head>
 
@@ -1387,13 +1572,10 @@
 
 <div id="topBar">
   <div class="topIdentity">
-    <button id="panelChevron" type="button" title="Show or hide filter panels">▾</button>
-    <div class="compactHidden">
-      <div class="titleRow">
-        <div id="topTitle">Gaps — Coaching vs Performance</div>
-        <button id="helpBtn" class="helpBtn" type="button" aria-label="Open quick instructions">Help</button>
-      </div>
-      <div id="barMeta" class="mono">—</div>
+    <div class="brandMark">CG</div>
+    <div class="brandText">
+      <div class="brandTitle" id="topTitle">Coaching Gaps</div>
+      <div class="brandSub">Coaching vs performance intelligence</div>
     </div>
   </div>
 
@@ -1407,53 +1589,66 @@
       </select>
     </div>
 
-    <div class="compactTabs">
-      <button class="compactTab active reportTab" id="reportTabIndividual" type="button">Coach</button>
-      <button class="compactTab reportTab" id="reportTabTeam" type="button">Team</button>
-      <button class="compactTab reportTab" id="reportTabAnalysis" type="button">Analysis</button>
-      <button class="compactTab reportTab" id="reportTabList" type="button">List Analysis</button>
-    </div>
-
     <label class="topControl" id="teamSelLabel"><span>Coach / Team</span>
       <select id="teamSel"></select>
     </label>
 
-    <label class="topControl"><span>KPI</span>
+    <label class="topControl kpiTopControl"><span>KPI</span>
       <select id="kpiSel"></select>
     </label>
 
-    <details class="multiView topAction" id="multiViewDetails">
-      <summary class="multiViewSummary">Multi View <span class="multiViewState" id="multiViewState">Single</span></summary>
-      <div class="multiViewPanel">
-        <label class="topControl"><span>Second stat</span>
-          <select id="kpiSelSecondary"></select>
-        </label>
-        <div class="modalSub" style="margin-top:8px">Select a second KPI to stack underneath the primary KPI on each rep timeline.</div>
-        <div class="row" style="margin-top:10px;justify-content:flex-end">
-          <button class="btn" id="multiViewClearBtn" type="button">Single view</button>
-        </div>
+    <label class="topControl dateRangeControl"><span>Date Range</span>
+      <div class="dateRangeBox">
+        <input id="startDate" type="date" aria-label="Start date" />
+        <input id="endDate" type="date" aria-label="End date" />
       </div>
-    </details>
-
-    <label class="topControl dateField topDate"><span>Start</span>
-      <input id="startDate" type="date" />
     </label>
 
-    <label class="topControl dateField topDate"><span>End</span>
-      <input id="endDate" type="date" />
-    </label>
+    <div class="headerActions">
+      <button id="panelChevron" class="filterToggleBtn" type="button" title="Open filters" aria-expanded="false">Filters <span class="filterCountBadge" id="filterCountBadge">0</span></button>
+      <button class="iconBtn" id="settingsBtn" type="button" title="Settings">⚙</button>
+      <button class="iconBtn" id="helpBtn" type="button" title="Help" aria-label="Open quick instructions">?</button>
+    </div>
+  </div>
+  <div id="barMeta" class="srOnly">—</div>
+</div>
 
-    <label class="topControl topCoverage"><span>Min Coverage</span>
-      <input id="minCovInp" type="number" step="1" min="0" max="100" value="50" />
-    </label>
-
-    <button class="iconBtn" id="settingsBtn" type="button" title="Settings">⚙</button>
-    <button class="btn primary" id="refreshBtn" type="button">Refresh</button>
+<div class="presetStrip" id="presetStrip">
+  <span class="presetLabel">Quick focus</span>
+  <button class="presetBtn" type="button" data-preset="cash">Cash</button>
+  <button class="presetBtn" type="button" data-preset="callQuality">Call Quality</button>
+  <button class="presetBtn" type="button" data-preset="wipers">Wipers</button>
+  <span class="presetSpacer"></span>
+  <div class="viewTabs compactTabs" aria-label="Report view">
+    <button class="compactTab active reportTab" id="reportTabIndividual" type="button">Coach</button>
+    <button class="compactTab reportTab" id="reportTabTeam" type="button">Team</button>
+    <button class="compactTab reportTab" id="reportTabAnalysis" type="button">Analysis</button>
+    <button class="compactTab reportTab" id="reportTabList" type="button">List Analysis</button>
   </div>
 </div>
 
+<div class="scopeShell">
+  <div class="scopeRibbon" id="scopeRibbon">
+    <div class="scopeCell"><div class="scopeK">Showing</div><div class="scopeV" id="scopePrimary">Loading…</div></div>
+    <div class="scopeCell"><div class="scopeK">Documented Coaching</div><div class="scopeV" id="scopeCoaching">Loading…</div></div>
+    <div class="scopeCell"><div class="scopeK">Checklist</div><div class="scopeV" id="scopeChecklist">Loading…</div></div>
+    <div class="scopeCell"><div class="scopeK">QA / Data</div><div class="scopeV" id="scopeData">Loading…</div></div>
+  </div>
+</div>
+
+<div id="filterBackdrop" aria-hidden="true"></div>
+
 <div id="topPanel">
   <div class="controlGrid">
+    <div class="filterDrawerHead">
+      <div><div class="filterDrawerTitle">Filters</div><div class="filterDrawerSub">The report updates automatically as you change these.</div></div>
+      <button class="filterDrawerClose" id="filterCloseBtn" type="button" aria-label="Close filters">✕</button>
+    </div>
+    <div class="filterStateCard" id="filterStateCard">
+      <div class="filterStateItem"><div class="filterStateK">Preset</div><div class="filterStateV" id="filterStatePreset">Custom</div></div>
+      <div class="filterStateItem"><div class="filterStateK">Coaching shown</div><div class="filterStateV" id="filterStateCoaching">All coaching</div></div>
+      <div class="filterStateItem"><div class="filterStateK">Checklist shown</div><div class="filterStateV" id="filterStateChecklist">All checklist items</div></div>
+    </div>
     <section class="filterPanel">
       <div class="filterPanelHead">
         <div>
@@ -1553,6 +1748,23 @@
         </label>
       </div>
       <div class="chips" id="kwChips" style="margin-top:10px"></div>
+    </section>
+
+    <section class="filterPanel filterAdvanced">
+      <div class="filterPanelHead">
+        <div><div class="filterPanelTitle">Advanced View Options</div><div class="filterPanelSub">Secondary KPI, coverage threshold, and manual refresh.</div></div>
+      </div>
+      <div class="settingsGrid tight">
+        <details class="multiView" id="multiViewDetails">
+          <summary class="multiViewSummary">Second KPI <span class="multiViewState" id="multiViewState">Single</span></summary>
+          <div style="margin-top:10px">
+            <label class="topControl"><span>Second stat</span><select id="kpiSelSecondary"></select></label>
+            <div class="row" style="margin-top:8px;justify-content:flex-end"><button class="btn" id="multiViewClearBtn" type="button">Single view</button></div>
+          </div>
+        </details>
+        <label class="topControl topCoverage"><span>Min KPI Coverage</span><input id="minCovInp" type="number" step="1" min="0" max="100" value="50" /></label>
+        <button class="btn primary" id="refreshBtn" type="button">Refresh report</button>
+      </div>
     </section>
   </div>
 
@@ -1844,7 +2056,14 @@
   </div>
 <div class="card" id="repTimelineCard">
     <div class="row" id="repTimelineHead" style="margin-bottom:10px">
-      <div style="font-weight:1000">Representatives (Timelines)</div>
+      <div>
+        <div style="font-weight:900">Representatives</div>
+        <div class="timelineLegend" style="margin-top:4px">
+          <span class="legendItem"><i class="legendDot"></i>Documented coaching</span>
+          <span class="legendItem"><i class="legendDiamond"></i>Checklist / corrective</span>
+          <span class="legendItem"><i class="legendSquare"></i>QA event</span>
+        </div>
+      </div>
       <span class="spacer"></span>
       <input id="repSearch" placeholder="Search rep…" style="min-width:220px" />
       <span class="mono" id="scopeHint" style="color:var(--muted);font-weight:900">—</span>
@@ -2936,6 +3155,16 @@ const els = {
   panelChevron: document.getElementById('panelChevron'),
   topPanel: document.getElementById('topPanel'),
   barMeta: document.getElementById('barMeta'),
+  filterBackdrop: document.getElementById('filterBackdrop'),
+  filterCloseBtn: document.getElementById('filterCloseBtn'),
+  filterCountBadge: document.getElementById('filterCountBadge'),
+  scopePrimary: document.getElementById('scopePrimary'),
+  scopeCoaching: document.getElementById('scopeCoaching'),
+  scopeChecklist: document.getElementById('scopeChecklist'),
+  scopeData: document.getElementById('scopeData'),
+  filterStatePreset: document.getElementById('filterStatePreset'),
+  filterStateCoaching: document.getElementById('filterStateCoaching'),
+  filterStateChecklist: document.getElementById('filterStateChecklist'),
   reportTabIndividual: document.getElementById('reportTabIndividual'),
   reportTabTeam: document.getElementById('reportTabTeam'),
   reportTabAnalysis: document.getElementById('reportTabAnalysis'),
@@ -3188,6 +3417,12 @@ let coachingTypes = [];
 let enabledTypes = new Set();
 let excludedCoachingTerms = new Set();
 let includedCoachingTerms = new Set();
+let activePreset = '';
+const PRESET_DEFS = {
+  cash:{ label:'Cash', mode:'retail', kpi:'consumerRate', coachingTerms:['appt rate'], checklistLabel:'Appointment behavior', checklistTerms:['appointment behavior','appt behavior'] },
+  callQuality:{ label:'Call Quality', kpi:'callQuality', coachingTerms:['call quality'], checklistLabel:'Call Quality Behaviors', checklistTerms:['call quality behavior','call quality behaviours'] },
+  wipers:{ label:'Wipers', kpi:'wiperRate', coachingTerms:['wiper'], checklistLabel:'VAPs or Wipers', checklistTerms:['vaps','wiper'] }
+};
 
 let coachingByRepKey = new Map();     // repKey -> coaching[]
 let coachingByRepWeek = new Map();    // repKey -> Map(weekKey -> coaching[])
@@ -3485,18 +3720,18 @@ function closeSettingsModal(){
 
 /* =================== top panel collapse =================== */
 function setPanelCollapsed(collapsed){
-  els.topPanel.classList.toggle('hidden', !!collapsed);
-  els.panelChevron.textContent = collapsed ? '▸' : '▾';
+  const open = !collapsed;
+  els.topPanel.classList.toggle('filtersOpen', open);
+  document.body.classList.toggle('filtersOpen', open);
+  if(els.panelChevron) els.panelChevron.setAttribute('aria-expanded', open ? 'true' : 'false');
   try{ localStorage.setItem(PANEL_KEY, collapsed ? '1' : '0'); }catch(e){}
 }
 function togglePanel(){
-  const collapsed = els.topPanel.classList.contains('hidden');
-  setPanelCollapsed(!collapsed);
+  setPanelCollapsed(els.topPanel.classList.contains('filtersOpen'));
 }
-els.panelChevron.addEventListener('click', (e)=>{
-  e.stopPropagation();
-  togglePanel();
-});
+els.panelChevron.addEventListener('click', (e)=>{ e.stopPropagation(); togglePanel(); });
+if(els.filterCloseBtn) els.filterCloseBtn.addEventListener('click', ()=>setPanelCollapsed(true));
+if(els.filterBackdrop) els.filterBackdrop.addEventListener('click', ()=>setPanelCollapsed(true));
 els.helpBtn.addEventListener('click', (e)=>{
   e.stopPropagation();
   openHelpModal();
@@ -3551,12 +3786,14 @@ function loadPrefs(){
           color: normalizeColor(c.color || '#f59e0b'),
           mode: c.mode === 'exclude' ? 'exclude' : 'include',
           incident: String(c.incident || '__ANY__'),
+          incidentTerms: Array.isArray(c.incidentTerms) ? c.incidentTerms.map(x=>String(x||'').trim().toLowerCase()).filter(Boolean) : [],
           keywords: Array.isArray(c.keywords)
             ? c.keywords.map(x=>String(x||'').trim().toLowerCase()).filter(Boolean)
             : []
         }));
       }
       if(typeof p.selectedCriteriaId==="string") selectedCriteriaId = p.selectedCriteriaId;
+      if(typeof p.activePreset === 'string' && PRESET_DEFS[p.activePreset]) activePreset = p.activePreset;
       if(Array.isArray(p.coachingExcludeTerms)){
         excludedCoachingTerms = new Set(
           p.coachingExcludeTerms.map(x=>String(x||'').trim().toLowerCase()).filter(Boolean)
@@ -3594,8 +3831,10 @@ function savePrefs(){
         color:normalizeColor(c.color),
         mode:c.mode === 'exclude' ? 'exclude' : 'include',
         incident:c.incident || '__ANY__',
+        incidentTerms:(c.incidentTerms||[]).slice(),
         keywords:(c.keywords||[]).slice()
       })),
+      activePreset,
       coachingExcludeTerms: Array.from(excludedCoachingTerms),
       coachingIncludeTerms: Array.from(includedCoachingTerms),
       disclaimer: disclaimerSettings,
@@ -3645,6 +3884,7 @@ function newChecklistCriteria(seedIdx){
     color: autoColorForCriteria(`Checklist item ${idx}`),
     mode: 'include',
     incident: '__ANY__',
+    incidentTerms: [],
     keywords: []
   };
 }
@@ -3670,8 +3910,17 @@ function allCriteriaKeywords(){
 function checklistCriteriaForItem(it){
   if(!it) return [];
   const desc = String(it.desc || '').toLowerCase();
+  const incidentText = String(it.incident || '').toLowerCase();
+  const preset = PRESET_DEFS[activePreset];
+  if(preset && Array.isArray(preset.checklistTerms) && preset.checklistTerms.length){
+    const presetHit = preset.checklistTerms.some(term=>incidentText.includes(String(term||'').toLowerCase()));
+    if(!presetHit) return [];
+    return [{ id:`preset_${activePreset}`, name:preset.checklistLabel, color:'#f59e0b', mode:'include', incident:'__ANY__', incidentTerms:preset.checklistTerms, keywords:[] }];
+  }
   const matches = checklistCriteria.filter(c=>{
-    const incOk = !c.incident || c.incident==='__ANY__' || c.incident===it.incident;
+    const terms = (c.incidentTerms||[]).map(x=>String(x||'').toLowerCase()).filter(Boolean);
+    const termOk = !terms.length || terms.some(term=>incidentText.includes(term));
+    const incOk = (!c.incident || c.incident==='__ANY__' || c.incident===it.incident) && termOk;
     if(!incOk) return false;
     if(!(c.keywords||[]).length) return true;
     return c.keywords.some(p=>desc.includes(p));
@@ -3838,7 +4087,8 @@ function paintKeywordChips(){
   const keywordPhrases = selected.keywords || [];
 
   const criteriaChipsHtml = checklistCriteria.map(c=>{
-    const inc = c.incident && c.incident !== '__ANY__' ? c.incident : 'Any incident';
+    const incTerms = (c.incidentTerms||[]).filter(Boolean);
+    const inc = incTerms.length ? `Contains: ${incTerms.join(' / ')}` : (c.incident && c.incident !== '__ANY__' ? c.incident : 'Any incident');
     const kwTxt = (c.keywords && c.keywords.length) ? c.keywords.join(', ') : 'No keywords';
     const modeTxt = c.mode === 'exclude' ? 'Exclude' : 'Include';
     return `<div class="chip criteria ${c.id===selectedCriteriaId?'on':''}" data-criteria-id="${escAttr(c.id)}" style="--criteria-color:${escAttr(normalizeColor(c.color))}">
@@ -3860,6 +4110,7 @@ function paintKeywordChips(){
   `;
   els.kwChips.querySelectorAll('.chip.criteria').forEach(ch=>{
     ch.addEventListener('click', ()=>{
+      activePreset = '';
       const id = ch.getAttribute('data-criteria-id') || '';
       if(!id) return;
       selectedCriteriaId = id;
@@ -3871,6 +4122,7 @@ function paintKeywordChips(){
   });
   els.kwChips.querySelectorAll('.chip.kw').forEach(ch=>{
     ch.addEventListener('click', ()=>{
+      activePreset = '';
       const ph = ch.getAttribute('data-phrase') || '';
       const sel = getSelectedCriteria();
       sel.keywords = (sel.keywords||[]).filter(x => x !== ph);
@@ -4120,6 +4372,7 @@ function paintTypeChips(){
 
   els.typeChips.querySelectorAll('.chip').forEach(ch=>{
     ch.addEventListener('click', ()=>{
+      activePreset = '';
       const t = ch.getAttribute('data-type');
       if(!t) return;
       if(enabledTypes.has(t)) enabledTypes.delete(t);
@@ -4192,6 +4445,7 @@ function paintCoachingWordChips(){
   els.coachingWordChips.innerHTML = chips.join('') || `<div class="mono" style="color:var(--muted);font-weight:900">No description/type word filters added.</div>`;
   els.coachingWordChips.querySelectorAll('.chip').forEach(ch=>{
     ch.addEventListener('click', ()=>{
+      activePreset = '';
       const term = String(ch.getAttribute('data-term') || '').trim().toLowerCase();
       const kind = ch.getAttribute('data-term-kind');
       if(!term) return;
@@ -4204,6 +4458,104 @@ function paintCoachingWordChips(){
     });
   });
 }
+
+
+/* =================== modern scope + quick presets =================== */
+function presetLabel(){ return PRESET_DEFS[activePreset]?.label || 'Custom'; }
+function clearPresetVisual(){
+  document.querySelectorAll('[data-preset]').forEach(btn=>btn.classList.toggle('active', btn.getAttribute('data-preset')===activePreset));
+}
+function coachingFilterLabel(){
+  const inc = Array.from(includedCoachingTerms);
+  const exc = Array.from(excludedCoachingTerms);
+  if(inc.length) return `Contains: ${inc.join(' / ')}`;
+  if(exc.length) return `All except: ${exc.join(' / ')}`;
+  if(enabledTypes.size !== coachingTypes.length) return `${enabledTypes.size} of ${coachingTypes.length} types`;
+  return 'All documented coaching';
+}
+function checklistFilterLabel(){
+  const preset = PRESET_DEFS[activePreset];
+  if(preset) return `Contains: ${preset.checklistTerms.join(' / ')}`;
+  const selected = getSelectedCriteria();
+  const terms = (selected.incidentTerms||[]).filter(Boolean);
+  if(terms.length) return `Contains: ${terms.join(' / ')}`;
+  if(selected.incident && selected.incident !== '__ANY__') return selected.incident;
+  if((selected.keywords||[]).length) return `Keywords: ${selected.keywords.join(' / ')}`;
+  return 'All checklist items';
+}
+function currentScopeRepKeys(){
+  if(!selectedTeam || reportView==='team') return null;
+  return new Set(Array.from(teamIndex.keys()).map(personKey));
+}
+function withinScopeDate(d, sd, ed){
+  if(!(d instanceof Date) || isNaN(d)) return false;
+  if(sd instanceof Date && !isNaN(sd) && d < sd) return false;
+  if(ed instanceof Date && !isNaN(ed) && d > ed) return false;
+  return true;
+}
+function updateModernScope(){
+  const { sd, ed } = getSelectedWindow();
+  const def = getKpiDef();
+  const repKeys = currentScopeRepKeys();
+  const filteredCoach = coachings.filter(c=>withinScopeDate(c.date,sd,ed) && (!repKeys || repKeys.has(c.repKey)) && coachingPassesFilters(c));
+  const filteredChecklist = checklistRows.filter(it=>withinScopeDate(it.date,sd,ed) && (!repKeys || repKeys.has(it.repKey)) && checklistCriteriaForItem(it).length);
+  const filteredQA = qaRows.filter(q=>withinScopeDate(q.startDate,sd,ed) && (!repKeys || repKeys.has(q.repKey)));
+  const scope = reportView==='team' ? `${mode.toUpperCase()} • All teams` : `${mode.toUpperCase()} • ${selectedTeam || 'Choose team'}`;
+  const range = (sd&&ed) ? `${mmddyy(sd)}–${mmddyy(ed)}` : 'Default range';
+  if(els.scopePrimary) els.scopePrimary.innerHTML = `<strong>${escAttr(scope)}</strong> • ${escAttr(def?.label || 'KPI')} • ${escAttr(range)} ${activePreset?`<span class="activePresetBadge">${escAttr(presetLabel())} preset</span>`:''}`;
+  if(els.scopeCoaching) els.scopeCoaching.innerHTML = `<strong>${filteredCoach.length.toLocaleString()}</strong> visible • ${escAttr(coachingFilterLabel())}`;
+  if(els.scopeChecklist) els.scopeChecklist.innerHTML = `<strong>${filteredChecklist.length.toLocaleString()}</strong> visible • ${escAttr(checklistFilterLabel())}`;
+  if(els.scopeData) els.scopeData.innerHTML = `QA <strong>${filteredQA.length.toLocaleString()}</strong> • Stats <strong>${allRows.length.toLocaleString()}</strong> • ${coachings.length&&checklistRows.length?'Data ready':'Check sources'}`;
+  let filterCount = 0;
+  if(includedCoachingTerms.size || excludedCoachingTerms.size || enabledTypes.size !== coachingTypes.length) filterCount++;
+  if(activePreset || checklistFilterLabel() !== 'All checklist items') filterCount++;
+  if(getSecondaryKpiKey()) filterCount++;
+  if(Number(els.minCovInp?.value||50) !== 50) filterCount++;
+  if(els.filterCountBadge) els.filterCountBadge.textContent = String(filterCount);
+  if(els.filterStatePreset) els.filterStatePreset.textContent = presetLabel();
+  if(els.filterStateCoaching) els.filterStateCoaching.textContent = coachingFilterLabel();
+  if(els.filterStateChecklist) els.filterStateChecklist.textContent = checklistFilterLabel();
+  clearPresetVisual();
+}
+function applyQuickPreset(key){
+  const preset = PRESET_DEFS[key];
+  if(!preset) return;
+  activePreset = key;
+  const dateStart = els.startDate.value;
+  const dateEnd = els.endDate.value;
+  if(preset.mode && preset.mode !== mode){
+    mode = preset.mode;
+    els.modeSel.value = mode;
+    paintModeButtons();
+    teamReportExpanded.clear();
+    populateDockSelects();
+    loadStats();
+    loadCoachings();
+    loadChecklist();
+    loadQA();
+    buildKpiUI();
+    rebuildTeamIndex();
+    els.startDate.value = dateStart;
+    els.endDate.value = dateEnd;
+  }
+  enabledTypes = new Set(coachingTypes);
+  excludedCoachingTerms.clear();
+  includedCoachingTerms = new Set(preset.coachingTerms.map(x=>x.toLowerCase()));
+  rebuildCoachingWeekIndex();
+  paintTypeChips();
+  paintCoachingWordChips();
+  if(Array.from(els.kpiSel.options).some(o=>o.value===preset.kpi)){
+    els.kpiSel.value = preset.kpi;
+    applyGoalForCurrentKpi();
+  }
+  if(els.kpiSelSecondary?.value === preset.kpi) els.kpiSelSecondary.value='__NONE__';
+  secondaryKpiSelection = String(els.kpiSelSecondary?.value || '');
+  updateMultiViewState();
+  savePrefs();
+  render();
+}
+document.querySelectorAll('[data-preset]').forEach(btn=>btn.addEventListener('click', ()=>applyQuickPreset(btn.getAttribute('data-preset'))));
+[els.scopeCoaching, els.scopeChecklist].filter(Boolean).forEach(el=>el.addEventListener('click', ()=>setPanelCollapsed(false)));
 
 /* =================== KPI UI =================== */
 function getKpiDef(){
@@ -4870,7 +5222,7 @@ function buildTooltipText(rep, wk, valStr, status, coachCount){
 function showTT(text, x, y){
   if(!text) return hideTT();
   const el = els.tt;
-  el.innerHTML = `<div class="hdr">Week detail</div><div class="mut">(hover coaching bar or timeline)</div>\n\n${escAttr(text).replace(/\n/g,'<br>')}`;
+  el.innerHTML = `<div class="hdr">Week detail</div><div class="mut">Documented coaching, checklist, and KPI evidence</div>\n\n${escAttr(text).replace(/\n/g,'<br>')}`;
   el.style.display = 'block';
   el.setAttribute('aria-hidden','false');
   positionTT(x,y);
@@ -5650,8 +6002,8 @@ function paintRepModal(){
   const rk = personKey(rep);
   const repCoachsAll = coachingByRepKey.get(rk) || [];
   const weekSet = new Set(weeks);
-  const repCoachsFiltered = repCoachsAll
-    .filter(c => weekSet.has(c.wk))
+  const repCoachsInWindow = repCoachsAll.filter(c => weekSet.has(c.wk));
+  const repCoachsFiltered = repCoachsInWindow
     .filter(c => coachingPassesFilters(c))
     .slice()
     .sort((a,b)=> b.date - a.date);
@@ -5740,6 +6092,7 @@ function paintRepModal(){
         <span>Coaching descriptions (in window)</span>
         <span class="mono" style="color:var(--muted);font-weight:900">${repCoachsFiltered.length} item(s)</span>
       </div>
+      <div class="coachingVisibilityNote"><strong>${repCoachsFiltered.length} visible</strong> of ${repCoachsInWindow.length} documented coaching record(s) in this window • ${escAttr(coachingFilterLabel())}${repCoachsInWindow.length>repCoachsFiltered.length?` • <strong>${repCoachsInWindow.length-repCoachsFiltered.length} hidden by filters</strong>`:''}</div>
       <div class="coachList">${coachingHistoryHtml}</div>
     </div>
 
@@ -8030,6 +8383,7 @@ function syncReportViewUI(){
 function render(){
   syncReportViewUI();
   updateMultiViewState();
+  updateModernScope();
   if(els.gapList) els.gapList.innerHTML = `<div class="gapMuted">—</div>`;
   if(els.teamSummaryBody) els.teamSummaryBody.innerHTML = `<tr><td colspan="12" class="mono" style="color:var(--muted);font-weight:900">—</td></tr>`;
   if(els.teamSummaryPills) els.teamSummaryPills.innerHTML = '';
@@ -8463,6 +8817,7 @@ els.disclaimerPhraseClear.addEventListener('click', ()=>{
 
 els.modeSel.addEventListener('change', ()=>{
   mode = els.modeSel.value;
+  if(activePreset && PRESET_DEFS[activePreset]?.mode && PRESET_DEFS[activePreset].mode !== mode) activePreset = '';
   paintModeButtons();
   teamReportExpanded.clear();
   els.startDate.value = '';
@@ -8492,6 +8847,7 @@ els.teamSel.addEventListener('change', ()=>{
 });
 
 els.kpiSel.addEventListener('change', ()=>{
+  if(activePreset && PRESET_DEFS[activePreset]?.kpi !== els.kpiSel.value) activePreset = '';
   applyGoalForCurrentKpi();
   if(els.kpiSelSecondary && els.kpiSelSecondary.value === els.kpiSel.value){
     els.kpiSelSecondary.value = '__NONE__';
@@ -8541,18 +8897,21 @@ els.oppSel.addEventListener('change', ()=>{
 els.oppMin.addEventListener('input', ()=> render());
 
 els.typesAllBtn.addEventListener('click', ()=>{
+  activePreset = '';
   enabledTypes = new Set(coachingTypes);
   rebuildCoachingWeekIndex();
   paintTypeChips();
   render();
 });
 els.typesNoneBtn.addEventListener('click', ()=>{
+  activePreset = '';
   enabledTypes = new Set();
   rebuildCoachingWeekIndex();
   paintTypeChips();
   render();
 });
 els.coachingTypeFilterAddBtn.addEventListener('click', ()=>{
+  activePreset = '';
   const v = String(els.coachingTypeFilterSel.value || '').trim().toLowerCase();
   if(!v) return;
   const action = els.coachingPhraseMode?.value === 'exclude' ? 'exclude' : 'include';
@@ -8572,6 +8931,7 @@ els.coachingTypeFilterAddBtn.addEventListener('click', ()=>{
   render();
 });
 els.coachingPhraseAddBtn.addEventListener('click', ()=>{
+  activePreset = '';
   const action = els.coachingPhraseMode?.value === 'exclude' ? 'exclude' : 'include';
   const raw = els.coachingPhraseInput?.value || '';
   const target = action === 'exclude' ? excludedCoachingTerms : includedCoachingTerms;
@@ -8626,7 +8986,9 @@ els.coachingPhraseInput.addEventListener('keydown', (e)=>{
 });
 
 els.incidentSel.addEventListener('change', ()=>{
+  activePreset = '';
   const sel = getSelectedCriteria();
+  sel.incidentTerms = [];
   sel.incident = els.incidentSel.value || '__ANY__';
   const nextName = cleanIncidentName(sel.incident, sel.name || 'Checklist item');
   if(sel.incident !== '__ANY__' && sel.incident !== '__NONE__'){
@@ -8640,6 +9002,7 @@ els.incidentSel.addEventListener('change', ()=>{
 });
 
 els.criteriaSel.addEventListener('change', ()=>{
+  activePreset = '';
   selectedCriteriaId = els.criteriaSel.value || selectedCriteriaId;
   paintChecklistCriteriaEditor();
   paintKeywordChips();
@@ -8647,6 +9010,7 @@ els.criteriaSel.addEventListener('change', ()=>{
   render();
 });
 els.criteriaAddBtn.addEventListener('click', ()=>{
+  activePreset = '';
   const next = newChecklistCriteria(checklistCriteria.length + 1);
   const inc = els.incidentSel?.value || '__ANY__';
   if(inc && inc !== '__ANY__' && inc !== '__NONE__'){
@@ -8662,6 +9026,7 @@ els.criteriaAddBtn.addEventListener('click', ()=>{
   render();
 });
 els.criteriaDeleteBtn.addEventListener('click', ()=>{
+  activePreset = '';
   if(checklistCriteria.length <= 1) return;
   checklistCriteria = checklistCriteria.filter(c=>c.id!==selectedCriteriaId);
   ensureChecklistCriteriaDefaults();
@@ -8698,6 +9063,7 @@ els.criteriaColorInput.addEventListener('input', ()=>{
 });
 
 els.kwAddBtn.addEventListener('click', ()=>{
+  activePreset = '';
   const sel = getSelectedCriteria();
   const v = String(els.kwInput.value||'').trim();
   if(!v) return;
@@ -8717,6 +9083,7 @@ els.kwInput.addEventListener('keydown', (e)=>{
   }
 });
 els.kwClearBtn.addEventListener('click', ()=>{
+  activePreset = '';
   const sel = getSelectedCriteria();
   sel.keywords = [];
   paintKeywordChips();
@@ -8762,7 +9129,8 @@ els.repSearch.addEventListener('input', ()=> render());
   paintModeButtons();
   paintCoachingActionButtons();
 
-  const collapsed = (localStorage.getItem(PANEL_KEY) === '1');
+  const savedPanel = localStorage.getItem(PANEL_KEY);
+  const collapsed = savedPanel === null ? true : (savedPanel === '1');
   setPanelCollapsed(collapsed);
 
   populateDockSelects();
@@ -8779,6 +9147,17 @@ els.repSearch.addEventListener('input', ()=> render());
   loadQA();
 
   buildKpiUI();
+  if(activePreset && PRESET_DEFS[activePreset]){
+    const preset = PRESET_DEFS[activePreset];
+    enabledTypes = new Set(coachingTypes);
+    excludedCoachingTerms.clear();
+    includedCoachingTerms = new Set(preset.coachingTerms.map(x=>x.toLowerCase()));
+    rebuildCoachingWeekIndex();
+    if(Array.from(els.kpiSel.options).some(o=>o.value===preset.kpi)){
+      els.kpiSel.value = preset.kpi;
+      applyGoalForCurrentKpi();
+    }
+  }
   toggleOppGateUI();
 
   paintChecklistCriteriaEditor();
