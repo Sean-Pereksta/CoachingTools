@@ -16,7 +16,6 @@
 <meta name="coachtools-version" content="1.0" />
 
 <!-- Export helpers -->
-<script src="../vendor/html2canvas.min.js"></script>
 <script src="../vendor/jspdf.umd.min.js"></script>
 
 <!-- LZ-String (for dock decompression) -->
@@ -27,1356 +26,347 @@
 <script src="../shared/coachtools-shell.js"></script>
 
 <style>
-  :root{
-    --bg:#f8fafc; --card:#fff; --ink:#0f172a; --muted:#6b7280; --line:#e5e7eb;
-    --accent:#e11d48; --good:#16a34a; --bad:#dc2626;
+:root{
+  --bg:#f4f7fb;
+  --surface:#ffffff;
+  --surface-2:#f8fafc;
+  --surface-3:#eef2f7;
+  --ink:#0f172a;
+  --ink-2:#334155;
+  --muted:#64748b;
+  --line:#e2e8f0;
+  --line-strong:#cbd5e1;
+  --accent:#e11d48;
+  --accent-dark:#be123c;
+  --accent-soft:#fff1f2;
+  --good:#15803d;
+  --good-soft:#ecfdf5;
+  --bad:#b91c1c;
+  --bad-soft:#fef2f2;
+  --warn:#b45309;
+  --warn-soft:#fffbeb;
+  --info:#1d4ed8;
+  --info-soft:#eff6ff;
+  --shadow-xs:0 1px 2px rgba(15,23,42,.04);
+  --shadow-sm:0 8px 24px rgba(15,23,42,.06);
+  --shadow-md:0 18px 48px rgba(15,23,42,.10);
+  --radius-sm:10px;
+  --radius:14px;
+  --radius-lg:20px;
+  --headerH:104px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;color:var(--ink);background:linear-gradient(180deg,#f8fafc 0%,var(--bg) 100%);font-size:14px}
+button,select,input{font:inherit}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid rgba(225,29,72,.18);outline-offset:2px}
+button{touch-action:manipulation}
+.hide{display:none!important}
+.muted{color:var(--muted)}
+.good{color:var(--good)}
+.bad{color:var(--bad)}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.app{height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
 
-    --apps:#16a34a;
-    --opps:#2563eb;
+/* Command bar */
+header#topbar{position:sticky;top:0;z-index:80;background:rgba(255,255,255,.96);border-bottom:1px solid var(--line);box-shadow:0 8px 28px rgba(15,23,42,.05);backdrop-filter:blur(16px);padding:10px 16px}
+.commandBar{display:flex;align-items:center;gap:10px;min-width:0}
+.brandBlock{display:flex;align-items:center;gap:10px;flex:0 0 auto;margin-right:4px}
+.brandMark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,#0f172a,#334155);color:#fff;font-weight:900;letter-spacing:-.04em;box-shadow:var(--shadow-sm)}
+.brandText h1{font-size:17px;line-height:1.05;letter-spacing:-.025em;margin:0}
+.brandText span{display:block;font-size:11px;color:var(--muted);font-weight:700;margin-top:3px}
+.commandControls{display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;flex-wrap:wrap}
+.controlGroup{display:flex;align-items:center;gap:7px;min-height:40px;padding:5px 8px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;color:var(--ink-2);font-weight:800}
+.controlGroup>span,.controlGroup>label:first-child{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.controlGroup select{border:0;background:transparent;padding:4px 22px 4px 2px;min-width:0;font-weight:800;color:var(--ink);outline:none}
+.coachSelectPrimary{display:flex;align-items:center;gap:7px;padding:0;border:0;background:none;box-shadow:none;font-weight:800;color:var(--ink-2)}
+.coachSelectPrimary select{min-width:170px!important;max-width:240px}
+.metricBar{display:flex;align-items:center;gap:6px;min-width:0;padding:0;border:0;background:none}
+.metricBar>label{font-size:11px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.04em}
+.metricBar select{height:auto;border:0;border-radius:0;background:transparent;padding:4px 20px 4px 2px}
+#metricMode{max-width:96px!important}
+#autoSetSel{min-width:210px!important;max-width:320px}
+#manualBlock select{min-width:160px!important;max-width:220px}
+.miniLegend{font-size:10px;color:var(--muted);font-weight:800}
+.sourceToggles{display:flex;align-items:center;gap:5px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:8px 10px;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink-2);font-size:12px;cursor:pointer;user-select:none;font-weight:800;transition:.14s ease}
+.pill:hover{border-color:var(--line-strong);background:var(--surface-2)}
+.pill input{width:15px;height:15px;margin:0;accent-color:var(--accent)}
+.commandActions{display:flex;align-items:center;gap:7px;margin-left:auto;flex:0 0 auto}
+.btn{appearance:none;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink-2);padding:8px 11px;cursor:pointer;font-weight:800;box-shadow:var(--shadow-xs);transition:transform .08s ease,box-shadow .14s ease,border-color .14s ease,background .14s ease}
+.btn:hover{transform:translateY(-1px);box-shadow:var(--shadow-sm);border-color:var(--line-strong)}
+.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent-dark));border-color:transparent;color:#fff;box-shadow:0 8px 20px rgba(225,29,72,.18)}
+.btn.dark{background:#0f172a;border-color:#0f172a;color:#fff}
+.btn.iconBtn{display:inline-flex;align-items:center;gap:7px}
+.statusBar{display:flex;align-items:center;gap:8px;margin-top:7px;min-height:18px;padding-left:48px}
+.chip,.tag{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--ink-2);font-size:11px;font-weight:800;padding:4px 8px}
+.statusBar .chip{padding:2px 7px;font-size:10px;color:var(--muted);background:transparent;border-color:transparent;max-width:44vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-    --warnBg:#fffbeb; --warnBr:#f59e0b; --warnInk:#92400e;
-    --urgentBg:#fff1f2; --urgentBr:#ef4444; --urgentInk:#9f1239;
+/* Workspace */
+.content{min-height:0;overflow:hidden;padding:14px}
+main.workspace{height:100%;min-height:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);display:grid;grid-template-rows:auto auto minmax(0,1fr);overflow:hidden}
+.summaryStrip{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr));gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.summaryCard{background:#fff;padding:13px 14px;min-width:0}
+.summaryLabel{font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.055em;color:var(--muted)}
+.summaryValue{font-size:23px;line-height:1.05;font-weight:900;letter-spacing:-.035em;margin-top:6px;color:var(--ink)}
+.summarySub{font-size:10px;color:var(--muted);font-weight:750;margin-top:5px;line-height:1.25;white-space:normal}
+.summaryValue.good{color:var(--good)}.summaryValue.bad{color:var(--bad)}.summaryValue.warn{color:var(--warn)}
+.totalRate{font-size:23px;font-weight:900}.totBig{font-size:14px;font-weight:900}.totSub{font-size:10px;color:var(--muted);font-weight:800}
+.viewTabs{display:flex;align-items:center;gap:4px;padding:8px 12px;border-bottom:1px solid var(--line);background:#fff;min-width:0}
+.viewTab{appearance:none;border:0;background:transparent;color:var(--muted);font-weight:850;border-radius:9px;padding:8px 11px;cursor:pointer;transition:.14s ease}
+.viewTab:hover{background:var(--surface-2);color:var(--ink)}
+.viewTab.active{background:#0f172a;color:#fff;box-shadow:none}
+#contextHint{margin-left:auto;font-size:11px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:44%}
+.tabPanel{min-height:0;overflow:auto;padding:14px;scrollbar-gutter:stable;background:#fbfcfe}
+.tabPanel:not(.active){display:none}
+.tabPanel::-webkit-scrollbar,.filterDrawer::-webkit-scrollbar,.modalBody::-webkit-scrollbar,.heatmapScroller::-webkit-scrollbar,.chips::-webkit-scrollbar{width:9px;height:9px}
+.tabPanel::-webkit-scrollbar-thumb,.filterDrawer::-webkit-scrollbar-thumb,.modalBody::-webkit-scrollbar-thumb,.heatmapScroller::-webkit-scrollbar-thumb,.chips::-webkit-scrollbar-thumb{background:#cbd5e1;border:2px solid transparent;background-clip:padding-box;border-radius:999px}
 
-    --headerH: 120px;
-  }
+/* Filter drawer */
+.drawerBackdrop{position:fixed;inset:0;z-index:1090;background:rgba(15,23,42,.26);opacity:0;pointer-events:none;transition:opacity .18s ease}
+.drawerBackdrop.show{opacity:1;pointer-events:auto}
+aside.side.filterDrawer{position:fixed;z-index:1100;top:0;right:0;width:min(390px,94vw);height:100vh;background:#fff;border-left:1px solid var(--line);box-shadow:-24px 0 60px rgba(15,23,42,.18);padding:0;transform:translateX(102%);transition:transform .22s ease;overflow:auto;display:block}
+aside.side.filterDrawer.show{transform:translateX(0)}
+.drawerHead{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.96);backdrop-filter:blur(14px)}
+.drawerTitle{font-size:16px;font-weight:900;letter-spacing:-.02em}.drawerSub{font-size:11px;color:var(--muted);font-weight:750;margin-top:3px}
+.drawerBody{padding:14px;display:grid;gap:12px}
+.card,.box{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:none}
+.box{overflow:hidden}.box .head{padding:10px 12px;border-bottom:1px solid var(--line);font-weight:900;background:var(--surface-2)}.box .body{padding:12px}
+.filterHead{display:flex;align-items:center;justify-content:space-between;gap:8px}.settingsBtn{font-size:11px;padding:6px 8px}
+.filterDivider{height:1px;background:var(--line);margin:12px 0}.filterSectionTitle{font-size:10px;font-weight:900;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.filterHelp{margin-top:4px;font-size:11px;font-weight:750;line-height:1.4}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;max-height:320px;overflow:auto;padding-right:4px}
+.typeChip{display:inline-flex;align-items:center;gap:5px;padding:6px 9px;border:1px solid var(--line);background:#fff;border-radius:999px;font-size:11px;cursor:pointer;user-select:none;font-weight:850;opacity:.48;transition:.12s ease;white-space:nowrap}
+.typeChip:hover{opacity:.75}.typeChip.on{opacity:1;border-color:rgba(225,29,72,.35);background:var(--accent-soft);color:#9f1239}
+.drawerOption{display:flex;align-items:flex-start;gap:9px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);font-weight:800;color:var(--ink-2)}.drawerOption input{margin-top:2px;accent-color:var(--accent)}.drawerOption small{display:block;color:var(--muted);font-weight:700;margin-top:3px;line-height:1.35}
 
-  *{ box-sizing:border-box }
-  html,body{ height:100% }
-  body{ margin:0; font-family:Segoe UI, Roboto, Arial, sans-serif; color:var(--ink); background:var(--bg); }
+/* Impact toolbar + quick filters */
+.impactToolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;padding:0;background:transparent;border:0;box-shadow:none}
+.gridHeadTitleRow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.gridHeadTitleRow strong{font-size:15px;letter-spacing:-.015em}
+.quickFilters{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.quickFilter{appearance:none;border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:999px;padding:6px 9px;font-size:11px;font-weight:850;cursor:pointer}
+.quickFilter:hover{border-color:var(--line-strong);color:var(--ink)}.quickFilter.active{background:#0f172a;color:#fff;border-color:#0f172a}
+.repSearch{display:flex;align-items:center;gap:6px;min-width:180px;border:1px solid var(--line);background:#fff;border-radius:11px;padding:0 9px}.repSearch span{color:var(--muted)}.repSearch input{width:170px;border:0;outline:0;background:transparent;padding:8px 0;color:var(--ink)}
+.sortWrap{display:flex;align-items:center;gap:6px;margin-left:auto;font-size:11px;font-weight:850;color:var(--muted)}.sortWrap select{border:1px solid var(--line);background:#fff;border-radius:10px;padding:7px 26px 7px 8px;color:var(--ink-2);font-weight:800;max-width:280px}
 
-  .app{
-    height:100vh;
-    display:grid;
-    grid-template-rows:auto 1fr;
-    overflow:hidden;
-  }
+/* Attention row */
+.attentionSection{margin:0 0 14px;padding:12px;border:1px solid #fed7aa;border-radius:16px;background:linear-gradient(135deg,#fffaf2,#fff)}
+.attentionHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}.attentionHead strong{font-size:13px}.attentionHead span{font-size:10px;color:var(--muted);font-weight:750}
+.attentionRow{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px}
+.attentionItem{appearance:none;text-align:left;border:1px solid rgba(245,158,11,.28);border-radius:12px;background:#fff;padding:9px 10px;cursor:pointer;transition:.12s ease}.attentionItem:hover{transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.attentionName{font-size:12px;font-weight:900;color:var(--ink)}.attentionMeta{display:flex;justify-content:space-between;gap:8px;margin-top:5px;font-size:10px;font-weight:800;color:var(--muted)}.attentionDrag{color:var(--bad)}
 
-  header{
-    background:#fff;
-    border-bottom:1px solid var(--line);
-    padding:10px 14px;
-    position:sticky;
-    top:0;
-    z-index:50;
-  }
+/* Rep cards */
+.impactGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px;align-items:start}
+.repCard{position:relative;border:1px solid var(--line);border-radius:16px;background:#fff;padding:12px;display:grid;gap:10px;cursor:pointer;min-width:0;box-shadow:0 3px 12px rgba(15,23,42,.035);transition:transform .10s ease,box-shadow .16s ease,border-color .16s ease}
+.repCard:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm);border-color:#cbd5e1}.repCard:active{transform:none}.repCard.warningBorder{opacity:.62;background:var(--surface-2)}
+.repCard.urgent,.repCard.stale{border-width:1px;background:#fff;box-shadow:0 3px 12px rgba(15,23,42,.035)}
+.repCard.urgent::before,.repCard.stale::before{content:"";position:absolute;left:-1px;top:14px;bottom:14px;width:3px;border-radius:99px}.repCard.urgent::before{background:var(--bad)}.repCard.stale::before{background:#f59e0b}
+.repTop{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.repIdentity{min-width:0}.repName{font-weight:900;font-size:14px;line-height:1.2;overflow-wrap:anywhere}.repSub{font-size:10px;color:var(--muted);font-weight:750;margin-top:3px}
+.badgeStack{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:flex-end}.impactBadge,.needScore,.coachRecency{display:inline-flex;align-items:center;gap:5px;padding:5px 7px;border-radius:999px;font-size:10px;font-weight:900;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);white-space:nowrap}
+.impactBadge.good{background:var(--good-soft);color:#166534;border-color:#bbf7d0}.impactBadge.bad{background:var(--bad-soft);color:#991b1b;border-color:#fecaca}.impactBadge.info{background:var(--info-soft);color:var(--info);border-color:#bfdbfe}
+.needScore.hot{background:var(--bad-soft);border-color:#fecaca;color:#991b1b}.coachRecency.warn{background:var(--warn-soft);border-color:#fde68a;color:#92400e}.coachRecency.bad{background:var(--bad-soft);border-color:#fecaca;color:#991b1b}
+.repMetricRow{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center}.repRateBig{font-size:26px;font-weight:900;letter-spacing:-.04em}.repRateLabel{font-size:10px;color:var(--muted);font-weight:850;text-transform:uppercase;letter-spacing:.04em}.repVsTeam{font-size:11px;font-weight:850;margin-top:3px;color:var(--ink-2)}
+.barWrap{width:100%;height:7px;border-radius:999px;background:var(--surface-3);overflow:visible;position:relative;margin-top:7px}.barFill{height:100%;border-radius:999px;transition:width .22s ease}.barLabel{display:none}.avgTick{position:absolute;top:-3px;bottom:-3px;width:2px;background:#0f172a;border-radius:2px}
+.repInfoGrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.repInfo{min-width:0;padding:7px 8px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2)}.repInfo .k{font-size:9px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.045em}.repInfo .v{font-size:11px;color:var(--ink-2);font-weight:900;margin-top:3px;overflow-wrap:anywhere}
+.cardFooter{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--line);padding-top:8px}.xbox{display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;font-size:10px;color:var(--muted);font-weight:850}.xbox input{width:14px;height:14px;margin:0;accent-color:var(--accent)}
+.plainTrendLine{font-size:10px;color:var(--muted);font-weight:850}.bottomHalf{font-size:9px;color:var(--muted);font-weight:850}
+.mini2,.dbWrap,.dbTrack,.dbLegend,.dbScale,#toggleCompare,.legend,.coachRowLine{display:none!important}
+.emptyState{grid-column:1/-1;padding:30px;border:1px dashed var(--line-strong);border-radius:16px;text-align:center;color:var(--muted);font-weight:800;background:#fff}
 
-  h1{ font-size:18px; margin:0 }
-  .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap }
-  .btn{ padding:6px 10px; border:1px solid var(--line); border-radius:999px; background:#fff; cursor:pointer; font-weight:800 }
-  .btn.primary{ background:var(--accent); color:#fff; border-color:var(--accent) }
-  .btn.dark{ background:#0f172a; color:#fff; border-color:#0f172a }
-  select,button,input{ font-size:14px }
-  .muted{ color:var(--muted) }
-  .chip{ display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; background:#f1f5f9; color:#334155; border:1px solid var(--line); font-size:12px }
-  .pill{ display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid var(--line); border-radius:999px; background:#f1f5f9; font-size:12px; color:#334155; cursor:pointer; user-select:none; font-weight:800 }
-  .pill input{ width:16px; height:16px; margin:0 }
-  .good{ color:var(--good) } .bad{ color:var(--bad) }
+/* Team breakdown */
+.teamTabIntro{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}.teamTabIntro strong{font-size:15px}.teamTabIntro span{font-size:11px;color:var(--muted);font-weight:750}.teamTabIntro>span{padding:5px 8px;border-radius:999px;background:#fff;border:1px solid var(--line)}
+.heatmapWrap{border:1px solid var(--line);border-radius:16px;background:#fff;overflow:hidden;box-shadow:none}.heatmapHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:13px 14px;border-bottom:1px solid var(--line)}.heatmapTitle{font-size:14px;font-weight:900}.heatmapHint{font-size:10px;color:var(--muted);font-weight:750;max-width:75ch;margin-top:3px;line-height:1.4}.heatmapStats{display:flex;gap:5px;flex-wrap:wrap;align-items:center}.heatmapLegend{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);font-size:10px;color:var(--muted);font-weight:800;background:var(--surface-2)}
+.legendSwatch{width:9px;height:9px;border-radius:3px;border:1px solid rgba(148,163,184,.6);display:inline-block}.legendSwatch.strong{background:#bbf7d0;border-color:#86efac}.legendSwatch.info{background:#fef3c7;border-color:#fde68a}.legendSwatch.partial{background:#fecdd3;border-color:#fda4af}.legendSwatch.weak{background:#fecaca;border-color:#fca5a5}.legendSwatch.na{background:#e2e8f0;border-color:#cbd5e1}.legendSwatch.coached{background:repeating-linear-gradient(135deg,rgba(37,99,235,.22) 0 4px,#fff 4px 8px),#dbeafe;border-color:#93c5fd}
+.heatmapMeta{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:8px;padding:10px 12px;background:#fff}.heatmapMetaCard{border:1px solid var(--line);border-radius:12px;padding:9px 10px;background:var(--surface-2)}.heatmapMetaLabel{font-size:9px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.05em}.heatmapMetaValue{font-size:18px;font-weight:900;margin-top:3px}.heatmapMetaSub{font-size:10px;color:var(--muted);font-weight:750;margin-top:3px;line-height:1.3}
+.heatmapScroller{overflow:auto;border-top:1px solid var(--line)}.heatmapTable{width:100%;border-collapse:separate;border-spacing:0;min-width:760px}.heatmapTable th,.heatmapTable td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:0;vertical-align:middle;background:#fff}.heatmapTable tr:last-child td,.heatmapTable tr:last-child th{border-bottom:0}.heatmapTable th:last-child,.heatmapTable td:last-child{border-right:0}.heatmapTable thead th{position:sticky;top:0;z-index:3;background:#f8fafc}.heatmapStub{position:sticky;left:0;z-index:2;min-width:200px;padding:9px 10px;background:#fff}.heatmapTable thead .heatmapStub{z-index:4;background:#f8fafc}.heatmapStub.summary{background:#fff7ed}.heatmapStub.attention{background:#fff7f7;box-shadow:inset 3px 0 0 var(--bad)}
+.heatmapRepBtn,.heatmapWeekBtn,.heatmapCellBtn{appearance:none;border:0;background:none;color:inherit;font:inherit;margin:0;cursor:pointer}.heatmapRepBtn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left}.heatmapRepName{font-weight:900;font-size:11px;line-height:1.15;overflow-wrap:anywhere}.heatmapRepCoachDate,.heatmapRepMeta{font-size:9px;color:var(--muted);font-weight:800}.heatmapOpportunity{display:inline-flex;align-items:center;gap:4px;margin-top:3px;padding:3px 6px;border-radius:999px;background:var(--bad-soft);color:#991b1b;font-size:9px;font-weight:900;border:1px solid #fecaca}
+.heatmapWeekBtn{width:100%;min-width:112px;padding:9px 7px;text-align:center}.heatmapWeekBtn:hover{background:rgba(225,29,72,.04)}.heatmapWeekLabel{font-size:11px;font-weight:900}.heatmapWeekSub{font-size:9px;color:var(--muted);font-weight:750;margin-top:2px}.heatmapCellBtn{width:100%;min-height:64px;padding:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;transition:.12s ease}.heatmapCellBtn:hover{box-shadow:inset 0 0 0 2px rgba(15,23,42,.08)}
+.heatCell{color:var(--ink);font-weight:900}.heatCell.strong{background:#f0fdf4}.heatCell.info{background:#fffbeb}.heatCell.partial{background:#fff1f2}.heatCell.weak{background:#fef2f2}.heatCell.na{background:#f8fafc;color:var(--muted)}.heatCell.coached{background-image:repeating-linear-gradient(135deg,rgba(37,99,235,.08) 0 7px,transparent 7px 14px);background-blend-mode:multiply}.heatPrimary{font-size:15px;font-weight:950;letter-spacing:-.025em}.heatSecondary{font-size:9px;color:var(--muted);font-weight:800}.heatCell .statusLine{display:flex;align-items:center;justify-content:center;gap:4px;font-size:9px;font-weight:850;color:var(--ink-2)}.statusIcon{font-size:12px}.statusIcon.good{color:var(--good)}.statusIcon.bad{color:var(--bad)}.statusIcon.info{color:var(--info)}.statusIcon.muted{color:#94a3b8}.statusIcon.big{font-size:14px}.heatCellRep .tiny,.heatCellSummary small{font-size:9px;color:var(--muted);font-weight:800}.heatCellRep .tiny.performance{color:var(--ink-2)}.heatCellRep .tiny.performance.low{color:var(--bad)}.heatCellRep .tiny.performance.high{color:var(--good)}
+.heatmapEmpty{padding:24px;color:var(--muted);font-weight:800;text-align:center;background:var(--surface-2)}
 
-  .content{
-    height: calc(100vh - var(--headerH));
-    min-height:0;
-    overflow:hidden;
-    display:grid;
-    grid-template-columns: 360px 1fr;
-    gap:12px;
-    padding:12px;
-  }
+/* Modals + detail */
+.modalOverlay{position:fixed;inset:0;z-index:1200;background:rgba(15,23,42,.48);display:none;align-items:center;justify-content:center;padding:16px}.modalOverlay.show{display:flex}.modalPanel{width:min(980px,96vw);max-height:92vh;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 26px 70px rgba(2,6,23,.30);display:flex;flex-direction:column;overflow:hidden}.coachingSettingsPanel{width:min(720px,94vw)}.modalHeadRow{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:13px 14px;border-bottom:1px solid var(--line);background:#fff}.modalTitle{font-size:16px;font-weight:900;margin:0;line-height:1.15}.modalSub{font-size:11px;color:var(--muted);font-weight:750;margin-top:4px;max-width:70ch}.modalActions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.modalBody{padding:14px;overflow:auto;min-height:0;background:#fbfcfe}.hint{font-size:11px;line-height:1.4;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);font-weight:750}
+.coachList{display:grid;gap:8px}.coachItem{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff}.coachItemTop{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.coachItemDate{font-weight:900}.coachItemType{font-weight:850;padding:4px 7px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);font-size:10px}.coachItemCoach{margin-left:auto;font-size:10px;color:var(--muted);font-weight:800}.coachItemDesc{margin-top:7px;font-size:12px;color:var(--ink);white-space:pre-wrap;line-height:1.4}
+.repTrendWrap{border:1px solid var(--line);border-radius:14px;padding:10px;margin-bottom:12px;background:#fff;display:grid;gap:9px}.repTrendHead{display:flex;gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}.repTrendTitle{font-size:13px;font-weight:900}.repTrendSub{font-size:10px;color:var(--muted);font-weight:750}.repTrendCanvas{width:100%;min-height:220px;border:1px solid var(--line);border-radius:12px;background:#fff;padding:8px}.repTrendSvg{width:100%;height:220px;display:block}.repImpactBars{display:grid;grid-template-columns:repeat(auto-fit,minmax(94px,1fr));gap:6px}.repImpactBar{border:1px solid var(--line);border-radius:10px;padding:6px;background:#fff;display:grid;gap:4px;justify-items:center}.repImpactBar .wk{font-size:9px;color:var(--muted);font-weight:900}.repImpactBar .arrow{font-size:15px;line-height:1;font-weight:900}.repImpactBar .val{font-size:10px;font-weight:900}.repImpactBar.good{background:var(--good-soft);border-color:#bbf7d0;color:#166534}.repImpactBar.bad{background:var(--bad-soft);border-color:#fecaca;color:#991b1b}.repImpactBar.na{background:var(--surface-2);color:var(--muted)}.repTrendInsights{display:grid;gap:7px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}.repTrendInsight{border:1px solid var(--line);border-radius:12px;padding:8px;background:#fff}.repTrendInsight.good{background:var(--good-soft);border-color:#bbf7d0}.repTrendInsight.bad{background:var(--bad-soft);border-color:#fecaca}.repTrendInsight.info{background:var(--info-soft);border-color:#bfdbfe}.repTrendInsight .k{font-size:9px;color:var(--muted);font-weight:900;text-transform:uppercase}.repTrendInsight .v{margin-top:2px;font-size:15px;font-weight:900}.repTrendInsight .d{margin-top:3px;font-size:10px;color:var(--ink-2);font-weight:750;line-height:1.35}
+.heatDetailGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-bottom:12px}.heatDetailCard{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff}.heatDetailCard.good{background:var(--good-soft);border-color:#bbf7d0}.heatDetailCard.bad{background:var(--bad-soft);border-color:#fecaca}.heatDetailCard.info{background:var(--info-soft);border-color:#bfdbfe}.heatDetailCard.warn{background:var(--warn-soft);border-color:#fde68a}.heatDetailLabel{font-size:9px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.05em}.heatDetailValue{font-size:17px;font-weight:900;margin-top:3px}.heatDetailValue.good{color:var(--good)}.heatDetailValue.bad{color:var(--bad)}.heatDetailValue.info{color:var(--info)}.heatDetailValue.warn{color:var(--warn)}.heatDetailSection{margin-top:13px}.heatDetailSection h4{margin:0 0 7px;font-size:12px}.heatDetailList{display:grid;gap:7px}.heatDetailItem{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;display:grid;gap:5px}.heatDetailTop{display:flex;gap:7px;align-items:center;justify-content:space-between;flex-wrap:wrap}.heatDetailRepBtn{appearance:none;border:0;background:none;padding:0;margin:0;color:var(--ink);font-weight:900;cursor:pointer;text-align:left}.heatDetailRepBtn:hover{text-decoration:underline}.heatDetailBadges,.heatDetailMetrics{display:flex;gap:5px;flex-wrap:wrap}.heatDetailMetrics .tag{font-size:9px}.heatDetailNote{font-size:10px;color:var(--muted);font-weight:750;line-height:1.4}.heatDetailNote.good{color:#166534}.heatDetailNote.bad{color:#991b1b}.heatDetailNote.info{color:var(--info)}.heatDetailTrend{display:grid;gap:5px;margin-top:5px;padding-top:5px;border-top:1px dashed var(--line-strong)}
+.tag.good{background:var(--good-soft);border-color:#bbf7d0;color:#166534}.tag.bad,.tag.urgent{background:var(--bad-soft);border-color:#fecaca;color:#991b1b}.tag.info{background:var(--info-soft);border-color:#bfdbfe;color:var(--info)}.tag.warn{background:var(--warn-soft);border-color:#fde68a;color:#92400e}
 
-  .card{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px }
-
-  aside.side{
-    min-height:0;
-    overflow:auto;
-    padding-right:8px;
-    padding-bottom:28px;
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-    scrollbar-gutter: stable;
-  }
-  aside.side::-webkit-scrollbar{ width:10px }
-  aside.side::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:10px; border:2px solid transparent; background-clip:padding-box }
-  aside.side::-webkit-scrollbar-track{ background:transparent }
-
-  main.card{
-    min-height:0;
-    overflow:auto;
-    scrollbar-gutter: stable;
-  }
-  main.card::-webkit-scrollbar{ width:10px }
-  main.card::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:10px; border:2px solid transparent; background-clip:padding-box }
-  main.card::-webkit-scrollbar-track{ background:transparent }
-
-  .box{ border:1px solid var(--line); border-radius:10px; background:#fff; overflow:visible }
-  .box .head{ padding:8px 10px; border-bottom:1px solid var(--line); font-weight:900; background:#fafafa }
-  .box .body{ padding:10px }
-
-  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:8px }
-  .stack > label{ display:block; font-size:12px; color:#475569; margin-top:6px; font-weight:900 }
-  .stack select{ width:100% }
-
-  .totalRow{
-    display:flex; gap:10px; align-items:center; justify-content:space-between;
-    border:1px solid var(--line); border-radius:10px; padding:10px; background:#fff; margin-bottom:8px
-  }
-  .totalRate{ font-size:20px; font-weight:900 }
-  .diff.good{ color:var(--good) } .diff.bad{ color:var(--bad) }
-
-  .totalsGrid{ display:grid; grid-template-columns:1fr 1fr; gap:10px }
-  .totBox{ border:1px dashed var(--line); border-radius:10px; padding:10px; background:#fff }
-  .totBig{ font-size:18px; font-weight:900 }
-  .totSub{ font-size:12px; color:#475569; font-weight:900 }
-
-  .legend{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; color:#475569 }
-
-  .gridHead{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:10px; flex-wrap:wrap }
-  .gridHeadTitleRow{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-width:0 }
-  .attendance3WeeksToggle{ display:flex; align-items:center; gap:6px; font-size:12px; color:#334155; font-weight:900; min-width:0; white-space:normal; overflow-wrap:anywhere }
-  .attendance3WeeksToggle input{ margin:0 }
-
-  .heatmapWrap{
-    border:1px solid var(--line);
-    border-radius:14px;
-    background:#fff;
-    padding:12px;
-    margin-bottom:10px;
-    display:grid;
-    gap:10px;
-  }
-  .heatmapHead{
-    display:flex;
-    align-items:flex-start;
-    justify-content:space-between;
-    gap:12px;
-    flex-wrap:wrap;
-  }
-  .heatmapTitle{ font-weight:900; }
-  .heatmapHint{ font-size:12px; color:#475569; font-weight:800; max-width:82ch; line-height:1.4; }
-  .heatmapStats{
-    display:flex;
-    gap:8px;
-    flex-wrap:wrap;
-    align-items:center;
-  }
-  .heatmapLegend{
-    display:flex;
-    gap:8px;
-    flex-wrap:wrap;
-    align-items:center;
-    font-size:12px;
-    color:#475569;
-    font-weight:800;
-  }
-  .legendSwatch{
-    width:12px;
-    height:12px;
-    border-radius:4px;
-    border:1px solid rgba(148,163,184,.6);
-    display:inline-block;
-  }
-  .legendSwatch.strong{ background:#16a34a; border-color:#15803d; }
-  .legendSwatch.info{ background:#facc15; border-color:#ca8a04; }
-  .legendSwatch.partial{ background:#fb7185; border-color:#e11d48; }
-  .legendSwatch.weak{ background:#dc2626; border-color:#b91c1c; }
-  .legendSwatch.na{ background:#cbd5e1; border-color:#94a3b8; }
-  .legendSwatch.coached{
-    background:repeating-linear-gradient(135deg, rgba(37,99,235,.26) 0 7px, rgba(255,255,255,.1) 7px 14px), #dbeafe;
-    border-color:#2563eb;
-  }
-  .heatmapMeta{
-    display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(180px,1fr));
-    gap:8px;
-  }
-  .heatmapMetaCard{
-    border:1px solid var(--line);
-    border-radius:12px;
-    padding:10px;
-    background:#fbfdff;
-  }
-  .heatmapMetaLabel{ font-size:11px; color:#64748b; font-weight:900; text-transform:uppercase; letter-spacing:.04em; }
-  .heatmapMetaValue{ font-size:18px; font-weight:900; margin-top:4px; }
-  .heatmapMetaSub{ font-size:12px; color:#475569; font-weight:800; margin-top:4px; line-height:1.35; }
-  .heatmapScroller{
-    overflow:auto;
-    border:1px solid var(--line);
-    border-radius:12px;
-    background:#fff;
-  }
-  .heatmapTable{
-    width:100%;
-    border-collapse:separate;
-    border-spacing:0;
-    min-width:760px;
-  }
-  .heatmapTable th,
-  .heatmapTable td{
-    border-bottom:1px solid var(--line);
-    border-right:1px solid var(--line);
-    padding:0;
-    vertical-align:middle;
-    background:#fff;
-  }
-  .heatmapTable tr:last-child td,
-  .heatmapTable tr:last-child th{ border-bottom:none; }
-  .heatmapTable th:last-child,
-  .heatmapTable td:last-child{ border-right:none; }
-  .heatmapTable thead th{
-    position:sticky;
-    top:0;
-    z-index:3;
-    background:#f8fafc;
-  }
-  .heatmapStub{
-    position:sticky;
-    left:0;
-    z-index:2;
-    min-width:210px;
-    padding:10px 12px;
-    background:#fff;
-  }
-  .heatmapTable thead .heatmapStub{ z-index:4; background:#f8fafc; }
-  .heatmapStub.summary{ background:#fff7ed; }
-  .heatmapRepBtn,
-  .heatmapWeekBtn,
-  .heatmapCellBtn{
-    appearance:none;
-    border:none;
-    background:none;
-    color:inherit;
-    font:inherit;
-    margin:0;
-    cursor:pointer;
-  }
-  .heatmapRepBtn{
-    display:flex;
-    flex-direction:column;
-    align-items:flex-start;
-    gap:4px;
-    width:100%;
-    text-align:left;
-    padding:0;
-  }
-  .heatmapRepBtn:hover .heatmapRepName{ text-decoration:underline; }
-  .heatmapRepName{ font-weight:900; line-height:1.15; white-space:normal; overflow-wrap:anywhere; min-width:0; }
-  .heatmapRepCoachDate{ font-size:11px; color:#475569; font-weight:900; line-height:1.2; white-space:normal; overflow-wrap:anywhere; min-width:0; }
-  .heatmapRepMeta{ font-size:11px; color:#64748b; font-weight:800; }
-  .heatmapWeekBtn{
-    width:100%;
-    min-width:118px;
-    padding:10px 8px;
-    text-align:center;
-  }
-  .heatmapWeekBtn:hover{ background:rgba(225,29,72,.06); }
-  .heatmapWeekLabel{ font-weight:900; }
-  .heatmapWeekSub{ font-size:11px; color:#64748b; font-weight:800; margin-top:4px; }
-  .heatmapCellBtn{
-    width:100%;
-    min-height:70px;
-    padding:8px;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    gap:4px;
-    transition:transform .06s ease, box-shadow .12s ease;
-  }
-  .heatmapCellBtn:hover{ transform:translateY(-1px); box-shadow:inset 0 0 0 2px rgba(15,23,42,.12); }
-  .heatCell{
-    color:#0f172a;
-    font-weight:900;
-  }
-  .heatCell.strong{ background:rgba(22,163,74,.18); }
-  .heatCell.info{ background:rgba(250,204,21,.22); }
-  .heatCell.partial{ background:rgba(251,113,133,.18); }
-  .heatCell.weak{ background:rgba(220,38,38,.2); }
-  .heatCell.na{ background:rgba(203,213,225,.32); color:#475569; }
-  .heatCell.coached{
-    background-image:repeating-linear-gradient(135deg, rgba(37,99,235,.26) 0 8px, rgba(255,255,255,.08) 8px 16px);
-    background-blend-mode:multiply;
-  }
-  .heatCellSummary{ font-size:14px; }
-  .heatCellSummary small,
-  .heatCellRep small{ font-size:11px; font-weight:800; color:#334155; }
-  .heatCellRep{ font-size:13px; }
-  .heatCellRep .tiny{ font-size:10px; font-weight:800; color:#475569; }
-  .heatCellRep .tiny.performance{ font-size:11px; color:#0f172a; }
-  .heatCellRep .tiny.performance.low{ color:#b91c1c; }
-  .heatCellRep .tiny.performance.high{ color:#166534; }
-  .heatCellRep .statusLine{ display:flex; align-items:center; justify-content:center; gap:6px; font-size:11px; font-weight:900; color:#334155; }
-  .heatCellRep .statusIcon{ font-size:16px; line-height:1; }
-  .heatCellRep .statusIcon.big{ font-size:20px; }
-  .heatCellRep .statusIcon.good{ color:#16a34a; }
-  .heatCellRep .statusIcon.bad{ color:#dc2626; }
-  .heatCellRep .statusIcon.info{ color:#2563eb; }
-  .heatCellRep .statusIcon.muted{ color:#94a3b8; }
-  .heatmapStub.attention{
-    background:linear-gradient(135deg, rgba(254,242,242,.98), rgba(255,255,255,.98));
-    box-shadow:inset 4px 0 0 #dc2626;
-  }
-  .heatmapOpportunity{
-    display:inline-flex;
-    align-items:center;
-    gap:6px;
-    margin-top:6px;
-    padding:4px 8px;
-    border-radius:999px;
-    background:rgba(220,38,38,.1);
-    color:#991b1b;
-    font-size:11px;
-    font-weight:900;
-    border:1px solid rgba(220,38,38,.22);
-  }
-  .tag{
-    display:inline-flex; align-items:center; gap:6px;
-    padding:4px 8px; border-radius:999px;
-    border:1px solid var(--line);
-    background:#fff;
-    font-size:12px;
-    font-weight:900;
-    color:#334155;
-  }
-  .tag.warn{ background:var(--warnBg); border-color:rgba(245,158,11,.55); color:var(--warnInk) }
-  .tag.urgent{ background:var(--urgentBg); border-color:rgba(239,68,68,.55); color:var(--urgentInk) }
-  .tag.good{ background:rgba(22,163,74,.1); border-color:rgba(22,163,74,.32); color:#166534; }
-  .tag.info{ background:rgba(37,99,235,.1); border-color:rgba(37,99,235,.28); color:#1d4ed8; }
-  .tag.bad{ background:rgba(220,38,38,.1); border-color:rgba(220,38,38,.24); color:#991b1b; }
-  .heatmapEmpty{
-    border:1px dashed var(--line);
-    border-radius:12px;
-    padding:16px;
-    background:#f8fafc;
-    color:#475569;
-    font-weight:800;
-  }
-  .heatDetailGrid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(200px,1fr));
-    gap:8px;
-    margin-bottom:12px;
-  }
-  .heatDetailCard{
-    border:1px solid var(--line);
-    border-radius:12px;
-    padding:10px;
-    background:#fbfdff;
-  }
-  .heatDetailCard.good{ background:rgba(22,163,74,.07); border-color:rgba(22,163,74,.24); }
-  .heatDetailCard.bad{ background:rgba(220,38,38,.07); border-color:rgba(220,38,38,.2); }
-  .heatDetailCard.info{ background:rgba(37,99,235,.07); border-color:rgba(37,99,235,.18); }
-  .heatDetailCard.warn{ background:rgba(245,158,11,.09); border-color:rgba(245,158,11,.22); }
-  .heatDetailLabel{ font-size:11px; color:#64748b; font-weight:900; text-transform:uppercase; letter-spacing:.04em; }
-  .heatDetailValue{ font-size:18px; font-weight:900; margin-top:4px; }
-  .heatDetailValue.good{ color:#166534; }
-  .heatDetailValue.bad{ color:#991b1b; }
-  .heatDetailValue.info{ color:#1d4ed8; }
-  .heatDetailValue.warn{ color:#b45309; }
-  .heatDetailSection{ margin-top:14px; }
-  .heatDetailSection h4{ margin:0 0 8px; font-size:13px; }
-  .heatDetailList{ display:grid; gap:8px; }
-  .heatDetailItem{
-    border:1px solid var(--line);
-    border-radius:12px;
-    padding:10px;
-    background:#fff;
-    display:grid;
-    gap:6px;
-  }
-  .heatDetailTop{
-    display:flex;
-    gap:8px;
-    align-items:center;
-    justify-content:space-between;
-    flex-wrap:wrap;
-  }
-  .heatDetailRepBtn{
-    appearance:none;
-    border:none;
-    background:none;
-    padding:0;
-    margin:0;
-    color:#0f172a;
-    font-weight:900;
-    cursor:pointer;
-    text-align:left;
-  }
-  .heatDetailRepBtn:hover{ text-decoration:underline; }
-  .heatDetailBadges{ display:flex; gap:6px; flex-wrap:wrap; }
-  .heatDetailMetrics{ display:flex; gap:6px; flex-wrap:wrap; }
-  .heatDetailMetrics .tag{ font-size:11px; }
-  .heatDetailNote{ font-size:12px; color:#475569; font-weight:800; line-height:1.35; }
-  .heatDetailNote.good{ color:#166534; }
-  .heatDetailNote.bad{ color:#991b1b; }
-  .heatDetailNote.info{ color:#1d4ed8; }
-  .heatDetailTrend{
-    display:grid;
-    gap:6px;
-    margin-top:6px;
-    padding-top:6px;
-    border-top:1px dashed rgba(148,163,184,.6);
-  }
-
-  /* UPDATED GRID */
-  .impactGrid{
-    display:grid;
-    grid-template-columns: repeat(4, minmax(280px,1fr));
-    gap:12px;
-    align-items:start;
-  }
-  @media (max-width:1700px){ .impactGrid{ grid-template-columns: repeat(3, minmax(280px,1fr)); } }
-  @media (max-width:1200px){ .impactGrid{ grid-template-columns: repeat(2, minmax(260px,1fr)); } }
-  @media (max-width:720px){ .impactGrid{ grid-template-columns: 1fr; } }
-
-  .repCard{
-    position:relative;
-    border:1px solid var(--line);
-    border-radius:12px;
-    background:#fff;
-    padding:10px;
-    display:grid;
-    gap:8px;
-    overflow:hidden;
-    cursor:pointer;
-    min-width:0;
-  }
-  .repCard:hover{ box-shadow:0 16px 34px rgba(2,6,23,.10); transform:translateY(-1px); }
-  .repCard:active{ transform:translateY(0px); }
-
-  .repCard.stale{
-    border:3px solid rgba(245,158,11,.98);
-    background:linear-gradient(180deg, rgba(245,158,11,.22), #fff 55%);
-    box-shadow:0 0 0 5px rgba(245,158,11,.14), 0 18px 38px rgba(2,6,23,.12);
-  }
-  .repCard.urgent{
-    border:3px solid rgba(239,68,68,.98);
-    background:linear-gradient(180deg, rgba(239,68,68,.22), #fff 55%);
-    box-shadow:0 0 0 6px rgba(239,68,68,.16), 0 22px 46px rgba(2,6,23,.14);
-  }
-  .repCard.stale::before,
-  .repCard.urgent::before{
-    content:"";
-    position:absolute;
-    left:0; top:0; bottom:0;
-    width:10px;
-    border-top-left-radius:12px;
-    border-bottom-left-radius:12px;
-  }
-  .repCard.stale::before{ background:rgba(245,158,11,.98); }
-  .repCard.urgent::before{ background:rgba(239,68,68,.98); }
-
-  /* UPDATED TOP ROW */
-  .repTop{
-    display:grid;
-    grid-template-columns: minmax(0,1fr);
-    gap:8px;
-    align-items:start;
-  }
-
-  .repName{
-    font-weight:900;
-    display:flex;
-    white-space:normal;
-    gap:6px;
-    align-items:flex-start;
-    line-height:1.15;
-    min-width:0;
-    overflow-wrap:anywhere;
-    word-break:break-word;
-    font-size:clamp(13px, 1vw, 16px);
-  }
-
-  /* UPDATED BADGE AREA */
-  .badgeStack{
-    display:grid;
-    gap:6px;
-    width:100%;
-    min-width:0;
-    max-width:none;
-    align-items:start;
-  }
-
-  .impactBadge{
-    display:inline-flex;
-    align-items:center;
-    gap:6px;
-    padding:4px 8px;
-    border-radius:999px;
-    font-weight:900;
-    border:1px solid var(--line);
-    white-space:normal;
-    overflow-wrap:anywhere;
-    word-break:break-word;
-    max-width:100%;
-    width:fit-content;
-  }
-  .impactBadge.good{ background:#ecfdf5; color:#065f46; border-color:#a7f3d0 }
-  .impactBadge.bad{ background:#fef2f2; color:#991b1b; border-color:#fecaca }
-
-  .coachRowLine{
-    display:flex;
-    gap:6px;
-    align-items:flex-start;
-    justify-content:flex-start;
-    width:100%;
-    margin-top:0;
-    flex-wrap:wrap;
-    min-width:0;
-  }
-
-  .needScore{
-    font-size:11px;
-    padding:4px 8px;
-    border-radius:999px;
-    border:1px solid var(--line);
-    background:#f1f5f9;
-    color:#334155;
-    font-weight:900;
-    white-space:normal;
-    overflow-wrap:anywhere;
-    word-break:break-word;
-    max-width:100%;
-  }
-  .needScore.hot{
-    background:var(--urgentBg);
-    border-color:rgba(239,68,68,.55);
-    color:var(--urgentInk);
-  }
-
-  .coachRecency{
-    font-size:11px;
-    padding:4px 8px;
-    border-radius:999px;
-    border:1px solid var(--line);
-    background:#f8fafc;
-    color:#334155;
-    text-align:left;
-    white-space:normal;
-    overflow-wrap:anywhere;
-    word-break:break-word;
-    font-weight:900;
-    max-width:100%;
-    flex:1 1 180px;
-    min-width:0;
-  }
-  .coachRecency.warn{
-    background:var(--warnBg);
-    border-color:rgba(245,158,11,.65);
-    color:var(--warnInk);
-  }
-  .coachRecency.bad{
-    background:var(--urgentBg);
-    border-color:rgba(239,68,68,.65);
-    color:var(--urgentInk);
-  }
-
-  .barWrap{ width:100%; background:#e5e7eb; border-radius:999px; height:14px; overflow:hidden; position:relative }
-  .barFill{ height:100%; width:0%; background:#16a34a; transition:width .25s ease }
-  .barLabel{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:12px; color:#0f172a; font-weight:900 }
-  .avgTick{ position:absolute; top:0; bottom:0; width:2px; background:#0f172a66 }
-
-  .dbWrap{ display:grid; gap:6px; min-width:0; }
-  .dbLegend{
-    display:flex;
-    gap:10px;
-    font-size:12px;
-    color:#475569;
-    flex-wrap:wrap;
-    font-weight:800;
-    min-width:0;
-  }
-  .dot{ display:inline-block; width:10px; height:10px; border-radius:50% }
-  .dot.apps{ background:var(--apps) }
-  .dot.opps{ background:var(--opps) }
-  .dbTrack{ position:relative; height:16px; background:#f1f5f9; border:1px solid var(--line); border-radius:999px; }
-  .dbLine{ position:absolute; top:7px; height:2px; background:#94a3b8; transform:translateY(-50%); }
-  .dbDot{ position:absolute; top:50%; width:14px; height:14px; border-radius:50%; transform:translate(-50%,-50%); border:2px solid #fff; box-shadow:0 1px 2px rgba(0,0,0,.12); }
-  .dbDot.apps{ background:var(--apps) }
-  .dbDot.opps{ background:var(--opps) }
-  .dbScale{ display:flex; justify-content:space-between; font-size:10px; color:#64748b; margin-top:2px; font-weight:800 }
-
-  .mini2{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:8px;
-    min-width:0;
-  }
-  .mini2 > div{
-    min-width:0;
-    overflow-wrap:anywhere;
-    word-break:break-word;
-  }
-
-  .xrow{
-    display:flex;
-    justify-content:space-between;
-    align-items:flex-start;
-    gap:8px;
-    font-size:12px;
-    color:#475569;
-    font-weight:800;
-    flex-wrap:wrap;
-    min-width:0;
-  }
-  .xbox{ display:inline-flex; align-items:center; gap:6px; cursor:pointer; user-select:none; font-weight:900; }
-  .xbox input{ width:16px; height:16px }
-
-  .warningBorder{ border:2px solid #fecaca !important; background:#fff7f7 !important }
-  .hide{ display:none !important; }
-
-  .chips{
-    display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;
-    max-height:260px;
-    overflow:auto;
-    padding-right:6px
-  }
-  .chips::-webkit-scrollbar{ width:10px }
-  .chips::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:10px; border:2px solid transparent; background-clip:padding-box }
-  .chips::-webkit-scrollbar-track{ background:transparent }
-
-  .typeChip{
-    display:inline-flex; align-items:center; gap:6px;
-    padding:6px 10px;
-    border:1px solid var(--line);
-    background:#fff;
-    border-radius:999px;
-    font-size:12px;
-    cursor:pointer;
-    user-select:none;
-    font-weight:900;
-    opacity:.45;
-    transition: transform .06s ease, box-shadow .12s ease, opacity .12s ease;
-    white-space:nowrap;
-  }
-  .typeChip:hover{ transform:translateY(-1px); box-shadow:0 8px 18px rgba(2,6,23,.08) }
-  .typeChip.on{ opacity:1; border-color:rgba(225,29,72,.35); box-shadow:0 0 0 3px rgba(225,29,72,.10) }
-
-  .hint{
-    font-size:12px; line-height:1.35;
-    padding:10px 12px; border-radius:12px; border:1px solid var(--line);
-    background:#f8fafc; color:#334155; font-weight:800;
-  }
-
-  .metricBar{
-    display:flex;
-    gap:8px;
-    align-items:center;
-    flex-wrap:wrap;
-    padding:6px 8px;
-    border:1px solid var(--line);
-    border-radius:12px;
-    background:#fbfdff;
-  }
-  .metricBar label{
-    font-size:12px;
-    font-weight:900;
-    color:#475569;
-  }
-  .metricBar select{
-    height:32px;
-    border-radius:10px;
-    border:1px solid var(--line);
-    background:#fff;
-    padding:0 8px;
-  }
-  .metricBar .miniLegend{
-    font-size:11px;
-    color:#64748b;
-    font-weight:800;
-  }
-
-  .modalOverlay{
-    position:fixed;
-    inset:0;
-    background:rgba(15,23,42,.55);
-    display:none;
-    align-items:center;
-    justify-content:center;
-    padding:16px;
-    z-index:9999;
-  }
-  .modalOverlay.show{ display:flex; }
-  .modalPanel{
-    width:min(980px, 96vw);
-    max-height:92vh;
-    background:#fff;
-    border:1px solid rgba(226,232,240,.95);
-    border-radius:16px;
-    box-shadow:0 22px 60px rgba(2,6,23,.35);
-    display:flex;
-    flex-direction:column;
-    overflow:hidden;
-  }
-  .modalHeadRow{
-    display:flex;
-    align-items:flex-start;
-    justify-content:space-between;
-    gap:10px;
-    padding:12px 14px;
-    border-bottom:1px solid var(--line);
-    background:linear-gradient(180deg, rgba(225,29,72,.08), rgba(225,29,72,0));
-  }
-  .modalTitle{
-    font-size:16px;
-    font-weight:900;
-    margin:0;
-    line-height:1.1;
-  }
-  .modalSub{
-    font-size:12px;
-    color:#475569;
-    font-weight:800;
-    margin-top:6px;
-    max-width: 62ch;
-  }
-  .modalActions{
-    display:flex;
-    gap:8px;
-    flex-wrap:wrap;
-    justify-content:flex-end;
-  }
-  .modalBody{
-    padding:12px 14px;
-    overflow:auto;
-    min-height:0;
-  }
-  .coachList{ display:grid; gap:10px; }
-  .coachItem{
-    border:1px solid var(--line);
-    border-radius:12px;
-    padding:10px;
-    background:#fbfdff;
-  }
-  .coachItemTop{
-    display:flex;
-    gap:8px;
-    align-items:center;
-    flex-wrap:wrap;
-  }
-  .coachItemDate{ font-weight:900; }
-  .coachItemType{
-    font-weight:900;
-    padding:4px 8px;
-    border-radius:999px;
-    border:1px solid var(--line);
-    background:#fff;
-    color:#334155;
-  }
-  .coachItemCoach{
-    margin-left:auto;
-    font-size:12px;
-    color:#64748b;
-    font-weight:800;
-  }
-  .coachItemDesc{
-    margin-top:8px;
-    font-size:13px;
-    color:#0f172a;
-    white-space:pre-wrap;
-    line-height:1.35;
-  }
-  .repTrendWrap{
-    border:1px solid var(--line);
-    border-radius:14px;
-    padding:10px;
-    margin-bottom:12px;
-    background:#f8fafc;
-    display:grid;
-    gap:10px;
-  }
-  .repTrendHead{
-    display:flex;
-    gap:8px;
-    align-items:flex-start;
-    justify-content:space-between;
-    flex-wrap:wrap;
-  }
-  .repTrendTitle{ font-size:13px; font-weight:900; }
-  .repTrendSub{ font-size:12px; color:#475569; font-weight:800; }
-  .repTrendCanvas{
-    width:100%;
-    min-height:220px;
-    border:1px solid var(--line);
-    border-radius:12px;
-    background:#fff;
-    padding:8px;
-  }
-  .repTrendSvg{ width:100%; height:220px; display:block; }
-  .repImpactBars{
-    display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(94px,1fr));
-    gap:6px;
-  }
-  .repImpactBar{
-    border:1px solid var(--line);
-    border-radius:10px;
-    padding:6px;
-    background:#fff;
-    display:grid;
-    gap:4px;
-    justify-items:center;
-  }
-  .repImpactBar .wk{ font-size:10px; color:#64748b; font-weight:900; }
-  .repImpactBar .arrow{ font-size:16px; line-height:1; font-weight:900; }
-  .repImpactBar .val{ font-size:12px; font-weight:900; }
-  .repImpactBar.good{ background:rgba(22,163,74,.1); border-color:rgba(22,163,74,.3); color:#166534; }
-  .repImpactBar.bad{ background:rgba(220,38,38,.1); border-color:rgba(220,38,38,.24); color:#991b1b; }
-  .repImpactBar.na{ background:rgba(148,163,184,.1); color:#64748b; }
-  .repTrendInsights{
-    display:grid;
-    gap:8px;
-    grid-template-columns:repeat(auto-fit, minmax(220px,1fr));
-  }
-  .repTrendInsight{
-    border:1px solid var(--line);
-    border-radius:12px;
-    padding:8px;
-    background:#fff;
-  }
-  .repTrendInsight.good{ background:rgba(22,163,74,.08); border-color:rgba(22,163,74,.28); }
-  .repTrendInsight.bad{ background:rgba(220,38,38,.08); border-color:rgba(220,38,38,.24); }
-  .repTrendInsight.info{ background:rgba(37,99,235,.08); border-color:rgba(37,99,235,.2); }
-  .repTrendInsight .k{ font-size:11px; color:#64748b; font-weight:900; text-transform:uppercase; }
-  .repTrendInsight .v{ margin-top:2px; font-size:16px; font-weight:900; }
-  .repTrendInsight .d{ margin-top:4px; font-size:12px; color:#334155; font-weight:800; line-height:1.35; }
-
-  @media (max-width: 1100px){
-    .content{ grid-template-columns: 1fr; }
-    aside.side{
-      max-height: 45vh;
-      border-radius:14px;
-    }
-    main.card{
-      max-height: calc(55vh - 12px);
-    }
-  }
-
-
-  /* ===== 2026 UI refresh: cleaner workspace, tabs, compact rep cards ===== */
-  :root{
-    --bg:#f3f6fb;
-    --card:#ffffff;
-    --ink:#111827;
-    --muted:#64748b;
-    --line:#e2e8f0;
-    --accent:#e11d48;
-    --accentDark:#be123c;
-    --softAccent:#fff1f2;
-    --shadow:0 18px 48px rgba(15,23,42,.10);
-    --shadowSoft:0 8px 24px rgba(15,23,42,.07);
-  }
-  body{
-    background:
-      radial-gradient(circle at top left, rgba(225,29,72,.10), transparent 28rem),
-      linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%);
-  }
-  header{
-    border-bottom:1px solid rgba(226,232,240,.95);
-    box-shadow:0 10px 28px rgba(15,23,42,.06);
-    background:rgba(255,255,255,.96);
-    backdrop-filter:blur(10px);
-  }
-  h1{ font-size:19px; letter-spacing:-.02em; }
-  .btn{
-    border-radius:12px;
-    padding:8px 12px;
-    transition:transform .08s ease, box-shadow .14s ease, border-color .14s ease, background .14s ease;
-  }
-  .btn:hover{ transform:translateY(-1px); box-shadow:var(--shadowSoft); }
-  .btn.primary{ background:linear-gradient(135deg, var(--accent), var(--accentDark)); }
-  select,input{
-    border:1px solid var(--line);
-    border-radius:10px;
-    background:#fff;
-    padding:6px 8px;
-  }
-  .content{
-    grid-template-columns:340px minmax(0,1fr);
-    gap:14px;
-    padding:14px;
-  }
-  .card{
-    border-color:rgba(226,232,240,.95);
-    border-radius:18px;
-    box-shadow:var(--shadowSoft);
-  }
-  .box{ border-radius:16px; overflow:hidden; }
-  .box .head{
-    padding:10px 12px;
-    background:linear-gradient(180deg, #ffffff, #f8fafc);
-    letter-spacing:-.01em;
-  }
-  aside.side{ gap:12px; padding-right:4px; }
-  main.card.workspace{
-    padding:0;
-    display:grid;
-    grid-template-rows:auto minmax(0,1fr);
-    overflow:hidden;
-  }
-  .viewTabs{
-    position:sticky;
-    top:0;
-    z-index:20;
-    display:flex;
-    gap:8px;
-    align-items:center;
-    flex-wrap:wrap;
-    padding:12px;
-    border-bottom:1px solid var(--line);
-    background:rgba(255,255,255,.96);
-    backdrop-filter:blur(10px);
-  }
-  .viewTab{
-    appearance:none;
-    border:1px solid var(--line);
-    background:#fff;
-    color:#334155;
-    font-weight:900;
-    border-radius:999px;
-    padding:9px 14px;
-    cursor:pointer;
-    transition:background .14s ease, color .14s ease, box-shadow .14s ease, transform .08s ease;
-  }
-  .viewTab:hover{ transform:translateY(-1px); box-shadow:var(--shadowSoft); }
-  .viewTab.active{
-    background:linear-gradient(135deg, var(--accent), var(--accentDark));
-    border-color:transparent;
-    color:#fff;
-    box-shadow:0 10px 22px rgba(225,29,72,.22);
-  }
-  .tabPanel{
-    min-height:0;
-    overflow:auto;
-    padding:14px;
-    scrollbar-gutter:stable;
-  }
-  .tabPanel:not(.active){ display:none; }
-  .tabPanel::-webkit-scrollbar{ width:10px }
-  .tabPanel::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:10px; border:2px solid transparent; background-clip:padding-box }
-  .impactToolbar{
-    background:rgba(255,255,255,.88);
-    border:1px solid var(--line);
-    border-radius:16px;
-    padding:10px;
-    margin-bottom:12px;
-    box-shadow:0 8px 18px rgba(15,23,42,.04);
-  }
-  .teamTabIntro{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:12px;
-    flex-wrap:wrap;
-    margin-bottom:12px;
-    padding:12px 14px;
-    border:1px solid var(--line);
-    border-radius:16px;
-    background:linear-gradient(135deg, #fff, #fff7f8);
-    box-shadow:0 8px 18px rgba(15,23,42,.04);
-  }
-  .teamTabIntro strong{ font-size:15px; }
-  .teamTabIntro span{ color:#64748b; font-size:12px; font-weight:800; }
-  .heatmapWrap{ margin-bottom:0; border-radius:18px; box-shadow:var(--shadowSoft); }
-  .heatmapTitle{ font-size:16px; letter-spacing:-.02em; }
-  .heatmapHint{ display:none; }
-  .impactGrid{
-    grid-template-columns:repeat(auto-fill, minmax(310px,1fr));
-    gap:14px;
-  }
-  @media (max-width:1700px){ .impactGrid{ grid-template-columns:repeat(auto-fill, minmax(300px,1fr)); } }
-  @media (max-width:1200px){ .impactGrid{ grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); } }
-  .repCard{
-    border-radius:18px;
-    padding:13px;
-    gap:10px;
-    box-shadow:0 10px 28px rgba(15,23,42,.07);
-    transition:transform .10s ease, box-shadow .16s ease, border-color .16s ease;
-  }
-  .repCard:hover{ box-shadow:0 18px 42px rgba(15,23,42,.13); }
-  .repName{ font-size:15px; }
-  .badgeStack{
-    display:flex;
-    align-items:flex-start;
-    justify-content:space-between;
-    gap:8px;
-    flex-wrap:wrap;
-  }
-  .impactBadge{ padding:6px 10px; box-shadow:inset 0 0 0 1px rgba(255,255,255,.45); }
-  .coachRowLine{ flex:1 1 170px; justify-content:flex-end; }
-  .needScore,.coachRecency{ border-radius:999px; }
-  .mini2{
-    grid-template-columns:1fr 1fr;
-    padding:9px 10px;
-    border:1px solid var(--line);
-    border-radius:14px;
-    background:#f8fafc;
-  }
-  .mini2 .muted{ font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
-  .dbWrap,.dbTrack,.dbLegend,.dbScale{ display:none !important; }
-  #toggleCompare{ display:none !important; }
-  .barWrap{ height:16px; background:#e2e8f0; }
-  .barFill{ background:linear-gradient(90deg, #fb7185, #e11d48); }
-  .totalRow,.totBox{ border-radius:14px; }
-  .legend{ display:none; }
-  @media (max-width:1100px){
-    .content{ grid-template-columns:1fr; overflow:auto; }
-    aside.side{ max-height:none; }
-    main.card{ max-height:none; }
-  }
-
-
-  /* ===== Request patch: wider scrollable boxes, Filters above summary, coach selector first ===== */
-  header .topControlRow{
-    flex:1 1 auto;
-    justify-content:flex-start;
-    align-items:center;
-  }
-  .coachSelectPrimary{
-    order:-999;
-    display:flex;
-    align-items:center;
-    gap:6px;
-    font-weight:900;
-    color:#334155;
-    padding:6px 8px;
-    border:1px solid var(--line);
-    border-radius:14px;
-    background:#fff;
-    box-shadow:0 6px 16px rgba(15,23,42,.05);
-  }
-  .coachSelectPrimary select{ min-width:240px !important; }
-
-  .content{
-    grid-template-columns:400px minmax(0,1fr);
-  }
-  aside.side{
-    overflow:auto;
-    min-height:0;
-  }
-  aside.side .card.box{
-    display:flex;
-    flex-direction:column;
-    min-height:170px;
-    max-height:310px;
-    overflow:hidden;
-  }
-  aside.side .card.box .head{
-    flex:0 0 auto;
-  }
-  aside.side .card.box .body{
-    flex:1 1 auto;
-    min-height:0;
-    overflow:auto;
-    scrollbar-gutter:stable;
-  }
-  aside.side .card.box .body::-webkit-scrollbar,
-  .repCard::-webkit-scrollbar{ width:10px; height:10px; }
-  aside.side .card.box .body::-webkit-scrollbar-thumb,
-  .repCard::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:10px; border:2px solid transparent; background-clip:padding-box; }
-  aside.side .card.box .body::-webkit-scrollbar-track,
-  .repCard::-webkit-scrollbar-track{ background:transparent; }
-
-  aside.side .filterBox{
-    min-height:360px;
-    max-height:560px;
-  }
-  aside.side .filterBox .body{
-    min-height:270px;
-  }
-  .filterHead{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:8px;
-  }
-  .settingsBtn{
-    padding:6px 9px;
-    font-size:12px;
-    white-space:nowrap;
-  }
-  .filterDivider{
-    height:1px;
-    background:var(--line);
-    margin:12px 0 10px;
-  }
-  .filterSectionTitle{
-    font-size:12px;
-    font-weight:900;
-    color:#334155;
-    text-transform:uppercase;
-    letter-spacing:.04em;
-  }
-  .filterHelp{
-    margin-top:4px;
-    font-size:12px;
-    font-weight:800;
-    line-height:1.35;
-  }
-  .filterTypeChips{
-    max-height:330px;
-    padding:4px 4px 8px 0;
-  }
-  .coachingSettingsPanel{
-    width:min(720px, 94vw);
-  }
-  aside.side .teamSummaryBox{ min-height:205px; max-height:350px; }
-  aside.side .teamTotalsBox{ min-height:170px; max-height:270px; }
-
-  .tabPanel{ padding:18px; }
-  .impactGrid{
-    grid-template-columns:repeat(auto-fill, minmax(340px,1fr));
-    align-items:start;
-  }
-  .repCard{
-    min-height:255px;
-    max-height:430px;
-    overflow:auto;
-  }
-  .coachRowLine{
-    align-items:center;
-    gap:8px;
-  }
-  .plainTrendLine{
-    flex:1 1 120px;
-    min-width:110px;
-    padding:4px 0;
-    font-size:11px;
-    line-height:1.25;
-    color:#334155;
-    font-weight:900;
-    white-space:normal;
-    overflow-wrap:anywhere;
-    word-break:break-word;
-    background:transparent;
-    border:0;
-    border-radius:0;
-  }
-
-  @media (max-width:1100px){
-    .content{ grid-template-columns:1fr; }
-    aside.side .card.box,
-    aside.side .filterBox,
-    aside.side .teamSummaryBox,
-    aside.side .teamTotalsBox{ max-height:420px; }
-    .coachSelectPrimary{ width:100%; }
-    .coachSelectPrimary select{ flex:1 1 auto; min-width:180px !important; }
-  }
-
+@media(max-width:1250px){
+  .summaryStrip{grid-template-columns:repeat(3,1fr)}
+  .commandBar{align-items:flex-start}.commandControls{flex-basis:100%}.commandActions{margin-left:0}
+  #autoSetSel{max-width:240px}
+}
+@media(max-width:820px){
+  .app{height:auto;min-height:100vh;overflow:visible}.content{overflow:visible;padding:8px}main.workspace{height:auto;min-height:calc(100vh - var(--headerH));overflow:visible}.tabPanel{overflow:visible}
+  header#topbar{position:relative;padding:9px}.commandBar{flex-wrap:wrap}.brandBlock{width:100%}.commandControls{width:100%}.controlGroup{flex:1 1 220px}.coachSelectPrimary select{max-width:none}.commandActions{width:100%;justify-content:flex-end}.statusBar{padding-left:0}
+  .summaryStrip{grid-template-columns:repeat(2,1fr)}.viewTabs{position:sticky;top:0;z-index:10}.impactGrid{grid-template-columns:1fr}.heatmapMeta{grid-template-columns:repeat(2,1fr)}
+  #contextHint{display:none}.sortWrap{margin-left:0;width:100%}.sortWrap select{flex:1;max-width:none}.repSearch{flex:1}.repSearch input{width:100%}
+}
+@media(max-width:500px){.summaryStrip{grid-template-columns:1fr 1fr}.summaryCard{padding:11px}.summaryValue{font-size:20px}.heatmapMeta{grid-template-columns:1fr}.repInfoGrid{grid-template-columns:1fr 1fr}.sourceToggles{width:100%}}
 </style>
 </head>
 
 <body>
 <div class="app">
 <header id="topbar">
-  <div class="row" style="justify-content:space-between">
-    <h1>Impact Tool (Local Cache)</h1>
+  <div class="commandBar">
+    <div class="brandBlock">
+      <div class="brandMark">KI</div>
+      <div class="brandText">
+        <h1>KPI Impact</h1>
+        <span>Performance + coaching intelligence</span>
+      </div>
+    </div>
 
-    <div class="row topControlRow">
-
-      <label class="coachSelectPrimary">Coach (Team/Sheet)
-        <select id="coachSel" style="min-width:220px"></select>
-      </label>
-
-      <!-- MOVED: Metric selection to top bar (left of Reload/Include All) -->
-      <div class="metricBar" title="Rate = A ÷ B (Appointments ÷ Opportunities). Team rate is weighted by opportunities.">
-        <label>Metric</label>
-        <select id="metricMode" style="min-width:170px">
-          <option value="auto" selected>Auto set</option>
-          <option value="manual">Manual (A ÷ B)</option>
-        </select>
-
-        <div id="autoBlock" class="row" style="gap:6px">
-          <select id="autoSetSel" style="min-width:340px"></select>
-        </div>
-
-        <div id="manualBlock" class="row hide" style="gap:6px">
-          <span class="miniLegend">A</span>
-          <select id="kpiA" style="min-width:220px"></select>
-          <span class="miniLegend">÷ B</span>
-          <select id="kpiB" style="min-width:220px"></select>
-        </div>
-
-        <span class="miniLegend">Rate = A ÷ B</span>
+    <div class="commandControls">
+      <div class="controlGroup">
+        <span>Coach</span>
+        <label class="coachSelectPrimary">
+          <select id="coachSel"></select>
+        </label>
       </div>
 
-      <button class="btn" id="reloadCache">Reload cache</button>
-      <button class="btn" id="includeAllTop">Include all</button>
-      <button class="btn" id="exportPdf">Export to PDF</button>
+      <div class="controlGroup" title="Rate = A ÷ B. Team rate is weighted by opportunities.">
+        <span>KPI</span>
+        <div class="metricBar">
+          <select id="metricMode" aria-label="Metric mode">
+            <option value="auto" selected>Auto</option>
+            <option value="manual">Manual</option>
+          </select>
+          <div id="autoBlock" class="row"><select id="autoSetSel" aria-label="KPI"></select></div>
+          <div id="manualBlock" class="row hide">
+            <span class="miniLegend">A</span><select id="kpiA"></select>
+            <span class="miniLegend">÷ B</span><select id="kpiB"></select>
+          </div>
+        </div>
+      </div>
 
-      <label class="pill" title="Include Retail dock">
-        <input type="checkbox" id="incRetail" checked />
-        Retail
-      </label>
-      <label class="pill" title="Include Referral dock">
-        <input type="checkbox" id="incReferral" checked />
-        Referral
-      </label>
-      <label>Timeframe
-        <select id="timeSel">
-          <option value="3">Last 3 weeks</option>
-          <option value="5" selected>Last 5 weeks</option>
-          <option value="10">Last 10 weeks</option>
+      <div class="controlGroup">
+        <span>Window</span>
+        <select id="timeSel" aria-label="Timeframe">
+          <option value="3">3 weeks</option>
+          <option value="5" selected>5 weeks</option>
+          <option value="10">10 weeks</option>
           <option value="custom">Custom…</option>
         </select>
-      </label>
-      <input id="customWeeks" type="number" min="1" step="1" placeholder="Weeks" style="width:90px; display:none" />
-      <button class="btn primary" id="refreshBtn">Refresh</button>
+        <input id="customWeeks" type="number" min="1" step="1" placeholder="Weeks" style="width:74px;display:none" aria-label="Custom weeks" />
+      </div>
+
+      <div class="sourceToggles">
+        <label class="pill" title="Include Retail data"><input type="checkbox" id="incRetail" checked /> Retail</label>
+        <label class="pill" title="Include Referral data"><input type="checkbox" id="incReferral" checked /> Referral</label>
+      </div>
+    </div>
+
+    <div class="commandActions">
+      <button class="btn iconBtn" id="filterDrawerBtn" type="button">☰ Filters</button>
+      <button class="btn" id="reloadCache" type="button">Reload Data</button>
+      <button class="btn primary" id="exportPdf" type="button">Export Report</button>
+      <button class="btn hide" id="refreshBtn" type="button" aria-hidden="true" tabindex="-1">Update View</button>
     </div>
   </div>
-
-  <div class="row" style="margin-top:8px; justify-content:space-between">
-    <span class="chip" id="dockBadge">dock keys: —</span>
-    <span class="chip" id="coachDockBadge">coachings: not loaded</span>
+  <div class="statusBar">
+    <span class="chip" id="dockBadge">Data: —</span>
+    <span class="chip" id="coachDockBadge">Coaching: not loaded</span>
   </div>
 </header>
 
 <div class="content" id="content">
-  <!-- LEFT -->
-  <aside class="side">
-
-    <!-- Filters above Team Summary -->
-    <div class="card box filterBox">
-      <div class="head filterHead">
-        <span>Filters</span>
-        <button class="btn dark settingsBtn" id="coachingSettingsBtn" type="button" title="Open documented coaching cache settings">⚙ Coaching Settings</button>
+  <main class="workspace">
+    <div class="summaryStrip" aria-label="Team summary">
+      <div class="summaryCard">
+        <div class="summaryLabel">Team Rate</div>
+        <div id="origRate" class="summaryValue">—</div>
+        <div class="summarySub"><span id="totApps">—</span> appointments · <span id="totOpps">—</span> opportunities</div>
+        <span class="hide" id="totAppsDelta">—</span><span class="hide" id="totOppsDelta">—</span>
       </div>
-      <div class="body">
-        <div class="grid2">
-          <button class="btn" id="selectAll">Select all</button>
-          <button class="btn" id="clearAll">Clear all</button>
-        </div>
-        <div class="muted" style="margin-top:6px; font-weight:900" id="repCount">—</div>
-
-        <div class="filterDivider"></div>
-        <div class="filterSectionTitle">Documented Coaching Categories</div>
-        <div class="muted filterHelp">Choose which coaching categories count toward the cards and team breakdown.</div>
-
-        <div class="grid2" style="margin-top:8px">
-          <button class="btn" id="typesAllBtn">Types: all</button>
-          <button class="btn" id="typesNoneBtn">Types: none</button>
-        </div>
-
-        <div class="chips filterTypeChips" id="typeChips">
-          <span class="muted">Load coachings to enable type filters.</span>
-        </div>
+      <div class="summaryCard">
+        <div class="summaryLabel">Included Team Rate</div>
+        <div id="currRate" class="summaryValue">—</div>
+        <div class="summarySub">After rep exclusions</div>
       </div>
-    </div>
-
-    <!-- Team Summary -->
-    <div class="card box teamSummaryBox">
-      <div class="head">Team Summary</div>
-      <div class="body">
-        <div class="totalRow" id="teamTotals">
-          <div>
-            <div class="muted">Original Team Rate</div>
-            <div id="origRate" class="totalRate">—</div>
-          </div>
-          <div>
-            <div class="muted">Current (after exclusions)</div>
-            <div id="currRate" class="totalRate">—</div>
-          </div>
-          <div>
-            <div class="muted">Change (Curr − Orig)</div>
-            <div id="rateDiff" class="totalRate diff">—</div>
-          </div>
-        </div>
-        <div class="legend">
-          <span>Badge color:</span>
-          <span class="impactBadge good">▲ Team improves without rep</span>
-          <span class="impactBadge bad">▼ Team worsens without rep</span>
-          <span class="chip">⭐ biggest improver (removed)</span>
-          <span class="chip">⚠️ biggest worsener (removed)</span>
-        </div>
+      <div class="summaryCard">
+        <div class="summaryLabel">Exclusion Change</div>
+        <div id="rateDiff" class="summaryValue diff">—</div>
+        <div class="summarySub">Included rate minus full team</div>
+      </div>
+      <div class="summaryCard">
+        <div class="summaryLabel">Goal</div>
+        <div id="summaryGoal" class="summaryValue">—</div>
+        <div id="summaryGoalSub" class="summarySub">No mapped goal</div>
+      </div>
+      <div class="summaryCard">
+        <div class="summaryLabel">Coaching Coverage</div>
+        <div id="summaryCoverage" class="summaryValue">—</div>
+        <div id="summaryCoverageSub" class="summarySub">Below-goal weeks coached</div>
+      </div>
+      <div class="summaryCard">
+        <div class="summaryLabel">Attention Reps</div>
+        <div id="summaryAttention" class="summaryValue">—</div>
+        <div id="summaryAttentionSub" class="summarySub">Current coaching opportunities</div>
       </div>
     </div>
 
-    <div class="card box teamTotalsBox">
-      <div class="head">Team Totals (window)</div>
-      <div class="body">
-        <div class="totalsGrid">
-          <div class="totBox">
-            <div class="totSub">Appointments</div>
-            <div class="totBig" id="totApps">—</div>
-            <div class="totSub" id="totAppsDelta">—</div>
-          </div>
-          <div class="totBox">
-            <div class="totSub">Opportunities</div>
-            <div class="totBig" id="totOpps">—</div>
-            <div class="totSub" id="totOppsDelta">—</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-  </aside>
-
-  <!-- RIGHT -->
-  <main class="card workspace">
     <div class="viewTabs" role="tablist" aria-label="Impact views">
       <button class="viewTab active" id="mainTabImpacts" type="button" role="tab" aria-selected="true" aria-controls="impactTabPanel">Impact Cards</button>
       <button class="viewTab" id="mainTabTeam" type="button" role="tab" aria-selected="false" aria-controls="teamTabPanel">Team Breakdown · Last 5 Weeks</button>
-      <span class="muted" id="contextHint" style="margin-left:auto; font-weight:900">—</span>
+      <span class="muted" id="contextHint">—</span>
     </div>
 
     <section class="tabPanel active" id="impactTabPanel" role="tabpanel" aria-labelledby="mainTabImpacts">
-      <div class="gridHead impactToolbar">
-        <div class="gridHeadTitleRow">
-          <strong>Member Impact Cards</strong>
-          <label class="attendance3WeeksToggle" title="Only show reps with at least one stat row in the 21 days ending on the latest stats date in the loaded data.">
-            <input type="checkbox" id="attendance3WeeksOnly">
-            <span>3 weeks attendance</span>
-          </label>
+      <div class="impactToolbar">
+        <div class="gridHeadTitleRow"><strong>Team Members</strong><span class="chip" id="repCount">—</span></div>
+        <div class="quickFilters" id="quickFilters" aria-label="Quick filters">
+          <button class="quickFilter active" type="button" data-filter="all">All</button>
+          <button class="quickFilter" type="button" data-filter="needs">Needs Coaching</button>
+          <button class="quickFilter" type="button" data-filter="notCoached">Not Coached</button>
+          <button class="quickFilter" type="button" data-filter="overdue">Overdue</button>
+          <button class="quickFilter" type="button" data-filter="belowGoal">Below Goal</button>
+          <button class="quickFilter" type="button" data-filter="top">Top Performers</button>
+          <button class="quickFilter" type="button" data-filter="excluded">Excluded</button>
         </div>
-
-        <div class="row" style="margin-left:auto">
-          <label>Sort
-            <select id="sortSel">
-              <option value="abs">Biggest impact → least (|impact|)</option>
-              <option value="pos">Most positive → most negative</option>
-              <option value="neg">Most negative → most positive</option>
-              <option value="negNeedCoach">Most negative impactor + fewest coaching (weighted)</option>
-              <option value="coachDesc">Most recent coaching ↓</option>
-              <option value="coachAsc">Most recent coaching ↑</option>
-              <option value="rateDesc">Highest % → lowest</option>
-              <option value="rateAsc">Lowest % → highest</option>
-            </select>
-          </label>
-          <button class="btn" id="toggleCompare" type="button" aria-hidden="true" tabindex="-1">Hide compare</button>
-        </div>
+        <label class="repSearch"><span>⌕</span><input id="repSearch" type="search" placeholder="Search rep" autocomplete="off" /></label>
+        <label class="sortWrap">Sort
+          <select id="sortSel">
+            <option value="abs">Biggest impact → least</option>
+            <option value="pos">Largest team drag → lift</option>
+            <option value="neg">Largest team lift → drag</option>
+            <option value="negNeedCoach">Coaching priority</option>
+            <option value="coachDesc">Most recent coaching ↓</option>
+            <option value="coachAsc">Most recent coaching ↑</option>
+            <option value="rateDesc">Highest KPI → lowest</option>
+            <option value="rateAsc">Lowest KPI → highest</option>
+          </select>
+        </label>
+        <button class="btn hide" id="toggleCompare" type="button" aria-hidden="true" tabindex="-1">Compare removed</button>
       </div>
 
+      <div class="attentionSection" id="attentionSection">
+        <div class="attentionHead"><strong>Needs Attention</strong><span>Highest team drag with limited/recent coaching context</span></div>
+        <div class="attentionRow" id="attentionRow"></div>
+      </div>
       <div class="impactGrid" id="impactGrid"></div>
     </section>
 
     <section class="tabPanel" id="teamTabPanel" role="tabpanel" aria-labelledby="mainTabTeam">
       <div class="teamTabIntro">
-        <div>
-          <strong>Team Breakdown</strong>
-          <span>Weekly rep-by-rep table, fixed to the last 5 available weeks for the selected team.</span>
-        </div>
-        <span>Use this tab when you want the big team table; use Impact Cards for the cleaner day-to-day view.</span>
+        <div><strong>Team Breakdown</strong><span>Fixed five-week coaching coverage view with rep-level drill-down.</span></div>
+        <span>Click a week, rep, or cell for details</span>
       </div>
-
       <div class="heatmapWrap" id="heatmapWrap">
         <div class="heatmapHead">
-          <div>
-            <div class="heatmapTitle">Weekly Team Breakdown</div>
-            <div class="heatmapHint">
-              Weekly goal view for the selected KPI window. Cells are red below goal, yellow up to 5 points above goal, and green above that. Blue stripes mean the rep was coached that week, and a big red X marks a below-goal week with no coaching.
-            </div>
-          </div>
+          <div><div class="heatmapTitle">Weekly Team Breakdown</div><div class="heatmapHint">KPI is the dominant value. Red is below goal, yellow is goal to +5 pts, green is above +5 pts. Blue striping means coached that week; a red X means below goal with no coaching.</div></div>
           <div class="heatmapStats" id="heatmapStats"></div>
         </div>
-
         <div class="heatmapLegend">
-          <span>Legend:</span>
           <span><span class="legendSwatch weak"></span> Below goal</span>
           <span><span class="legendSwatch info"></span> Goal to +5 pts</span>
-          <span><span class="legendSwatch strong"></span> More than +5 pts</span>
-          <span><span class="legendSwatch coached"></span> Coached this week</span>
-          <span>❌ below goal and not coached</span>
+          <span><span class="legendSwatch strong"></span> Above +5 pts</span>
+          <span><span class="legendSwatch coached"></span> Coached</span>
+          <span>❌ missed coaching</span>
           <span><span class="legendSwatch na"></span> No KPI</span>
         </div>
-
         <div class="heatmapMeta" id="heatmapMeta"></div>
         <div class="heatmapScroller" id="heatmapScroller"></div>
       </div>
@@ -1384,6 +374,31 @@
   </main>
 </div>
 </div>
+
+<div id="drawerBackdrop" class="drawerBackdrop" aria-hidden="true"></div>
+<aside class="side filterDrawer" id="filterDrawer" aria-hidden="true">
+  <div class="drawerHead">
+    <div><div class="drawerTitle">Filters</div><div class="drawerSub">Refine the coaching view without shrinking the workspace.</div></div>
+    <button class="btn dark" id="filterDrawerClose" type="button">Close ✕</button>
+  </div>
+  <div class="drawerBody">
+    <div class="card box filterBox">
+      <div class="head filterHead"><span>Representatives</span><button class="btn settingsBtn" id="coachingSettingsBtn" type="button">⚙ Data Settings</button></div>
+      <div class="body">
+        <div class="grid2"><button class="btn" id="selectAll">Include all</button><button class="btn" id="clearAll">Exclude all</button></div>
+        <label class="drawerOption" style="margin-top:10px"><input type="checkbox" id="attendance3WeeksOnly"><span>Recent attendance only<small>Only show reps with stats in the last 21 days of the active data set.</small></span></label>
+      </div>
+    </div>
+    <div class="card box">
+      <div class="head">Documented Coaching Categories</div>
+      <div class="body">
+        <div class="muted filterHelp">Choose which coaching categories count toward rep cards and the five-week team breakdown.</div>
+        <div class="grid2" style="margin-top:9px"><button class="btn" id="typesAllBtn">Select all</button><button class="btn" id="typesNoneBtn">Clear all</button></div>
+        <div class="chips filterTypeChips" id="typeChips"><span class="muted">Load coachings to enable type filters.</span></div>
+      </div>
+    </div>
+  </div>
+</aside>
 
 <!-- ===== Documented Coaching Settings Modal ===== -->
 <div id="coachingSettingsOverlay" class="modalOverlay" aria-hidden="true">
@@ -1836,6 +851,10 @@ let metricMode = 'auto';
 let excluded = new Set();
 let showCompare = false;
 let attendance3WeeksOnly = false;
+let activeQuickFilter = 'all';
+let repSearchTerm = '';
+let workspaceRestored = false;
+const WORKSPACE_KEY = 'impactTool.workspace.v2';
 
 let includeRetail = true;
 let includeReferral = true;
@@ -1850,6 +869,73 @@ let coachingTypes = new Set();
 let enabledTypes = new Set();
 let coachingByRepKey = new Map();
 let lastCoachingLoadedKey = null;
+
+function readWorkspace(){
+  try{ return JSON.parse(localStorage.getItem(WORKSPACE_KEY) || '{}') || {}; }catch(e){ return {}; }
+}
+function saveWorkspace(){
+  try{
+    const state = {
+      selectedSheet,
+      metricMode,
+      selectedSet,
+      timeframe: document.getElementById('timeSel')?.value || '5',
+      customWeeks: document.getElementById('customWeeks')?.value || '',
+      includeRetail: !!document.getElementById('incRetail')?.checked,
+      includeReferral: !!document.getElementById('incReferral')?.checked,
+      attendance3WeeksOnly,
+      sort: document.getElementById('sortSel')?.value || 'abs',
+      enabledTypes: Array.from(enabledTypes),
+      excluded: Array.from(excluded),
+      quickFilter: activeQuickFilter,
+      repSearchTerm
+    };
+    localStorage.setItem(WORKSPACE_KEY, JSON.stringify(state));
+  }catch(e){}
+}
+function restoreStaticWorkspace(){
+  const state = readWorkspace();
+  const timeSel = document.getElementById('timeSel');
+  const customWeeks = document.getElementById('customWeeks');
+  const retail = document.getElementById('incRetail');
+  const referral = document.getElementById('incReferral');
+  const sort = document.getElementById('sortSel');
+  const attendance = document.getElementById('attendance3WeeksOnly');
+  if(timeSel && ['3','5','10','custom'].includes(state.timeframe)) timeSel.value = state.timeframe;
+  if(customWeeks && state.customWeeks) customWeeks.value = state.customWeeks;
+  if(customWeeks && timeSel) customWeeks.style.display = timeSel.value === 'custom' ? 'inline-block' : 'none';
+  if(retail && typeof state.includeRetail === 'boolean') retail.checked = state.includeRetail;
+  if(referral && typeof state.includeReferral === 'boolean') referral.checked = state.includeReferral;
+  if(sort && [...sort.options].some(o=>o.value===state.sort)) sort.value = state.sort;
+  attendance3WeeksOnly = !!state.attendance3WeeksOnly;
+  if(attendance) attendance.checked = attendance3WeeksOnly;
+  activeQuickFilter = state.quickFilter || 'all';
+  repSearchTerm = String(state.repSearchTerm || '');
+  const search = document.getElementById('repSearch');
+  if(search) search.value = repSearchTerm;
+  document.querySelectorAll('.quickFilter').forEach(btn=>btn.classList.toggle('active', btn.dataset.filter === activeQuickFilter));
+}
+function restoreDataWorkspace(){
+  const state = readWorkspace();
+  if(state.selectedSheet && sheets.includes(state.selectedSheet)) selectedSheet = state.selectedSheet;
+  const coachSel = document.getElementById('coachSel');
+  if(coachSel && selectedSheet && [...coachSel.options].some(o=>o.value===selectedSheet)) coachSel.value = selectedSheet;
+  if(state.metricMode === 'manual' || state.metricMode === 'auto') metricMode = state.metricMode;
+  if(state.selectedSet?.A && state.selectedSet?.B && headers.includes(state.selectedSet.A) && headers.includes(state.selectedSet.B)) selectedSet = {A:state.selectedSet.A,B:state.selectedSet.B};
+  const metricModeSel = document.getElementById('metricMode');
+  if(metricModeSel) metricModeSel.value = metricMode;
+  if(Array.isArray(state.excluded) && state.selectedSheet === selectedSheet){
+    const valid = new Set(getRepNamesInScope());
+    excluded = new Set(state.excluded.filter(n=>valid.has(n)));
+  }
+  workspaceRestored = true;
+}
+function restoreCoachingWorkspace(){
+  const state = readWorkspace();
+  if(Array.isArray(state.enabledTypes) && coachingTypes.size){
+    enabledTypes = new Set(state.enabledTypes.filter(t=>coachingTypes.has(t)));
+  }
+}
 
 function personKey(name){
   let s = String(name||"").trim().toLowerCase();
@@ -1916,7 +1002,10 @@ const timeSel = document.getElementById('timeSel');
 const customWeeks = document.getElementById('customWeeks');
 timeSel.onchange = ()=>{
   customWeeks.style.display = (timeSel.value==='custom') ? 'inline-block' : 'none';
+  saveWorkspace();
+  renderAll();
 };
+customWeeks.addEventListener('change',()=>{saveWorkspace();renderAll();});
 function currentWeeks(){
   if (timeSel.value==='custom'){
     const n = parseInt(customWeeks.value,10);
@@ -1960,13 +1049,13 @@ function needCoachingScore(repName, impact){
   return { score, cnt };
 }
 
-function buildRepRateTrendMap(repNames, bottomHalfSetGlobal){
+function buildRepRateTrendMap(repNames, bottomHalfSetGlobal, prebuiltModel=null){
   const trendMap = new Map();
   const set = effectiveSet();
   const names = Array.from(new Set((repNames || []).filter(Boolean)));
   if(!set || !names.length) return trendMap;
 
-  const model = buildWeeklyHeatmapModel(set, names, bottomHalfSetGlobal || new Set(), currentWeeks());
+  const model = prebuiltModel || buildWeeklyHeatmapModel(set, names, bottomHalfSetGlobal || new Set(), currentWeeks());
   (model?.repSummaries || []).forEach(summary => {
     const points = (summary.entries || [])
       .map((entry, idx)=> ({ idx, rate: Number.isFinite(entry?.repRate) ? entry.repRate : NaN }))
@@ -2297,6 +1386,7 @@ function buildCoachSel(){
   sel.onchange = ()=>{
     selectedSheet = sel.value || null;
     excluded.clear();
+    saveWorkspace();
     renderAll();
   };
 }
@@ -2488,22 +1578,21 @@ function computeTeamMetrics(set, excludeNames=new Set()){
 function computeImpacts(set, excludedNow){
   const base = computeTeamMetrics(set, excludedNow);
   const baseRate = base.rate;
-
-  const rows = [];
-  base.byRep.forEach(r=>{
-    const excl = new Set([...excludedNow, r.rep]);
-    const w = computeTeamMetrics(set, excl);
-    const impact = (w.rate - baseRate);
-    rows.push({
-      rep: r.rep,
-      apps: r.apps, opps: r.opps,
-      repRate: r.repRate,
-      weightShare: (base.opps>0 ? (r.opps/base.opps) : 0),
+  const rows = base.byRep.map(r=>{
+    const appsWithout = base.apps - (Number.isFinite(r.apps) ? r.apps : 0);
+    const oppsWithout = base.opps - (Number.isFinite(r.opps) ? r.opps : 0);
+    const rateWithout = oppsWithout > 0 ? (appsWithout / oppsWithout) : NaN;
+    const impact = Number.isFinite(rateWithout) && Number.isFinite(baseRate) ? (rateWithout - baseRate) : NaN;
+    return {
+      rep:r.rep,
+      apps:r.apps,
+      opps:r.opps,
+      repRate:r.repRate,
+      weightShare:(base.opps>0 ? (r.opps/base.opps) : 0),
       impact,
-      rateWithout: w.rate
-    });
+      rateWithout
+    };
   });
-
   rows.sort((a,b)=> Math.abs(b.impact) - Math.abs(a.impact));
   return {base, rows};
 }
@@ -2512,11 +1601,12 @@ function computeImpacts(set, excludedNow){
    Sort + view controls
    ========================= */
 const sortSel = document.getElementById('sortSel');
-sortSel.onchange = ()=> renderAll();
+sortSel.onchange = ()=>{ saveWorkspace(); renderAll(); };
 
 const attendance3WeeksOnlyCb = document.getElementById('attendance3WeeksOnly');
 attendance3WeeksOnlyCb.onchange = ()=>{
   attendance3WeeksOnly = attendance3WeeksOnlyCb.checked;
+  saveWorkspace();
   renderAll();
 };
 
@@ -2558,6 +1648,29 @@ function paintTeamSummary(orig, curr){
   d.textContent = (delta>=0?'+':'') + fmtPct2(delta);
   d.classList.toggle('good', delta>0);
   d.classList.toggle('bad', delta<0);
+}
+function paintExecutiveSummary(original, current, heatmapModel){
+  const goal = metricGoalConfig(effectiveSet());
+  const goalEl = document.getElementById('summaryGoal');
+  const goalSub = document.getElementById('summaryGoalSub');
+  if(goalEl) goalEl.textContent = goal ? fmtPct1(goal.goal) : '—';
+  if(goalSub) goalSub.textContent = goal ? goal.label : 'No mapped goal for this KPI';
+
+  const coverageEl = document.getElementById('summaryCoverage');
+  const coverageSub = document.getElementById('summaryCoverageSub');
+  if(coverageEl){
+    coverageEl.textContent = Number.isFinite(heatmapModel?.overallCoverage) ? fmtPct1(heatmapModel.overallCoverage) : 'N/A';
+    coverageEl.classList.toggle('good', Number.isFinite(heatmapModel?.overallCoverage) && heatmapModel.overallCoverage >= .75);
+    coverageEl.classList.toggle('bad', Number.isFinite(heatmapModel?.overallCoverage) && heatmapModel.overallCoverage < .4);
+    coverageEl.classList.toggle('warn', Number.isFinite(heatmapModel?.overallCoverage) && heatmapModel.overallCoverage >= .4 && heatmapModel.overallCoverage < .75);
+  }
+  if(coverageSub) coverageSub.textContent = heatmapModel ? `${heatmapModel.totalCovered} of ${heatmapModel.totalNeeded || 0} below-goal weeks coached` : 'Below-goal weeks coached';
+
+  const attention = heatmapModel?.repSummaries?.filter(r=>r.hasCoachingOpportunity).length || 0;
+  const attentionEl = document.getElementById('summaryAttention');
+  if(attentionEl){ attentionEl.textContent = String(attention); attentionEl.classList.toggle('bad', attention>0); }
+  const attentionSub = document.getElementById('summaryAttentionSub');
+  if(attentionSub) attentionSub.textContent = attention ? 'More than one missed coaching opportunity' : 'No repeat missed-coaching concerns';
 }
 function updateRepCount(total, excl, visibleTotal=total){
   const suffix = attendance3WeeksOnly ? ` • ${visibleTotal} with 3-week attendance` : '';
@@ -2708,7 +1821,13 @@ function detailToneClass(kind, value){
     if(band === 'high') return 'info';
     return 'warn';
   }
-  if(kind === 'impact' || kind === 'delta'){
+  if(kind === 'impact'){
+    if(!Number.isFinite(value)) return '';
+    if(value > 0) return 'bad';
+    if(value < 0) return 'good';
+    return 'warn';
+  }
+  if(kind === 'delta'){
     if(!Number.isFinite(value)) return '';
     if(value > 0) return 'good';
     if(value < 0) return 'bad';
@@ -3061,10 +2180,9 @@ function paintHeatmap(model){
       const perfClass = state === 'weak' ? 'low' : (state === 'strong' ? 'high' : '');
       const coachingLabel = entry.coached ? `${entry.coachedThisWeek.length} coaching${entry.coachedThisWeek.length===1?'':'s'}` : entry.isPriorityMiss ? 'Not coached' : 'No coaching';
       btn.innerHTML = `
-        <div>${status.label}</div>
+        <div class="heatPrimary">${Number.isFinite(entry.repRate) ? fmtPct1(entry.repRate) : '—'}</div>
         <div class="statusLine">${status.icon ? `<span class="statusIcon ${status.iconTone}${entry.isPriorityMiss ? ' big' : ''}">${status.icon}</span>` : `<span class="statusIcon muted">•</span>`}<span>${coachingLabel}</span></div>
-        <div class="tiny performance ${perfClass}">${entry.goalConfig ? `${entry.performanceLabel} • Goal ${fmtPct1(entry.goalConfig.goal)}` : fmtPercentile(entry.percentile)}</div>
-        <div class="tiny">${Number.isFinite(entry.repRate) ? fmtPct1(entry.repRate) : 'No KPI'}</div>
+        <div class="heatSecondary ${perfClass}">${entry.goalConfig ? entry.performanceLabel : fmtPercentile(entry.percentile)}</div>
       `;
       btn.addEventListener('click', ()=> openHeatmapCellDetail(entry.rep, entry.weekKey));
       td.appendChild(btn);
@@ -3146,7 +2264,7 @@ function detailItemMarkup(entry){
     <div class="heatDetailTrend">
       <div class="heatDetailNote ${rateTone || ''}">Rate trend: ${Number.isFinite(rateDelta) ? `${rateDelta >= 0 ? 'above' : 'below'} team by ${fmtPct2(Math.abs(rateDelta))}` : 'No rate comparison available'}.</div>
       <div class="heatDetailNote ${perfTone || ''}">Goal signal: ${entry.goalConfig ? `${entry.performanceLabel} versus ${entry.goalConfig.label} goal of ${fmtPct1(entry.goalConfig.goal)}${Number.isFinite(entry.goalDelta) ? ` (${entry.goalDelta >= 0 ? '+' : ''}${fmtPct2(entry.goalDelta)})` : ''}.` : 'No goal mapping is configured for this KPI.'}</div>
-      <div class="heatDetailNote ${impactTone || ''}">Growth signal: ${Number.isFinite(entry.impact) ? (entry.impact > 0 ? `coaching this rep could lift team rate by ${fmtPct2(entry.impact)}` : entry.impact < 0 ? `this rep is already helping team rate by ${fmtPct2(Math.abs(entry.impact))}` : 'neutral impact in this week') : 'No impact signal available'}.</div>
+      <div class="heatDetailNote ${impactTone || ''}">Growth signal: ${Number.isFinite(entry.impact) ? (entry.impact > 0 ? `team drag is ${fmtPct2(entry.impact)}; removing this rep would improve team rate by that amount` : entry.impact < 0 ? `team lift is ${fmtPct2(Math.abs(entry.impact))}; removing this rep would lower team rate by that amount` : 'neutral impact in this week') : 'No impact signal available'}.</div>
       <div class="heatDetailNote ${percentileTone || ''}">Percentile signal: ${Number.isFinite(entry.percentile) ? `${fmtPercentile(entry.percentile)} on the team, so ${entry.isPriority ? 'this week counts as Priority' : entry.isStrongPerformer ? 'this rep showed up as a Strong Performer' : 'this rep landed in the middle tier'}` : 'Percentile unavailable for this week'}.</div>
       <div class="heatDetailNote">Latest filtered coaching before week end: ${latestTxt}.</div>
       <div class="heatDetailNote">Coaching events in ${entry.weekKey}: ${weekCoachTxt}.</div>
@@ -3194,7 +2312,7 @@ function paintHeatmapModal(){
       ['Coaching status', status.label, entry.coached ? `${entry.coachedThisWeek.length} coaching event(s) matched in this ISO week.` : entry.isPriorityMiss ? 'No coaching event matched this ISO week, so this week receives a red X.' : 'No coaching event matched this ISO week.', status.state === 'strong' ? 'good' : status.state === 'weak' ? 'bad' : status.state === 'info' ? 'info' : 'warn'],
       ['Coaching notes', entry.coached ? `${entry.coachedThisWeek.length} logged` : 'None', coachingDescriptionsText(entry), entry.coached ? 'info' : 'warn'],
       ['Red X count', String((model.repSummaries.find(r => r.rep === entry.rep)?.redXCount) || 0), 'More than one red X is treated as a concern and highlights the rep name in the heatmap.', ((model.repSummaries.find(r => r.rep === entry.rep)?.redXCount) || 0) > 1 ? 'bad' : 'info'],
-      ['Trend impact', Number.isFinite(entry.impact) ? fmtPct2(entry.impact) : '—', Number.isFinite(entry.impact) ? (entry.impact > 0 ? 'Positive value means coaching this rep could improve team rate.' : entry.impact < 0 ? 'Negative value means removing this rep would lower team rate.' : 'Neutral impact this week.') : 'No impact signal available.', detailToneClass('impact', entry.impact)]
+      ['Trend impact', Number.isFinite(entry.impact) ? fmtPct2(entry.impact) : '—', Number.isFinite(entry.impact) ? (entry.impact > 0 ? 'Team drag: removing this rep would improve team rate.' : entry.impact < 0 ? 'Team lift: removing this rep would lower team rate.' : 'Neutral impact this week.') : 'No impact signal available.', detailToneClass('impact', entry.impact)]
     ];
     cards.forEach(([label, value, sub, tone])=>{
       const card = document.createElement('div');
@@ -3249,12 +2367,52 @@ function paintHeatmapModal(){
 /* =========================
    Rep grid rendering
    ========================= */
-function paintRepGrid(rows, teamRate, allNames, maxVal, bottomHalfSet){
+function impactPresentation(impact){
+  if(!Number.isFinite(impact)) return {cls:'info', label:'Impact —', short:'—'};
+  if(impact > 0) return {cls:'bad', label:`Team drag ${fmtPct2(Math.abs(impact))}`, short:`Drag ${fmtPct2(Math.abs(impact))}`};
+  if(impact < 0) return {cls:'good', label:`Team lift ${fmtPct2(Math.abs(impact))}`, short:`Lift ${fmtPct2(Math.abs(impact))}`};
+  return {cls:'info', label:'Neutral impact', short:'Neutral'};
+}
+function quickFilterMatches(r, teamRate){
+  const off = r.isExcluded || excluded.has(r.rep);
+  const rec = coachingRecencyInfo(r.rep);
+  const nWin = coachingCountForRep(r.rep);
+  const goal = metricGoalConfig(effectiveSet());
+  const belowGoal = Number.isFinite(r.repRate) && (goal ? r.repRate < goal.goal : (Number.isFinite(teamRate) && r.repRate < teamRate));
+  const topPerformer = Number.isFinite(r.repRate) && (goal ? r.repRate > goal.goal + .05 : (Number.isFinite(teamRate) && r.repRate >= teamRate));
+  if(activeQuickFilter === 'needs') return !off && Number.isFinite(r.impact) && r.impact > 0;
+  if(activeQuickFilter === 'notCoached') return !off && coachings.length > 0 && nWin === 0;
+  if(activeQuickFilter === 'overdue') return !off && coachings.length > 0 && (rec.ageDays === null || rec.ageDays > 42);
+  if(activeQuickFilter === 'belowGoal') return !off && belowGoal;
+  if(activeQuickFilter === 'top') return !off && topPerformer;
+  if(activeQuickFilter === 'excluded') return off;
+  return true;
+}
+function paintAttentionRow(cardData){
+  const section = document.getElementById('attentionSection');
+  const row = document.getElementById('attentionRow');
+  if(!section || !row) return;
+  row.innerHTML = '';
+  const picks = cardData
+    .filter(r=>!r.isExcluded && !excluded.has(r.rep) && Number.isFinite(r.impact) && r.impact > 0)
+    .map(r=>({r, score:needCoachingScore(r.rep,r.impact)}))
+    .sort((a,b)=> (b.score.score-a.score.score) || (b.r.impact-a.r.impact))
+    .slice(0,5);
+  section.classList.toggle('hide', picks.length===0);
+  picks.forEach(({r,score})=>{
+    const rec = coachingRecencyInfo(r.rep);
+    const nWin = coachingCountForRep(r.rep);
+    const btn = document.createElement('button');
+    btn.type='button'; btn.className='attentionItem';
+    const coachTxt = !coachings.length ? 'Coaching not loaded' : rec.has ? `Last coached ${Math.max(0,Math.round(rec.ageDays))}d ago · ${nWin} in window` : `No coaching · ${nWin} in window`;
+    btn.innerHTML = `<div class="attentionName">${r.rep}</div><div class="attentionMeta"><span class="attentionDrag">Team drag ${fmtPct2(Math.abs(r.impact))}</span><span>${coachTxt}</span></div>`;
+    btn.addEventListener('click',()=>openRepCoachings(r.rep));
+    row.appendChild(btn);
+  });
+}
+function paintRepGrid(rows, teamRate, allNames, maxVal, bottomHalfSet, cardTrendModel=null){
   const grid = document.getElementById('impactGrid');
   grid.innerHTML = '';
-
-  const topImprover = rows.find(r=>r.impact>0);
-  const topWorsener = rows.find(r=>r.impact<0);
 
   const includedSet = new Set(rows.map(r=>r.rep));
   const excludedNames = allNames.filter(n=>!includedSet.has(n));
@@ -3262,176 +2420,71 @@ function paintRepGrid(rows, teamRate, allNames, maxVal, bottomHalfSet){
     ...rows.map(r=>({ ...r, isExcluded:false })),
     ...excludedNames.map(name=>({ rep:name, apps:NaN, opps:NaN, repRate:NaN, impact:NaN, weightShare:0, isExcluded:true }))
   ];
+  const cardTrendMap = buildRepRateTrendMap(allNames, bottomHalfSet || new Set(), cardTrendModel);
+  paintAttentionRow(cardData);
 
-  const cardTrendMap = buildRepRateTrendMap(allNames, bottomHalfSet || new Set());
+  const search = repSearchTerm.trim().toLowerCase();
+  const shown = cardData.filter(r=>quickFilterMatches(r,teamRate)).filter(r=>!search || String(r.rep).toLowerCase().includes(search));
+  if(!shown.length){
+    grid.innerHTML = `<div class="emptyState">No representatives match the current filters.</div>`;
+    return;
+  }
 
-  cardData.forEach(r=>{
+  shown.forEach(r=>{
     const off = r.isExcluded || excluded.has(r.rep);
-
     const rec = coachingRecencyInfo(r.rep);
-    const urgent = (!off && (rec.ageDays===null || rec.ageDays>42));
+    const urgent = (!off && coachings.length > 0 && (rec.ageDays===null || rec.ageDays>42));
     const stale  = (!off && !urgent && rec.ageDays!==null && rec.ageDays>21);
-
-    const impactCls = Number.isFinite(r.impact) ? (r.impact>0 ? 'good' : (r.impact<0 ? 'bad' : '')) : '';
-    const badgeTxt = Number.isFinite(r.impact)
-      ? (r.impact>0 ? `▲ +${fmtPct2(Math.abs(r.impact))}` : (r.impact<0 ? `▼ -${fmtPct2(Math.abs(r.impact))}` : '• 0.00%'))
-      : (off ? 'Excluded' : '—');
-
-    const star = (!off && topImprover && r.rep===topImprover.rep) ? '⭐' : '';
-    const warn = (!off && topWorsener && r.rep===topWorsener.rep) ? '⚠️' : '';
-
-    const card = document.createElement('div');
-    card.className = 'repCard' + (off ? ' warningBorder' : '') + (urgent ? ' urgent' : (stale ? ' stale' : ''));
-    card.title = 'Click to view coaching history';
-
-    card.addEventListener('click', (ev)=>{
-      if(ev.target.closest('input') || ev.target.closest('label') || ev.target.closest('button') || ev.target.closest('select')) return;
-      openRepCoachings(r.rep);
-    });
-
-    const top = document.createElement('div');
-    top.className='repTop';
-
-    const nameDiv = document.createElement('div');
-    nameDiv.className = 'repName';
-    nameDiv.innerHTML = `${repLastCoachedLabel(r.rep)} ${star||warn? `<span class="muted">${star}${warn}</span>`:''}`;
-
-    const badgeStack = document.createElement('div');
-    badgeStack.className = 'badgeStack';
-
-    const badge = document.createElement('div');
-    badge.className = `impactBadge ${impactCls}`;
-    badge.textContent = badgeTxt;
-
-    // NEW: Need score (weighted by fewest coachings) shown left of recency
-    const scoreInfo = needCoachingScore(r.rep, r.impact);
-    const scorePill = document.createElement('div');
-    const scoreHot = (!off && scoreInfo.score > 0 && scoreInfo.cnt === 0); // quick visual pop for "big need + zero coachings"
-    scorePill.className = 'needScore' + (scoreHot ? ' hot' : '');
-    const scoreTxt = (Number.isFinite(scoreInfo.score) && scoreInfo.score>0)
-      ? `Need +${fmtPct2(scoreInfo.score)}`
-      : `Need —`;
-    scorePill.textContent = scoreTxt;
-    scorePill.title = `NeedScore = max(impact,0) ÷ (1 + coachingCountInWindow). Impact is team-rate improvement if this rep is removed. Window = last ${currentWeeks()} week(s).`;
-
-    const recLine = document.createElement('div');
-    recLine.className = 'coachRecency' + (urgent ? ' bad' : (stale ? ' warn' : ''));
-
+    const impact = impactPresentation(r.impact);
+    const scoreInfo = needCoachingScore(r.rep,r.impact);
     const nWin = coachingCountForRep(r.rep);
+    const rateDelta = Number.isFinite(r.repRate) && Number.isFinite(teamRate) ? r.repRate-teamRate : NaN;
+    const goal = metricGoalConfig(effectiveSet());
+    const goalDelta = Number.isFinite(r.repRate) && goal ? r.repRate-goal.goal : NaN;
+    const trendText = trendTextForRepFromMap(cardTrendMap,r.rep);
 
-    if(!coachings.length){
-      recLine.textContent = 'Coachings not loaded';
-      recLine.title = 'No coaching dock found/loaded yet.';
-    }else if(coachingTypes.size && enabledTypes.size===0){
-      recLine.textContent = `Types filtered out (${nWin})`;
-      recLine.title = 'No coaching types selected.';
-    }else{
-      if(rec.has){
-        recLine.textContent = `${rec.text} (${nWin})`;
-        recLine.title = `${rec.text} • ${nWin} coaching(s) in last ${currentWeeks()}w`;
-      }else{
-        recLine.textContent = `No coaching (${nWin})`;
-        recLine.title = `No matching coaching found for this rep. In-window count: ${nWin}.`;
-      }
-    }
+    const card=document.createElement('div');
+    card.className='repCard'+(off?' warningBorder':'')+(urgent?' urgent':(stale?' stale':''));
+    card.title='Click to open coaching history and KPI trend';
+    card.addEventListener('click',ev=>{ if(ev.target.closest('input')||ev.target.closest('label')||ev.target.closest('button')||ev.target.closest('select')) return; openRepCoachings(r.rep); });
 
-    const trendLine = document.createElement('div');
-    trendLine.className = 'plainTrendLine';
-    trendLine.textContent = trendTextForRepFromMap(cardTrendMap, r.rep);
-    trendLine.title = `Trend across the selected ${currentWeeks()} week time period.`;
+    const top=document.createElement('div'); top.className='repTop';
+    const identity=document.createElement('div'); identity.className='repIdentity';
+    identity.innerHTML=`<div class="repName">${r.rep}</div><div class="repSub">${off?'Excluded from team calculation':(goal?goal.label:'Selected KPI')}</div>`;
+    const badges=document.createElement('div'); badges.className='badgeStack';
+    const impactBadge=document.createElement('span'); impactBadge.className=`impactBadge ${impact.cls}`; impactBadge.textContent=off?'Excluded':impact.label;
+    badges.appendChild(impactBadge);
+    if(!off && urgent){ const b=document.createElement('span'); b.className='coachRecency bad'; b.textContent=rec.has?`Overdue ${Math.round(rec.ageDays)}d`:'No coaching'; badges.appendChild(b); }
+    else if(!off && stale){ const b=document.createElement('span'); b.className='coachRecency warn'; b.textContent=`${Math.round(rec.ageDays)}d since coaching`; badges.appendChild(b); }
+    top.appendChild(identity); top.appendChild(badges);
 
-    const coachRow = document.createElement('div');
-    coachRow.className = 'coachRowLine';
-    coachRow.appendChild(scorePill);
-    coachRow.appendChild(recLine);
-    coachRow.appendChild(trendLine);
+    const metric=document.createElement('div'); metric.className='repMetricRow';
+    const rate=document.createElement('div');
+    rate.innerHTML=`<div class="repRateLabel">KPI Rate</div><div class="repRateBig">${Number.isFinite(r.repRate)?fmtPct1(r.repRate):'—'}</div>`;
+    const compare=document.createElement('div');
+    const teamCompare=Number.isFinite(rateDelta)?`${rateDelta>=0?'+':''}${fmtPct2(rateDelta)} vs team`:'No team comparison';
+    const goalCompare=Number.isFinite(goalDelta)?`${goalDelta>=0?'+':''}${fmtPct2(goalDelta)} vs goal`:'';
+    compare.innerHTML=`<div class="repVsTeam">${teamCompare}</div><div class="repSub">${goalCompare}</div>`;
+    metric.appendChild(rate); metric.appendChild(compare);
 
-    badgeStack.appendChild(badge);
-    badgeStack.appendChild(coachRow);
+    const bar=document.createElement('div'); bar.className='barWrap';
+    const fill=document.createElement('div'); fill.className='barFill';
+    const pct=Number.isFinite(r.repRate)?Math.max(0,Math.min(1,r.repRate))*100:0;
+    fill.style.width=pct.toFixed(1)+'%'; fill.style.background=Number.isFinite(rateDelta)&&rateDelta>=0?'#16a34a':'#dc2626';
+    const avg=document.createElement('div'); avg.className='avgTick'; avg.style.left=`calc(${Number.isFinite(teamRate)?Math.max(0,Math.min(1,teamRate))*100:0}% - 1px)`;
+    bar.appendChild(fill);bar.appendChild(avg);
 
-    top.appendChild(nameDiv);
-    top.appendChild(badgeStack);
+    const info=document.createElement('div'); info.className='repInfoGrid';
+    const coachingText=!coachings.length?'Not loaded':rec.has?`${Math.max(0,Math.round(rec.ageDays))}d ago`:'None';
+    const infoData=[['Coaching',coachingText],['In window',coachings.length?`${nWin} coaching${nWin===1?'':'s'}`:'—'],['Trend',trendText.replace(/^Trend:\s*/, '')]];
+    infoData.forEach(([k,v])=>{const d=document.createElement('div');d.className='repInfo';d.innerHTML=`<div class="k">${k}</div><div class="v">${v}</div>`;info.appendChild(d);});
 
-    const bar = document.createElement('div'); bar.className='barWrap';
-    const fill = document.createElement('div'); fill.className='barFill';
-    const pct = Number.isFinite(r.repRate) ? Math.max(0, Math.min(1, r.repRate))*100 : 0;
-    const isAbove = Number.isFinite(r.repRate) && Number.isFinite(teamRate) && r.repRate >= teamRate;
-    fill.style.width = pct.toFixed(1) + '%';
-    fill.style.background = isAbove ? '#16a34a' : '#dc2626';
-    const label = document.createElement('div'); label.className='barLabel'; label.textContent = Number.isFinite(r.repRate) ? (pct.toFixed(1)+'%') : '—';
-    const avg = document.createElement('div'); avg.className='avgTick';
-    const avgLeft = Number.isFinite(teamRate) ? (Math.max(0, Math.min(1, teamRate))*100) : 0;
-    avg.style.left = `calc(${avgLeft}% - 1px)`;
-    bar.appendChild(fill); bar.appendChild(avg); bar.appendChild(label);
+    const footer=document.createElement('div'); footer.className='cardFooter';
+    const xb=document.createElement('label');xb.className='xbox';const cb=document.createElement('input');cb.type='checkbox';cb.checked=!off;const txt=document.createElement('span');txt.textContent=off?'Excluded':'Included';
+    cb.onchange=()=>{if(cb.checked)excluded.delete(r.rep);else excluded.add(r.rep);saveWorkspace();renderAll();};xb.appendChild(cb);xb.appendChild(txt);footer.appendChild(xb);
+    const volumes=document.createElement('span');volumes.className='plainTrendLine';volumes.textContent=`${Number.isFinite(r.apps)?r.apps.toFixed(0):'—'} apps · ${Number.isFinite(r.opps)?r.opps.toFixed(0):'—'} opps`;footer.appendChild(volumes);
 
-    const compareWrap = document.createElement('div');
-    compareWrap.className = 'dbWrap';
-    if (showCompare){
-      const legend = document.createElement('div');
-      legend.className = 'dbLegend';
-      legend.innerHTML = `<span><span class="dot apps"></span> A: Apps <b>${Number.isFinite(r.apps)? r.apps.toFixed(0): (off?'—':'0')}</b></span>
-                          <span><span class="dot opps"></span> B: Opps <b>${Number.isFinite(r.opps)? r.opps.toFixed(0): (off?'—':'0')}</b></span>`;
-      const track = document.createElement('div'); track.className='dbTrack';
-
-      const aVal = Number.isFinite(r.apps) ? r.apps : 0;
-      const bVal = Number.isFinite(r.opps) ? r.opps : 0;
-      const aPct = Math.min(100, Math.max(0, (aVal / maxVal) * 100));
-      const bPct = Math.min(100, Math.max(0, (bVal / maxVal) * 100));
-      const leftPct = Math.min(aPct, bPct);
-      const rightPct = Math.max(aPct, bPct);
-
-      const line = document.createElement('div');
-      line.className='dbLine';
-      line.style.left = `calc(${leftPct}% )`;
-      line.style.width = `calc(${rightPct - leftPct}% )`;
-
-      const dotA = document.createElement('div'); dotA.className='dbDot apps'; dotA.style.left = `${aPct}%`;
-      const dotB = document.createElement('div'); dotB.className='dbDot opps'; dotB.style.left = `${bPct}%`;
-
-      track.appendChild(line); track.appendChild(dotA); track.appendChild(dotB);
-
-      const scale = document.createElement('div');
-      scale.className='dbScale';
-      scale.innerHTML = `<span>0</span><span>${Math.max(1, Math.round(maxVal)).toLocaleString()}</span>`;
-
-      compareWrap.appendChild(legend);
-      compareWrap.appendChild(track);
-      compareWrap.appendChild(scale);
-    }
-
-    const mid = document.createElement('div'); mid.className='mini2';
-    const aDiv = document.createElement('div'); aDiv.innerHTML = `<div class="muted" style="font-weight:900">Appointments</div><div style="font-weight:900; font-size:16px">${Number.isFinite(r.apps)? r.apps.toFixed(0): (off?'—':'0')}</div>`;
-    const oDiv = document.createElement('div'); oDiv.innerHTML = `<div class="muted" style="font-weight:900">Opportunities</div><div style="font-weight:900; font-size:16px">${Number.isFinite(r.opps)? r.opps.toFixed(0): (off?'—':'0')}</div>`;
-    mid.appendChild(aDiv); mid.appendChild(oDiv);
-
-    const bottom = document.createElement('div'); bottom.className='xrow';
-    const xb = document.createElement('label'); xb.className='xbox';
-    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=off;
-    const txt=document.createElement('span'); txt.textContent = off? 'Excluded' : 'Include';
-    cb.onchange = ()=>{
-      if (cb.checked) excluded.add(r.rep); else excluded.delete(r.rep);
-      txt.textContent = cb.checked? 'Excluded':'Include';
-      renderAll();
-    };
-    xb.appendChild(cb); xb.appendChild(txt);
-    bottom.appendChild(xb);
-
-    const b50 = document.createElement('div');
-    b50.className = 'muted';
-    b50.style.fontWeight = '900';
-    b50.style.fontSize = '11px';
-    if(!off && bottomHalfSet.has(r.rep)){
-      b50.textContent = 'Bottom 50% (rate)';
-    }
-    bottom.appendChild(b50);
-
-    card.appendChild(top);
-    card.appendChild(bar);
-    if (showCompare) card.appendChild(compareWrap);
-    card.appendChild(mid);
-    card.appendChild(bottom);
-
-    grid.appendChild(card);
+    card.appendChild(top);card.appendChild(metric);card.appendChild(bar);card.appendChild(info);card.appendChild(footer);grid.appendChild(card);
   });
 }
 
@@ -3530,11 +2583,15 @@ function renderAll(){
   }
 
   const includedNames = visibleNames.filter(n => !excluded.has(n));
+  const cardTrendModel = buildWeeklyHeatmapModel(set, includedNames, bottomHalfSet, currentWeeks());
   const heatmapNames = applyAttendance3WeeksFilter(getRepNamesInScope(5)).filter(n => !excluded.has(n));
-  const heatmapModel = buildWeeklyHeatmapModel(set, heatmapNames, bottomHalfSet, 5);
+  const heatmapModel = currentWeeks() === 5 && heatmapNames.length === includedNames.length && heatmapNames.every((n,i)=>n===includedNames[i])
+    ? cardTrendModel
+    : buildWeeklyHeatmapModel(set, heatmapNames, bottomHalfSet, 5);
   paintHeatmap(heatmapModel);
-
-  paintRepGrid(rowsSorted, base.rate, visibleNames, maxVal, bottomHalfSet);
+  paintExecutiveSummary(originalAll, base, heatmapModel);
+  paintRepGrid(rowsSorted, base.rate, visibleNames, maxVal, bottomHalfSet, cardTrendModel);
+  saveWorkspace();
 }
 
 /* =========================
@@ -3556,6 +2613,7 @@ metricModeSel.onchange = ()=>{
     if (A && B) selectedSet = {A, B};
   }
   syncModeUI();
+  saveWorkspace();
   renderAll();
 };
 
@@ -3579,6 +2637,7 @@ function repaintTypeChips(){
       if(enabledTypes.has(t)) enabledTypes.delete(t);
       else enabledTypes.add(t);
       repaintTypeChips();
+      saveWorkspace();
       renderAll();
       if(document.getElementById('repCoachModalOverlay').classList.contains('show') && repCoachingModal.mode==='filtered'){
         paintRepCoachingsModal();
@@ -3635,11 +2694,14 @@ function loadCoachings(opts={silent:false}){
   coachingTypes = new Set();
   for(const c of coachings) for(const t of c.types) coachingTypes.add(t);
   enabledTypes = new Set(coachingTypes);
+  restoreCoachingWorkspace();
   rebuildCoachingIndex();
   repaintTypeChips();
 
   lastCoachingLoadedKey = key;
-  document.getElementById('coachDockBadge').textContent = `coachings: ${coachings.length}`;
+  const coachBadge=document.getElementById('coachDockBadge');
+  coachBadge.textContent = `Coaching ready • ${coachings.length.toLocaleString()} records`;
+  coachBadge.title = `Loaded from ${key}`;
   renderAll();
   return true;
 }
@@ -3689,8 +2751,9 @@ function refreshFromCache(){
 
   sheets = Array.from(new Set(allRows.map(r=>String(r.Sheet||'').trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
 
-  document.getElementById('dockBadge').textContent =
-    `dock keys: R=${shortKey(dockKeyRetail)} • F=${shortKey(dockKeyReferral)} • rows=${allRows.length}`;
+  const dockBadge = document.getElementById('dockBadge');
+  dockBadge.textContent = `Data ready • ${allRows.length.toLocaleString()} rows`;
+  dockBadge.title = `Retail: ${shortKey(dockKeyRetail)} • Referral: ${shortKey(dockKeyReferral)}`;
 
   const prevSheet = selectedSheet;
   buildCoachSel();
@@ -3707,6 +2770,7 @@ function refreshFromCache(){
   computeHeaders();
   buildAutoSets();
   feedManualKpis();
+  if(!workspaceRestored) restoreDataWorkspace();
 
   // Default metric on boot: Consumer Appointment Rate (if found)
   if (!selectedSet){
@@ -3757,23 +2821,40 @@ document.getElementById('mainTabImpacts')?.addEventListener('click', ()=> setMai
 document.getElementById('mainTabTeam')?.addEventListener('click', ()=> setMainTab('team'));
 try{ setMainTab(localStorage.getItem('impactTool.activeTab') === 'team' ? 'team' : 'impacts'); }catch(e){ setMainTab('impacts'); }
 
-document.getElementById('reloadCache').onclick = refreshFromCache;
+document.getElementById('reloadCache').onclick = ()=>{ refreshFromCache(); saveWorkspace(); };
 document.getElementById('refreshBtn').onclick = ()=> renderAll();
 
-document.getElementById('selectAll').onclick = ()=>{ excluded.clear(); renderAll(); };
-document.getElementById('includeAllTop').onclick = ()=>{ excluded.clear(); renderAll(); };
+document.getElementById('selectAll').onclick = ()=>{ excluded.clear(); saveWorkspace(); renderAll(); };
 document.getElementById('clearAll').onclick = ()=>{
   excluded = new Set(getRepNamesInScope());
+  saveWorkspace();
   renderAll();
 };
 
-document.getElementById('incRetail').addEventListener('change', refreshFromCache);
-document.getElementById('incReferral').addEventListener('change', refreshFromCache);
+function setFilterDrawer(open){
+  const drawer=document.getElementById('filterDrawer');
+  const backdrop=document.getElementById('drawerBackdrop');
+  drawer?.classList.toggle('show',open); backdrop?.classList.toggle('show',open);
+  drawer?.setAttribute('aria-hidden',String(!open)); backdrop?.setAttribute('aria-hidden',String(!open));
+}
+document.getElementById('filterDrawerBtn')?.addEventListener('click',()=>setFilterDrawer(true));
+document.getElementById('filterDrawerClose')?.addEventListener('click',()=>setFilterDrawer(false));
+document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setFilterDrawer(false));
+document.querySelectorAll('.quickFilter').forEach(btn=>btn.addEventListener('click',()=>{
+  activeQuickFilter=btn.dataset.filter||'all';
+  document.querySelectorAll('.quickFilter').forEach(b=>b.classList.toggle('active',b===btn));
+  saveWorkspace(); renderAll();
+}));
+document.getElementById('repSearch')?.addEventListener('input',e=>{repSearchTerm=e.target.value||'';saveWorkspace();renderAll();});
+
+document.getElementById('incRetail').addEventListener('change', ()=>{saveWorkspace();refreshFromCache();});
+document.getElementById('incReferral').addEventListener('change', ()=>{saveWorkspace();refreshFromCache();});
 
 document.getElementById('loadCoachingsBtn').onclick = ()=> loadCoachings({silent:false});
 document.getElementById('typesAllBtn').onclick = ()=>{
   enabledTypes = new Set(coachingTypes);
   repaintTypeChips();
+  saveWorkspace();
   renderAll();
   if(document.getElementById('repCoachModalOverlay').classList.contains('show') && repCoachingModal.mode==='filtered'){
     paintRepCoachingsModal();
@@ -3782,6 +2863,7 @@ document.getElementById('typesAllBtn').onclick = ()=>{
 document.getElementById('typesNoneBtn').onclick = ()=>{
   enabledTypes = new Set();
   repaintTypeChips();
+  saveWorkspace();
   renderAll();
   if(document.getElementById('repCoachModalOverlay').classList.contains('show') && repCoachingModal.mode==='filtered'){
     paintRepCoachingsModal();
@@ -3793,6 +2875,7 @@ document.getElementById('autoSetSel').addEventListener('change', e=>{
   if (Number.isFinite(i) && autoSets[i]){
     selectedSet = {A:autoSets[i].A, B:autoSets[i].B};
     syncManualToSet();
+    saveWorkspace();
     if(metricMode==='auto') renderAll();
   }
 });
@@ -3830,6 +2913,8 @@ document.getElementById('heatmapModalOverlay').addEventListener('click', (e)=>{
 });
 document.addEventListener('keydown', (e)=>{
   if(e.key === 'Escape'){
+    const drawer = document.getElementById('filterDrawer');
+    if(drawer?.classList.contains('show')){ setFilterDrawer(false); return; }
     const settingsOv = document.getElementById('coachingSettingsOverlay');
     if(settingsOv?.classList.contains('show')){
       closeCoachingSettings();
@@ -3851,52 +2936,66 @@ document.addEventListener('keydown', (e)=>{
 document.getElementById('exportPdf').addEventListener('click', async ()=>{
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ unit:'pt', format:'letter' });
-  const margin = 36;
+  const margin=38, pageW=pdf.internal.pageSize.getWidth(), pageH=pdf.internal.pageSize.getHeight();
+  const usable=pageW-margin*2;
+  let y=margin;
+  const set=effectiveSet();
+  const original=computeTeamMetrics(set,new Set());
+  const current=computeTeamMetrics(set,excluded);
+  const impacts=computeImpacts(set,excluded).rows;
+  const goal=metricGoalConfig(set);
+  const names=applyAttendance3WeeksFilter(getRepNamesInScope(5)).filter(n=>!excluded.has(n));
+  const ratePairs=original.byRep.map(r=>({rep:r.rep,rate:r.repRate})).filter(x=>Number.isFinite(x.rate)).sort((a,b)=>a.rate-b.rate);
+  const bottomHalf=new Set();
+  if(ratePairs.length>=2){const n=Math.floor(ratePairs.length/2),thr=ratePairs[n-1]?.rate;if(Number.isFinite(thr))ratePairs.forEach(p=>{if(p.rate<=thr)bottomHalf.add(p.rep);});}
+  const heat=buildWeeklyHeatmapModel(set,names,bottomHalf,5);
+  const priority=[...impacts].filter(r=>Number.isFinite(r.impact)&&r.impact>0).sort((a,b)=>needCoachingScore(b.rep,b.impact).score-needCoachingScore(a.rep,a.impact).score);
 
-  const origTxt = document.getElementById('origRate').textContent || '';
-  const currTxt = document.getElementById('currRate').textContent || '';
-  const diffTxt = document.getElementById('rateDiff').textContent || '';
-  const appsTxt = document.getElementById('totApps').textContent || '';
-  const oppsTxt = document.getElementById('totOpps').textContent || '';
-  const appsDelta = document.getElementById('totAppsDelta').textContent || '';
-  const oppsDelta = document.getElementById('totOppsDelta').textContent || '';
+  function pageCheck(h=24){if(y+h>pageH-margin){pdf.addPage();y=margin;}}
+  function text(txt,x,size=10,style='normal',maxW=usable){pdf.setFont('helvetica',style);pdf.setFontSize(size);const lines=pdf.splitTextToSize(String(txt??''),maxW);pageCheck(lines.length*(size+3));pdf.text(lines,x,y);y+=lines.length*(size+3);}
+  function rule(){pageCheck(10);pdf.setDrawColor(226,232,240);pdf.line(margin,y,pageW-margin,y);y+=10;}
 
-  pdf.setFont('helvetica','bold'); pdf.setFontSize(14);
-  pdf.text('Impact Tool Export', margin, margin);
-  pdf.setFont('helvetica','normal'); pdf.setFontSize(11);
-  pdf.text(`Original Rate: ${origTxt}`, margin, margin+18);
-  pdf.text(`Current Rate: ${currTxt}   (Change: ${diffTxt})`, margin, margin+34);
-  pdf.text(`Team Totals — Apps: ${appsTxt} (${appsDelta})   Opps: ${oppsTxt} (${oppsDelta})`, margin, margin+50);
+  pdf.setTextColor(15,23,42);text('KPI Impact — Coaching Report',margin,18,'bold');
+  text(`${selectedSheet||'Team'} • ${currentWeeks()}-week impact window • Team Breakdown fixed at 5 weeks`,margin,9,'normal');
+  y+=4;rule();
+  text('Executive Summary',margin,12,'bold');
+  const summary=[
+    `Team rate: ${fmtPct1(original.rate)}${goal?`  |  Goal: ${fmtPct1(goal.goal)} (${goal.label})`:''}`,
+    `Included team rate: ${fmtPct1(current.rate)}  |  Exclusion change: ${fmtPct2(current.rate-original.rate)}`,
+    `Appointments: ${Number.isFinite(original.apps)?original.apps.toFixed(0):'—'}  |  Opportunities: ${Number.isFinite(original.opps)?original.opps.toFixed(0):'—'}`,
+    `Below-goal coaching coverage (5 weeks): ${Number.isFinite(heat.overallCoverage)?fmtPct1(heat.overallCoverage):'N/A'} (${heat.totalCovered}/${heat.totalNeeded||0})`,
+    `Repeat missed-coaching concerns: ${heat.repSummaries.filter(r=>r.hasCoachingOpportunity).length}`
+  ];
+  summary.forEach(t=>text(t,margin,10,'normal'));
+  y+=5;rule();
 
-  const cards = Array.from(document.querySelectorAll('#impactGrid .repCard'));
-  const pageW = pdf.internal.pageSize.getWidth();
-  const pageH = pdf.internal.pageSize.getHeight();
-
-  const colW = (pageW - margin*2 - 12)/2;
-  let x = margin, y = margin+70;
-
-  for (let i=0; i<cards.length; i++){
-    const card = cards[i];
-    const canvas = await html2canvas(card, {backgroundColor: null, scale:2});
-    const imgData = canvas.toDataURL('imagePNG', 1.0);
-    const w = colW;
-    const h = (canvas.height/canvas.width) * w;
-
-    if (y + h > pageH - margin){
-      pdf.addPage(); x = margin; y = margin;
-    }
-    pdf.addImage(imgData, 'PNG', x, y, w, h);
-    if (x === margin){ x = margin + colW + 12; }
-    else { x = margin; y += h + 12; }
+  text('Coaching Priority',margin,12,'bold');
+  if(!priority.length) text('No current team-drag representatives are available for the selected scope.',margin,10);
+  else{
+    text('Rep                              KPI        Team impact     Coaching',margin,9,'bold');
+    priority.slice(0,25).forEach(r=>{
+      pageCheck(18);
+      const rec=coachingRecencyInfo(r.rep), n=coachingCountForRep(r.rep);
+      const coach=!coachings.length?'not loaded':rec.has?`${Math.max(0,Math.round(rec.ageDays))}d ago / ${n}`:`none / ${n}`;
+      const line=`${String(r.rep).slice(0,28).padEnd(30)} ${fmtPct1(r.repRate).padEnd(10)} ${(`drag ${fmtPct2(Math.abs(r.impact))}`).padEnd(15)} ${coach}`;
+      pdf.setFont('courier','normal');pdf.setFontSize(8.5);pdf.text(line,margin,y);y+=13;
+    });
   }
+  y+=5;rule();
+  text('Five-Week Coaching Coverage',margin,12,'bold');
+  heat.weekly.forEach(w=>text(`${w.weekKey}: team ${fmtPct1(w.teamRate)} • coverage ${Number.isFinite(w.coverageRate)?fmtPct1(w.coverageRate):'N/A'} • ${w.coveredCount}/${w.neededCount||0} below-goal reps coached • ${w.missedCount} missed`,margin,9));
+  y+=5;rule();
+  text('Interpretation',margin,12,'bold');
+  text('Team drag means the team rate improves when that representative is removed from the calculation. Team lift means removing the representative lowers the team rate. This wording is used throughout the redesigned tool to avoid ambiguous positive/negative impact labels.',margin,9);
 
-  pdf.save('impact-tool-export.pdf');
+  pdf.save(`kpi-impact-${String(selectedSheet||'team').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}-report.pdf`);
 });
 
 /* =========================
    Boot
    ========================= */
 (function boot(){
+  restoreStaticWorkspace();
   setHeaderH();
   refreshFromCache(); // refresh also populates coaching keys and auto-loads coachings if possible
 })();
