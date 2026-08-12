@@ -110,10 +110,16 @@ if (manifest) {
       if (!html.includes('../shared/coachtools-import.js')) fail(`${app.id}: must route spreadsheet uploads through the shared classifier.`);
       if (!html.includes('getByCompatibilityKey')) fail(`${app.id}: must read shared current data through CoachToolsStorage before legacy fallback.`);
     }
-    const attributes = [...html.matchAll(/<(?:script|link|iframe)\b[^>]*?\b(?:src|href|data-src)=(?:"([^"]+)"|'([^']+)')/gi)].map(match => match[1] || match[2]);
-    for (const target of attributes) {
+    const dependencies = [...html.matchAll(/<(script|link|iframe)\b([^>]*?)\b(?:src|href|data-src)=(?:"([^"]+)"|'([^']+)')([^>]*)>/gi)].map(match => ({
+      tag: match[1].toLowerCase(),
+      attributes: `${match[2] || ''} ${match[5] || ''}`,
+      target: match[3] || match[4]
+    }));
+    for (const dependency of dependencies) {
+      const { tag, attributes, target } = dependency;
       if (!target || /^(?:https?:|data:|blob:|about:|#)/i.test(target)) {
-        if (/^https?:/i.test(target)) fail(`${app.file}: active runtime dependency is still remote: ${target}`);
+        const approvedRemoteApp = tag === 'iframe' && /\bdata-coachtools-remote-app\s*=\s*["']true["']/i.test(attributes);
+        if (/^https?:/i.test(target) && !approvedRemoteApp) fail(`${app.file}: active runtime dependency is still remote: ${target}`);
         continue;
       }
       const clean = target.split(/[?#]/)[0];

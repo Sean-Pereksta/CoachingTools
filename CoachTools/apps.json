@@ -184,6 +184,27 @@
       "order": 70,
       "version": "1.0",
       "enabled": true
+    },
+    {
+      "id": "contact-center-checklist",
+      "name": "Contact Center Checklist",
+      "description": "Open contact center checklist and documentation records in Dynamics.",
+      "file": "apps/contact_center_checklist_iframe.html",
+      "icon": "icons/checklist-and-documentation.png",
+      "initials": "CC",
+      "category": "Quality",
+      "keywords": [
+        "checklist",
+        "documentation",
+        "dynamics",
+        "contact center"
+      ],
+      "data": [],
+      "favorite": false,
+      "featured": false,
+      "order": 80,
+      "version": "1.0",
+      "enabled": true
     }
   ]
 }
