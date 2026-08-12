@@ -28,6 +28,7 @@ window.COACHTOOLS_MANIFEST = {
       "data": [],
       "favorite": true,
       "featured": true,
+      "preload": true,
       "order": 10,
       "version": "1.0",
       "enabled": true
@@ -52,6 +53,7 @@ window.COACHTOOLS_MANIFEST = {
       "data": [],
       "favorite": true,
       "featured": false,
+      "preload": true,
       "order": 20,
       "version": "1.0",
       "enabled": true
@@ -88,6 +90,7 @@ window.COACHTOOLS_MANIFEST = {
       ],
       "favorite": true,
       "featured": false,
+      "preload": true,
       "order": 25,
       "version": "1.0",
       "enabled": true
@@ -116,6 +119,7 @@ window.COACHTOOLS_MANIFEST = {
       ],
       "favorite": false,
       "featured": false,
+      "preload": true,
       "order": 30,
       "version": "1.0",
       "enabled": true
@@ -141,6 +145,7 @@ window.COACHTOOLS_MANIFEST = {
       ],
       "favorite": false,
       "featured": false,
+      "preload": true,
       "order": 40,
       "version": "1.0",
       "enabled": true
@@ -168,6 +173,7 @@ window.COACHTOOLS_MANIFEST = {
       ],
       "favorite": false,
       "featured": false,
+      "preload": true,
       "order": 50,
       "version": "1.0",
       "enabled": true
@@ -193,6 +199,7 @@ window.COACHTOOLS_MANIFEST = {
       ],
       "favorite": false,
       "featured": false,
+      "preload": true,
       "order": 60,
       "version": "1.0",
       "enabled": true
@@ -218,6 +225,7 @@ window.COACHTOOLS_MANIFEST = {
       ],
       "favorite": false,
       "featured": false,
+      "preload": true,
       "order": 70,
       "version": "1.0",
       "enabled": true
@@ -239,6 +247,7 @@ window.COACHTOOLS_MANIFEST = {
       "data": [],
       "favorite": false,
       "featured": false,
+      "preload": false,
       "order": 80,
       "version": "1.0",
       "enabled": true

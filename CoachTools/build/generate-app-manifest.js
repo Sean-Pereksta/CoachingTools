@@ -123,6 +123,7 @@ const discovered = candidates.map((item, index) => {
   const name = pick('name', item.meta.name, title || titleCase(defaultNameSource));
   const favorite = bool(pick('favorite', item.meta.favorite, false), false);
   const featured = bool(pick('featured', item.meta.featured, false), false);
+  const preload = bool(pick('preload', item.meta.preload, false), false);
   const enabled = bool(pick('enabled', item.meta.enabled, true), true);
   return {
     id: fallbackId,
@@ -136,6 +137,7 @@ const discovered = candidates.map((item, index) => {
     data: list(pick('data', item.meta.data, []), []),
     favorite,
     featured,
+    preload,
     order: Number(pick('order', item.meta.order, (index + 1) * 10)) || (index + 1) * 10,
     version: String(pick('version', item.meta.version, '1.0')),
     enabled

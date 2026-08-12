@@ -31,6 +31,7 @@ Support pages nested inside an application are ignored unless explicitly marked.
 <meta name="coachtools-data" content="retail, referral, qa, coaching, checklist">
 <meta name="coachtools-favorite" content="false">
 <meta name="coachtools-featured" content="false">
+<meta name="coachtools-preload" content="true">
 <meta name="coachtools-order" content="30">
 <meta name="coachtools-version" content="1.0">
 <meta name="coachtools-enabled" content="true">
@@ -53,6 +54,7 @@ Metadata is optional for top-level HTML files and `apps/name/index.html`. Defaul
   "data": ["retail", "referral", "qa", "coaching", "checklist"],
   "favorite": false,
   "featured": false,
+  "preload": true,
   "order": 30,
   "version": "1.0",
   "enabled": true
@@ -60,6 +62,8 @@ Metadata is optional for top-level HTML files and `apps/name/index.html`. Defaul
 ```
 
 Valid shared data IDs include `weeklyRetail`, `weeklyReferral`, `monthlyRetail`, `monthlyReferral`, `qa`, `documentedCoaching`, `checklist`, and `compCoaching`; legacy `retail`, `referral`, and `coaching` aliases remain supported. Missing requirements produce a warning, not an app-opening block.
+
+`preload` is optional and defaults to `false` for backward compatibility. Set it to `true` for local applications that should be initialized during startup and kept alive until the user opens them. Keep remote or authentication-triggering applications set to `false`.
 
 ## Preserve or refresh metadata
 

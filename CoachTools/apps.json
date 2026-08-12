@@ -27,6 +27,7 @@
       "data": [],
       "favorite": true,
       "featured": true,
+      "preload": true,
       "order": 10,
       "version": "1.0",
       "enabled": true
@@ -51,6 +52,7 @@
       "data": [],
       "favorite": true,
       "featured": false,
+      "preload": true,
       "order": 20,
       "version": "1.0",
       "enabled": true
@@ -87,6 +89,7 @@
       ],
       "favorite": true,
       "featured": false,
+      "preload": true,
       "order": 25,
       "version": "1.0",
       "enabled": true
@@ -115,6 +118,7 @@
       ],
       "favorite": false,
       "featured": false,
+      "preload": true,
       "order": 30,
       "version": "1.0",
       "enabled": true
@@ -140,6 +144,7 @@
       ],
       "favorite": false,
       "featured": false,
+      "preload": true,
       "order": 40,
       "version": "1.0",
       "enabled": true
@@ -167,6 +172,7 @@
       ],
       "favorite": false,
       "featured": false,
+      "preload": true,
       "order": 50,
       "version": "1.0",
       "enabled": true
@@ -192,6 +198,7 @@
       ],
       "favorite": false,
       "featured": false,
+      "preload": true,
       "order": 60,
       "version": "1.0",
       "enabled": true
@@ -217,6 +224,7 @@
       ],
       "favorite": false,
       "featured": false,
+      "preload": true,
       "order": 70,
       "version": "1.0",
       "enabled": true
@@ -238,6 +246,7 @@
       "data": [],
       "favorite": false,
       "featured": false,
+      "preload": false,
       "order": 80,
       "version": "1.0",
       "enabled": true

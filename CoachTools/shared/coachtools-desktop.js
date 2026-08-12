@@ -33,6 +33,8 @@
   const OPEN_APPS_KEY = 'coachtools.desktop.openApps.v1';
   const STORAGE_SCAN_KEY = 'coachtools.desktop.storageScan.v1';
   const MAX_RECENT = 8;
+  const WARMUP_CONCURRENCY = 2;
+  const APP_LOAD_TIMEOUT_MS = 12000;
   const FILTERS = Object.freeze(['All', 'Favorites', 'Core', 'People', 'Data', 'Coaching', 'Performance', 'Quality', 'Other', 'Needs Data']);
   const elements = {};
   const openWindows = new Map();
@@ -55,7 +57,8 @@
     pendingStageSent: false,
     lastScan: null,
     iconFailures: new Set(),
-    scopeOptions: new Map()
+    scopeOptions: new Map(),
+    wallpaperReady: Promise.resolve(false)
   };
 
   function $(id) { return document.getElementById(id); }
@@ -222,7 +225,7 @@
     if (!elements.startupSplash || elements.startupSplash.hidden) return;
     elements.startupSplash.classList.add('is-leaving');
     clearTimeout(state.startupDismissTimer);
-    state.startupDismissTimer = setTimeout(() => { elements.startupSplash.hidden = true; }, 240);
+    state.startupDismissTimer = setTimeout(() => { elements.startupSplash.hidden = true; }, 620);
   }
 
   function missingRequirements(app) {
@@ -444,28 +447,60 @@
   }
 
   function persistOpenWindows() {
+    const userOpened = Array.from(openWindows.values()).filter(item => item.userOpened);
     const payload = {
       version: 1,
-      ids: Array.from(openWindows.keys()),
+      ids: userOpened.map(item => item.app.id),
       activeId: state.activeAppId,
-      minimized: Array.from(openWindows.values()).filter(item => item.minimized).map(item => item.app.id)
+      minimized: userOpened.filter(item => item.minimized).map(item => item.app.id)
     };
     writeJson(OPEN_APPS_KEY, payload);
   }
 
+  function settleWindowLoad(windowState, success) {
+    if (!windowState || windowState.readySettled) return;
+    windowState.readySettled = true;
+    clearTimeout(windowState.loadTimer);
+    windowState.loaded = Boolean(success);
+    windowState.warmState = success ? (windowState.userOpened ? 'ready' : 'warmed') : 'failed';
+    if (!success && !windowState.userOpened) {
+      windowState.pane.remove();
+      if (openWindows.get(windowState.app.id) === windowState) openWindows.delete(windowState.app.id);
+    }
+    windowState.resolveReady(Boolean(success));
+  }
+
   function showUnavailable(windowState) {
     if (!windowState) return;
-    clearTimeout(windowState.loadTimer);
+    if (!windowState.userOpened) {
+      settleWindowLoad(windowState, false);
+      return;
+    }
     windowState.loading.hidden = true;
     windowState.unavailable.hidden = false;
     windowState.unavailablePath.textContent = `Missing or unreadable: ${windowState.app.file}`;
+    settleWindowLoad(windowState, false);
+  }
+
+  function promoteWindowState(windowState, options) {
+    if (!windowState) return null;
+    windowState.userOpened = true;
+    windowState.minimized = Boolean(options && options.minimized);
+    windowState.warmState = windowState.loaded ? 'ready' : 'loading';
+    windowState.pane.dataset.lifecycle = 'opened';
+    return windowState;
   }
 
   function createWindow(app, options) {
-    if (openWindows.has(app.id)) return openWindows.get(app.id);
+    const preload = Boolean(options && options.preload);
+    if (openWindows.has(app.id)) {
+      const existing = openWindows.get(app.id);
+      return preload ? existing : promoteWindowState(existing, options);
+    }
     const pane = document.createElement('section');
     pane.className = 'window-pane';
     pane.dataset.appId = app.id;
+    pane.dataset.lifecycle = preload ? 'preloaded' : 'opened';
     pane.hidden = true;
 
     const iframe = document.createElement('iframe');
@@ -505,38 +540,52 @@
       unavailable,
       unavailablePath,
       minimized: Boolean(options && options.minimized),
+      userOpened: !preload,
+      warmState: preload ? 'preloading' : 'loading',
       loaded: false,
       loadTimer: null,
-      lastActivated: 0
+      lastActivated: 0,
+      readySettled: false,
+      readyPromise: null,
+      resolveReady: null
     };
+    windowState.readyPromise = new Promise(resolve => { windowState.resolveReady = resolve; });
     openWindows.set(app.id, windowState);
 
     iframe.addEventListener('load', () => {
-      clearTimeout(windowState.loadTimer);
-      windowState.loaded = true;
+      try {
+        const doc = iframe.contentDocument;
+        if (doc && doc.URL === 'about:blank' && app.file !== 'about:blank') {
+          showUnavailable(windowState);
+          return;
+        }
+      } catch (_) {
+        // Local file iframe isolation differs between browsers; a load event is sufficient.
+      }
       windowState.loading.hidden = true;
       windowState.unavailable.hidden = true;
+      settleWindowLoad(windowState, true);
       if (app.id === 'weekly-data') {
         state.pendingStageSent = false;
         deliverPendingStageFiles(windowState);
       }
-      try {
-        const doc = iframe.contentDocument;
-        if (doc && doc.URL === 'about:blank' && app.file !== 'about:blank') showUnavailable(windowState);
-      } catch (_) {
-        // Local file iframe isolation differs between browsers; a load event is sufficient.
-      }
     });
     iframe.addEventListener('error', () => showUnavailable(windowState));
-    windowState.loadTimer = setTimeout(() => { windowState.loading.hidden = true; }, 12000);
+    windowState.loadTimer = setTimeout(() => {
+      windowState.loading.hidden = true;
+      settleWindowLoad(windowState, false);
+    }, APP_LOAD_TIMEOUT_MS);
     iframe.src = app.file;
-    renderTaskbar();
-    persistOpenWindows();
+    if (windowState.userOpened) {
+      renderTaskbar();
+      persistOpenWindows();
+    }
     return windowState;
   }
 
   function renderTaskbar() {
-    elements.taskbarOpen.replaceChildren(...Array.from(openWindows.values()).map(windowState => {
+    const userOpened = Array.from(openWindows.values()).filter(windowState => windowState.userOpened);
+    elements.taskbarOpen.replaceChildren(...userOpened.map(windowState => {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'taskbar-app';
@@ -563,6 +612,7 @@
   function activateWindow(appId) {
     const windowState = openWindows.get(appId);
     if (!windowState) return;
+    promoteWindowState(windowState);
     state.activeAppId = appId;
     windowState.minimized = false;
     windowState.lastActivated = Date.now();
@@ -580,7 +630,9 @@
 
   function openApp(app) {
     if (!app || !app.file) return;
-    if (!openWindows.has(app.id)) createWindow(app);
+    const existing = openWindows.get(app.id);
+    if (existing) promoteWindowState(existing);
+    else createWindow(app);
     activateWindow(app.id);
   }
 
@@ -635,9 +687,15 @@
     windowState.unavailable.hidden = true;
     windowState.loading.hidden = false;
     windowState.loaded = false;
+    windowState.warmState = 'loading';
+    windowState.readySettled = false;
+    windowState.readyPromise = new Promise(resolve => { windowState.resolveReady = resolve; });
     state.pendingStageSent = false;
     clearTimeout(windowState.loadTimer);
-    windowState.loadTimer = setTimeout(() => { windowState.loading.hidden = true; }, 12000);
+    windowState.loadTimer = setTimeout(() => {
+      windowState.loading.hidden = true;
+      settleWindowLoad(windowState, false);
+    }, APP_LOAD_TIMEOUT_MS);
     try { windowState.iframe.contentWindow.location.reload(); }
     catch (_) { windowState.iframe.src = windowState.app.file; }
   }
@@ -647,7 +705,7 @@
     const favoriteAction = elements.contextMenu.querySelector('[data-context-action="favorite"]');
     const closeAction = elements.contextMenu.querySelector('[data-context-action="close"]');
     favoriteAction.textContent = state.favorites.has(app.id) ? 'Unfavorite' : 'Favorite';
-    closeAction.hidden = !openWindows.has(app.id);
+    closeAction.hidden = !(openWindows.has(app.id) && openWindows.get(app.id).userOpened);
     elements.contextMenu.hidden = false;
     const bounds = elements.contextMenu.getBoundingClientRect();
     elements.contextMenu.style.left = Math.max(7, Math.min(x, root.innerWidth - bounds.width - 7)) + 'px';
@@ -696,7 +754,7 @@
       ['HTML file', app.file],
       ['Icon file', app.icon || 'Initials fallback'],
       ['Data sources', data],
-      ['Session', openWindows.has(app.id) ? (openWindows.get(app.id).minimized ? 'Open · minimized' : 'Open') : 'Closed'],
+      ['Session', openWindows.has(app.id) && openWindows.get(app.id).userOpened ? (openWindows.get(app.id).minimized ? 'Open · minimized' : 'Open') : 'Closed'],
       ['Data status', missingRequirements(app).length ? 'Opens with a data warning' : 'Ready']
     ];
     for (const [label, value] of rows) {
@@ -753,12 +811,13 @@
   function showDiagnostics() {
     const statuses = storage && storage.getDatasetStatus ? storage.getDatasetStatus() : [];
     const size = storage && storage.getApproximateStorageSize ? storage.getApproximateStorageSize() : { bytes: 0, entries: 0 };
-    const minimized = Array.from(openWindows.values()).filter(item => item.minimized).map(item => item.app.name);
+    const userOpened = Array.from(openWindows.values()).filter(item => item.userOpened);
+    const minimized = userOpened.filter(item => item.minimized).map(item => item.app.name);
     const scan = state.lastScan || readJson(STORAGE_SCAN_KEY, null) || {};
     const content = document.createElement('div');
     content.className = 'diagnostics-grid';
     content.appendChild(diagnosticSection('Desktop', [
-      ['Open applications', String(openWindows.size)],
+      ['Open applications', String(userOpened.length)],
       ['Active application', state.activeAppId && byId.get(state.activeAppId) ? byId.get(state.activeAppId).name : 'Desktop'],
       ['Minimized', minimized.length ? minimized.join(', ') : 'None'],
       ['Remembered on refresh', 'Yes · app list only'],
@@ -870,7 +929,7 @@
   function setImportProgress(percent, currentSource, currentFile, count, summary) {
     const value = Math.max(0, Math.min(100, Number(percent) || 0));
     if (state.startupScanActive) {
-      setStartupProgress(value, currentSource, summary || currentFile, count);
+      setStartupProgress(15 + value * .35, currentSource, summary || currentFile, count);
       return;
     }
     elements.importProgressFill.style.width = value + '%';
@@ -899,7 +958,7 @@
   function finishImportProgress(summary, options) {
     if (state.startupScanActive) {
       renderStartupDatasets(currentDatasetStatuses());
-      setStartupProgress(100, options && options.warning ? 'Data review available' : 'Shared data ready', summary, options && options.count || '5 of 5');
+      setStartupProgress(50, options && options.warning ? 'Data review available' : 'Shared data ready', summary, options && options.count || '5 of 5');
       return;
     }
     setImportProgress(100, options && options.warning ? 'Review needed' : 'Ready', '', options && options.count || '5 of 5', summary);
@@ -948,12 +1007,12 @@
     const datasetTypes = statuses.map(item => item.datasetType || item.id);
     if (location.protocol === 'file:') {
       saveScanRecord({ available: false, fileCount: 0, ambiguous: [], summary: 'Direct-file mode · manual import available' });
-      if (startup) setStartupProgress(86, 'Desktop ready', `${statuses.filter(item => item.ready).length} of 5 data sources ready · use START COACHTOOLS for automatic storage loading.`, `${statuses.filter(item => item.ready).length} of 5 ready`);
+      if (startup) setStartupProgress(50, 'Shared data ready', `${statuses.filter(item => item.ready).length} of 5 data sources ready · use START COACHTOOLS for automatic storage loading.`, `${statuses.filter(item => item.ready).length} of 5 ready`);
       if (manual) showToast('Start CoachTools with START COACHTOOLS to scan storage. Manual Weekly Data import is still available.', 5800);
       return;
     }
     if (!importer) {
-      if (startup) setStartupProgress(86, 'Desktop ready', 'Shared import utilities are unavailable. Manual Weekly Data import remains available.', `${statuses.filter(item => item.ready).length} of 5 ready`);
+      if (startup) setStartupProgress(50, 'Shared data ready', 'Shared import utilities are unavailable. Manual Weekly Data import remains available.', `${statuses.filter(item => item.ready).length} of 5 ready`);
       if (manual) showToast('The shared import utility is unavailable. Use Weekly Data for manual import.', 5600);
       return;
     }
@@ -968,7 +1027,7 @@
     } catch (error) {
       state.autoScanRunning = false;
       saveScanRecord({ available: false, fileCount: 0, ambiguous: [], summary: 'Storage API unavailable' });
-      if (startup) setStartupProgress(88, 'Desktop ready', 'Storage scanning is unavailable. Existing data is unchanged and manual import remains available.', `${statuses.filter(item => item.ready).length} of 5 ready`);
+      if (startup) setStartupProgress(50, 'Shared data ready', 'Storage scanning is unavailable. Existing data is unchanged and manual import remains available.', `${statuses.filter(item => item.ready).length} of 5 ready`);
       if (manual) showToast('Storage scanning is unavailable. Manual Weekly Data import remains available.', 5600);
       return;
     }
@@ -977,7 +1036,7 @@
     if (!listedFiles.length) {
       state.autoScanRunning = false;
       saveScanRecord({ available: true, fileCount: 0, ambiguous: [], summary: 'No supported storage files found' });
-      if (startup) setStartupProgress(92, 'Desktop ready', 'No XLSX, XLS, or CSV files were found in CoachTools/storage. Existing data is unchanged.', `${statuses.filter(item => item.ready).length} of 5 ready`);
+      if (startup) setStartupProgress(50, 'Shared data ready', 'No XLSX, XLS, or CSV files were found in CoachTools/storage. Existing data is unchanged.', `${statuses.filter(item => item.ready).length} of 5 ready`);
       if (manual) showToast('No XLSX, XLS, or CSV files were found in CoachTools/storage.');
       return;
     }
@@ -1211,9 +1270,9 @@
       const type = event.data && event.data.type;
       const windowState = Array.from(openWindows.values()).find(item => item.iframe.contentWindow === event.source) || null;
       if (type === 'coachtools:app-ready' && windowState) {
-        clearTimeout(windowState.loadTimer);
-        windowState.loaded = true;
         windowState.loading.hidden = true;
+        windowState.unavailable.hidden = true;
+        settleWindowLoad(windowState, true);
         deliverPendingStageFiles(windowState);
       }
       if (type === 'coachtools:show-desktop' && windowState) minimizeWindow(windowState.app.id);
@@ -1293,16 +1352,20 @@
   }
 
   function detectWallpaper() {
-    const image = new Image();
-    image.addEventListener('load', () => {
-      elements.wallpaper.style.backgroundImage = 'url("graphics/background.png")';
-      elements.wallpaper.classList.add('has-wallpaper');
-    }, { once: true });
-    image.addEventListener('error', () => {
-      elements.wallpaper.classList.remove('has-wallpaper');
-      elements.wallpaper.style.backgroundImage = '';
-    }, { once: true });
-    image.src = 'graphics/background.png';
+    return new Promise(resolve => {
+      const image = new Image();
+      image.addEventListener('load', () => {
+        elements.wallpaper.style.backgroundImage = 'url("graphics/background.png")';
+        elements.wallpaper.classList.add('has-wallpaper');
+        resolve(true);
+      }, { once: true });
+      image.addEventListener('error', () => {
+        elements.wallpaper.classList.remove('has-wallpaper');
+        elements.wallpaper.style.backgroundImage = '';
+        resolve(false);
+      }, { once: true });
+      image.src = 'graphics/background.png';
+    });
   }
 
   function updateClock() {
@@ -1327,10 +1390,42 @@
     }
   }
 
+  async function warmApplications() {
+    const eligible = sortedApps(apps.filter(app => app.preload === true));
+    if (!eligible.length) {
+      setStartupProgress(90, 'Applications ready', 'No applications are configured for startup preparation.', '0 prepared');
+      return { completed: 0, failed: 0, total: 0 };
+    }
+
+    let nextIndex = 0;
+    let completed = 0;
+    let failed = 0;
+    setStartupProgress(52, 'Preparing applications', `Starting ${eligible[0].name}…`, `0 of ${eligible.length}`);
+
+    async function worker() {
+      while (nextIndex < eligible.length) {
+        const app = eligible[nextIndex];
+        nextIndex += 1;
+        const windowState = createWindow(app, { preload: true });
+        const success = await windowState.readyPromise;
+        completed += 1;
+        if (!success) failed += 1;
+        const progress = 52 + (completed / eligible.length) * 38;
+        const summary = success ? `${app.name} is ready.` : `${app.name} will load normally when opened.`;
+        setStartupProgress(progress, 'Preparing applications', summary, `${completed} of ${eligible.length}`);
+      }
+    }
+
+    const workers = Array.from({ length: Math.min(WARMUP_CONCURRENCY, eligible.length) }, () => worker());
+    await Promise.all(workers);
+    return { completed, failed, total: eligible.length };
+  }
+
   async function runStartupSequence() {
     state.startupStartedAt = Date.now();
     state.startupScanActive = true;
-    if (storage && storage.ready) await storage.ready();
+    setStartupProgress(6, 'Starting CoachTools', 'Opening shared storage…', 'Starting');
+    try { if (storage && storage.ready) await storage.ready(); } catch (_) {}
     let statuses = currentDatasetStatuses();
     renderStartupDatasets(statuses);
     const initialReady = statuses.filter(item => item.ready).length;
@@ -1341,28 +1436,37 @@
       await scanStorage({ startup: true });
     } catch (error) {
       saveScanRecord({ available: false, fileCount: 0, ambiguous: [], summary: 'Startup data check could not finish' });
-      setStartupProgress(92, 'Desktop ready', 'The startup data check could not finish. Existing data is unchanged and manual Weekly Data import remains available.', `${initialReady} of 5 ready`);
-    } finally {
-      renderDataStatus();
-      statuses = currentDatasetStatuses();
-      let peopleCount = 0;
-      try { if (root.CoachToolsIdentity) peopleCount = (await root.CoachToolsIdentity.getAllPeople()).length; } catch (_) {}
-      renderStartupDatasets(peopleCount ? [...statuses, { id: 'people-registry', label: 'People Registry', ready: true, display: `${peopleCount.toLocaleString()} people` }] : statuses);
-      const readyCount = statuses.filter(item => item.ready).length;
-      const scanIsCurrent = Boolean(state.lastScan && Date.parse(state.lastScan.scannedAt) >= state.startupStartedAt);
-      const loadedCount = scanIsCurrent && Array.isArray(state.lastScan.loaded) ? state.lastScan.loaded.length : 0;
-      const fallbackSummary = scanIsCurrent && state.lastScan.summary || `${readyCount} of 5 shared data sources ready.`;
-      const finalSummary = readyCount === 5
-        ? `All five shared data sources are ready${loadedCount ? ` · ${loadedCount} loaded automatically` : ''}.`
-        : `${readyCount} of 5 shared data sources ready · ${fallbackSummary}`;
-      setStartupProgress(100, 'CoachTools ready', finalSummary, `${readyCount} of 5 ready`);
+      setStartupProgress(50, 'Shared data ready', 'The startup data check could not finish. Existing data is unchanged and manual Weekly Data import remains available.', `${initialReady} of 5 ready`);
+    }
 
-      state.startupScanActive = false;
-      restoreOpenWindows();
-      dismissStartupSplash();
-      if (state.pendingStageFiles.length) {
-        setTimeout(() => showToast('Some storage files need review. Open Weekly Data to place them safely.', 6500), 300);
-      }
+    renderDataStatus();
+    statuses = currentDatasetStatuses();
+    setStartupProgress(51, 'Refreshing identity and scope', 'Preparing the current people, team, and department scope…', 'Shared data checked');
+    await refreshGlobalScope();
+    let peopleCount = 0;
+    try { if (root.CoachToolsIdentity) peopleCount = (await root.CoachToolsIdentity.getAllPeople()).length; } catch (_) {}
+    renderStartupDatasets(peopleCount ? [...statuses, { id: 'people-registry', label: 'People Registry', ready: true, display: `${peopleCount.toLocaleString()} people` }] : statuses);
+
+    const warmup = await warmApplications();
+    setStartupProgress(93, 'Restoring workspace', 'Reconnecting remembered applications without duplicating prepared instances…', 'Workspace');
+    restoreOpenWindows();
+    setStartupProgress(97, 'Preparing desktop', 'Waiting for the CoachTools workspace background…', 'Almost ready');
+    await state.wallpaperReady;
+
+    const readyCount = statuses.filter(item => item.ready).length;
+    const scanIsCurrent = Boolean(state.lastScan && Date.parse(state.lastScan.scannedAt) >= state.startupStartedAt);
+    const loadedCount = scanIsCurrent && Array.isArray(state.lastScan.loaded) ? state.lastScan.loaded.length : 0;
+    const warmSummary = warmup.total ? `${warmup.completed - warmup.failed} of ${warmup.total} applications prepared` : 'Applications will load on demand';
+    const finalSummary = readyCount === 5
+      ? `Shared data ready${loadedCount ? ` · ${loadedCount} updated` : ''} · ${warmSummary}.`
+      : `${readyCount} of 5 shared data sources ready · ${warmSummary}.`;
+    setStartupProgress(100, 'CoachTools ready', finalSummary, 'Ready');
+    await nextPaint();
+
+    state.startupScanActive = false;
+    dismissStartupSplash();
+    if (state.pendingStageFiles.length) {
+      setTimeout(() => showToast('Some storage files need review. Open Weekly Data to place them safely.', 6500), 300);
     }
   }
 
@@ -1381,7 +1485,7 @@
     $('startVersion').textContent = `Version ${manifest.suite && manifest.suite.version || '2.0'}`;
     bind();
     refreshGlobalScope();
-    detectWallpaper();
+    state.wallpaperReady = detectWallpaper();
     renderCategories();
     renderDataStatus();
     updateClock();
