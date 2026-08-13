@@ -6,77 +6,603 @@
   <title>People Profiles</title>
   <meta name="coachtools-id" content="people-profiles">
   <meta name="coachtools-name" content="People Profiles">
-  <meta name="coachtools-description" content="Find a coach or representative and review department-relative performance, rankings, coaching, checklist, QA, and timeline details.">
+  <meta name="coachtools-description" content="Canonical people profiles with identity intelligence, KPI trends, QA, coaching focus, team health, and department-relative comparisons.">
   <meta name="coachtools-category" content="People">
   <meta name="coachtools-icon" content="icons/default-app.png">
   <meta name="coachtools-initials" content="PP">
-  <meta name="coachtools-keywords" content="people, profile, coach, representative, rep, performance, ranking, coaching, qa, checklist, timeline">
+  <meta name="coachtools-keywords" content="people, profile, coach, representative, rep, performance, ranking, coaching, qa, checklist, timeline, identity, trends, focus">
   <meta name="coachtools-data" content="weeklyRetail, weeklyReferral, monthlyRetail, monthlyReferral, qa, documentedCoaching, checklist">
   <meta name="coachtools-favorite" content="true">
   <meta name="coachtools-order" content="25">
-  <meta name="coachtools-version" content="1.0">
+  <meta name="coachtools-version" content="2.3">
+
+  <script src="../vendor/chart.umd.js"></script>
   <script src="../shared/coachtools-sync.js"></script>
   <script src="../shared/coachtools-storage.js"></script>
   <script src="../shared/coachtools-app-data.js"></script>
   <script src="../shared/coachtools-identity.js"></script>
   <script src="../shared/coachtools-profile-data.js"></script>
   <script src="../shared/coachtools-shell.js"></script>
+
   <style>
-    :root{--bg:#f3f6f9;--panel:#fff;--ink:#14212d;--muted:#667786;--line:#dde5ec;--navy:#10283d;--blue:#247bb5;--cyan:#50b6d9;--green:#13805b;--amber:#a96500;--red:#b63b38;--soft:#eef5f8;--shadow:0 15px 45px rgba(31,55,74,.09)}
-    *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:var(--ink);background:var(--bg)}button,input,select{font:inherit}.app{min-height:100vh;display:grid;grid-template-rows:auto 1fr}.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.94);backdrop-filter:blur(15px)}.brand{display:flex;align-items:center;gap:10px;min-width:190px}.mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(145deg,var(--navy),#285b7d);color:#dff7ff;font-weight:900}.brand b,.brand small{display:block}.brand small{color:var(--muted);font-size:11px}.finder{position:relative;flex:1;max-width:720px}.finder input{width:100%;padding:11px 42px 11px 14px;border:1px solid var(--line);border-radius:12px;background:#fff;outline:none}.finder input:focus{border-color:#79b9dc;box-shadow:0 0 0 3px rgba(36,123,181,.1)}.finder span{position:absolute;right:14px;top:9px;color:var(--muted);font-size:18px}.status{margin-left:auto;color:var(--muted);font-size:11px}.layout{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:0}.sidebar{border-right:1px solid var(--line);background:#fff;padding:14px;overflow:auto}.sideTitle{margin:2px 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.11em;color:var(--muted);font-weight:850}.peopleList{display:grid;gap:5px}.personButton{width:100%;text-align:left;border:1px solid transparent;border-radius:11px;background:transparent;padding:9px 10px;cursor:pointer}.personButton:hover,.personButton.active{border-color:var(--line);background:var(--soft)}.personButton b,.personButton small{display:block}.personButton small{margin-top:2px;color:var(--muted);font-size:11px}.content{min-width:0;overflow:auto;padding:18px}.empty{max-width:680px;margin:12vh auto;text-align:center;color:var(--muted)}.emptyIcon{width:68px;height:68px;border-radius:22px;margin:0 auto 16px;display:grid;place-items:center;background:#e5f0f6;color:var(--blue);font-size:26px}.empty h1{color:var(--ink);font-size:24px}.profile{max-width:1240px;margin:0 auto}.profileHeader{position:sticky;top:0;z-index:10;border:1px solid var(--line);border-radius:17px;background:rgba(255,255,255,.96);box-shadow:var(--shadow);overflow:hidden}.profileIdentity{display:flex;align-items:flex-start;gap:14px;padding:17px}.avatar{width:52px;height:52px;flex:0 0 52px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(145deg,var(--navy),#34789e);color:#fff;font-size:18px;font-weight:900}.identityCopy{min-width:0}.identityCopy h1{margin:0;font-size:23px;letter-spacing:-.025em}.identityCopy p{margin:4px 0 0;color:var(--muted);font-size:12px}.headerActions{margin-left:auto;display:flex;gap:8px}.btn{border:1px solid var(--line);border-radius:10px;background:#fff;padding:8px 11px;cursor:pointer;color:var(--ink);font-size:12px;font-weight:730}.btn:hover{background:var(--soft)}.btn.primary{background:var(--navy);border-color:var(--navy);color:#fff}.dataBadges{display:flex;gap:6px;flex-wrap:wrap;padding:0 17px 13px}.badge{font-size:10px;font-weight:780;padding:5px 7px;border-radius:999px;background:#f1f3f5;color:#7a8792}.badge.ready{background:#e9f6f0;color:#147050}.tabs{display:flex;gap:3px;padding:0 12px;border-top:1px solid var(--line);overflow:auto}.tab{border:0;border-bottom:3px solid transparent;background:transparent;padding:11px 10px 9px;color:var(--muted);cursor:pointer;font-size:11px;font-weight:800}.tab.active{color:var(--blue);border-bottom-color:var(--blue)}.tabPanel{padding:16px 0}.sectionTitle{display:flex;align-items:end;justify-content:space-between;gap:10px;margin:3px 0 10px}.sectionTitle h2{margin:0;font-size:15px}.sectionTitle span{color:var(--muted);font-size:11px}.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:11px}.card{grid-column:span 4;border:1px solid var(--line);border-radius:15px;background:var(--panel);box-shadow:0 8px 25px rgba(31,55,74,.055);padding:13px}.card.wide{grid-column:span 8}.card.full{grid-column:1/-1}.card.half{grid-column:span 6}.card h3{margin:0 0 9px;font-size:12px}.kpi{font-size:25px;font-weight:900;letter-spacing:-.03em}.sub{margin-top:3px;color:var(--muted);font-size:11px}.metricGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}.metric{border:1px solid var(--line);border-radius:12px;padding:11px;background:#fbfdff}.metric strong,.metric small{display:block}.metric strong{font-size:20px}.metric small{margin-top:3px;color:var(--muted)}.score{color:var(--blue)}.rank{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}.rank:last-child{border-bottom:0}.rankCopy{min-width:0;flex:1}.rankCopy b,.rankCopy small{display:block}.rankCopy small{color:var(--muted);margin-top:2px}.rankValue{text-align:right}.rankValue strong,.rankValue small{display:block}.rankValue strong{font-size:17px}.rankValue small{color:var(--muted)}.attention{display:grid;grid-template-columns:1fr 1fr;gap:10px}.attentionBox{border-radius:12px;padding:11px;background:#edf8f3}.attentionBox.watch{background:#fff5e7}.attentionBox h3{color:var(--green)}.attentionBox.watch h3{color:var(--amber)}.attentionBox ul{margin:0;padding-left:17px;font-size:12px;line-height:1.55}.list{display:grid}.listRow{display:grid;grid-template-columns:minmax(150px,1fr) auto;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:12px}.listRow:last-child{border-bottom:0}.listRow small{display:block;color:var(--muted);margin-top:2px}.pill{display:inline-block;border-radius:999px;padding:4px 7px;background:var(--soft);font-size:10px;color:#466276}.bar{height:6px;border-radius:999px;background:#e7edf2;overflow:hidden;margin-top:7px}.bar span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--blue),var(--cyan))}.provenance{margin-top:7px;color:var(--muted);font-size:10px}.emptyData{padding:20px;text-align:center;color:var(--muted);font-size:12px}.loading{padding:20vh 0;text-align:center;color:var(--muted)}.timeline{display:grid;grid-template-columns:repeat(8,minmax(82px,1fr));gap:7px;overflow:auto}.week{border:1px solid var(--line);border-radius:11px;padding:9px;background:#fff}.week b,.week small{display:block}.week small{margin-top:4px;color:var(--muted)}details{border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:7px}summary{cursor:pointer;padding:10px 11px;font-size:12px;font-weight:760}details .detail{padding:0 11px 11px;color:var(--muted);font-size:11px}.error{max-width:700px;margin:12vh auto;padding:18px;border:1px solid #efc6c4;border-radius:14px;background:#fff3f2;color:var(--red)}
-    @media(max-width:1000px){.layout{grid-template-columns:230px minmax(0,1fr)}.card,.card.wide{grid-column:span 6}.card.full{grid-column:1/-1}}@media(max-width:720px){.topbar{flex-wrap:wrap}.brand{min-width:0}.status{display:none}.finder{order:3;flex-basis:100%;max-width:none}.layout{display:block}.sidebar{border-right:0;border-bottom:1px solid var(--line);max-height:235px}.content{padding:10px}.profileHeader{position:relative}.profileIdentity{flex-wrap:wrap}.headerActions{width:100%;margin-left:66px}.card,.card.wide,.card.half{grid-column:1/-1}.attention{grid-template-columns:1fr}.timeline{grid-template-columns:repeat(8,110px)}}
+    :root{
+      --bg:#f3f6f9;--panel:#fff;--ink:#14212d;--muted:#667786;--line:#dde5ec;
+      --navy:#10283d;--navy2:#1b415e;--blue:#247bb5;--cyan:#50b6d9;--green:#13805b;
+      --amber:#a96500;--red:#b63b38;--soft:#eef5f8;--soft2:#f8fbfd;
+      --shadow:0 15px 45px rgba(31,55,74,.09);--shadow-sm:0 8px 25px rgba(31,55,74,.055)
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;color:var(--ink);background:var(--bg)}
+    button,input,select{font:inherit}
+    button{color:inherit}
+    .app{min-height:100vh;display:grid;grid-template-rows:auto 1fr}
+    .topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.95);backdrop-filter:blur(15px)}
+    .brand{display:flex;align-items:center;gap:10px;min-width:205px}.mark{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;background:linear-gradient(145deg,var(--navy),#285b7d);color:#dff7ff;font-weight:950;box-shadow:0 8px 20px rgba(16,40,61,.15)}
+    .brand b,.brand small{display:block}.brand b{letter-spacing:-.015em}.brand small{color:var(--muted);font-size:11px;margin-top:2px}
+    .finder{position:relative;flex:1;max-width:760px}.finder input{width:100%;padding:11px 42px 11px 14px;border:1px solid var(--line);border-radius:12px;background:#fff;outline:none}.finder input:focus{border-color:#79b9dc;box-shadow:0 0 0 3px rgba(36,123,181,.1)}.finder span{position:absolute;right:14px;top:9px;color:var(--muted);font-size:18px}
+    .status{margin-left:auto;color:var(--muted);font-size:11px;white-space:nowrap}.status.good{color:var(--green)}
+    .layout{display:grid;grid-template-columns:292px minmax(0,1fr);min-height:0}.sidebar{border-right:1px solid var(--line);background:#fff;padding:14px;overflow:auto;min-height:0}.sideTitle{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:2px 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.11em;color:var(--muted);font-weight:850}.sideTitle span:last-child{text-transform:none;letter-spacing:0;font-size:10px;font-weight:700}
+    .peopleList{display:grid;gap:12px}.peopleSection{display:grid;gap:5px}.peopleSectionHead{position:sticky;top:-14px;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 -2px 3px;padding:8px 6px 6px;background:rgba(255,255,255,.97);border-bottom:1px solid var(--line);color:var(--navy);font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.peopleSectionHead span:last-child{color:var(--muted);font-weight:800;letter-spacing:0}.personButton{width:100%;text-align:left;border:1px solid transparent;border-radius:11px;background:transparent;padding:9px 10px;cursor:pointer}.personButton:hover,.personButton.active{border-color:var(--line);background:var(--soft)}.personButton b,.personButton small{display:block}.personButton small{margin-top:2px;color:var(--muted);font-size:11px;line-height:1.3}.personButton .micro{margin-top:4px;color:#587286;font-size:9px}.content{min-width:0;overflow:auto;padding:18px}.empty{max-width:680px;margin:12vh auto;text-align:center;color:var(--muted)}.emptyIcon{width:68px;height:68px;border-radius:22px;margin:0 auto 16px;display:grid;place-items:center;background:#e5f0f6;color:var(--blue);font-size:26px}.empty h1{color:var(--ink);font-size:24px}.profile{max-width:1320px;margin:0 auto}.profileHeader{position:sticky;top:0;z-index:20;border:1px solid var(--line);border-radius:17px;background:rgba(255,255,255,.97);box-shadow:var(--shadow);overflow:hidden}.profileIdentity{display:flex;align-items:flex-start;gap:14px;padding:17px}.avatar{width:54px;height:54px;flex:0 0 54px;border-radius:17px;display:grid;place-items:center;background:linear-gradient(145deg,var(--navy),#34789e);color:#fff;font-size:18px;font-weight:950}.identityCopy{min-width:0;flex:1}.identityCopy h1{margin:0;font-size:24px;letter-spacing:-.03em}.identityCopy p{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}.identityLine{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:7px}.identityChip{appearance:none;border:1px solid #bfe5d5;background:#eefaf4;color:#126b4d;border-radius:999px;padding:5px 8px;font-size:10px;font-weight:850;cursor:pointer}.identityChip:hover{background:#e2f6ed}.headerActions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}.btn{border:1px solid var(--line);border-radius:10px;background:#fff;padding:8px 11px;cursor:pointer;color:var(--ink);font-size:12px;font-weight:760}.btn:hover{background:var(--soft)}.btn.primary{background:var(--navy);border-color:var(--navy);color:#fff}.btn.small{padding:6px 8px;font-size:10px}.dataBadges{display:flex;gap:6px;flex-wrap:wrap;padding:0 17px 13px}.badge{font-size:10px;font-weight:780;padding:5px 7px;border-radius:999px;background:#f1f3f5;color:#7a8792}.badge.ready{background:#e9f6f0;color:#147050}.tabs{display:flex;gap:3px;padding:0 12px;border-top:1px solid var(--line);overflow:auto}.tab{border:0;border-bottom:3px solid transparent;background:transparent;padding:11px 10px 9px;color:var(--muted);cursor:pointer;font-size:11px;font-weight:800;white-space:nowrap}.tab.active{color:var(--blue);border-bottom-color:var(--blue)}.tabPanel{padding:16px 0}.sectionTitle{display:flex;align-items:end;justify-content:space-between;gap:10px;margin:3px 0 10px}.sectionTitle h2{margin:0;font-size:15px}.sectionTitle span{color:var(--muted);font-size:11px;text-align:right}.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:11px}.card{grid-column:span 4;border:1px solid var(--line);border-radius:15px;background:var(--panel);box-shadow:var(--shadow-sm);padding:13px;min-width:0}.card.wide{grid-column:span 8}.card.full{grid-column:1/-1}.card.half{grid-column:span 6}.card.quarter{grid-column:span 3}.card h3{margin:0 0 9px;font-size:12px}.cardHead{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:9px}.cardHead h3{margin:0}.cardHead select{border:1px solid var(--line);border-radius:9px;background:#fff;padding:6px 8px;font-size:10px;max-width:260px}.kpi{font-size:26px;font-weight:950;letter-spacing:-.035em}.sub{margin-top:3px;color:var(--muted);font-size:11px;line-height:1.45}.delta{font-weight:850}.delta.up{color:var(--green)}.delta.down{color:var(--red)}.delta.flat{color:var(--muted)}
+    .pulseGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:8px}.pulse{border:1px solid var(--line);border-radius:13px;padding:12px;background:linear-gradient(180deg,#fff,#fbfdff)}.pulseTop{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.pulse label{font-size:10px;color:var(--muted);font-weight:850;text-transform:uppercase;letter-spacing:.04em}.pulse strong{display:block;font-size:24px;letter-spacing:-.035em;margin-top:6px}.pulse .rankTag{border-radius:999px;background:var(--soft);padding:4px 6px;font-size:9px;color:#466276;font-weight:800;white-space:nowrap}.pulseFoot{display:flex;justify-content:space-between;gap:8px;margin-top:7px;color:var(--muted);font-size:10px}.metricGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}.metric{border:1px solid var(--line);border-radius:12px;padding:11px;background:#fbfdff}.metric strong,.metric small{display:block}.metric strong{font-size:20px}.metric small{margin-top:3px;color:var(--muted)}.score{color:var(--blue)}
+    .rank{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}.rank:last-child{border-bottom:0}.rankCopy{min-width:0;flex:1}.rankCopy b,.rankCopy small{display:block}.rankCopy small{color:var(--muted);margin-top:2px}.rankValue{text-align:right}.rankValue strong,.rankValue small{display:block}.rankValue strong{font-size:17px}.rankValue small{color:var(--muted)}
+    .attention{display:grid;grid-template-columns:1fr 1fr;gap:10px}.attentionBox{border-radius:13px;padding:12px;background:#edf8f3;border:1px solid #d9efe5}.attentionBox.watch{background:#fff7eb;border-color:#f3e3c9}.attentionBox h3{color:var(--green)}.attentionBox.watch h3{color:var(--amber)}.attentionBox ul{margin:0;padding-left:17px;font-size:12px;line-height:1.55}
+    .insightGrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.insight{border:1px solid var(--line);border-radius:13px;padding:12px;background:#fff}.insight.good{border-color:#cfe8dc;background:#f6fcf9}.insight.watch{border-color:#f0dcc1;background:#fffaf3}.insightTitle{display:flex;align-items:center;justify-content:space-between;gap:8px}.insightTitle b{font-size:12px}.severity{border-radius:999px;padding:4px 7px;font-size:9px;font-weight:900}.severity.high{background:#fdeceb;color:var(--red)}.severity.medium{background:#fff2da;color:var(--amber)}.severity.good{background:#e7f7ef;color:var(--green)}.insightValue{font-size:21px;font-weight:950;margin-top:7px}.insight p{font-size:11px;color:var(--muted);line-height:1.45;margin:6px 0 0}.reasonList{display:grid;gap:4px;margin-top:8px}.reason{font-size:10px;color:#41596b;display:flex;gap:6px}.reason:before{content:'•';color:var(--blue)}
+    .list{display:grid}.listRow{display:grid;grid-template-columns:minmax(150px,1fr) auto;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:12px}.listRow:last-child{border-bottom:0}.listRow small{display:block;color:var(--muted);margin-top:2px;line-height:1.35}.pill{display:inline-block;border-radius:999px;padding:4px 7px;background:var(--soft);font-size:10px;color:#466276}.pill.good{background:#e9f6f0;color:#147050}.pill.warn{background:#fff2df;color:#8b5900}.pill.bad{background:#fdeceb;color:#a13230}.bar{height:6px;border-radius:999px;background:#e7edf2;overflow:hidden;margin-top:7px}.bar span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--blue),var(--cyan))}.provenance{margin-top:7px;color:var(--muted);font-size:10px;line-height:1.4}.emptyData{padding:20px;text-align:center;color:var(--muted);font-size:12px}.loading{padding:20vh 0;text-align:center;color:var(--muted)}.startup{max-width:620px;margin:16vh auto;padding:26px;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:var(--shadow-sm);text-align:left}.startup h1{margin:0;font-size:21px;letter-spacing:-.025em}.startup p{margin:7px 0 16px;color:var(--muted);font-size:12px;line-height:1.45}.startupTrack{height:11px;border-radius:999px;background:#e7edf2;overflow:hidden}.startupBar{height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,var(--blue),var(--cyan));transition:width .22s ease}.startupMeta{display:flex;justify-content:space-between;gap:12px;margin-top:8px;color:var(--muted);font-size:10px;font-weight:800}.startupDone{color:var(--green)}
+    .chartWrap{position:relative;height:315px;width:100%}.chartWrap.tall{height:380px}.chartLegend{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;color:var(--muted);font-size:10px}.legendDot{width:8px;height:8px;border-radius:999px;display:inline-block;background:currentColor;margin-right:4px}.legendPerson{color:var(--blue)}.legendTeam{color:var(--green)}.legendDept{color:var(--muted)}
+    .coachingMarkers{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.marker{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 7px;font-size:9px;color:#536878}.marker b{color:var(--ink)}
+    .priorityList{display:grid;gap:7px}.priorityPerson{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;cursor:pointer}.priorityPerson:hover{background:var(--soft2)}.priorityTop{display:flex;align-items:center;justify-content:space-between;gap:8px}.priorityTop b{font-size:12px}.priorityWhy{margin-top:5px;color:var(--muted);font-size:10px;line-height:1.4}.priorityStats{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.priorityStats span{font-size:9px;border-radius:999px;padding:4px 6px;background:var(--soft);color:#50697b;font-weight:800}
+    .coverageGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}.coverage{border:1px solid var(--line);border-radius:12px;padding:11px}.coverageTop{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.coverageTop b{font-size:11px}.coverage strong{font-size:20px}.coverage .bar{margin-top:8px}.coverage small{display:block;color:var(--muted);margin-top:5px;font-size:9px;line-height:1.4}
+    .healthRow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.health{border:1px solid var(--line);border-radius:12px;padding:11px;background:#fff}.health label{display:block;color:var(--muted);font-size:9px;font-weight:850;text-transform:uppercase;letter-spacing:.05em}.health strong{display:block;font-size:22px;margin-top:5px}.health.good strong{color:var(--green)}.health.bad strong{color:var(--red)}.health.warn strong{color:var(--amber)}
+    .heatWrap{overflow:auto;border:1px solid var(--line);border-radius:13px}.heatTable{border-collapse:collapse;width:100%;min-width:780px;background:#fff}.heatTable th{position:sticky;top:0;background:#f6f9fb;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.04em;text-align:left;padding:9px;border-bottom:1px solid var(--line)}.heatTable td{padding:9px;border-bottom:1px solid var(--line);font-size:11px}.heatTable tr:last-child td{border-bottom:0}.heatTable tr[data-person-id]{cursor:pointer}.heatTable tr[data-person-id]:hover td{background:#f8fbfd}.heatCell{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 7px;font-size:9px;font-weight:850}.heatCell.good{background:#e9f7f0;color:#126d4e}.heatCell.mid{background:#fff5df;color:#8b5c0a}.heatCell.bad{background:#fdeceb;color:#a23230}.heatCell.none{background:#f1f3f5;color:#7b8993}
+    .timeline{display:grid;grid-template-columns:repeat(8,minmax(95px,1fr));gap:7px;overflow:auto}.week{border:1px solid var(--line);border-radius:11px;padding:9px;background:#fff}.week b,.week small{display:block}.week small{margin-top:4px;color:var(--muted)}details{border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:7px}summary{cursor:pointer;padding:10px 11px;font-size:12px;font-weight:760}details .detail{padding:0 11px 11px;color:var(--muted);font-size:11px;line-height:1.5}.error{max-width:700px;margin:12vh auto;padding:18px;border:1px solid #efc6c4;border-radius:14px;background:#fff3f2;color:var(--red)}
+    .modalBackdrop{position:fixed;inset:0;z-index:200;background:rgba(9,24,36,.38);display:none;align-items:center;justify-content:center;padding:20px}.modalBackdrop.show{display:flex}.modal{width:min(720px,96vw);max-height:85vh;overflow:auto;border-radius:18px;background:#fff;border:1px solid var(--line);box-shadow:0 30px 80px rgba(9,24,36,.24)}.modalHead{position:sticky;top:0;background:rgba(255,255,255,.97);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 16px;border-bottom:1px solid var(--line);z-index:2}.modalHead h2{font-size:16px;margin:0}.modalBody{padding:16px}.aliasGrid{display:flex;gap:6px;flex-wrap:wrap}.alias{border-radius:999px;background:var(--soft);padding:6px 8px;font-size:10px;color:#486476}.sourceBox{margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:11px}.sourceBox b{display:block;font-size:11px}.sourceBox small{display:block;color:var(--muted);margin-top:4px;line-height:1.45}.identityLog{display:grid;gap:6px;margin-top:10px}.identityLog div{font-size:10px;color:#4f6575;padding:7px 8px;border-radius:9px;background:#f7fafc}
+    @media(max-width:1050px){.layout{grid-template-columns:235px minmax(0,1fr)}.card,.card.wide{grid-column:span 6}.card.full{grid-column:1/-1}.card.quarter{grid-column:span 6}.healthRow{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:720px){.topbar{flex-wrap:wrap}.brand{min-width:0}.status{display:none}.finder{order:3;flex-basis:100%;max-width:none}.layout{display:block}.sidebar{border-right:0;border-bottom:1px solid var(--line);max-height:245px}.content{padding:10px}.profileHeader{position:relative}.profileIdentity{flex-wrap:wrap}.headerActions{width:100%;margin-left:68px}.card,.card.wide,.card.half,.card.quarter{grid-column:1/-1}.attention,.insightGrid{grid-template-columns:1fr}.timeline{grid-template-columns:repeat(8,115px)}.chartWrap{height:280px}.healthRow{grid-template-columns:1fr 1fr}}
   </style>
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand"><div class="mark">PP</div><div><b>People Profiles</b><small>One person · connected CoachTools data</small></div></div>
+      <div class="brand"><div class="mark">PP</div><div><b>People Profiles</b><small>Identity intelligence · performance profiles</small></div></div>
       <label class="finder"><input id="personSearch" type="search" autocomplete="off" placeholder="Search name, alias, team, coach, or department"><span>⌕</span></label>
       <div class="status" id="registryStatus">Loading people…</div>
     </header>
     <div class="layout">
-      <aside class="sidebar"><div class="sideTitle" id="listTitle">People</div><div class="peopleList" id="peopleList"></div></aside>
-      <main class="content" id="content"><section class="empty"><div class="emptyIcon">◎</div><h1>Show me a person</h1><p>Search for a coach or representative to connect performance, QA, coaching, checklist activity, and department-relative comparisons.</p></section></main>
+      <aside class="sidebar">
+        <div class="sideTitle"><span id="listTitle">People</span><span id="dedupeStatus"></span></div>
+        <div class="peopleList" id="peopleList"></div>
+      </aside>
+      <main class="content" id="content"><section class="startup" id="startupPanel"><h1>Preparing People Profiles</h1><p>Rebuilding coaches and representatives from the source rows, then reconciling coach-only surname aliases. This runs once when the app opens.</p><div class="startupTrack"><div class="startupBar" id="startupBar"></div></div><div class="startupMeta"><span id="startupLabel">Starting…</span><span id="startupPct">0%</span></div></section></main>
     </div>
   </div>
+
+  <div class="modalBackdrop" id="identityModal">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="identityModalTitle">
+      <header class="modalHead"><h2 id="identityModalTitle">Identity details</h2><button class="btn" data-action="close-identity">Close</button></header>
+      <div class="modalBody" id="identityModalBody"></div>
+    </section>
+  </div>
+
   <script>
   (()=>{
     'use strict';
-    const RECENT_KEY='coachtools.peopleProfiles.recent.v1';
+
+    const DATA_TYPES=['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist'];
+    const HISTORY_TYPES=['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral','qa'];
+    const RECENT_KEY='coachtools.peopleProfiles.recent.v2';
+    const ROLE_SUFFIXES=[
+      /\s*\((?:job\s*)?coach\)\s*$/i,
+      /\s*\((?:team\s*)?coach\)\s*$/i,
+      /\s*\((?:supervisor|manager)\)\s*$/i,
+      /\s*[-–—]\s*(?:job\s*)?coach\s*$/i,
+      /\s*[-–—]\s*(?:supervisor|manager)\s*$/i
+    ];
+    const METRIC_SYNONYMS={
+      'cash-appointment-rate':['cash','appointment','appt','schedule'],
+      'referral-appointment-rate':['referral','appointment','appt','schedule'],
+      'call-quality':['call','quality','cq'],
+      'qa-score':['qa','quality'],
+      'afterpay':['afterpay'],
+      'save-the-sale':['save','sale','sts'],
+      'rapport':['rapport'],
+      'insurance-cash':['insurance','cash'],
+      'solution-rate':['solution'],
+      'worst-practice':['worst','practice'],
+      'wiper-rate':['wiper','wipers','vaps']
+    };
+
     const $=id=>document.getElementById(id);
-    const state={people:[],selectedId:'',profile:null,tab:'Overview',recent:[],searchTimer:null};
+    const state={
+      people:[],visiblePeople:[],selectedId:'',profile:null,tab:'Overview',recent:[],searchTimer:null,
+      records:{},historyRecords:{},charts:new Map(),identityReport:{merges:[],aliases:[],ambiguous:[]},
+      teamProfiles:[],repInsights:null,coachInsights:null,metricSelection:'',qualityReady:false,canonicalIdMap:new Map(),virtualCollapsed:0,identityPrepared:false,coachEvidence:null
+    };
+
     const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
-    const initials=name=>String(name||'').split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase()||'P';
+    const clean=value=>String(value==null?'':value).trim().replace(/\s+/g,' ');
+    const normHeader=value=>clean(value).toLowerCase().replace(/[^a-z0-9%]/g,'');
+    const normalizeName=value=>CoachToolsIdentity.normalizeName(value);
+    const initials=name=>clean(name).split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase()||'P';
     const fmtPct=value=>Number.isFinite(value)?(value*100).toFixed(1)+'%':'—';
     const fmtDays=value=>Number.isFinite(value)?value.toFixed(1)+' days':'—';
     const fmtDate=value=>value?new Date(value).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}):'—';
-    const sourceNames={weeklyRetail:'Weekly',weeklyReferral:'Weekly',monthlyRetail:'Monthly',monthlyReferral:'Monthly',qa:'QA',documentedCoaching:'Coaching',checklist:'Checklist'};
+    const fmtShortDate=value=>value?new Date(value).toLocaleDateString([], {month:'short',day:'numeric'}):'—';
+    const mean=values=>{const valid=(values||[]).filter(Number.isFinite);return valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:NaN};
+    const sourceNames={weeklyRetail:'Weekly Retail',weeklyReferral:'Weekly Referral',monthlyRetail:'Monthly Retail',monthlyReferral:'Monthly Referral',qa:'QA',documentedCoaching:'Coaching',checklist:'Checklist'};
+
     function readRecent(){try{return JSON.parse(localStorage.getItem(RECENT_KEY)||'[]').filter(Boolean).slice(0,8)}catch{return[]}}
     function saveRecent(id){state.recent=[id,...state.recent.filter(value=>value!==id)].slice(0,8);try{localStorage.setItem(RECENT_KEY,JSON.stringify(state.recent))}catch{}}
-    function personMeta(person){const coach=person.currentCoachId&&state.people.find(candidate=>candidate.personId===person.currentCoachId);return[person.role==='coach'?'Coach':person.role==='representative'?'Representative':'Role not set',person.department,person.currentTeam||person.team,coach&&coach.displayName].filter(Boolean).join(' · ')}
-    function renderPeople(list,title){$('listTitle').textContent=title;$('peopleList').innerHTML=list.length?list.map(person=>`<button class="personButton ${person.personId===state.selectedId?'active':''}" data-person-id="${esc(person.personId)}"><b>${esc(person.displayName)}</b><small>${esc(personMeta(person))}</small></button>`).join(''):'<div class="emptyData">No matching people.</div>'}
-    async function searchPeople(){const query=$('personSearch').value.trim();if(query){const matches=await CoachToolsIdentity.find(query);renderPeople(matches.slice(0,80),`${matches.length} result${matches.length===1?'':'s'}`)}else{const recent=state.recent.map(id=>state.people.find(person=>person.personId===id)).filter(Boolean);renderPeople(recent.length?recent:state.people.slice(0,40),recent.length?'Recent people':'People')}}
-    function dataBadges(profile){const groups={Weekly:profile.sources.weeklyRetail||profile.sources.weeklyReferral,QA:profile.sources.qa,Coaching:profile.sources.documentedCoaching,Checklist:profile.sources.checklist,Timeline:profile.sources.checklist||profile.sources.documentedCoaching};return Object.entries(groups).map(([name,ready])=>`<span class="badge ${ready?'ready':''}">${name} ${ready?'✓':'—'}</span>`).join('')}
+    function stripRoleAnnotation(value){let result=clean(value);for(const pattern of ROLE_SUFFIXES)result=result.replace(pattern,'').trim();return result}
+    function hasCoachAnnotation(value){const raw=clean(value);return /\(\s*(?:job\s*|team\s*)?coach\s*\)\s*$/i.test(raw)||/[-–—]\s*(?:job\s*)?coach\s*$/i.test(raw)}
+    function surname(value){const parts=normalizeName(stripRoleAnnotation(value)).split(' ').filter(Boolean);return parts.length>1?parts[parts.length-1]:parts[0]||''}
+    function departmentFor(type){return /retail/i.test(type)?'Retail':/referral/i.test(type)?'Referral':''}
+    function parseDate(value){if(value instanceof Date&&!Number.isNaN(value.getTime()))return value;if(typeof value==='number'&&value>0&&value<100000)return new Date(Date.UTC(1899,11,30)+value*86400000);const raw=clean(value);if(!raw)return null;const date=new Date(raw);return Number.isNaN(date.getTime())?null:date}
+    function pick(row,names){const map=new Map(Object.keys(row||{}).map(key=>[normHeader(key),key]));for(const name of names){const key=map.get(normHeader(name));if(key!=null)return row[key]}return undefined}
+
+    function rowsFromAoa(aoa){
+      if(!Array.isArray(aoa))return[];
+      const signals=['sheet','team','coach','jobcoach','coachassigned','representative','associatename','agentname','name','score%','action','date'];
+      let best={index:-1,score:0,header:[]};
+      for(let index=0;index<Math.min(60,aoa.length);index+=1){const header=Array.isArray(aoa[index])?aoa[index].map(clean):[];const keys=header.map(normHeader);const score=signals.filter(signal=>keys.includes(normHeader(signal))).length;if(score>best.score)best={index,score,header}}
+      if(best.index<0||!best.score)return[];
+      return aoa.slice(best.index+1).map(values=>Object.fromEntries(best.header.map((header,index)=>[header,Array.isArray(values)?values[index]:'']).filter(([header])=>header))).filter(row=>Object.values(row).some(value=>clean(value)));
+    }
+
+    function extractRows(dataset){
+      const result=[],seen=new Set();
+      function push(rows,sheet){if(!Array.isArray(rows)||!rows.length)return;const values=Array.isArray(rows[0])?rowsFromAoa(rows):rows;if(!values.length)return;const key=`${sheet}|${values.length}|${Object.keys(values[0]||{}).join('|')}`;if(seen.has(key))return;seen.add(key);result.push(...values.map(row=>({...row,__sheet:sheet||''})))}
+      function walk(node,sheet){if(node==null)return;if(Array.isArray(node)){push(node,sheet);return}if(typeof node!=='object')return;if(Array.isArray(node.aoa))push(node.aoa,sheet);if(Array.isArray(node.rows))push(node.rows,sheet);if(node.workbook&&node.workbook.data)for(const[name,value]of Object.entries(node.workbook.data))walk(value,name);if(node.sheets&&typeof node.sheets==='object'&&!Array.isArray(node.sheets))for(const[name,value]of Object.entries(node.sheets))walk(value,name)}
+      walk(dataset,'');return result;
+    }
+
+    function richness(person){return (person.displayName?4:0)+(person.department?3:0)+(person.currentTeam?3:0)+(person.currentCoachId?2:0)+Object.values(person.sourceNames||{}).flat().length*2+(person.aliases||[]).length+(person.relationshipHistory||[]).length+(person.teamHistory||[]).length}
+    function roleCompatible(a,b){return a.role===b.role||a.role==='unknown'||b.role==='unknown'}
+    function choosePrimary(group){return [...group].sort((a,b)=>{const aDecor=stripRoleAnnotation(a.displayName)!==clean(a.displayName),bDecor=stripRoleAnnotation(b.displayName)!==clean(b.displayName);if(aDecor!==bDecor)return aDecor?1:-1;return richness(b)-richness(a)})[0]}
+
+    async function safeMerge(primary,secondary,reason,force){
+      if(!primary||!secondary||primary.personId===secondary.personId||(!force&&!roleCompatible(primary,secondary)))return primary;
+      try{const result=await CoachToolsIdentity.mergePeople(primary.personId,secondary.personId);state.identityReport.merges.push(`${secondary.displayName} → ${result.person.displayName} (${reason})`);return result.person}catch(error){state.identityReport.ambiguous.push(`${secondary.displayName} ↔ ${primary.displayName}: ${error.message||error}`);return primary}
+    }
+
+    async function safeAlias(person,alias,reason){
+      const raw=clean(alias);if(!person||!raw||normalizeName(raw)===person.normalizedName||(person.aliases||[]).some(value=>normalizeName(value)===normalizeName(raw)))return person;
+      try{const next=await CoachToolsIdentity.addAlias(person.personId,raw);state.identityReport.aliases.push(`${raw} → ${next.displayName} (${reason})`);return next}catch(error){state.identityReport.ambiguous.push(`${raw} ↔ ${person.displayName}: ${error.message||error}`);return person}
+    }
+
+    async function mergeDecoratedDuplicates(){
+      let people=await CoachToolsIdentity.getAllPeople();
+      const groups=new Map();
+      for(const person of people){const key=normalizeName(stripRoleAnnotation(person.displayName));if(!key)continue;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(person)}
+      for(const group of groups.values()){
+        if(group.length<2)continue;
+        const annotated=group.some(person=>hasCoachAnnotation(person.displayName));
+        const knownRoles=new Set(group.map(person=>person.role).filter(role=>role!=='unknown'));
+        if(knownRoles.size>1&&!annotated)continue;
+        let primary=choosePrimary(group);
+        // A literal “(Job Coach)”/“- Job Coach” suffix is stronger evidence than a bad role inferred by an old import.
+        if(annotated){
+          const plain=group.filter(person=>!hasCoachAnnotation(person.displayName)).sort((a,b)=>richness(b)-richness(a))[0];
+          const coach=group.find(person=>person.role==='coach');
+          primary=plain||coach||primary;
+          if(primary.role!=='coach'){
+            try{primary=await CoachToolsIdentity.updatePerson(primary.personId,{role:'coach'});state.identityReport.aliases.push(`${primary.displayName} marked Coach (explicit job-coach annotation)`)}catch(error){state.identityReport.ambiguous.push(`${primary.displayName}: could not promote explicit coach identity — ${error.message||error}`)}
+          }
+        }
+        for(const secondary of group)if(secondary.personId!==primary.personId)primary=await safeMerge(primary,secondary,annotated?'explicit job-coach annotation':'name normalization',annotated);
+      }
+      return CoachToolsIdentity.getAllPeople();
+    }
+
+    function collectIdentityEvidence(records){
+      const teamRosters=new Map(),coachRosters=new Map(),singleCoachTokens=[],coachKeys=new Set(),repKeys=new Set(),annotatedCoachKeys=new Set();
+      const coachFields=['Job Coach','Coach Assigned','Coach','Supervisor','Manager','Team','Sheet'];
+      const repFields=['Associate Name','Associate','Representative','Agent Name','AgentName','CSR/SSR Name','CSR Name','SSR Name','Employee','Name'];
+      const add=(map,key,value)=>{if(!key||!value)return;if(!map.has(key))map.set(key,new Set());map.get(key).add(value)};
+      for(const[type,record]of Object.entries(records||{})){
+        if(!record)continue;
+        const dept=departmentFor(type);
+        for(const row of extractRows(record.data)){
+          let coachRaw=pick(row,coachFields),repRaw=pick(row,repFields);
+          if(!coachRaw&&['weeklyRetail','weeklyReferral'].includes(type))coachRaw=row.__sheet;
+          const repKey=normalizeName(repRaw);
+          if(repKey)repKeys.add(repKey);
+          // Coach intelligence only comes from a row that actually connects a coach/team value to a representative.
+          if(!coachRaw||!clean(coachRaw)||!repKey)continue;
+          const coachName=stripRoleAnnotation(coachRaw),coachKey=normalizeName(coachName);
+          if(!coachKey)continue;
+          coachKeys.add(coachKey);
+          if(hasCoachAnnotation(coachRaw))annotatedCoachKeys.add(coachKey);
+          if(coachKey.split(' ').length===1)singleCoachTokens.push({raw:coachName,key:coachKey,department:dept,source:type});
+          add(teamRosters,`${type}|${dept}|${coachKey}`,repKey);
+          add(coachRosters,coachKey,repKey);
+        }
+      }
+      return{teamRosters,coachRosters,singleCoachTokens,coachKeys,repKeys,annotatedCoachKeys};
+    }
+
+    function personKeys(person){
+      return [...new Set([person?.displayName,person?.normalizedName,...(person?.aliases||[]),...Object.values(person?.sourceNames||{}).flat()]
+        .map(value=>normalizeName(stripRoleAnnotation(value))).filter(Boolean))];
+    }
+    function personObservedAsRepresentative(person,evidence){return personKeys(person).some(key=>evidence.repKeys.has(key))}
+    function linkedRepresentativeSet(person,evidence){const out=new Set();for(const key of personKeys(person))for(const rep of(evidence.coachRosters.get(key)||[]))out.add(rep);return out}
+    function personObservedAsCoach(person,evidence){
+      if(!person||!evidence)return false;
+      if([person.displayName,...(person.aliases||[]),...Object.values(person.sourceNames||{}).flat()].some(hasCoachAnnotation))return true;
+      return personKeys(person).some(key=>evidence.coachKeys.has(key));
+    }
+    function coachStrength(person,evidence){return linkedRepresentativeSet(person,evidence).size}
+    function effectiveRole(person,evidence){
+      const coachSeen=personObservedAsCoach(person,evidence),repSeen=personObservedAsRepresentative(person,evidence),strength=coachStrength(person,evidence);
+      // Actual team ownership wins: if at least two representatives sit under this name, treat it as a coach even when an old registry role is wrong.
+      if(coachSeen&&strength>=2)return'coach';
+      // Explicit Job Coach text is also definitive coach evidence.
+      if(coachSeen&&[person.displayName,...(person.aliases||[]),...Object.values(person.sourceNames||{}).flat()].some(hasCoachAnnotation))return'coach';
+      // Representative-column evidence protects reps from surname logic and repairs bad old role labels.
+      if(repSeen)return'representative';
+      if(person.role==='coach'&&coachSeen)return'coach';
+      if(person.role==='representative')return'representative';
+      return person.role==='coach'?'coach':'representative';
+    }
+    function coachEligible(person,evidence){return effectiveRole(person,evidence)==='coach'}
+    function fullSurnameCandidates(people,token,department,evidence){
+      // Always consider every full name with the same surname. We do NOT turn it into a coach here;
+      // the person must still win the representative-overlap test below.
+      return people.filter(person=>{
+        const full=normalizeName(stripRoleAnnotation(person.displayName));
+        if(full.split(' ').length<2||surname(person.displayName)!==token)return false;
+        return !department||!person.department||person.department===department;
+      });
+    }
+    function overlapCount(a,b){let count=0;for(const value of a||[])if(b?.has(value))count+=1;return count}
+    function rosterForToken(evidence,token,department){
+      const out=new Set(evidence.coachRosters.get(token)||[]);
+      for(const[key,set]of evidence.teamRosters)if(key.endsWith(`|${token}`)&&(!department||key.includes(`|${department}|`)))for(const rep of set)out.add(rep);
+      return out;
+    }
+
+    function mergeSourceNames(target,source){
+      const out={...(target||{})};
+      for(const [name,values] of Object.entries(source||{}))out[name]=[...new Set([...(out[name]||[]),...(values||[])])];
+      return out;
+    }
+
+    function buildVirtualCanonicalPeople(rawPeople){
+      const raw=[...(rawPeople||[])],idMap=new Map(raw.map(person=>[person.personId,person.personId]));
+      const evidence=state.coachEvidence||collectIdentityEvidence(state.records);state.coachEvidence=evidence;
+      const rawById=new Map(raw.map(person=>[person.personId,person]));
+      const registryChildren=new Map();
+      for(const rep of raw){
+        if(!rep.currentCoachId)continue;
+        if(!registryChildren.has(rep.currentCoachId))registryChildren.set(rep.currentCoachId,new Set());
+        registryChildren.get(rep.currentCoachId).add(normalizeName(rep.displayName));
+      }
+      const roleFor=person=>{
+        const children=registryChildren.get(person.personId)?.size||0;
+        if(children>=2)return'coach';
+        return effectiveRole(person,evidence);
+      };
+
+      // 1) Collapse only coach versions whose FULL cleaned names are identical.
+      //    Example: "Aisha Villalobos" + "Aisha Villalobos (Job Coach)".
+      const exactGroups=new Map();
+      for(const person of raw){
+        const base=normalizeName(stripRoleAnnotation(person.displayName));if(!base)continue;
+        if(!exactGroups.has(base))exactGroups.set(base,[]);exactGroups.get(base).push(person);
+      }
+      for(const group of exactGroups.values()){
+        if(group.length<2)continue;
+        const eligible=group.filter(person=>coachEligible(person,evidence));
+        if(eligible.length<2)continue;
+        const plain=eligible.filter(person=>!hasCoachAnnotation(person.displayName)&&normalizeName(stripRoleAnnotation(person.displayName)).split(' ').length>1).sort((a,b)=>richness(b)-richness(a))[0];
+        const primary=plain||choosePrimary(eligible);
+        for(const person of eligible)idMap.set(person.personId,primary.personId);
+      }
+
+      // Resolve any chains from the full-name cleanup before surname scoring.
+      const resolveId=id=>{let next=id,seen=new Set();while(idMap.has(next)&&idMap.get(next)!==next&&!seen.has(next)){seen.add(next);next=idMap.get(next)}return next};
+      for(const[id]of idMap)idMap.set(id,resolveId(id));
+
+      // 2) Surname-only names are coach-only. Match them to a full-name coach when TWO OR MORE
+      //    representatives under the surname are also under the full-name coach.
+      //    This is intentionally asymmetric: representatives never use surname matching.
+      const observedTokens=new Map();
+      for(const item of evidence.singleCoachTokens){const key=`${item.key}|${item.department||''}`;if(!observedTokens.has(key))observedTokens.set(key,item)}
+      for(const observed of observedTokens.values()){
+        const tokenRoster=rosterForToken(evidence,observed.key,observed.department);
+        if(tokenRoster.size<2)continue;
+        const candidates=fullSurnameCandidates(raw,observed.key,observed.department,evidence).map(candidate=>{
+          const canonicalId=resolveId(candidate.personId),canonical=rawById.get(canonicalId)||candidate;
+          const activity=new Set();
+          for(const member of raw.filter(person=>resolveId(person.personId)===canonicalId)){
+            for(const rep of linkedRepresentativeSet(member,evidence))activity.add(rep);
+            for(const rep of(registryChildren.get(member.personId)||[]))activity.add(rep);
+          }
+          const matches=overlapCount(activity,tokenRoster);
+          return{candidate:canonical,canonicalId,activity,matches};
+        });
+        const uniqueCandidates=[...new Map(candidates.map(item=>[item.canonicalId,item])).values()].sort((a,b)=>b.matches-a.matches||b.activity.size-a.activity.size);
+        const best=uniqueCandidates[0],next=uniqueCandidates[1];
+        // User rule: more than one matching representative is enough to identify the coach.
+        // If two same-surname full names both clear that bar with the same overlap, leave it unmerged rather than guess.
+        if(!best||best.matches<2||(next&&next.matches===best.matches&&next.matches>=2)){
+          if(uniqueCandidates.length)state.identityReport.ambiguous.push(`${observed.raw}: ${uniqueCandidates.slice(0,3).map(item=>`${item.candidate.displayName} ${item.matches} rep match${item.matches===1?'':'es'}`).join(' vs ')}`);
+          continue;
+        }
+        for(const person of raw){
+          const base=normalizeName(stripRoleAnnotation(person.displayName));
+          if(base!==observed.key)continue;
+          if(observed.department&&person.department&&person.department!==observed.department)continue;
+          // Only a record actually seen as a coach/team name may be collapsed into the full-name coach.
+          if(personObservedAsCoach(person,evidence))idMap.set(person.personId,best.canonicalId);
+        }
+        state.identityReport.aliases.push(`${observed.raw} → ${best.candidate.displayName} (${best.matches} matching representatives)`);
+      }
+
+      for(const[id]of idMap)idMap.set(id,resolveId(id));
+      const groups=new Map();for(const person of raw){const id=resolveId(person.personId);if(!groups.has(id))groups.set(id,[]);groups.get(id).push(person)}
+      const canonical=[];
+      for(const[id,group]of groups){
+        if(group.length===1){
+          const person={...group[0],role:roleFor(group[0])};
+          canonical.push(person);continue;
+        }
+        // A group is only merged here because the coach-only rules above mapped it.
+        let primary=group.find(person=>person.personId===id)||choosePrimary(group);
+        const fullPlain=group.filter(person=>normalizeName(stripRoleAnnotation(person.displayName)).split(' ').length>1&&!hasCoachAnnotation(person.displayName)).sort((a,b)=>richness(b)-richness(a))[0];
+        if(fullPlain)primary=fullPlain;
+        const merged={...primary,personId:id,displayName:stripRoleAnnotation(fullPlain?.displayName||primary.displayName),aliases:[],sourceNames:{},teamHistory:[],relationshipHistory:[],role:'coach'};
+        for(const person of group){
+          merged.aliases=[...new Set([...(merged.aliases||[]),person.displayName,...(person.aliases||[])].filter(Boolean))];
+          merged.sourceNames=mergeSourceNames(merged.sourceNames,person.sourceNames);
+          merged.teamHistory.push(...(person.teamHistory||[]));merged.relationshipHistory.push(...(person.relationshipHistory||[]));
+          if(!merged.department&&person.department)merged.department=person.department;if(!merged.currentTeam&&person.currentTeam)merged.currentTeam=person.currentTeam;if(!merged.team&&person.team)merged.team=person.team;if(!merged.coordinator&&person.coordinator)merged.coordinator=person.coordinator;
+        }
+        merged.aliases=[...new Set(merged.aliases.filter(alias=>normalizeName(alias)!==normalizeName(merged.displayName)))];
+        canonical.push(merged);
+      }
+      // Reconnect representatives to a collapsed coach ID, without changing representative identities themselves.
+      for(const person of canonical)if(person.currentCoachId)person.currentCoachId=resolveId(person.currentCoachId);
+      state.canonicalIdMap=idMap;state.virtualCollapsed=Math.max(0,raw.length-canonical.length);
+      return canonical.sort((a,b)=>a.displayName.localeCompare(b.displayName));
+    }
+
+    function setStartupProgress(percent,label){
+      const bar=$('startupBar'),pct=$('startupPct'),text=$('startupLabel');
+      if(bar)bar.style.width=`${Math.max(0,Math.min(100,percent))}%`;
+      if(pct)pct.textContent=`${Math.round(percent)}%`;
+      if(text)text.textContent=label||'';
+    }
+    const nextPaint=()=>new Promise(resolve=>requestAnimationFrame(()=>resolve()));
+
+    async function runIdentityIntelligence(){
+      if(state.identityPrepared)return;
+      state.identityReport={merges:[],aliases:[],ambiguous:[]};
+      setStartupProgress(58,'Finding representatives from source rows…');await nextPaint();
+      state.coachEvidence=collectIdentityEvidence(state.records);
+      setStartupProgress(72,'Matching coach surnames by representative overlap…');await nextPaint();
+      const raw=await CoachToolsIdentity.getAllPeople();
+      setStartupProgress(84,'Collapsing confirmed coach aliases…');await nextPaint();
+      state.people=buildVirtualCanonicalPeople(raw);
+      state.identityPrepared=true;
+      setStartupProgress(94,'Separating coaches and representatives…');await nextPaint();
+    }
+
+    function visiblePeople(){return [...state.people].sort((a,b)=>a.displayName.localeCompare(b.displayName))}
+
+    function personMeta(person){const coach=person.currentCoachId&&state.people.find(candidate=>candidate.personId===person.currentCoachId);return[person.role==='coach'?'Coach':person.role==='representative'?'Representative':'Representative',person.department,person.currentTeam||person.team,coach&&coach.displayName].filter(Boolean).join(' · ')}
+    function personMicro(person){const sources=Object.keys(person.sourceNames||{}).length,aliases=(person.aliases||[]).length;return`${sources} source${sources===1?'':'s'}${aliases?` · ${aliases} alias${aliases===1?'':'es'}`:''}`}
+    function personButtonHtml(person){return`<button class="personButton ${person.personId===state.selectedId?'active':''}" data-person-id="${esc(person.personId)}"><b>${esc(person.displayName)}</b><small>${esc(personMeta(person))}</small><div class="micro">${esc(personMicro(person))}</div></button>`}
+    function renderPeople(list,title){
+      $('listTitle').textContent=title;
+      const coaches=list.filter(person=>person.role==='coach');
+      const representatives=list.filter(person=>person.role!=='coach');
+      const section=(name,rows)=>`<section class="peopleSection"><div class="peopleSectionHead"><span>${name}</span><span>${rows.length}</span></div>${rows.length?rows.map(personButtonHtml).join(''):`<div class="emptyData">No ${name.toLowerCase()}.</div>`}</section>`;
+      $('peopleList').innerHTML=section('Coaches',coaches)+section('Representatives',representatives);
+    }
+    async function searchPeople(){
+      const query=$('personSearch').value.trim();state.visiblePeople=visiblePeople();
+      let matches=state.visiblePeople;
+      if(query){
+        const term=normalizeName(query),byId=new Map(state.visiblePeople.map(person=>[person.personId,person]));
+        matches=state.visiblePeople.filter(person=>{const coach=person.currentCoachId&&byId.get(person.currentCoachId);const hay=[person.displayName,...(person.aliases||[]),person.team,person.currentTeam,person.department,person.coordinator,coach&&coach.displayName].filter(Boolean).map(normalizeName).join(' ');return hay.includes(term)});
+      }
+      renderPeople(matches,query?`${matches.length} result${matches.length===1?'':'s'}`:'People');
+      const coachCount=state.visiblePeople.filter(person=>person.role==='coach').length,repCount=state.visiblePeople.length-coachCount;
+      $('dedupeStatus').textContent=`${coachCount} coaches · ${repCount} reps`;
+    }
+
+    async function loadData(){
+      state.records=await CoachToolsAppData.getMany(DATA_TYPES,{includeRecord:true});state.historyRecords={};
+      if(window.CoachToolsData&&CoachToolsData.getHistory){for(const type of HISTORY_TYPES){try{state.historyRecords[type]=(await CoachToolsData.getHistory(type,{activeOnly:true})).slice(0,16)}catch{state.historyRecords[type]=[]}}}
+    }
+
+    function resolverFor(people){const exact=new Map();for(const person of people)for(const value of[person.displayName,person.normalizedName,...(person.aliases||[])]){const key=normalizeName(value);if(key&&!exact.has(key))exact.set(key,person.personId)}return value=>exact.get(normalizeName(value))||''}
+    function historyForMetric(metricId){
+      if(metricId==='qa-score')return state.historyRecords.qa||[];
+      return [...(state.historyRecords.weeklyRetail||[]),...(state.historyRecords.weeklyReferral||[]),...(state.historyRecords.monthlyRetail||[]),...(state.historyRecords.monthlyReferral||[])];
+    }
+    function recordLabel(record){return record?.detectedPeriod?.label||record?.detectedPeriod?.periodKey||record?.periodKey||record?.periodSort||''}
+    function recordSort(record){return record?.periodSort||record?.detectedPeriod?.periodKey||record?.importedAt||''}
+
+    function metricTrendData(person,metricId){
+      const resolve=resolverFor(state.people),teamIds=new Set(state.people.filter(candidate=>candidate.role==='representative'&&candidate.currentCoachId===person.currentCoachId&&candidate.department===person.department).map(candidate=>candidate.personId)),deptIds=new Set(state.people.filter(candidate=>candidate.role==='representative'&&candidate.department===person.department).map(candidate=>candidate.personId));
+      const points=[];
+      for(const record of historyForMetric(metricId)){
+        let rows=[];
+        if(metricId==='qa-score')rows=CoachToolsProfiles._test.canonicalizeQA(record,resolve).map(row=>({personId:row.representativeId,value:row.score}));
+        else rows=CoachToolsProfiles._test.canonicalizePerformance(record,resolve).filter(row=>row.metric.id===metricId).map(row=>({personId:row.personId,value:row.value}));
+        const own=mean(rows.filter(row=>row.personId===person.personId).map(row=>row.value));if(!Number.isFinite(own))continue;
+        const team=mean(rows.filter(row=>teamIds.has(row.personId)).map(row=>row.value));const dept=mean(rows.filter(row=>deptIds.has(row.personId)).map(row=>row.value));
+        points.push({label:recordLabel(record),sort:recordSort(record),own,team,dept});
+      }
+      const unique=new Map();for(const point of points)unique.set(`${point.sort}|${point.label}`,point);return[...unique.values()].sort((a,b)=>String(a.sort).localeCompare(String(b.sort))).slice(-14);
+    }
+
+    function coachTeamTrendData(coach,metricId){
+      const resolve=resolverFor(state.people),teamIds=new Set(state.people.filter(candidate=>candidate.role==='representative'&&candidate.currentCoachId===coach.personId).map(candidate=>candidate.personId)),deptIds=new Set(state.people.filter(candidate=>candidate.role==='representative'&&candidate.department===coach.department).map(candidate=>candidate.personId));
+      const points=[];
+      for(const record of historyForMetric(metricId)){
+        let rows=[];
+        if(metricId==='qa-score')rows=CoachToolsProfiles._test.canonicalizeQA(record,resolve).map(row=>({personId:row.representativeId,value:row.score}));
+        else rows=CoachToolsProfiles._test.canonicalizePerformance(record,resolve).filter(row=>row.metric.id===metricId&&row.role==='representative').map(row=>({personId:row.personId,value:row.value}));
+        const team=mean(rows.filter(row=>teamIds.has(row.personId)).map(row=>row.value));if(!Number.isFinite(team))continue;const dept=mean(rows.filter(row=>deptIds.has(row.personId)).map(row=>row.value));points.push({label:recordLabel(record),sort:recordSort(record),own:team,team:NaN,dept});
+      }
+      const unique=new Map();for(const point of points)unique.set(`${point.sort}|${point.label}`,point);return[...unique.values()].sort((a,b)=>String(a.sort).localeCompare(String(b.sort))).slice(-14);
+    }
+
+    function trendDelta(points){if(!points||points.length<2)return NaN;return points[points.length-1].own-points[0].own}
+    function deltaHtml(delta){if(!Number.isFinite(delta))return'<span class="delta flat">No trend</span>';const cls=delta>.001?'up':delta<-.001?'down':'flat',arrow=delta>.001?'↑':delta<-.001?'↓':'→';return`<span class="delta ${cls}">${arrow} ${Math.abs(delta*100).toFixed(1)} pts</span>`}
+    function metricSynonyms(metric){return METRIC_SYNONYMS[metric.id]||normalizeName(metric.name).split(' ').filter(word=>word.length>2)}
+    function textMatchesMetric(text,metric){const norm=normalizeName(text),tokens=metricSynonyms(metric);return tokens.some(token=>norm.split(' ').includes(token)||norm.includes(token))}
+    function recentTopicCount(profile,metric){return(profile.coaching?.events||[]).filter(event=>new Date(event.date)>=new Date(Date.now()-30*86400000)&&(event.topics||[]).some(topic=>textMatchesMetric(topic,metric))).length}
+    function checklistThemeCount(profile,metric){return(profile.checklist?.themes||[]).filter(theme=>textMatchesMetric(theme.name,metric)).reduce((sum,theme)=>sum+(theme.count||0),0)}
+
+    function buildRepresentativeInsights(profile){
+      const details=profile.metricDetails||[];
+      const focus=details.filter(metric=>Number.isFinite(metric.percentile)&&metric.percentile<45).sort((a,b)=>{const ad=a.trend?.status==='declining'?-15:0,bd=b.trend?.status==='declining'?-15:0;return(a.percentile+ad)-(b.percentile+bd)}).slice(0,3).map(metric=>({metric,severity:metric.percentile<25||metric.trend?.status==='declining'?'high':'medium',coaching:recentTopicCount(profile,metric),checklist:checklistThemeCount(profile,metric)}));
+      const strengths=details.filter(metric=>Number.isFinite(metric.percentile)&&metric.percentile>=70).sort((a,b)=>b.percentile-a.percentile).slice(0,3);
+      return{focus,strengths};
+    }
+
+    async function buildCoachInsights(profile){
+      const reps=profile.relationships.representatives||[];state.teamProfiles=[];
+      for(const rep of reps){try{state.teamProfiles.push(CoachToolsProfiles.buildProfile(rep.personId,state.people,state.records,state.historyRecords))}catch{}}
+      const priorities=state.teamProfiles.map(repProfile=>{
+        const weak=(repProfile.metricDetails||[]).filter(metric=>Number.isFinite(metric.percentile)&&metric.percentile<40),declining=(repProfile.metricDetails||[]).filter(metric=>metric.trend?.status==='declining');let score=weak.reduce((sum,metric)=>sum+(40-metric.percentile),0)+declining.length*14;const days=repProfile.coaching?.daysSinceLast;if(Number.isFinite(days)&&days>14)score+=Math.min(20,(days-14)*.8);if(repProfile.coaching?.last30===0)score+=8;return{profile:repProfile,score,weak,declining,days}
+      }).sort((a,b)=>b.score-a.score);
+      const improving=state.teamProfiles.filter(rep=>{const details=rep.metricDetails||[];return details.filter(m=>m.trend?.status==='improving').length>details.filter(m=>m.trend?.status==='declining').length}).length;
+      const declining=state.teamProfiles.filter(rep=>{const details=rep.metricDetails||[];return details.filter(m=>m.trend?.status==='declining').length>details.filter(m=>m.trend?.status==='improving').length}).length;
+      const highPriority=priorities.filter(item=>item.score>=35).length;
+      const stable=Math.max(0,state.teamProfiles.length-improving-declining);
+      const metricMap=new Map();
+      for(const rep of state.teamProfiles)for(const metric of rep.metricDetails||[]){if(!metricMap.has(metric.id))metricMap.set(metric.id,{metric,values:[]});metricMap.get(metric.id).values.push(metric.value)}
+      const teamMetrics=[...metricMap.values()].map(item=>({...item.metric,teamValue:mean(item.values)})).sort((a,b)=>b.sampleSize-a.sampleSize);
+      const coverage=[];
+      for(const metric of teamMetrics){const needs=state.teamProfiles.filter(rep=>rep.metricDetails?.some(row=>row.id===metric.id&&Number.isFinite(row.percentile)&&row.percentile<40));if(!needs.length)continue;const coached=needs.filter(rep=>(rep.coaching?.events||[]).filter(event=>new Date(event.date)>=new Date(Date.now()-30*86400000)).some(event=>(event.topics||[]).some(topic=>textMatchesMetric(topic,metric))));coverage.push({metric,needs,coached,rate:coached.length/needs.length,missed:needs.filter(rep=>!coached.includes(rep))})}
+      return{priorities,improving,declining,stable,highPriority,teamMetrics,coverage:coverage.sort((a,b)=>a.rate-b.rate)};
+    }
+
+    function dataBadges(profile){const groups={Weekly:profile.sources.weeklyRetail||profile.sources.weeklyReferral,Monthly:profile.sources.monthlyRetail||profile.sources.monthlyReferral,QA:profile.sources.qa,Coaching:profile.sources.documentedCoaching,Checklist:profile.sources.checklist};return Object.entries(groups).map(([name,ready])=>`<span class="badge ${ready?'ready':''}">${name} ${ready?'✓':'—'}</span>`).join('')}
     function profileSubtitle(profile){const person=profile.person,coach=profile.relationships.coach;return[person.role==='coach'?'Coach':person.role==='representative'?'Representative':'Role not set',person.department&&`${person.department} Department`,person.currentTeam||person.team?`Team: ${person.currentTeam||person.team}`:'',coach?`Coach: ${coach.displayName}`:'',profile.currentDataThrough?`Data through: ${profile.currentDataThrough}`:''].filter(Boolean).join(' · ')}
-    function tabsFor(profile){return profile.mode==='coach'?['Overview','Performance','Quality','Coaching','Checklist','Timeline']:['Overview','Performance','Quality','Coaching','Checklist']}
-    function renderProfileShell(){const profile=state.profile,person=profile.person,tabs=tabsFor(profile);$('content').innerHTML=`<article class="profile"><header class="profileHeader"><div class="profileIdentity"><div class="avatar">${esc(initials(person.displayName))}</div><div class="identityCopy"><h1>${esc(person.displayName)}</h1><p>${esc(profileSubtitle(profile))}</p></div><div class="headerActions"><button class="btn primary" data-action="set-scope">Set as CoachTools Scope</button></div></div><div class="dataBadges">${dataBadges(profile)}</div><nav class="tabs">${tabs.map(tab=>`<button class="tab ${tab===state.tab?'active':''}" data-tab="${tab}">${tab}</button>`).join('')}</nav></header><section class="tabPanel" id="tabPanel"></section></article>`;renderTab()}
-    function attentionCard(attention){const strongest=attention.strongest||[],watch=attention.watch||[];return `<div class="card full"><h3>What should I look at?</h3><div class="attention"><div class="attentionBox"><h3>Strongest areas</h3>${strongest.length?`<ul>${strongest.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>`:'<div class="sub">Not enough comparison data yet.</div>'}</div><div class="attentionBox watch"><h3>Watch areas</h3>${watch.length?`<ul>${watch.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>`:'<div class="sub">No data-backed watch area is currently available.</div>'}</div></div><div class="provenance">${esc(attention.recent||'')}</div></div>`}
-    function coachOverview(profile){const s=profile.snapshot;return `<div class="sectionTitle"><h2>Executive snapshot</h2><span>Last 30 days where dates are available</span></div><div class="grid"><div class="card"><h3>Representatives</h3><div class="kpi">${s.representatives}</div><div class="sub">Current canonical coach relationships</div></div><div class="card"><h3>Documented coaching</h3><div class="kpi">${s.coachingCount}</div><div class="sub">${Number.isFinite(s.coachingPerRepresentative)?s.coachingPerRepresentative.toFixed(1)+' per representative':'Last 30 days'} · ${esc(s.activityTrend)} trend</div></div><div class="card"><h3>Checklist activity</h3><div class="kpi">${s.checklistCount}</div><div class="sub">${s.checklistCompleted} completed · ${s.checklistOpen} open</div></div><div class="card"><h3>Average response</h3><div class="kpi">${fmtDays(s.averageResponseDays)}</div><div class="sub">Median ${fmtDays(s.medianResponseDays)} · Coach Timeline calendar-day method</div></div><div class="card"><h3>QA performance</h3><div class="kpi">${fmtPct(s.qaAverage)}</div><div class="sub">Current QA records · last 30 days</div></div><div class="card"><h3>Within target</h3><div class="kpi">${fmtPct(s.withinTarget)}</div><div class="sub">Completed within ${CoachToolsProfiles.TARGET_CHECKLIST_DAYS} calendar days</div></div><div class="card wide"><h3>Department rankings</h3>${rankingRows(profile.rankings)}</div><div class="card"><h3>Recent coaching focus</h3>${topicRows(profile.coaching.topics.slice(0,5))}</div>${attentionCard(profile.attention)}</div>`}
-    function representativeOverview(profile){return `<div class="sectionTitle"><h2>Performance profile</h2><span>Scores compare same-department representatives</span></div><div class="grid"><div class="card wide"><div class="metricGrid">${profile.categories.length?profile.categories.map(category=>`<div class="metric"><small>${esc(category.name)}</small><strong class="score">${Number.isFinite(category.score)?category.score.toFixed(1)+' / 10':'—'}</strong><small>${category.metrics.length?category.metrics.length+' supported metric'+(category.metrics.length===1?'':'s'):'Insufficient comparison data'}</small></div>`).join(''):'<div class="emptyData">No department-relative score can be calculated from current data.</div>'}</div></div><div class="card"><h3>Recent coaching</h3><div class="kpi">${profile.coaching.last30}</div><div class="sub">Last 30 days · ${profile.coaching.last90} in 90 days</div></div><div class="card"><h3>QA average</h3><div class="kpi">${fmtPct(profile.qa.average)}</div><div class="sub">${profile.qa.evaluations} evaluation${profile.qa.evaluations===1?'':'s'}</div></div>${attentionCard(profile.attention)}</div>`}
-    function rankingRows(rankings){return rankings.map(item=>`<div class="rank"><div class="rankCopy"><b>${esc(item.name)}</b><small>${esc(item.source)} · same ${esc(state.profile.person.department||'department')}</small></div><div class="rankValue"><strong>${item.rank?`#${item.rank} / ${item.total}`:'—'}</strong><small>${item.rank?`Top ${item.percentile}% · ${esc(item.displayValue)}`:esc(item.reason)}</small></div></div>`).join('')}
-    function topicRows(topics){return topics.length?topics.map(topic=>`<div class="listRow"><div>${esc(topic.name)}<small>${topic.representatives??0} rep${topic.representatives===1?'':'s'} · ${topic.repeatRepresentatives??0} repeated · ${esc(topic.trend||'stable')}</small></div><b>${topic.count}</b></div>`).join(''):'<div class="emptyData">No documented coaching topics in this period.</div>'}
-    function performanceTab(profile){if(profile.mode==='coach')return `<div class="sectionTitle"><h2>Coach rankings</h2><span>Same-department coaches · last 30 days</span></div><div class="grid"><div class="card full">${rankingRows(profile.rankings)}</div></div>`;return `<div class="sectionTitle"><h2>Department comparison</h2><span>Percentile mid-rank → transparent 1–10 score</span></div><div class="grid">${profile.metricDetails.length?profile.metricDetails.map(metric=>`<div class="card half"><div class="rank"><div class="rankCopy"><b>${esc(metric.name)}</b><small>${esc(metric.category)}</small></div><div class="rankValue"><strong class="score">${metric.score?metric.score.toFixed(1)+' / 10':'—'}</strong><small>${metric.percentile!=null?metric.percentile+'th percentile':esc(metric.reason)}</small></div></div><div class="metricGrid"><div class="metric"><small>${esc(profile.person.displayName)}</small><strong>${esc(metric.displayValue)}</strong></div><div class="metric"><small>${esc(profile.person.department)} Department</small><strong>${esc(metric.departmentAverageDisplay)}</strong></div></div>${metric.score?`<div class="bar"><span style="width:${metric.score*10}%"></span></div>`:''}<div class="provenance">Source: ${esc(metric.provenance.source)}${metric.provenance.period?' · Period: '+esc(metric.provenance.period):''} · Cohort: ${metric.sampleSize} · Trend: ${esc(metric.trend.status)}${metric.trend.reason?' ('+esc(metric.trend.reason)+')':''}</div></div>`).join(''):'<div class="card full emptyData">Insufficient same-department comparison data. Scores appear only when at least ${CoachToolsProfiles.MIN_REP_COHORT} representatives have the same metric.</div>'}</div>`}
-    function qualityTab(profile){const qa=profile.qa;return `<div class="sectionTitle"><h2>Quality</h2><span>QA source records</span></div><div class="grid"><div class="card"><h3>Average QA</h3><div class="kpi">${fmtPct(qa.average)}</div><div class="sub">${qa.evaluations} evaluation${qa.evaluations===1?'':'s'}</div></div><div class="card wide"><h3>Recent evaluations</h3>${qa.rows.length?qa.rows.slice(0,20).map(row=>`<div class="listRow"><div><b>${fmtDate(row.date)}</b><small>${esc(row.evaluator||'Evaluator not listed')}</small></div><b>${fmtPct(row.score)}</b></div>`).join(''):'<div class="emptyData">No matching QA records.</div>'}</div></div>`}
-    function coachingTab(profile){const events=profile.coaching.events||[];return `<div class="sectionTitle"><h2>Documented coaching</h2><span>Topics are descriptive; no causal result is inferred</span></div><div class="grid">${profile.mode==='coach'?`<div class="card"><h3>Topic frequency · 30 days</h3>${topicRows(profile.coaching.topics)}</div>`:''}<div class="card ${profile.mode==='coach'?'wide':'full'}"><h3>Recent coaching history</h3>${events.length?events.slice(0,40).map(event=>`<details><summary>${fmtDate(event.date)} · ${esc(event.topics.join(', '))}</summary><div class="detail">${event.representative?`Representative: ${esc(event.representative)} · `:''}Coach: ${esc(event.coach)}${event.description?`<br>${esc(event.description)}`:''}<div class="provenance">Source: ${esc(event.provenance.source)}${event.provenance.period?' · '+esc(event.provenance.period):''}</div></div></details>`).join(''):'<div class="emptyData">No documented coaching history for this person.</div>'}</div></div>`}
-    function checklistTab(profile){const data=profile.checklist,items=data.items||[];return `<div class="sectionTitle"><h2>Checklist</h2><span>Compact history with expandable detail</span></div><div class="grid"><div class="card"><h3>Total items</h3><div class="kpi">${data.total??items.length}</div><div class="sub">${data.completed??items.filter(item=>item.served).length} completed · ${data.open??items.filter(item=>!item.served).length} open</div></div>${profile.mode==='coach'?`<div class="card"><h3>Fastest categories</h3>${speedRows(data.fastestCategories)}</div><div class="card"><h3>Slowest categories</h3>${speedRows(data.slowestCategories)}</div><div class="card half"><h3>Repeated themes</h3>${frequencyRows(data.themes)}</div><div class="card half"><h3>Most checklist work</h3>${frequencyRows(data.representatives)}</div>`:`<div class="card wide"><h3>Repeated themes</h3>${frequencyRows(data.themes)}</div>`}<div class="card full"><h3>Recent items</h3>${items.length?items.slice(0,40).map(item=>`<details><summary>${fmtDate(item.created)} · ${esc(item.incident)} · ${item.served?'Completed':'Open'}</summary><div class="detail">${item.representative?`Representative: ${esc(item.representative)} · `:''}Coach: ${esc(item.coach)} · ${Number.isFinite(item.days)?fmtDays(item.days):'Open'}${item.description?`<br>${esc(item.description)}`:''}<div class="provenance">Source: ${esc(item.provenance.source)}${item.provenance.period?' · '+esc(item.provenance.period):''}</div></div></details>`).join(''):'<div class="emptyData">No checklist history for this person.</div>'}</div></div>`}
+    function tabsFor(profile){return profile.mode==='coach'?['Overview','Team','Performance','Quality','Coaching','Checklist','Timeline']:['Overview','Performance','Quality','Coaching','Checklist']}
+
+    function renderProfileShell(){
+      const profile=state.profile,person=profile.person,tabs=tabsFor(profile),aliasCount=(person.aliases||[]).length,sourceCount=Object.keys(person.sourceNames||{}).length;
+      $('content').innerHTML=`<article class="profile"><header class="profileHeader"><div class="profileIdentity"><div class="avatar">${esc(initials(person.displayName))}</div><div class="identityCopy"><h1>${esc(person.displayName)}</h1><p>${esc(profileSubtitle(profile))}</p><div class="identityLine"><button class="identityChip" data-action="show-identity">Identity ✓ · ${sourceCount} sources${aliasCount?` · ${aliasCount} aliases`:''}</button></div></div><div class="headerActions"><button class="btn primary" data-action="set-scope">Set as CoachTools Scope</button></div></div><div class="dataBadges">${dataBadges(profile)}</div><nav class="tabs">${tabs.map(tab=>`<button class="tab ${tab===state.tab?'active':''}" data-tab="${tab}">${tab}</button>`).join('')}</nav></header><section class="tabPanel" id="tabPanel"></section></article>`;
+      renderTab();
+    }
+
+    function destroyCharts(){for(const chart of state.charts.values())try{chart.destroy()}catch{}state.charts.clear()}
+    function createTrendChart(canvasId,points,personLabel,teamLabel,metricLabel){
+      requestAnimationFrame(()=>{
+        const canvas=$(canvasId);if(!canvas||!window.Chart)return;const existing=state.charts.get(canvasId);if(existing)existing.destroy();
+        const datasets=[{label:personLabel,data:points.map(point=>Number.isFinite(point.own)?point.own:null),borderWidth:3,tension:.28,pointRadius:3,pointHoverRadius:5},{label:teamLabel,data:points.map(point=>Number.isFinite(point.team)?point.team:null),borderWidth:2,tension:.28,pointRadius:2,borderDash:[6,4]},{label:'Department',data:points.map(point=>Number.isFinite(point.dept)?point.dept:null),borderWidth:2,tension:.28,pointRadius:0,borderDash:[2,4]}].filter(dataset=>dataset.label&&dataset.data.some(Number.isFinite));
+        if(/qa/i.test(metricLabel))datasets.push({label:'85% target',data:points.map(()=>.85),borderWidth:1,pointRadius:0,borderDash:[8,5]});
+        const chart=new Chart(canvas,{type:'line',data:{labels:points.map(point=>point.label),datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{boxWidth:10,usePointStyle:true,font:{size:10}}},tooltip:{callbacks:{label:context=>`${context.dataset.label}: ${Number.isFinite(context.parsed.y)?(context.parsed.y*100).toFixed(1)+'%':'—'}`}}},scales:{x:{ticks:{font:{size:9},maxRotation:0,autoSkip:true},grid:{display:false}},y:{ticks:{font:{size:9},callback:value=>(value*100).toFixed(0)+'%'},beginAtZero:false}}}});state.charts.set(canvasId,chart)
+      })
+    }
+
+    function pulseCards(profile){
+      const details=(profile.metricDetails||[]).filter(metric=>Number.isFinite(metric.value));
+      const order=['cash-appointment-rate','referral-appointment-rate','call-quality','wiper-rate','qa-score','afterpay','save-the-sale'];details.sort((a,b)=>{const ai=order.indexOf(a.id),bi=order.indexOf(b.id);return(ai<0?99:ai)-(bi<0?99:bi)});
+      return details.slice(0,6).map(metric=>{const points=metricTrendData(profile.person,metric.id),delta=trendDelta(points);return`<div class="pulse"><div class="pulseTop"><div><label>${esc(metric.name)}</label><strong>${esc(metric.displayValue)}</strong></div><span class="rankTag">${metric.percentile!=null?metric.percentile+'th pct':'No rank'}</span></div><div class="pulseFoot"><span>${deltaHtml(delta)}</span><span>${metric.score?metric.score.toFixed(1)+'/10':'—'}</span></div></div>`}).join('')||'<div class="emptyData">No KPI metrics are connected to this representative yet.</div>';
+    }
+
+    function representativeInsightHtml(insights){
+      const focus=insights.focus||[],strengths=insights.strengths||[];
+      return`<div class="card full"><div class="cardHead"><h3>Focus areas</h3><span class="pill">Evidence-based</span></div><div class="insightGrid">${focus.length?focus.map(item=>{const metric=item.metric,reasons=[`${metric.percentile}th percentile in ${state.profile.person.department}`,metric.trend?.status==='declining'?`Declining across ${metric.trend.points?.length||'recent'} reporting periods`:`Trend: ${metric.trend?.status||'insufficient'}`,item.coaching?`${item.coaching} matching coaching event${item.coaching===1?'':'s'} in 30 days`:'No matching coaching in the last 30 days',item.checklist?`${item.checklist} related checklist item${item.checklist===1?'':'s'}`:''];return`<div class="insight watch"><div class="insightTitle"><b>${esc(metric.name)}</b><span class="severity ${item.severity}">${item.severity==='high'?'High priority':'Watch'}</span></div><div class="insightValue">${esc(metric.displayValue)}</div><p>${esc(metric.departmentAverageDisplay)} department average · ${metric.score?metric.score.toFixed(1)+'/10':'—'} relative score</p><div class="reasonList">${reasons.filter(Boolean).map(reason=>`<div class="reason">${esc(reason)}</div>`).join('')}</div></div>`}).join(''):'<div class="insight good"><div class="insightTitle"><b>No major statistical watch area</b><span class="severity good">Good</span></div><p>No supported metric is currently below the 45th department percentile.</p></div>'}${strengths.length?strengths.slice(0,2).map(metric=>`<div class="insight good"><div class="insightTitle"><b>${esc(metric.name)}</b><span class="severity good">Strength</span></div><div class="insightValue">${esc(metric.displayValue)}</div><p>${metric.percentile}th percentile · ${esc(metric.trend?.status||'trend unavailable')} · department average ${esc(metric.departmentAverageDisplay)}</p></div>`).join(''):''}</div></div>`;
+    }
+
+    function coachingMarkerHtml(profile,metric){const events=(profile.coaching?.events||[]).filter(event=>(event.topics||[]).some(topic=>textMatchesMetric(topic,metric))).slice(0,8);return events.length?`<div class="coachingMarkers">${events.map(event=>`<span class="marker"><b>${fmtShortDate(event.date)}</b> ${esc(event.topics.join(', '))}</span>`).join('')}</div>`:''}
+
+    function representativeOverview(profile){
+      const metrics=profile.metricDetails||[],preferred=metrics.find(metric=>metric.id==='cash-appointment-rate')||metrics.find(metric=>metric.id==='call-quality')||metrics.find(metric=>metric.id==='qa-score')||metrics[0];
+      if(preferred){state.metricSelection=preferred.id;const points=metricTrendData(profile.person,preferred.id);createTrendChart('overviewTrend',points,profile.person.displayName,'Team',preferred.name)}
+      return`<div class="sectionTitle"><h2>Performance pulse</h2><span>Actual KPI · department percentile · recent movement</span></div><div class="grid"><div class="card full"><div class="pulseGrid">${pulseCards(profile)}</div></div>${preferred?`<div class="card full"><div class="cardHead"><h3>${esc(preferred.name)} · recent trend</h3><span class="pill">${esc(preferred.displayValue)} current</span></div><div class="chartWrap"><canvas id="overviewTrend"></canvas></div>${coachingMarkerHtml(profile,preferred)}<div class="provenance">Trend compares this representative with their current coach team and same-department representatives where the same historical metric exists.</div></div>`:''}${representativeInsightHtml(state.repInsights)}<div class="card"><h3>Recent coaching</h3><div class="kpi">${profile.coaching.last30}</div><div class="sub">Last 30 days · ${profile.coaching.last90} in 90 days${Number.isFinite(profile.coaching.daysSinceLast)?` · ${profile.coaching.daysSinceLast} days since last`:''}</div></div><div class="card"><h3>QA average</h3><div class="kpi">${fmtPct(profile.qa.average)}</div><div class="sub">${profile.qa.evaluations} evaluation${profile.qa.evaluations===1?'':'s'} in current QA data</div></div><div class="card"><h3>Checklist</h3><div class="kpi">${profile.checklist.total}</div><div class="sub">${profile.checklist.open} open · ${profile.checklist.completed} completed</div></div></div>`;
+    }
+
+    function coachHealthHtml(){const insight=state.coachInsights;return`<div class="healthRow"><div class="health good"><label>Improving reps</label><strong>${insight.improving}</strong></div><div class="health"><label>Stable reps</label><strong>${insight.stable}</strong></div><div class="health bad"><label>Declining reps</label><strong>${insight.declining}</strong></div><div class="health warn"><label>High priority</label><strong>${insight.highPriority}</strong></div></div>`}
+    function priorityHtml(limit=5){const rows=(state.coachInsights?.priorities||[]).filter(item=>item.score>0).slice(0,limit);return rows.length?`<div class="priorityList">${rows.map(item=>{const person=item.profile.person,weak=item.weak.slice(0,2).map(metric=>`${metric.name} ${metric.percentile}th pct`).join(' · '),declining=item.declining.slice(0,2).map(metric=>metric.name).join(', ');return`<div class="priorityPerson" data-person-id="${esc(person.personId)}"><div class="priorityTop"><b>${esc(person.displayName)}</b><span class="pill ${item.score>=35?'bad':item.score>=18?'warn':''}">${item.score>=35?'High':item.score>=18?'Moderate':'Watch'}</span></div><div class="priorityWhy">${esc(weak||'No low-percentile KPI')} ${declining?`· Declining: ${esc(declining)}`:''}</div><div class="priorityStats"><span>${item.profile.coaching.last30} coachings / 30d</span>${Number.isFinite(item.days)?`<span>${item.days} days since last</span>`:''}<span>${item.profile.qa.evaluations} QA evals</span></div></div>`}).join('')}</div>`:'<div class="emptyData">No representative is currently being flagged by the available KPI trend data.</div>'}
+    function coverageHtml(){const rows=(state.coachInsights?.coverage||[]).slice(0,6);return rows.length?`<div class="coverageGrid">${rows.map(row=>`<div class="coverage"><div class="coverageTop"><b>${esc(row.metric.name)}</b><strong>${Math.round(row.rate*100)}%</strong></div><div class="bar"><span style="width:${Math.round(row.rate*100)}%"></span></div><small>${row.coached.length} of ${row.needs.length} below-40th-percentile reps have matching coaching in the last 30 days.${row.missed.length?` ${row.missed.length} may need attention.`:''}</small></div>`).join('')}</div>`:'<div class="emptyData">No KPI currently has enough below-range representatives to calculate coaching coverage.</div>'}
+
+    function coachOverview(profile){
+      const s=profile.snapshot,metric=state.coachInsights?.teamMetrics.find(item=>item.id==='cash-appointment-rate')||state.coachInsights?.teamMetrics.find(item=>item.id==='call-quality')||state.coachInsights?.teamMetrics.find(item=>item.id==='qa-score')||state.coachInsights?.teamMetrics[0];
+      if(metric){const points=coachTeamTrendData(profile.person,metric.id);createTrendChart('coachTrend',points,`${profile.person.displayName} team`,'',metric.name)}
+      return`<div class="sectionTitle"><h2>Team performance dashboard</h2><span>Current team · last 30 days where dates exist</span></div><div class="grid"><div class="card full">${coachHealthHtml()}</div><div class="card quarter"><h3>Representatives</h3><div class="kpi">${s.representatives}</div><div class="sub">Current canonical coach relationships</div></div><div class="card quarter"><h3>Documented coaching</h3><div class="kpi">${s.coachingCount}</div><div class="sub">${Number.isFinite(s.coachingPerRepresentative)?s.coachingPerRepresentative.toFixed(1)+' per representative':'Last 30 days'} · ${esc(s.activityTrend)} trend</div></div><div class="card quarter"><h3>QA performance</h3><div class="kpi">${fmtPct(s.qaAverage)}</div><div class="sub">Current team-linked QA records · 30 days</div></div><div class="card quarter"><h3>Checklist response</h3><div class="kpi">${fmtDays(s.averageResponseDays)}</div><div class="sub">${fmtPct(s.withinTarget)} within ${CoachToolsProfiles.TARGET_CHECKLIST_DAYS} days</div></div>${metric?`<div class="card full"><div class="cardHead"><h3>${esc(metric.name)} · team trend</h3><span class="pill">Team ${fmtPct(metric.teamValue)}</span></div><div class="chartWrap"><canvas id="coachTrend"></canvas></div><div class="provenance">Team line uses currently assigned representatives; department line uses same-department representatives with the metric in each historical period.</div></div>`:''}<div class="card half"><div class="cardHead"><h3>Who needs attention?</h3><span class="pill">Priority representatives</span></div>${priorityHtml()}</div><div class="card half"><div class="cardHead"><h3>Coaching coverage</h3><span class="pill">Need vs recent coaching</span></div>${coverageHtml()}</div><div class="card wide"><h3>Department rankings</h3>${rankingRows(profile.rankings)}</div><div class="card"><h3>Recent coaching focus</h3>${topicRows(profile.coaching.topics.slice(0,6))}</div></div>`;
+    }
+
+    function rankingRows(rankings){return(rankings||[]).map(item=>`<div class="rank"><div class="rankCopy"><b>${esc(item.name)}</b><small>${esc(item.source)} · same ${esc(state.profile.person.department||'department')}</small></div><div class="rankValue"><strong>${item.rank?`#${item.rank} / ${item.total}`:'—'}</strong><small>${item.rank?`${item.percentile}% rank position · ${esc(item.displayValue)}`:esc(item.reason)}</small></div></div>`).join('')||'<div class="emptyData">No comparable coach ranking is available.</div>'}
+    function topicRows(topics){return topics?.length?topics.map(topic=>`<div class="listRow"><div>${esc(topic.name)}<small>${topic.representatives??0} rep${topic.representatives===1?'':'s'} · ${topic.repeatRepresentatives??0} repeated · ${esc(topic.trend||'stable')}</small></div><b>${topic.count}</b></div>`).join(''):'<div class="emptyData">No documented coaching topics in this period.</div>'}
+
+    function representativePerformanceTab(profile){
+      const details=profile.metricDetails||[],selected=details.find(metric=>metric.id===state.metricSelection)||details[0];if(selected){state.metricSelection=selected.id;createTrendChart('metricTrend',metricTrendData(profile.person,selected.id),profile.person.displayName,'Team',selected.name)}
+      return`<div class="sectionTitle"><h2>Department comparison</h2><span>Actual metric + percentile + 1–10 relative score</span></div><div class="grid">${selected?`<div class="card full"><div class="cardHead"><h3>Trend explorer</h3><select id="metricSelect">${details.map(metric=>`<option value="${esc(metric.id)}" ${metric.id===selected.id?'selected':''}>${esc(metric.name)}</option>`).join('')}</select></div><div class="chartWrap tall"><canvas id="metricTrend"></canvas></div>${coachingMarkerHtml(profile,selected)}</div>`:''}${details.length?details.map(metric=>`<div class="card half"><div class="rank"><div class="rankCopy"><b>${esc(metric.name)}</b><small>${esc(metric.category)} · ${esc(metric.trend?.status||'trend unavailable')}</small></div><div class="rankValue"><strong class="score">${metric.score?metric.score.toFixed(1)+' / 10':'—'}</strong><small>${metric.percentile!=null?metric.percentile+'th percentile':esc(metric.reason)}</small></div></div><div class="metricGrid"><div class="metric"><small>${esc(profile.person.displayName)}</small><strong>${esc(metric.displayValue)}</strong></div><div class="metric"><small>${esc(profile.person.department)} Department</small><strong>${esc(metric.departmentAverageDisplay)}</strong></div></div>${metric.score?`<div class="bar"><span style="width:${metric.score*10}%"></span></div>`:''}<div class="provenance">Source: ${esc(metric.provenance?.source||'Performance')}${metric.provenance?.period?' · Period: '+esc(metric.provenance.period):''} · Cohort: ${metric.sampleSize}</div></div>`).join(''):'<div class="card full emptyData">Insufficient same-department comparison data. Scores appear only when at least ${CoachToolsProfiles.MIN_REP_COHORT} representatives have the same metric.</div>'}</div>`;
+    }
+
+    function coachPerformanceTab(profile){const metrics=state.coachInsights?.teamMetrics||[],selected=metrics.find(metric=>metric.id===state.metricSelection)||metrics[0];if(selected){state.metricSelection=selected.id;createTrendChart('coachMetricTrend',coachTeamTrendData(profile.person,selected.id),`${profile.person.displayName} team`,'',selected.name)}return`<div class="sectionTitle"><h2>Coach performance</h2><span>Team outcomes and same-department coach rankings</span></div><div class="grid">${selected?`<div class="card full"><div class="cardHead"><h3>Team KPI trend</h3><select id="metricSelect">${metrics.map(metric=>`<option value="${esc(metric.id)}" ${metric.id===selected.id?'selected':''}>${esc(metric.name)}</option>`).join('')}</select></div><div class="chartWrap tall"><canvas id="coachMetricTrend"></canvas></div></div>`:''}<div class="card full">${rankingRows(profile.rankings)}</div><div class="card full"><div class="cardHead"><h3>Current team KPI snapshot</h3><span class="pill">Current connected data</span></div><div class="pulseGrid">${metrics.slice(0,8).map(metric=>`<div class="pulse"><label>${esc(metric.name)}</label><strong>${fmtPct(metric.teamValue)}</strong><div class="pulseFoot"><span>${esc(metric.category)}</span><span>${metric.trend?.status?esc(metric.trend.status):''}</span></div></div>`).join('')||'<div class="emptyData">No representative KPI metrics are available for this team.</div>'}</div></div></div>`}
+    function performanceTab(profile){return profile.mode==='coach'?coachPerformanceTab(profile):representativePerformanceTab(profile)}
+
+    function qualityTab(profile){
+      const metric={id:'qa-score',name:'QA Score'},points=profile.mode==='coach'?coachTeamTrendData(profile.person,'qa-score'):metricTrendData(profile.person,'qa-score');if(points.length)createTrendChart('qaTrend',points,profile.mode==='coach'?`${profile.person.displayName} team`:profile.person.displayName,profile.mode==='coach'?'':'Team','QA Score');const qa=profile.qa;
+      return`<div class="sectionTitle"><h2>Quality</h2><span>QA movement + recent evaluations</span></div><div class="grid">${points.length?`<div class="card full"><div class="cardHead"><h3>QA trend</h3><span class="pill">85% target</span></div><div class="chartWrap"><canvas id="qaTrend"></canvas></div></div>`:''}<div class="card"><h3>Average QA</h3><div class="kpi">${fmtPct(qa.average)}</div><div class="sub">${qa.evaluations} evaluation${qa.evaluations===1?'':'s'} in current QA data</div></div><div class="card wide"><h3>Recent evaluations</h3>${qa.rows.length?qa.rows.slice(0,24).map(row=>`<div class="listRow"><div><b>${fmtDate(row.date)}</b><small>${esc(row.evaluator||'Evaluator not listed')}</small></div><b>${fmtPct(row.score)}</b></div>`).join(''):'<div class="emptyData">No matching QA records.</div>'}</div></div>`}
+
+    function coachingTab(profile){const events=profile.coaching.events||[];return`<div class="sectionTitle"><h2>Documented coaching</h2><span>Topics are descriptive; KPI movement is association, not causal proof</span></div><div class="grid">${profile.mode==='coach'?`<div class="card"><h3>Topic frequency · 30 days</h3>${topicRows(profile.coaching.topics)}</div>`:`<div class="card"><h3>Coaching cadence</h3><div class="kpi">${profile.coaching.last30}</div><div class="sub">Last 30 days · ${profile.coaching.last90} in 90 days${Number.isFinite(profile.coaching.daysSinceLast)?` · ${profile.coaching.daysSinceLast} days since last`:''}</div></div>`}<div class="card ${profile.mode==='coach'?'wide':'wide'}"><h3>Recent coaching history</h3>${events.length?events.slice(0,50).map(event=>`<details><summary>${fmtDate(event.date)} · ${esc(event.topics.join(', '))}</summary><div class="detail">${event.representative?`Representative: ${esc(event.representative)} · `:''}Coach: ${esc(event.coach)}${event.description?`<br>${esc(event.description)}`:''}<div class="provenance">Source: ${esc(event.provenance.source)}${event.provenance.period?' · '+esc(event.provenance.period):''}</div></div></details>`).join(''):'<div class="emptyData">No documented coaching history for this person.</div>'}</div>${profile.mode==='coach'?`<div class="card full"><div class="cardHead"><h3>Coverage by KPI need</h3><span class="pill">Below 40th percentile</span></div>${coverageHtml()}</div>`:''}</div>`}
+
+    function checklistTab(profile){const data=profile.checklist,items=data.items||[];return`<div class="sectionTitle"><h2>Checklist</h2><span>Repeated themes and completion history</span></div><div class="grid"><div class="card"><h3>Total items</h3><div class="kpi">${data.total??items.length}</div><div class="sub">${data.completed??items.filter(item=>item.served).length} completed · ${data.open??items.filter(item=>!item.served).length} open</div></div>${profile.mode==='coach'?`<div class="card"><h3>Fastest categories</h3>${speedRows(data.fastestCategories)}</div><div class="card"><h3>Slowest categories</h3>${speedRows(data.slowestCategories)}</div><div class="card half"><h3>Repeated themes</h3>${frequencyRows(data.themes)}</div><div class="card half"><h3>Most checklist work</h3>${frequencyRows(data.representatives)}</div>`:`<div class="card wide"><h3>Repeated themes</h3>${frequencyRows(data.themes)}</div>`}<div class="card full"><h3>Recent items</h3>${items.length?items.slice(0,50).map(item=>`<details><summary>${fmtDate(item.created)} · ${esc(item.incident)} · ${item.served?'Completed':'Open'}</summary><div class="detail">${item.representative?`Representative: ${esc(item.representative)} · `:''}Coach: ${esc(item.coach)} · ${Number.isFinite(item.days)?fmtDays(item.days):'Open'}${item.description?`<br>${esc(item.description)}`:''}<div class="provenance">Source: ${esc(item.provenance.source)}${item.provenance.period?' · '+esc(item.provenance.period):''}</div></div></details>`).join(''):'<div class="emptyData">No checklist history for this person.</div>'}</div></div>`}
     function speedRows(rows){return rows?.length?rows.map(row=>`<div class="listRow"><div>${esc(row.name)}<small>${row.count} item${row.count===1?'':'s'}</small></div><b>${fmtDays(row.averageDays)}</b></div>`).join(''):'<div class="emptyData">Not enough completed items.</div>'}
     function frequencyRows(rows){return rows?.length?rows.map(row=>`<div class="listRow"><div>${esc(row.name)}<small>${row.open} open</small></div><b>${row.count}</b></div>`).join(''):'<div class="emptyData">No repeated themes in this period.</div>'}
-    function timelineTab(profile){return `<div class="sectionTitle"><h2>Last 8 weeks</h2><span>Documented coaching and checklist completion cadence</span></div><div class="card full"><div class="timeline">${profile.timeline.map(week=>`<div class="week"><b>${esc(week.week)}</b><small>Coaching: ${week.coaching}</small><small>Checklist: ${week.checklistTotal}</small><small>Response: ${fmtPct(week.checklistResponse)}</small></div>`).join('')}</div></div>`}
-    function renderTab(){const panel=$('tabPanel'),profile=state.profile;if(!panel||!profile)return;if(state.tab==='Overview')panel.innerHTML=profile.mode==='coach'?coachOverview(profile):representativeOverview(profile);if(state.tab==='Performance')panel.innerHTML=performanceTab(profile);if(state.tab==='Quality')panel.innerHTML=qualityTab(profile);if(state.tab==='Coaching')panel.innerHTML=coachingTab(profile);if(state.tab==='Checklist')panel.innerHTML=checklistTab(profile);if(state.tab==='Timeline')panel.innerHTML=timelineTab(profile)}
-    async function openPerson(personId){if(!personId)return;state.selectedId=personId;saveRecent(personId);searchPeople();$('content').innerHTML='<div class="loading">Connecting current CoachTools data…</div>';try{state.profile=await CoachToolsProfiles.loadProfile(personId);if(!tabsFor(state.profile).includes(state.tab))state.tab='Overview';renderProfileShell()}catch(err){$('content').innerHTML=`<div class="error"><b>Profile could not be loaded.</b><p>${esc(err?.message||err)}</p></div>`}}
-    async function setScope(){const person=state.profile?.person;if(!person)return;CoachToolsStorage.setScope({mode:person.role==='representative'?'representative':'coach',personId:person.personId,label:person.displayName,department:person.department||'',team:person.currentTeam||person.team||'',coaches:person.role==='coach'?[person.displayName]:[],representatives:person.role==='representative'?[person.displayName]:[]});$('registryStatus').textContent=`Scope set to ${person.displayName}`}
-    async function initialize(){state.recent=readRecent();await Promise.all([CoachToolsIdentity.ready(),CoachToolsAppData.ready()]);state.people=await CoachToolsIdentity.getAllPeople();$('registryStatus').textContent=`${state.people.length.toLocaleString()} canonical people`;await searchPeople();const scope=CoachToolsAppData.getScope();if(scope?.personId&&state.people.some(person=>person.personId===scope.personId))await openPerson(scope.personId)}
-    $('personSearch').addEventListener('input',()=>{clearTimeout(state.searchTimer);state.searchTimer=setTimeout(searchPeople,100)});$('peopleList').addEventListener('click',event=>{const button=event.target.closest('[data-person-id]');if(button)openPerson(button.dataset.personId)});$('content').addEventListener('click',event=>{const tab=event.target.closest('[data-tab]')?.dataset.tab,action=event.target.closest('[data-action]')?.dataset.action;if(tab){state.tab=tab;renderProfileShell()}if(action==='set-scope')setScope()});CoachToolsAppData.subscribe(['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist'],()=>{if(state.selectedId)openPerson(state.selectedId)});CoachToolsAppData.subscribeScope(scope=>{if(scope.personId&&scope.personId!==state.selectedId)openPerson(scope.personId)});CoachToolsIdentity.subscribe(async()=>{state.people=await CoachToolsIdentity.getAllPeople();await searchPeople()});initialize().catch(err=>{$('content').innerHTML=`<div class="error"><b>People Profiles could not start.</b><p>${esc(err?.message||err)}</p></div>`});
+    function timelineTab(profile){return`<div class="sectionTitle"><h2>Last 8 weeks</h2><span>Documented coaching and checklist completion cadence</span></div><div class="card full"><div class="timeline">${profile.timeline.map(week=>`<div class="week"><b>${esc(week.week)}</b><small>Coaching: ${week.coaching}</small><small>Checklist: ${week.checklistTotal}</small><small>Response: ${fmtPct(week.checklistResponse)}</small></div>`).join('')}</div></div>`}
+
+    function heatClass(percentile){if(!Number.isFinite(percentile))return'none';if(percentile>=65)return'good';if(percentile>=35)return'mid';return'bad'}
+    function teamTab(profile){
+      const metrics=(state.coachInsights?.teamMetrics||[]).slice(0,5),rows=state.teamProfiles||[];
+      return`<div class="sectionTitle"><h2>Team overview</h2><span>Click a representative to open their profile</span></div><div class="grid"><div class="card full">${coachHealthHtml()}</div><div class="card full"><div class="cardHead"><h3>Team heatmap</h3><span class="pill">Department percentile</span></div><div class="heatWrap"><table class="heatTable"><thead><tr><th>Representative</th>${metrics.map(metric=>`<th>${esc(metric.name)}</th>`).join('')}<th>Trend</th><th>Coaching 30d</th></tr></thead><tbody>${rows.length?rows.map(rep=>{const improving=(rep.metricDetails||[]).filter(metric=>metric.trend?.status==='improving').length,declining=(rep.metricDetails||[]).filter(metric=>metric.trend?.status==='declining').length,trend=improving>declining?'↑ Improving':declining>improving?'↓ Declining':'→ Stable';return`<tr data-person-id="${esc(rep.person.personId)}"><td><b>${esc(rep.person.displayName)}</b><br><small>${esc(rep.person.currentTeam||rep.person.team||'')}</small></td>${metrics.map(metric=>{const row=rep.metricDetails?.find(item=>item.id===metric.id);return`<td><span class="heatCell ${heatClass(row?.percentile)}">${row?`${esc(row.displayValue)} · ${row.percentile??'—'}th`:'—'}</span></td>`}).join('')}<td>${esc(trend)}</td><td>${rep.coaching.last30}</td></tr>`}).join(''):'<tr><td colspan="8">No current representatives are linked to this coach.</td></tr>'}</tbody></table></div></div><div class="card half"><div class="cardHead"><h3>Priority representatives</h3><span class="pill">Automatic</span></div>${priorityHtml(8)}</div><div class="card half"><div class="cardHead"><h3>Coaching coverage</h3><span class="pill">30 days</span></div>${coverageHtml()}</div></div>`}
+
+    function renderTab(){destroyCharts();const panel=$('tabPanel'),profile=state.profile;if(!panel||!profile)return;if(state.tab==='Overview')panel.innerHTML=profile.mode==='coach'?coachOverview(profile):representativeOverview(profile);if(state.tab==='Team')panel.innerHTML=teamTab(profile);if(state.tab==='Performance')panel.innerHTML=performanceTab(profile);if(state.tab==='Quality')panel.innerHTML=qualityTab(profile);if(state.tab==='Coaching')panel.innerHTML=coachingTab(profile);if(state.tab==='Checklist')panel.innerHTML=checklistTab(profile);if(state.tab==='Timeline')panel.innerHTML=timelineTab(profile)}
+
+    function identityModalHtml(person){
+      const aliases=[...new Set([...(person.aliases||[]),...Object.values(person.sourceNames||{}).flat().filter(value=>normalizeName(value)!==person.normalizedName)])];
+      const sources=Object.entries(person.sourceNames||{});
+      const relatedLog=[...state.identityReport.merges,...state.identityReport.aliases].filter(line=>normalizeName(line).includes(surname(person.displayName))).slice(-10);
+      return`<div class="cardHead"><div><h3>${esc(person.displayName)}</h3><div class="sub">Canonical person ID: ${esc(person.personId)}</div></div><span class="pill good">Connected identity</span></div><div class="sourceBox"><b>Known names and aliases</b><div class="aliasGrid" style="margin-top:8px">${aliases.length?aliases.map(alias=>`<span class="alias">${esc(alias)}</span>`).join(''):'<span class="sub">No alternate names are currently stored.</span>'}</div></div><div class="sourceBox"><b>Connected data sources</b>${sources.length?sources.map(([source,names])=>`<small><strong>${esc(sourceNames[source]||source)}</strong>: ${esc((names||[]).join(', '))}</small>`).join(''):'<small>No source-name history is stored yet.</small>'}</div><div class="sourceBox"><b>Relationship context</b><small>Role: ${esc(person.role)} · Department: ${esc(person.department||'—')} · Team: ${esc(person.currentTeam||person.team||'—')}</small></div>${relatedLog.length?`<div class="sourceBox"><b>Identity intelligence applied this session</b><div class="identityLog">${relatedLog.map(line=>`<div>${esc(line)}</div>`).join('')}</div></div>`:''}<div class="provenance">Identity reconciliation is coach-only: role annotations and surname/team aliases are applied only to coach/team values observed on rows that also contain a representative. Representative identities never use surname inference.</div>`
+    }
+
+    async function openPerson(personId){
+      if(!personId)return;personId=state.canonicalIdMap.get(personId)||personId;state.selectedId=personId;saveRecent(personId);searchPeople();$('content').innerHTML='<div class="loading">Connecting current CoachTools data…</div>';
+      try{state.profile=CoachToolsProfiles.buildProfile(personId,state.people,state.records,state.historyRecords);state.repInsights=null;state.coachInsights=null;if(state.profile.mode==='coach')state.coachInsights=await buildCoachInsights(state.profile);else state.repInsights=buildRepresentativeInsights(state.profile);if(!tabsFor(state.profile).includes(state.tab))state.tab='Overview';renderProfileShell()}catch(err){$('content').innerHTML=`<div class="error"><b>Profile could not be loaded.</b><p>${esc(err?.message||err)}</p></div>`}
+    }
+
+    async function setScope(){const person=state.profile?.person;if(!person)return;CoachToolsStorage.setScope({mode:person.role==='representative'?'representative':'coach',personId:person.personId,label:person.displayName,department:person.department||'',team:person.currentTeam||person.team||'',coaches:person.role==='coach'?[person.displayName]:[],representatives:person.role==='representative'?[person.displayName]:[]});$('registryStatus').textContent=`Scope set to ${person.displayName}`;$('registryStatus').classList.add('good')}
+
+    async function initialize(){
+      state.recent=readRecent();
+      $('personSearch').disabled=true;$('registryStatus').textContent='Preparing identities…';setStartupProgress(8,'Opening CoachTools data…');await nextPaint();
+      await Promise.all([CoachToolsIdentity.ready(),CoachToolsAppData.ready()]);
+      setStartupProgress(30,'Loading current performance sources…');await nextPaint();
+      await loadData();
+      setStartupProgress(50,'Building one-time coach identity evidence…');await nextPaint();
+      await runIdentityIntelligence();
+      state.visiblePeople=visiblePeople();
+      setStartupProgress(100,'Ready');await new Promise(resolve=>setTimeout(resolve,140));
+      $('personSearch').disabled=false;$('registryStatus').textContent=`${state.visiblePeople.length.toLocaleString()} people ready`;$('registryStatus').classList.add('good');
+      $('content').innerHTML='<section class="empty"><div class="emptyIcon">◎</div><h1>Show me a person</h1><p>Coaches and representatives are separated in the people bar. Representatives come from representative columns; coach surname aliases are collapsed only after at least two representative matches.</p></section>';
+      await searchPeople();
+      const scope=CoachToolsAppData.getScope();if(scope?.personId){const canonicalScope=state.canonicalIdMap.get(scope.personId)||scope.personId;if(state.people.some(person=>person.personId===canonicalScope))await openPerson(canonicalScope)}
+    }
+
+    $('personSearch').addEventListener('input',()=>{clearTimeout(state.searchTimer);state.searchTimer=setTimeout(searchPeople,100)});
+    $('peopleList').addEventListener('click',event=>{const button=event.target.closest('[data-person-id]');if(button)openPerson(button.dataset.personId)});
+    $('content').addEventListener('click',event=>{const tab=event.target.closest('[data-tab]')?.dataset.tab,action=event.target.closest('[data-action]')?.dataset.action,person=event.target.closest('[data-person-id]')?.dataset.personId;if(person&&!event.target.closest('.personButton')){openPerson(person);return}if(tab){state.tab=tab;renderProfileShell()}if(action==='set-scope')setScope();if(action==='show-identity'&&state.profile){$('identityModalTitle').textContent=`Identity · ${state.profile.person.displayName}`;$('identityModalBody').innerHTML=identityModalHtml(state.profile.person);$('identityModal').classList.add('show')}});
+    $('content').addEventListener('change',event=>{if(event.target.id==='metricSelect'){state.metricSelection=event.target.value;renderTab()}});
+    $('identityModal').addEventListener('click',event=>{if(event.target.id==='identityModal'||event.target.closest('[data-action="close-identity"]'))$('identityModal').classList.remove('show')});
+    document.addEventListener('keydown',event=>{if(event.key==='Escape')$('identityModal').classList.remove('show')});
+
+    CoachToolsAppData.subscribe(DATA_TYPES,async()=>{if(!state.identityPrepared)return;await loadData();$('registryStatus').textContent='Data updated · identity map ready';if(state.selectedId&&state.people.some(person=>person.personId===state.selectedId))openPerson(state.selectedId)});
+    CoachToolsAppData.subscribeScope(scope=>{if(scope.personId&&scope.personId!==state.selectedId)openPerson(scope.personId)});
+    CoachToolsIdentity.subscribe(detail=>{if(!state.identityPrepared||detail?.relayed)return;$('registryStatus').textContent='Identity map ready · reload to reconcile new names'});
+
+    initialize().catch(err=>{$('content').innerHTML=`<div class="error"><b>People Profiles could not start.</b><p>${esc(err?.message||err)}</p></div>`});
   })();
   </script>
 </body>
