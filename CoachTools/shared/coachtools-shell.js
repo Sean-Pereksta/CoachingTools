@@ -82,7 +82,10 @@
     if (!config) return;
 
     const canonicalStates = new Map();
-    let activeLoad = null;
+    // Data consumers can legitimately overlap during startup (the primary app,
+    // intelligence surfaces, refresh subscribers, etc.). Keep each request's
+    // cancellation isolated instead of aborting whichever request started first.
+    const activeLoads = new Set();
 
     function datasetLabel(type) {
       return DATASET_LABELS[type] || String(type || 'Data').replace(/([a-z])([A-Z])/g, '$1 $2');
@@ -252,6 +255,16 @@
       return state;
     }
 
+    function throwIfAborted(signal) {
+      if (!signal || !signal.aborted) return;
+      // Browser AbortController commonly supplies a DOMException whose `name`
+      // property is read-only. Never mutate the supplied reason.
+      if (signal.reason instanceof Error) throw signal.reason;
+      const error = new Error(signal.reason && signal.reason.message || 'Application data loading was cancelled.');
+      error.name = 'AbortError';
+      throw error;
+    }
+
     async function canonicalizeInChunks(dockObj, definition, ui, startPct, endPct, signal) {
       if (!dockObj || typeof dockObj !== 'object') return;
       if (typeof root.extractRowArrays !== 'function') return;
@@ -276,11 +289,7 @@
       for (const pack of packs) {
         const rows = Array.isArray(pack.rows) ? pack.rows : [];
         for (let start = 0; start < rows.length; start += config.chunkSize) {
-          if (signal && signal.aborted) {
-            const error = signal.reason instanceof Error ? signal.reason : new Error('Application data loading was cancelled.');
-            error.name = 'AbortError';
-            throw error;
-          }
+          throwIfAborted(signal);
 
           const slice = rows.slice(start, start + config.chunkSize);
           const sheetName = String(pack.sheetName || dockObj?.meta?.sourceSheet || '__chunk__');
@@ -328,12 +337,8 @@
         return target(requested, options);
       }
 
-      if (activeLoad && typeof activeLoad.abort === 'function') {
-        try { activeLoad.abort(); } catch (_) {}
-      }
-
       const controller = typeof root.AbortController === 'function' ? new root.AbortController() : null;
-      activeLoad = controller;
+      if (controller) activeLoads.add(controller);
       const upstreamSignal = options && options.signal;
       if (controller && upstreamSignal) {
         if (upstreamSignal.aborted) controller.abort(upstreamSignal.reason);
@@ -362,16 +367,16 @@
         else await prepare(types, { stage() {} }, signal);
         return result;
       } finally {
-        if (activeLoad === controller) activeLoad = null;
+        if (controller) activeLoads.delete(controller);
         if (ui) ui.finish();
       }
     }
 
     root.addEventListener('pagehide', () => {
-      if (activeLoad && typeof activeLoad.abort === 'function') {
-        try { activeLoad.abort(); } catch (_) {}
+      for (const controller of activeLoads) {
+        try { controller.abort(); } catch (_) {}
       }
-      activeLoad = null;
+      activeLoads.clear();
     }, { once: true });
 
     root.CoachToolsAppData = Object.freeze({
