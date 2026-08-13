@@ -8,6 +8,7 @@
   <link rel="preload" as="image" href="graphics/loading.png">
   <link rel="stylesheet" href="shared/coachtools-theme.css">
   <link rel="stylesheet" href="shared/coachtools-smart-import.css">
+  <link rel="stylesheet" href="shared/coachtools-folders.css">
   <script src="shared/coachtools-dependencies.js" defer></script>
   <script src="shared/coachtools-performance.js" defer></script>
   <script src="shared/coachtools-sync.js" defer></script>
@@ -18,6 +19,7 @@
   <script src="shared/coachtools-app-data.js" defer></script>
   <script src="apps-manifest.js" defer></script>
   <script src="shared/coachtools-desktop.js" defer></script>
+  <script src="shared/coachtools-folders.js" defer></script>
 </head>
 <body>
   <section id="startupSplash" class="startup-splash" role="status" aria-live="polite" aria-label="Starting CoachTools">
@@ -36,21 +38,17 @@
     <header class="command-bar">
       <button class="suite-mark" type="button" data-action="about" aria-label="About CoachTools"><span class="system-icon" data-system-icon="coachtools-home" data-icon-fallback="✦"></span></button>
       <div class="suite-name"><strong>CoachTools</strong><small>Coaching Intelligence</small></div>
-
       <nav id="categoryFilters" class="category-filters" aria-label="Application filters"></nav>
-
       <label class="global-scope" title="Choose the person, team, or department open CoachTools apps should follow">
         <span>Scope</span>
         <select id="globalScopeSelect" aria-label="Global CoachTools scope"><option value="all:">All people</option></select>
       </label>
-
       <label class="search-box">
         <span aria-hidden="true">⌕</span>
         <span class="sr-only">Search applications</span>
         <input id="appSearch" type="search" autocomplete="off" placeholder="Search apps">
         <kbd>/</kbd>
       </label>
-
       <button id="readinessButton" class="readiness-button" type="button" data-action="toggle-data-panel" aria-expanded="false" aria-controls="dataPanel">
         <span class="system-icon small" data-system-icon="shared-data" data-icon-fallback="◫"></span><span class="status-dot"></span><span id="readyCount">0/8 Data</span>
       </button>
