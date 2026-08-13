@@ -1,0 +1,36 @@
+.desktop-folder-card { order: -20; }
+.desktop-folder-card .app-status { background: rgba(112, 196, 255, .16); color: #cbeeff; border-color: rgba(112, 196, 255, .3); }
+.desktop-folder-card .app-icon img { object-fit: contain; }
+
+.folder-dialog {
+  width: min(820px, calc(100vw - 36px));
+  max-height: min(680px, calc(100vh - 70px));
+  padding: 0;
+  border: 1px solid rgba(180, 218, 255, .34);
+  border-radius: 22px;
+  overflow: hidden;
+  color: #f4f8ff;
+  background: #07111e url('../graphics/videobackground.png') center/cover no-repeat;
+  box-shadow: 0 30px 90px rgba(0,0,0,.58), inset 0 1px rgba(255,255,255,.12);
+}
+.folder-dialog::backdrop { background: rgba(0, 6, 15, .62); backdrop-filter: blur(8px); }
+.folder-dialog-shell { min-height: 420px; padding: 24px; background: linear-gradient(180deg, rgba(5,13,24,.62), rgba(5,13,24,.84)); }
+.folder-dialog-header { display: flex; align-items: center; gap: 16px; margin-bottom: 22px; padding-right: 48px; position: relative; }
+.folder-dialog-icon { width: 66px; height: 66px; flex: 0 0 66px; object-fit: contain; filter: drop-shadow(0 10px 18px rgba(0,0,0,.35)); }
+.folder-dialog-heading { min-width: 0; }
+.folder-dialog-heading .eyebrow { margin: 0 0 3px; opacity: .72; }
+.folder-dialog-heading h2 { margin: 0; font-size: clamp(1.45rem, 3vw, 2rem); }
+.folder-dialog-heading p { margin: 6px 0 0; color: rgba(235,244,255,.72); }
+.folder-dialog-close { position: absolute; top: 0; right: 0; width: 38px; height: 38px; border-radius: 10px; border: 1px solid rgba(255,255,255,.18); color: white; background: rgba(4,10,19,.5); font: 700 24px/1 system-ui,sans-serif; cursor: pointer; }
+.folder-dialog-close:hover { background: rgba(210,63,75,.72); }
+.folder-app-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; align-items: stretch; }
+.folder-app-grid .app-card { width: 100%; min-height: 150px; background: rgba(8,18,32,.72); border-color: rgba(255,255,255,.14); backdrop-filter: blur(10px); }
+.folder-app-grid .app-card:hover { background: rgba(18,39,65,.82); transform: translateY(-2px); }
+.folder-app-grid .app-icon { width: 74px; height: 74px; }
+.folder-empty { padding: 42px 12px; text-align: center; color: rgba(235,244,255,.7); }
+
+@media (max-width: 640px) {
+  .folder-dialog-shell { padding: 18px; }
+  .folder-app-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .folder-dialog-icon { width: 54px; height: 54px; flex-basis: 54px; }
+}
