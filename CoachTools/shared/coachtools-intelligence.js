@@ -275,7 +275,8 @@
       });
       const oriented=cohort.map(item=>item.value*(metric.higher===false?-1:1)).sort((a,b)=>a-b), mine=current*(metric.higher===false?-1:1);
       const percentile=oriented.length>=5 ? (oriented.filter(value=>value<mine).length+oriented.filter(value=>value===mine).length*.5)/oriented.length : null;
-      const weak=percentile!=null&&percentile<=.25, declining=Number.isFinite(orientedDelta)&&orientedDelta<=-(metric.percent?.04:Math.max(1,Math.abs(current)*.04));
+      const declineThreshold=metric.percent ? .04 : Math.max(1,Math.abs(current)*.04);
+      const weak=percentile!=null&&percentile<=.25, declining=Number.isFinite(orientedDelta)&&orientedDelta<=-declineThreshold;
       if(!weak&&!declining) continue;
       const coachings=coachingForMetric(context,personId,metric,75), latestCoaching=coachings[0]||null;
       let status='open';
@@ -339,7 +340,7 @@
     const result=[];
     for(const summary of supportSummary(context)){
       if(!(summary.overThreeDays>0 || summary.averageDays>3.25 || summary.open>=5)) continue;
-      const coach=context.byId.get(summary.coachId); const reasons=[];
+      const reasons=[];
       if(summary.overThreeDays) reasons.push(`${summary.overThreeDays} checklist item${summary.overThreeDays===1?'':'s'} have been waiting more than 3 days.`);
       if(Number.isFinite(summary.averageDays)&&summary.averageDays>3.25) reasons.push(`Average time to serve is ${summary.averageDays.toFixed(1)} days.`);
       if(summary.open) reasons.push(`${summary.open} checklist item${summary.open===1?' is':'s are'} currently open.`);
@@ -396,8 +397,8 @@
     for(const [key,rows] of series){
       if(rows.length<4) continue; const [personId]=key.split('|'),person=context.byId.get(personId); if(!person||!personInScope(person,context.scope,context.byId)) continue;
       const metric=rows[rows.length-1].metric,recent=mean(rows.slice(-2).map(row=>row.value)),prior=mean(rows.slice(-4,-2).map(row=>row.value)); if(!Number.isFinite(recent)||!Number.isFinite(prior))continue;
-      const oriented=(recent-prior)*(metric.higher===false?-1:1),threshold=metric.percent?.04:Math.max(1,Math.abs(prior)*.04); if(oriented<threshold)continue;
-      result.push({personId,personName:person.displayName,coachId:person.currentCoachId||'',coachName:(context.byId.get(person.currentCoachId)||{}).displayName||'',topic:metric.name,metric:metric.name,change:recent-prior,orientedChange:oriented,current:recent,message:`${metric.name} has improved across recent periods.`});
+      const oriented=(recent-prior)*(metric.higher===false?-1:1), threshold=metric.percent ? .04 : Math.max(1,Math.abs(prior)*.04); if(oriented<threshold)continue;
+      result.push({personId,personName:person.displayName,coachId:person.currentCoachId||'',coachName:(context.byId.get(person.currentCoachId)||{}).displayName||'',topic:metric.name,metric:metric.name,metricId:metric.id,change:recent-prior,orientedChange:oriented,current:recent,message:`${metric.name} has improved across recent periods.`});
     }
     return result.sort((a,b)=>b.orientedChange-a.orientedChange).slice(0,30);
   }
