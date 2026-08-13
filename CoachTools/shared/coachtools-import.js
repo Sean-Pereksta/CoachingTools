@@ -305,7 +305,9 @@
     if (!SOURCES[source]) throw new Error('Unknown CoachTools source: ' + source);
     const prepared = clone(parsed);
     if (source === 'documentedCoaching') convertCoachingDateHeader(prepared);
-    const selectedNames = new Set(scopeNames(options && options.scope));
+    // QA is intentionally department-wide. Scope selection narrows coach-owned
+    // operational datasets, but QA must always retain every uploaded evaluation.
+    const selectedNames = new Set(source === 'qa' ? [] : scopeNames(options && options.scope));
     let matchedRows = 0;
     let totalRows = 0;
 
