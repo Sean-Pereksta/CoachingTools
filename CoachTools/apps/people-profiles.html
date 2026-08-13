@@ -14,7 +14,7 @@
   <meta name="coachtools-data" content="weeklyRetail, weeklyReferral, monthlyRetail, monthlyReferral, qa, documentedCoaching, checklist">
   <meta name="coachtools-favorite" content="true">
   <meta name="coachtools-order" content="25">
-  <meta name="coachtools-version" content="2.3">
+  <meta name="coachtools-version" content="2.4">
 
   <script src="../vendor/chart.umd.js"></script>
   <script src="../shared/coachtools-sync.js"></script>
@@ -72,7 +72,7 @@
         <div class="sideTitle"><span id="listTitle">People</span><span id="dedupeStatus"></span></div>
         <div class="peopleList" id="peopleList"></div>
       </aside>
-      <main class="content" id="content"><section class="startup" id="startupPanel"><h1>Preparing People Profiles</h1><p>Rebuilding coaches and representatives from the source rows, then reconciling coach-only surname aliases. This runs once when the app opens.</p><div class="startupTrack"><div class="startupBar" id="startupBar"></div></div><div class="startupMeta"><span id="startupLabel">Starting…</span><span id="startupPct">0%</span></div></section></main>
+      <main class="content" id="content"><section class="startup" id="startupPanel"><h1>Preparing People Profiles</h1><p>Learning representatives from the current source rows, then reconciling coach-only surname aliases and current team relationships.</p><div class="startupTrack"><div class="startupBar" id="startupBar"></div></div><div class="startupMeta"><span id="startupLabel">Starting…</span><span id="startupPct">0%</span></div></section></main>
     </div>
   </div>
 
@@ -115,10 +115,10 @@
     const state={
       people:[],visiblePeople:[],selectedId:'',profile:null,tab:'Overview',recent:[],searchTimer:null,
       records:{},historyRecords:{},charts:new Map(),identityReport:{merges:[],aliases:[],ambiguous:[]},
-      teamProfiles:[],repInsights:null,coachInsights:null,metricSelection:'',qualityReady:false,canonicalIdMap:new Map(),virtualCollapsed:0,identityPrepared:false,coachEvidence:null
+      teamProfiles:[],repInsights:null,coachInsights:null,metricSelection:'',qualityReady:false,canonicalIdMap:new Map(),virtualCollapsed:0,identityPrepared:false,coachEvidence:null,refreshPromise:null
     };
 
-    const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+    const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[char]));
     const clean=value=>String(value==null?'':value).trim().replace(/\s+/g,' ');
     const normHeader=value=>clean(value).toLowerCase().replace(/[^a-z0-9%]/g,'');
     const normalizeName=value=>CoachToolsIdentity.normalizeName(value);
@@ -179,7 +179,6 @@
         const knownRoles=new Set(group.map(person=>person.role).filter(role=>role!=='unknown'));
         if(knownRoles.size>1&&!annotated)continue;
         let primary=choosePrimary(group);
-        // A literal “(Job Coach)”/“- Job Coach” suffix is stronger evidence than a bad role inferred by an old import.
         if(annotated){
           const plain=group.filter(person=>!hasCoachAnnotation(person.displayName)).sort((a,b)=>richness(b)-richness(a))[0];
           const coach=group.find(person=>person.role==='coach');
@@ -206,7 +205,6 @@
           if(!coachRaw&&['weeklyRetail','weeklyReferral'].includes(type))coachRaw=row.__sheet;
           const repKey=normalizeName(repRaw);
           if(repKey)repKeys.add(repKey);
-          // Coach intelligence only comes from a row that actually connects a coach/team value to a representative.
           if(!coachRaw||!clean(coachRaw)||!repKey)continue;
           const coachName=stripRoleAnnotation(coachRaw),coachKey=normalizeName(coachName);
           if(!coachKey)continue;
@@ -234,11 +232,8 @@
     function coachStrength(person,evidence){return linkedRepresentativeSet(person,evidence).size}
     function effectiveRole(person,evidence){
       const coachSeen=personObservedAsCoach(person,evidence),repSeen=personObservedAsRepresentative(person,evidence),strength=coachStrength(person,evidence);
-      // Actual team ownership wins: if at least two representatives sit under this name, treat it as a coach even when an old registry role is wrong.
       if(coachSeen&&strength>=2)return'coach';
-      // Explicit Job Coach text is also definitive coach evidence.
       if(coachSeen&&[person.displayName,...(person.aliases||[]),...Object.values(person.sourceNames||{}).flat()].some(hasCoachAnnotation))return'coach';
-      // Representative-column evidence protects reps from surname logic and repairs bad old role labels.
       if(repSeen)return'representative';
       if(person.role==='coach'&&coachSeen)return'coach';
       if(person.role==='representative')return'representative';
@@ -246,12 +241,11 @@
     }
     function coachEligible(person,evidence){return effectiveRole(person,evidence)==='coach'}
     function fullSurnameCandidates(people,token,department,evidence){
-      // Always consider every full name with the same surname. We do NOT turn it into a coach here;
-      // the person must still win the representative-overlap test below.
       return people.filter(person=>{
         const full=normalizeName(stripRoleAnnotation(person.displayName));
         if(full.split(' ').length<2||surname(person.displayName)!==token)return false;
-        return !department||!person.department||person.department===department;
+        if(department&&person.department&&person.department!==department)return false;
+        return person.role==='coach'||personObservedAsCoach(person,evidence);
       });
     }
     function overlapCount(a,b){let count=0;for(const value of a||[])if(b?.has(value))count+=1;return count}
@@ -271,7 +265,7 @@
       const raw=[...(rawPeople||[])],idMap=new Map(raw.map(person=>[person.personId,person.personId]));
       const evidence=state.coachEvidence||collectIdentityEvidence(state.records);state.coachEvidence=evidence;
       const rawById=new Map(raw.map(person=>[person.personId,person]));
-      const registryChildren=new Map();
+      const registryChildren=new Map(),inferredCoachAliases=new Map();
       for(const rep of raw){
         if(!rep.currentCoachId)continue;
         if(!registryChildren.has(rep.currentCoachId))registryChildren.set(rep.currentCoachId,new Set());
@@ -283,8 +277,6 @@
         return effectiveRole(person,evidence);
       };
 
-      // 1) Collapse only coach versions whose FULL cleaned names are identical.
-      //    Example: "Aisha Villalobos" + "Aisha Villalobos (Job Coach)".
       const exactGroups=new Map();
       for(const person of raw){
         const base=normalizeName(stripRoleAnnotation(person.displayName));if(!base)continue;
@@ -299,18 +291,13 @@
         for(const person of eligible)idMap.set(person.personId,primary.personId);
       }
 
-      // Resolve any chains from the full-name cleanup before surname scoring.
       const resolveId=id=>{let next=id,seen=new Set();while(idMap.has(next)&&idMap.get(next)!==next&&!seen.has(next)){seen.add(next);next=idMap.get(next)}return next};
       for(const[id]of idMap)idMap.set(id,resolveId(id));
 
-      // 2) Surname-only names are coach-only. Match them to a full-name coach when TWO OR MORE
-      //    representatives under the surname are also under the full-name coach.
-      //    This is intentionally asymmetric: representatives never use surname matching.
       const observedTokens=new Map();
       for(const item of evidence.singleCoachTokens){const key=`${item.key}|${item.department||''}`;if(!observedTokens.has(key))observedTokens.set(key,item)}
       for(const observed of observedTokens.values()){
         const tokenRoster=rosterForToken(evidence,observed.key,observed.department);
-        if(tokenRoster.size<2)continue;
         const candidates=fullSurnameCandidates(raw,observed.key,observed.department,evidence).map(candidate=>{
           const canonicalId=resolveId(candidate.personId),canonical=rawById.get(canonicalId)||candidate;
           const activity=new Set();
@@ -323,9 +310,9 @@
         });
         const uniqueCandidates=[...new Map(candidates.map(item=>[item.canonicalId,item])).values()].sort((a,b)=>b.matches-a.matches||b.activity.size-a.activity.size);
         const best=uniqueCandidates[0],next=uniqueCandidates[1];
-        // User rule: more than one matching representative is enough to identify the coach.
-        // If two same-surname full names both clear that bar with the same overlap, leave it unmerged rather than guess.
-        if(!best||best.matches<2||(next&&next.matches===best.matches&&next.matches>=2)){
+        const overlapWinner=!!best&&best.matches>=2&&!(next&&next.matches===best.matches&&next.matches>=2);
+        const uniqueSurnameWinner=!!best&&uniqueCandidates.length===1;
+        if(!overlapWinner&&!uniqueSurnameWinner){
           if(uniqueCandidates.length)state.identityReport.ambiguous.push(`${observed.raw}: ${uniqueCandidates.slice(0,3).map(item=>`${item.candidate.displayName} ${item.matches} rep match${item.matches===1?'':'es'}`).join(' vs ')}`);
           continue;
         }
@@ -333,10 +320,10 @@
           const base=normalizeName(stripRoleAnnotation(person.displayName));
           if(base!==observed.key)continue;
           if(observed.department&&person.department&&person.department!==observed.department)continue;
-          // Only a record actually seen as a coach/team name may be collapsed into the full-name coach.
-          if(personObservedAsCoach(person,evidence))idMap.set(person.personId,best.canonicalId);
+          if(personObservedAsCoach(person,evidence)||person.role==='coach')idMap.set(person.personId,best.canonicalId);
         }
-        state.identityReport.aliases.push(`${observed.raw} → ${best.candidate.displayName} (${best.matches} matching representatives)`);
+        inferredCoachAliases.set(`${observed.key}|${observed.department||''}`,{raw:observed.raw,key:observed.key,department:observed.department||'',targetId:best.canonicalId});
+        state.identityReport.aliases.push(`${observed.raw} → ${best.candidate.displayName} (${overlapWinner?`${best.matches} matching representatives`:`unique coach surname${observed.department?` in ${observed.department}`:''}`})`);
       }
 
       for(const[id]of idMap)idMap.set(id,resolveId(id));
@@ -347,7 +334,6 @@
           const person={...group[0],role:roleFor(group[0])};
           canonical.push(person);continue;
         }
-        // A group is only merged here because the coach-only rules above mapped it.
         let primary=group.find(person=>person.personId===id)||choosePrimary(group);
         const fullPlain=group.filter(person=>normalizeName(stripRoleAnnotation(person.displayName)).split(' ').length>1&&!hasCoachAnnotation(person.displayName)).sort((a,b)=>richness(b)-richness(a))[0];
         if(fullPlain)primary=fullPlain;
@@ -361,8 +347,29 @@
         merged.aliases=[...new Set(merged.aliases.filter(alias=>normalizeName(alias)!==normalizeName(merged.displayName)))];
         canonical.push(merged);
       }
-      // Reconnect representatives to a collapsed coach ID, without changing representative identities themselves.
+
+      const canonicalById=new Map(canonical.map(person=>[person.personId,person]));
+      for(const alias of inferredCoachAliases.values()){
+        const target=canonicalById.get(resolveId(alias.targetId));if(!target)continue;
+        if(!(target.aliases||[]).some(value=>normalizeName(value)===alias.key)&&normalizeName(target.displayName)!==alias.key)target.aliases=[...(target.aliases||[]),alias.raw];
+      }
       for(const person of canonical)if(person.currentCoachId)person.currentCoachId=resolveId(person.currentCoachId);
+
+      const coachKeyTargets=new Map();
+      const addCoachTarget=(key,id)=>{if(!key||!id)return;if(!coachKeyTargets.has(key))coachKeyTargets.set(key,new Set());coachKeyTargets.get(key).add(resolveId(id))};
+      for(const coach of canonical.filter(person=>person.role==='coach'))for(const key of personKeys(coach))addCoachTarget(key,coach.personId);
+      for(const alias of inferredCoachAliases.values())addCoachTarget(alias.key,alias.targetId);
+      for(const rep of canonical.filter(person=>person.role!=='coach')){
+        const existing=rep.currentCoachId&&canonicalById.get(resolveId(rep.currentCoachId));
+        if(existing&&existing.role==='coach'){rep.currentCoachId=existing.personId;continue}
+        const repKeys=personKeys(rep),candidateIds=new Set();
+        for(const[coachKey,roster]of evidence.coachRosters){
+          if(!repKeys.some(key=>roster.has(key)))continue;
+          for(const id of coachKeyTargets.get(coachKey)||[]){const coach=canonicalById.get(id);if(!coach)continue;if(rep.department&&coach.department&&rep.department!==coach.department)continue;candidateIds.add(id)}
+        }
+        if(candidateIds.size===1)rep.currentCoachId=[...candidateIds][0];
+      }
+
       state.canonicalIdMap=idMap;state.virtualCollapsed=Math.max(0,raw.length-canonical.length);
       return canonical.sort((a,b)=>a.displayName.localeCompare(b.displayName));
     }
@@ -380,12 +387,12 @@
       state.identityReport={merges:[],aliases:[],ambiguous:[]};
       setStartupProgress(58,'Finding representatives from source rows…');await nextPaint();
       state.coachEvidence=collectIdentityEvidence(state.records);
-      setStartupProgress(72,'Matching coach surnames by representative overlap…');await nextPaint();
+      setStartupProgress(72,'Matching coach names and surname aliases…');await nextPaint();
       const raw=await CoachToolsIdentity.getAllPeople();
       setStartupProgress(84,'Collapsing confirmed coach aliases…');await nextPaint();
       state.people=buildVirtualCanonicalPeople(raw);
       state.identityPrepared=true;
-      setStartupProgress(94,'Separating coaches and representatives…');await nextPaint();
+      setStartupProgress(94,'Linking representatives to current coaches…');await nextPaint();
     }
 
     function visiblePeople(){return [...state.people].sort((a,b)=>a.displayName.localeCompare(b.displayName))}
@@ -405,7 +412,7 @@
       let matches=state.visiblePeople;
       if(query){
         const term=normalizeName(query),byId=new Map(state.visiblePeople.map(person=>[person.personId,person]));
-        matches=state.visiblePeople.filter(person=>{const coach=person.currentCoachId&&byId.get(person.currentCoachId);const hay=[person.displayName,...(person.aliases||[]),person.team,person.currentTeam,person.department,person.coordinator,coach&&coach.displayName].filter(Boolean).map(normalizeName).join(' ');return hay.includes(term)});
+        matches=state.visiblePeople.filter(person=>{const coach=person.currentCoachId&&byId.get(person.currentCoachId);const hay=[person.displayName,...(person.aliases||[]),...Object.values(person.sourceNames||{}).flat(),person.team,person.currentTeam,person.department,person.coordinator,coach&&coach.displayName].filter(Boolean).map(normalizeName).join(' ');return hay.includes(term)});
       }
       renderPeople(matches,query?`${matches.length} result${matches.length===1?'':'s'}`:'People');
       const coachCount=state.visiblePeople.filter(person=>person.role==='coach').length,repCount=state.visiblePeople.length-coachCount;
@@ -417,7 +424,17 @@
       if(window.CoachToolsData&&CoachToolsData.getHistory){for(const type of HISTORY_TYPES){try{state.historyRecords[type]=(await CoachToolsData.getHistory(type,{activeOnly:true})).slice(0,16)}catch{state.historyRecords[type]=[]}}}
     }
 
-    function resolverFor(people){const exact=new Map();for(const person of people)for(const value of[person.displayName,person.normalizedName,...(person.aliases||[])]){const key=normalizeName(value);if(key&&!exact.has(key))exact.set(key,person.personId)}return value=>exact.get(normalizeName(value))||''}
+    async function learnCurrentRows(){
+      const learned=[];
+      for(const type of DATA_TYPES){
+        const record=state.records[type];if(!record?.data)continue;
+        try{learned.push(await CoachToolsIdentity.ingestDataset(type,record.data,{fingerprint:record.fingerprint||record.datasetId||record.id||'',source:'people-profiles-current'}))}
+        catch(error){console.warn(`[People Profiles] Could not learn ${type} identities from current data.`,error)}
+      }
+      return learned;
+    }
+
+    function resolverFor(people){const exact=new Map();for(const person of people)for(const value of[person.displayName,person.normalizedName,...(person.aliases||[]),...Object.values(person.sourceNames||{}).flat()]){const key=normalizeName(value);if(key&&!exact.has(key))exact.set(key,person.personId)}return value=>exact.get(normalizeName(value))||''}
     function historyForMetric(metricId){
       if(metricId==='qa-score')return state.historyRecords.qa||[];
       return [...(state.historyRecords.weeklyRetail||[]),...(state.historyRecords.weeklyReferral||[]),...(state.historyRecords.monthlyRetail||[]),...(state.historyRecords.monthlyReferral||[])];
@@ -565,7 +582,7 @@
       const aliases=[...new Set([...(person.aliases||[]),...Object.values(person.sourceNames||{}).flat().filter(value=>normalizeName(value)!==person.normalizedName)])];
       const sources=Object.entries(person.sourceNames||{});
       const relatedLog=[...state.identityReport.merges,...state.identityReport.aliases].filter(line=>normalizeName(line).includes(surname(person.displayName))).slice(-10);
-      return`<div class="cardHead"><div><h3>${esc(person.displayName)}</h3><div class="sub">Canonical person ID: ${esc(person.personId)}</div></div><span class="pill good">Connected identity</span></div><div class="sourceBox"><b>Known names and aliases</b><div class="aliasGrid" style="margin-top:8px">${aliases.length?aliases.map(alias=>`<span class="alias">${esc(alias)}</span>`).join(''):'<span class="sub">No alternate names are currently stored.</span>'}</div></div><div class="sourceBox"><b>Connected data sources</b>${sources.length?sources.map(([source,names])=>`<small><strong>${esc(sourceNames[source]||source)}</strong>: ${esc((names||[]).join(', '))}</small>`).join(''):'<small>No source-name history is stored yet.</small>'}</div><div class="sourceBox"><b>Relationship context</b><small>Role: ${esc(person.role)} · Department: ${esc(person.department||'—')} · Team: ${esc(person.currentTeam||person.team||'—')}</small></div>${relatedLog.length?`<div class="sourceBox"><b>Identity intelligence applied this session</b><div class="identityLog">${relatedLog.map(line=>`<div>${esc(line)}</div>`).join('')}</div></div>`:''}<div class="provenance">Identity reconciliation is coach-only: role annotations and surname/team aliases are applied only to coach/team values observed on rows that also contain a representative. Representative identities never use surname inference.</div>`
+      return`<div class="cardHead"><div><h3>${esc(person.displayName)}</h3><div class="sub">Canonical person ID: ${esc(person.personId)}</div></div><span class="pill good">Connected identity</span></div><div class="sourceBox"><b>Known names and aliases</b><div class="aliasGrid" style="margin-top:8px">${aliases.length?aliases.map(alias=>`<span class="alias">${esc(alias)}</span>`).join(''):'<span class="sub">No alternate names are currently stored.</span>'}</div></div><div class="sourceBox"><b>Connected data sources</b>${sources.length?sources.map(([source,names])=>`<small><strong>${esc(sourceNames[source]||source)}</strong>: ${esc((names||[]).join(', '))}</small>`).join(''):'<small>No source-name history is stored yet.</small>'}</div><div class="sourceBox"><b>Relationship context</b><small>Role: ${esc(person.role)} · Department: ${esc(person.department||'—')} · Team: ${esc(person.currentTeam||person.team||'—')}</small></div>${relatedLog.length?`<div class="sourceBox"><b>Identity intelligence applied this session</b><div class="identityLog">${relatedLog.map(line=>`<div>${esc(line)}</div>`).join('')}</div></div>`:''}<div class="provenance">Identity reconciliation is coach-only. Full names, role annotations, and surname/team aliases can resolve to one coach, while representative identities never use surname inference.</div>`
     }
 
     async function openPerson(personId){
@@ -575,18 +592,37 @@
 
     async function setScope(){const person=state.profile?.person;if(!person)return;CoachToolsStorage.setScope({mode:person.role==='representative'?'representative':'coach',personId:person.personId,label:person.displayName,department:person.department||'',team:person.currentTeam||person.team||'',coaches:person.role==='coach'?[person.displayName]:[],representatives:person.role==='representative'?[person.displayName]:[]});$('registryStatus').textContent=`Scope set to ${person.displayName}`;$('registryStatus').classList.add('good')}
 
+    async function refreshFromCurrentData(){
+      if(state.refreshPromise)return state.refreshPromise;
+      state.refreshPromise=(async()=>{
+        const selected=state.selectedId;
+        state.identityPrepared=false;state.coachEvidence=null;
+        await loadData();
+        await learnCurrentRows();
+        await runIdentityIntelligence();
+        state.visiblePeople=visiblePeople();
+        await searchPeople();
+        $('registryStatus').textContent=`${state.visiblePeople.length.toLocaleString()} people ready · data refreshed`;$('registryStatus').classList.add('good');
+        const canonicalSelected=state.canonicalIdMap.get(selected)||selected;
+        if(canonicalSelected&&state.people.some(person=>person.personId===canonicalSelected))await openPerson(canonicalSelected);
+      })().finally(()=>{state.refreshPromise=null});
+      return state.refreshPromise;
+    }
+
     async function initialize(){
       state.recent=readRecent();
       $('personSearch').disabled=true;$('registryStatus').textContent='Preparing identities…';setStartupProgress(8,'Opening CoachTools data…');await nextPaint();
       await Promise.all([CoachToolsIdentity.ready(),CoachToolsAppData.ready()]);
       setStartupProgress(30,'Loading current performance sources…');await nextPaint();
       await loadData();
-      setStartupProgress(50,'Building one-time coach identity evidence…');await nextPaint();
+      setStartupProgress(44,'Learning representatives and coaches from current rows…');await nextPaint();
+      await learnCurrentRows();
+      setStartupProgress(52,'Building coach identity evidence…');await nextPaint();
       await runIdentityIntelligence();
       state.visiblePeople=visiblePeople();
       setStartupProgress(100,'Ready');await new Promise(resolve=>setTimeout(resolve,140));
       $('personSearch').disabled=false;$('registryStatus').textContent=`${state.visiblePeople.length.toLocaleString()} people ready`;$('registryStatus').classList.add('good');
-      $('content').innerHTML='<section class="empty"><div class="emptyIcon">◎</div><h1>Show me a person</h1><p>Coaches and representatives are separated in the people bar. Representatives come from representative columns; coach surname aliases are collapsed only after at least two representative matches.</p></section>';
+      $('content').innerHTML='<section class="empty"><div class="emptyIcon">◎</div><h1>Show me a person</h1><p>Representatives are rebuilt from the current representative columns. Coach-only short names such as a surname are folded into the matching full coach when the match is unique or confirmed by representative overlap.</p></section>';
       await searchPeople();
       const scope=CoachToolsAppData.getScope();if(scope?.personId){const canonicalScope=state.canonicalIdMap.get(scope.personId)||scope.personId;if(state.people.some(person=>person.personId===canonicalScope))await openPerson(canonicalScope)}
     }
@@ -598,9 +634,9 @@
     $('identityModal').addEventListener('click',event=>{if(event.target.id==='identityModal'||event.target.closest('[data-action="close-identity"]'))$('identityModal').classList.remove('show')});
     document.addEventListener('keydown',event=>{if(event.key==='Escape')$('identityModal').classList.remove('show')});
 
-    CoachToolsAppData.subscribe(DATA_TYPES,async()=>{if(!state.identityPrepared)return;await loadData();$('registryStatus').textContent='Data updated · identity map ready';if(state.selectedId&&state.people.some(person=>person.personId===state.selectedId))openPerson(state.selectedId)});
+    CoachToolsAppData.subscribe(DATA_TYPES,async()=>{if(!state.identityPrepared)return;await refreshFromCurrentData()});
     CoachToolsAppData.subscribeScope(scope=>{if(scope.personId&&scope.personId!==state.selectedId)openPerson(scope.personId)});
-    CoachToolsIdentity.subscribe(detail=>{if(!state.identityPrepared||detail?.relayed)return;$('registryStatus').textContent='Identity map ready · reload to reconcile new names'});
+    CoachToolsIdentity.subscribe(detail=>{if(!state.identityPrepared||detail?.relayed||state.refreshPromise)return;$('registryStatus').textContent='Identity map updated · reconciling names…';refreshFromCurrentData()});
 
     initialize().catch(err=>{$('content').innerHTML=`<div class="error"><b>People Profiles could not start.</b><p>${esc(err?.message||err)}</p></div>`});
   })();
