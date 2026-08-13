@@ -1,9 +1,10 @@
 (function attachCoachToolsIdentity(root) {
   'use strict';
 
-  const VERSION = '1.0.0';
+  const VERSION = '1.0.1';
   const DB_NAME = 'allStarImportedDataCache.v1';
-  const DB_VERSION = 6;
+  const DB_VERSION = 7;
+  const DATASET_CHUNK_STORE = 'coachtoolsDatasetChunks';
   const PEOPLE_STORE = 'coachtoolsPeople';
   const REVIEW_STORE = 'coachtoolsIdentityReviews';
   const EVENT_NAME = 'coachtools:identity-updated';
@@ -87,6 +88,13 @@
           store.createIndex('datasetType', 'datasetType', { unique: false });
           store.createIndex('periodKey', ['datasetType', 'periodKey'], { unique: false });
           store.createIndex('fingerprint', ['datasetType', 'fingerprint'], { unique: false });
+        }
+        // Identity and storage share one database. Mirror the v7 chunk store here
+        // so whichever shared module opens the database first creates the same schema.
+        if (!db.objectStoreNames.contains(DATASET_CHUNK_STORE)) {
+          const store = db.createObjectStore(DATASET_CHUNK_STORE, { keyPath: 'id' });
+          store.createIndex('datasetId', 'datasetId', { unique: false });
+          store.createIndex('datasetOrder', ['datasetId', 'index'], { unique: true });
         }
         if (!db.objectStoreNames.contains('coachtoolsCurrent')) db.createObjectStore('coachtoolsCurrent', { keyPath: 'datasetType' });
         if (!db.objectStoreNames.contains('coachtoolsImports')) {
