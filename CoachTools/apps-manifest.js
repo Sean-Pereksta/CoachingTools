@@ -96,6 +96,39 @@ window.COACHTOOLS_MANIFEST = {
       "enabled": true
     },
     {
+      "id": "coaching-command-center",
+      "name": "Coaching Command Center",
+      "description": "Prioritize coaching needs, follow-ups, support delays, and recognition from shared CoachTools data.",
+      "file": "apps/coaching-command-center.html",
+      "icon": "icons/default-app.png",
+      "initials": "CC",
+      "category": "Coaching",
+      "keywords": [
+        "today",
+        "coaching",
+        "priority",
+        "follow-up",
+        "debt",
+        "checklist",
+        "support",
+        "recognition",
+        "intelligence"
+      ],
+      "data": [
+        "weeklyRetail",
+        "weeklyReferral",
+        "qa",
+        "documentedCoaching",
+        "checklist"
+      ],
+      "favorite": true,
+      "featured": false,
+      "preload": false,
+      "order": 27,
+      "version": "1.0",
+      "enabled": true
+    },
+    {
       "id": "coaching-gaps",
       "name": "Coaching Gaps",
       "description": "Compare documented coaching, performance, QA, and checklist gaps.",
