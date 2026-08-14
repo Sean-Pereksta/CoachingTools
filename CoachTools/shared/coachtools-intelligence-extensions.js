@@ -13,7 +13,7 @@
   };
 
   function quietCommandCenterIdentityStartup() {
-    const appId = clean(document.querySelector('meta[name="coachtools-id"]')?.content);
+    const appId = typeof document !== 'undefined' ? clean(document.querySelector('meta[name="coachtools-id"]')?.content) : '';
     const identity = root.CoachToolsIdentity;
     if (appId !== 'coaching-command-center' || !identity || typeof identity.subscribe !== 'function' || typeof identity.ready !== 'function') return;
 
