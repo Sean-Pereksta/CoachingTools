@@ -14,7 +14,7 @@
   <meta name="coachtools-data" content="weeklyRetail, weeklyReferral, qa, documentedCoaching, checklist">
   <meta name="coachtools-favorite" content="true">
   <meta name="coachtools-order" content="27">
-  <meta name="coachtools-version" content="2.1">
+  <meta name="coachtools-version" content="2.2">
 
   <script src="../vendor/lz-string.min.js"></script>
   <script src="../shared/coachtools-sync.js"></script>
@@ -117,6 +117,8 @@
   const ORG_KEY = 'allStarOrgBuilder.v1';
   const REMINDER_KEY = 'coachtools.commandCenter.reminders.v1';
   const SCOPE_KEY = 'coachtools.commandCenter.scope.v2';
+  const SCOPE_BATCH_SIZE = 12;
+  const SCOPE_REFRESH_DELAY = 180;
   const $ = id => document.getElementById(id);
 
   const state = {
@@ -131,7 +133,11 @@
     repRows: [],
     alerts: [],
     impact: {},
-    reminders: []
+    reminders: [],
+    scopeLoading: false,
+    scopeRefreshTimer: 0,
+    scopeRefreshGeneration: 0,
+    running: false
   };
 
   function clean(value) { return String(value == null ? '' : value).trim().replace(/\s+/g, ' '); }
@@ -287,29 +293,48 @@
     });
   }
 
-  async function loadCoachOptions() {
-    if (!window.CoachToolsIdentity) throw new Error('CoachToolsIdentity is unavailable.');
-    if (typeof window.CoachToolsIdentity.ready === 'function') await window.CoachToolsIdentity.ready();
-
-    state.people = typeof window.CoachToolsIdentity.getAllPeople === 'function'
-      ? await window.CoachToolsIdentity.getAllPeople()
-      : [];
-    state.byId = new Map(state.people.map(person => [person.personId, person]));
-
-    let coaches = [];
-    if (typeof window.CoachToolsIdentity.getCoaches === 'function') {
-      try { coaches = await window.CoachToolsIdentity.getCoaches(); } catch (_) { coaches = []; }
+  function deriveCoaches(people) {
+    const coachIds = new Set();
+    for (const person of people || []) {
+      if (!person) continue;
+      if (person.role === 'coach' && person.personId) coachIds.add(person.personId);
+      if (person.currentCoachId) coachIds.add(person.currentCoachId);
     }
-    if (!coaches.length) {
-      const coachIds = new Set();
-      for (const person of state.people) {
-        if (person.role === 'coach') coachIds.add(person.personId);
-        if (person.currentCoachId) coachIds.add(person.currentCoachId);
-      }
-      coaches = state.people.filter(person => coachIds.has(person.personId));
+    return (people || [])
+      .filter(person => person && person.personId && coachIds.has(person.personId) && clean(person.displayName))
+      .sort((a, b) => clean(a.displayName).localeCompare(clean(b.displayName)));
+  }
+
+  async function readCoachSnapshot() {
+    const identity = window.CoachToolsIdentity;
+    if (!identity) throw new Error('CoachToolsIdentity is unavailable.');
+
+    let people = [];
+    if (typeof identity.getAllPeople === 'function') {
+      try { people = await identity.getAllPeople(); }
+      catch (error) { console.warn('[Coaching Command Center] cached people snapshot unavailable', error); }
     }
-    state.coaches = coaches.filter(coach => coach && coach.personId && clean(coach.displayName)).sort((a, b) => clean(a.displayName).localeCompare(clean(b.displayName)));
+
+    let coaches = deriveCoaches(people);
+    if (!coaches.length && typeof identity.getCoaches === 'function') {
+      try { coaches = await identity.getCoaches(); }
+      catch (error) { console.warn('[Coaching Command Center] cached coach snapshot unavailable', error); }
+    }
+
+    if (coaches.length) {
+      const peopleById = new Map((people || []).filter(Boolean).map(person => [person.personId, person]));
+      for (const coach of coaches) if (coach && coach.personId && !peopleById.has(coach.personId)) peopleById.set(coach.personId, coach);
+      people = Array.from(peopleById.values()).sort((a, b) => clean(a.displayName).localeCompare(clean(b.displayName)));
+    }
+
+    state.people = Array.isArray(people) ? people : [];
+    state.byId = new Map(state.people.filter(person => person && person.personId).map(person => [person.personId, person]));
+    state.coaches = Array.from(new Map((coaches.length ? coaches : deriveCoaches(state.people))
+      .filter(coach => coach && coach.personId && clean(coach.displayName))
+      .map(coach => [coach.personId, coach])).values())
+      .sort((a, b) => clean(a.displayName).localeCompare(clean(b.displayName)));
     state.orgs = hydrateOrganizations();
+    return { people: state.people, coaches: state.coaches, orgs: state.orgs };
   }
 
   function renderScopeStatus() {
@@ -320,51 +345,97 @@
       <span><b>${state.coaches.length}</b> coaches loaded</span>
       <span><b>${savedOrgs}</b> All-Star org${savedOrgs === 1 ? '' : 's'} loaded</span>
       <span><b>${orgCoaches}</b> org coaches matched</span>
-      ${unmatched ? `<span><b>${unmatched}</b> org coach name${unmatched === 1 ? '' : 's'} not yet matched</span>` : ''}`;
+      ${unmatched ? `<span><b>${unmatched}</b> org coach name${unmatched === 1 ? '' : 's'} not yet matched</span>` : ''}
+      ${state.scopeLoading ? '<span><b>Updating</b> identity registry in background</span>' : ''}`;
   }
 
-  function populateScopeSelect() {
+  function setScopePlaceholder(text) {
+    const option = Array.from($('scopeSelect').options).find(item => item.value === '');
+    if (option) option.textContent = text;
+  }
+
+  async function appendScopeOptions(group, items, createOption, label, preserveValue) {
+    for (let start = 0; start < items.length; start += SCOPE_BATCH_SIZE) {
+      const end = Math.min(items.length, start + SCOPE_BATCH_SIZE);
+      const fragment = document.createDocumentFragment();
+      for (let index = start; index < end; index += 1) fragment.appendChild(createOption(items[index]));
+      group.appendChild(fragment);
+      group.label = `${label} (${end}/${items.length})`;
+      setScopePlaceholder(`Loading ${label.toLowerCase()} ${end}/${items.length}…`);
+      if (preserveValue && Array.from($('scopeSelect').options).some(option => option.value === preserveValue && !option.disabled)) {
+        $('scopeSelect').value = preserveValue;
+      }
+      $('runBtn').disabled = state.running || !$('scopeSelect').value;
+      renderScopeStatus();
+      await yieldBrowser();
+    }
+    group.label = `${label} (${items.length})`;
+  }
+
+  async function populateScopeSelect(options) {
     const select = $('scopeSelect');
+    const saved = loadSavedScope();
+    const preserveValue = clean(options && options.preserveValue) || clean(select.value) || clean(saved && saved.value);
     select.replaceChildren();
 
     const placeholder = document.createElement('option');
     placeholder.value = '';
-    placeholder.textContent = state.coaches.length || state.orgs.length ? 'Choose a coach or organization…' : 'No coaches or organizations found';
+    placeholder.textContent = state.scopeLoading ? 'Loading cached coaches and organizations…' : 'Choose a coach or organization…';
     select.appendChild(placeholder);
 
     if (state.coaches.length) {
       const group = document.createElement('optgroup');
-      group.label = `Coaches (${state.coaches.length})`;
-      for (const coach of state.coaches) {
+      group.label = `Coaches (0/${state.coaches.length})`;
+      select.appendChild(group);
+      await appendScopeOptions(group, state.coaches, coach => {
         const option = document.createElement('option');
         option.value = `coach:${coach.personId}`;
         option.textContent = coach.displayName;
-        group.appendChild(option);
-      }
-      select.appendChild(group);
+        return option;
+      }, 'Coaches', preserveValue);
     }
 
     if (state.orgs.length) {
       const group = document.createElement('optgroup');
-      group.label = `All-Star Organizations (${state.orgs.length})`;
-      for (const org of state.orgs) {
+      group.label = `All-Star Organizations (0/${state.orgs.length})`;
+      select.appendChild(group);
+      await appendScopeOptions(group, state.orgs, org => {
         const option = document.createElement('option');
         option.value = org.value;
         const matched = org.coaches.length;
         const total = org.coachNames.length;
         option.textContent = `${org.name} · ${matched}/${total} coaches matched`;
-        group.appendChild(option);
-      }
-      select.appendChild(group);
+        option.disabled = matched === 0;
+        return option;
+      }, 'All-Star Organizations', preserveValue);
     }
 
-    const saved = loadSavedScope();
-    if (saved && saved.value) {
-      const matching = Array.from(select.options).find(option => option.value === saved.value);
-      if (matching) select.value = saved.value;
-    }
-    $('runBtn').disabled = !select.value;
+    const matching = preserveValue && Array.from(select.options).find(option => option.value === preserveValue && !option.disabled);
+    if (matching) select.value = preserveValue;
+    placeholder.textContent = state.coaches.length || state.orgs.length
+      ? 'Choose a coach or organization…'
+      : state.scopeLoading ? 'Discovering coaches and organizations…' : 'No coaches or organizations found';
+    $('runBtn').disabled = state.running || !select.value;
     renderScopeStatus();
+  }
+
+  async function refreshScopeOptions(options) {
+    if (state.running && !(options && options.force)) return;
+    const generation = ++state.scopeRefreshGeneration;
+    const preserveValue = clean(options && options.preserveValue) || clean($('scopeSelect').value) || clean(loadSavedScope() && loadSavedScope().value);
+    await readCoachSnapshot();
+    if (generation !== state.scopeRefreshGeneration) return;
+    await populateScopeSelect({ preserveValue });
+  }
+
+  function scheduleScopeRefresh() {
+    if (state.running) return;
+    clearTimeout(state.scopeRefreshTimer);
+    state.scopeRefreshTimer = setTimeout(() => {
+      refreshScopeOptions({ preserveValue: $('scopeSelect').value }).catch(error => {
+        console.warn('[Coaching Command Center] background scope refresh failed', error);
+      });
+    }, SCOPE_REFRESH_DELAY);
   }
 
   function scopeFromValue(value) {
@@ -495,11 +566,20 @@
 
   async function buildContextChunked(scope) {
     openLoader(`Running ${scope.label}`);
-    setProgress(4, 'Identity', `Scoping ${scope.coachIds.length} coach${scope.coachIds.length === 1 ? '' : 'es'}.`, 'Matching coaches and representatives accurately.');
+    setProgress(4, 'Identity', `Scoping ${scope.coachIds.length} coach${scope.coachIds.length === 1 ? '' : 'es'}.`, 'Using the current identity snapshot while background identity refresh continues.');
 
-    if (window.CoachToolsIdentity && typeof window.CoachToolsIdentity.ready === 'function') await window.CoachToolsIdentity.ready();
-    state.people = typeof window.CoachToolsIdentity.getAllPeople === 'function' ? await window.CoachToolsIdentity.getAllPeople() : state.people;
-    state.byId = new Map(state.people.map(person => [person.personId, person]));
+    const identity = window.CoachToolsIdentity;
+    if (identity && typeof identity.getAllPeople === 'function') {
+      try {
+        const latestPeople = await identity.getAllPeople();
+        if (Array.isArray(latestPeople) && latestPeople.length) {
+          state.people = latestPeople;
+          state.byId = new Map(state.people.map(person => [person.personId, person]));
+        }
+      } catch (error) {
+        console.warn('[Coaching Command Center] latest identity snapshot unavailable for run', error);
+      }
+    }
     const resolve = makeResolver(state.people);
 
     setProgress(8, 'Shared data', 'Loading current datasets one at a time.');
@@ -780,7 +860,7 @@
         <div class="metricCard bad"><small>Open attention</small><strong>${summary.open}</strong><span>Coaching + custom risk signals</span></div>
         <div class="metricCard"><small>Coaching · 30d</small><strong>${summary.coaching30}</strong><span>Documented coaching events</span></div>
         <div class="metricCard ${Number.isFinite(summary.qa) && summary.qa < .85 ? 'warn' : 'good'}"><small>Team QA · 30d</small><strong>${fmtPct(summary.qa)}</strong><span>Recent QA average</span></div>
-        <div class="metricCard ${summary.delayedCorrectives ? 'bad' : 'good'}"><small>Open 5d+ correctives</small><strong>${summary.delayedCorrectives}</strong><span>Verbal, written, or final</span></div>
+        <div class="metricCard ${summary.delayedCorrectives ? 'bad' : 'good'}"><small>Open 5d+ correctives</small><strong>${summary.delayedCorrectives}</strong><span>Open or served late</span></div>
       </section>
 
       <section class="grid2">
@@ -857,6 +937,7 @@
     const scope = scopeFromValue($('scopeSelect').value);
     if (!scope) return;
 
+    state.running = true;
     $('runBtn').disabled = true;
     state.scope = scope;
     saveScope({ value: scope.value, label: scope.label });
@@ -888,21 +969,54 @@
       $('loadingDetail').textContent = String(error && error.message || error);
       setTimeout(() => $('loadingShade').classList.remove('open'), 2200);
     } finally {
+      state.running = false;
       $('runBtn').disabled = !$('scopeSelect').value;
+      if (state.scopeLoading) scheduleScopeRefresh();
     }
   }
 
   async function boot() {
     state.reminders = loadReminders();
     renderReminders();
+    state.scopeLoading = true;
+    setScopePlaceholder('Reading cached coaches and organizations…');
+
+    const identity = window.CoachToolsIdentity;
+    let unsubscribe = null;
     try {
-      await loadCoachOptions();
-      populateScopeSelect();
-      if (!state.coaches.length) {
-        $('welcome').querySelector('h2').textContent = 'No coaches are available yet';
-        $('welcome').querySelector('p').textContent = 'Load shared weekly/coaching data first so the CoachTools identity registry can build coach and representative relationships.';
+      await refreshScopeOptions({ preserveValue: clean(loadSavedScope() && loadSavedScope().value), force: true });
+
+      if (identity && typeof identity.subscribe === 'function') {
+        unsubscribe = identity.subscribe(detail => {
+          const reason = clean(detail && detail.reason);
+          if (reason === 'dataset-ingested' || reason === 'team-setup-synced' || reason === 'person-updated' || reason === 'people-merged' || reason === 'merge-undone') {
+            scheduleScopeRefresh();
+          }
+        });
+      }
+
+      if (identity && typeof identity.ready === 'function') {
+        Promise.resolve(identity.ready()).then(async () => {
+          state.scopeLoading = false;
+          if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+          await refreshScopeOptions({ preserveValue: $('scopeSelect').value, force: true });
+          if (!state.coaches.length) {
+            $('welcome').querySelector('h2').textContent = 'No coaches are available yet';
+            $('welcome').querySelector('p').textContent = 'Load shared weekly/coaching data first so the CoachTools identity registry can build coach and representative relationships.';
+          }
+        }).catch(error => {
+          state.scopeLoading = false;
+          if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+          console.warn('[Coaching Command Center] background identity refresh did not finish', error);
+          populateScopeSelect({ preserveValue: $('scopeSelect').value }).catch(() => {});
+        });
+      } else {
+        state.scopeLoading = false;
+        await populateScopeSelect({ preserveValue: $('scopeSelect').value });
       }
     } catch (error) {
+      state.scopeLoading = false;
+      if (unsubscribe) unsubscribe();
       console.error('[Coaching Command Center] startup', error);
       $('scopeSelect').innerHTML = '<option value="">Could not load coach options</option>';
       $('runBtn').disabled = true;
@@ -912,7 +1026,7 @@
   }
 
   $('runBtn').addEventListener('click', runSelected);
-  $('scopeSelect').addEventListener('change', () => { $('runBtn').disabled = !$('scopeSelect').value; });
+  $('scopeSelect').addEventListener('change', () => { $('runBtn').disabled = state.running || !$('scopeSelect').value; });
   $('scopeSelect').addEventListener('keydown', event => { if (event.key === 'Enter' && $('scopeSelect').value) runSelected(); });
   $('reminders').addEventListener('click', event => {
     const btn = event.target.closest('[data-remove-reminder]');
