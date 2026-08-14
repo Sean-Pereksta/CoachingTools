@@ -7,6 +7,8 @@
   const METRICS = Profiles.METRICS || [];
   const WEEKLY_TYPES = ['weeklyRetail', 'weeklyReferral'];
   const QA_METRIC = METRICS.find(metric => metric.id === 'qa-score') || { id: 'qa-score', name: 'QA Score', category: 'Quality', higher: true, percent: true };
+  const CASH_APPOINTMENT_METRIC = METRICS.find(metric => metric.id === 'cash-appointment-rate') || null;
+  const WIPER_METRIC = METRICS.find(metric => metric.id === 'wiper-rate') || null;
   const DAY = 86400000;
 
   const clean = value => String(value == null ? '' : value).trim().replace(/\s+/g, ' ');
@@ -31,8 +33,16 @@
     if (!meta || meta.content !== 'people-profiles' || root.document.getElementById('people-profiles-scroll-fix')) return;
     const style = root.document.createElement('style');
     style.id = 'people-profiles-scroll-fix';
-    style.textContent = '@media (min-width:721px){html,body{height:100%;overflow:hidden}.app{height:100vh;min-height:0;overflow:hidden}.layout{min-height:0;overflow:hidden}.sidebar,.content{min-height:0;overflow:auto}}';
+    style.textContent = '.finder{position:relative;z-index:55}.finder input{pointer-events:auto;cursor:text}.finder span{pointer-events:none}@media (min-width:721px){html,body{height:100%;overflow:hidden}.app{height:100vh;min-height:0;overflow:hidden}.layout{min-height:0;overflow:hidden}.sidebar,.content{min-height:0;overflow:auto}}';
     root.document.head.appendChild(style);
+    const enableSearch = () => {
+      const input = root.document.getElementById('personSearch');
+      if (!input) return;
+      input.disabled = false;
+      input.removeAttribute('disabled');
+    };
+    if (root.document.readyState === 'loading') root.document.addEventListener('DOMContentLoaded', enableSearch, { once: true });
+    else enableSearch();
   }
   applyPeopleProfilesViewportFix();
 
@@ -68,6 +78,96 @@
       if (key != null) return row[key];
     }
     return undefined;
+  }
+
+  function rowPickPattern(row, candidates, patterns) {
+    const exact = rowPick(row, candidates || []);
+    if (exact !== undefined) return exact;
+    for (const key of Object.keys(row || {})) {
+      if ((patterns || []).some(pattern => pattern.test(key))) return row[key];
+    }
+    return undefined;
+  }
+
+  function rowNumber(row, candidates, patterns) {
+    const raw = rowPickPattern(row, candidates, patterns);
+    return test.parseNumber ? test.parseNumber(raw) : Number(raw);
+  }
+
+  function performanceProvenance(record, type) {
+    return {
+      source: record && (record.originalFileName || record.datasetType) || type || 'Performance',
+      period: record && record.detectedPeriod && record.detectedPeriod.label || '',
+      importedAt: record && record.importedAt || ''
+    };
+  }
+
+  function derivedPerformanceRows(record, resolvePerson, type) {
+    if (!record || !record.data || !test.extractRows) return [];
+    const rows = [], sourceType = type || record.datasetType || '', provenance = performanceProvenance(record, type);
+    for (const pack of test.extractRows(record.data)) {
+      for (const row of pack.rows || []) {
+        const repRaw = rowPick(row, ['Representative', 'Associate Name', 'Agent Name', 'AgentName', 'Employee']);
+        const coachRaw = rowPick(row, ['Job Coach', 'Coach Assigned', 'Coach', 'Sheet', 'Team']) || pack.sheet;
+        const personId = repRaw ? resolvePerson(repRaw) : resolvePerson(coachRaw);
+        if (!personId) continue;
+        const role = repRaw ? 'representative' : 'coach';
+
+        const consumerApps = rowNumber(row,
+          ['Consumer Appointments', 'Consumer Appointment', 'Consumer Apps'],
+          [/^Consumer[_\s-]*Appointments?$/i, /consumer.*appointments?/i]);
+        const consumerOpps = rowNumber(row,
+          ['Consumer Opportunities', 'Consumer Opportunity', 'Consumer Opps'],
+          [/^Consumer[_\s-]*Opportunit/i, /consumer.*opportunit/i]);
+        if (CASH_APPOINTMENT_METRIC && sourceType !== 'weeklyReferral' && Number.isFinite(consumerApps) && Number.isFinite(consumerOpps) && consumerOpps > 0) {
+          rows.push({ personId, role, metric: CASH_APPOINTMENT_METRIC, value: consumerApps / consumerOpps, weight: consumerOpps, provenance });
+        }
+
+        const wiperCount = rowNumber(row,
+          ['Wiper Count'],
+          [/^Wiper[_\s-]*Count$/i, /wiper.*count/i]);
+        const wiperJobs = rowNumber(row,
+          ['Wiper Jobs', 'Wiper Job'],
+          [/^Wiper[_\s-]*Jobs?$/i, /wiper.*jobs?/i]);
+        const wipersAccept = rowNumber(row,
+          ['Wipers Accept', 'Wiper Accept', 'Wipers Accepted', 'Wiper Accepted'],
+          [/wipers?[_\s-]*accept/i, /wipers? accept/i]);
+        const wipersAsked = rowNumber(row,
+          ['Wipers Asked', 'Wiper Asked'],
+          [/wipers?[_\s-]*asked/i, /wipers? asked/i]);
+
+        let wiperValue = NaN, wiperWeight = NaN;
+        if (sourceType === 'weeklyReferral') {
+          if (Number.isFinite(wipersAccept) && Number.isFinite(wipersAsked) && wipersAsked > 0) {
+            wiperValue = wipersAccept / wipersAsked;
+            wiperWeight = wipersAsked;
+          } else if (Number.isFinite(wiperCount) && Number.isFinite(wiperJobs) && wiperJobs > 0) {
+            wiperValue = wiperCount / wiperJobs;
+            wiperWeight = wiperJobs;
+          }
+        } else {
+          if (Number.isFinite(wiperCount) && Number.isFinite(wiperJobs) && wiperJobs > 0) {
+            wiperValue = wiperCount / wiperJobs;
+            wiperWeight = wiperJobs;
+          } else if (Number.isFinite(wipersAccept) && Number.isFinite(wipersAsked) && wipersAsked > 0) {
+            wiperValue = wipersAccept / wipersAsked;
+            wiperWeight = wipersAsked;
+          }
+        }
+        if (WIPER_METRIC && Number.isFinite(wiperValue)) rows.push({ personId, role, metric: WIPER_METRIC, value: wiperValue, weight: wiperWeight, provenance });
+      }
+    }
+    return rows;
+  }
+
+  function metricKey(personId, metricId) { return `${personId}|${metricId}`; }
+
+  function profilePerformanceRows(record, resolvePerson, type) {
+    const base = test.canonicalizePerformance(record, resolvePerson) || [];
+    const derived = derivedPerformanceRows(record, resolvePerson, type);
+    if (!derived.length) return base;
+    const derivedKeys = new Set(derived.map(row => metricKey(row.personId, row.metric.id)));
+    return base.filter(row => !derivedKeys.has(metricKey(row.personId, row.metric.id))).concat(derived);
   }
 
   function weeklyDepartment(type) {
@@ -109,19 +209,46 @@
     }
   }
 
-  function metricKey(personId, metricId) { return `${personId}|${metricId}`; }
-  function aggregateInto(map, personId, metric, value, provenance) {
+  function aggregateInto(map, personId, metric, value, provenance, weight) {
     if (!personId || !metric || !Number.isFinite(value)) return;
     const key = metricKey(personId, metric.id);
-    if (!map.has(key)) map.set(key, { metric, sum: 0, count: 0, provenance });
+    if (!map.has(key)) map.set(key, { metric, sum: 0, count: 0, weightedSum: 0, weightSum: 0, provenance });
     const row = map.get(key);
-    row.sum += value; row.count += 1;
+    if (Number.isFinite(weight) && weight > 0) {
+      row.weightedSum += value * weight;
+      row.weightSum += weight;
+    } else {
+      row.sum += value;
+      row.count += 1;
+    }
     if (!row.provenance && provenance) row.provenance = provenance;
   }
+
   function finishAggregates(map) {
     const out = new Map();
-    for (const [key, row] of map) out.set(key, { metric: row.metric, value: row.count ? row.sum / row.count : NaN, provenance: row.provenance });
+    for (const [key, row] of map) {
+      const value = row.weightSum > 0 ? row.weightedSum / row.weightSum : row.count ? row.sum / row.count : NaN;
+      out.set(key, { metric: row.metric, value, weight: row.weightSum || 0, provenance: row.provenance });
+    }
     return out;
+  }
+
+  function summarizeMetricRows(rows) {
+    const weighted = (rows || []).filter(row => Number.isFinite(row.value) && Number.isFinite(row.weight) && row.weight > 0);
+    if (weighted.length) {
+      const weight = weighted.reduce((sum, row) => sum + row.weight, 0);
+      return { value: weight > 0 ? weighted.reduce((sum, row) => sum + row.value * row.weight, 0) / weight : NaN, weight };
+    }
+    return { value: mean((rows || []).map(row => row.value)), weight: 0 };
+  }
+
+  function weightedEntryValue(entries) {
+    const weighted = (entries || []).filter(entry => entry && Number.isFinite(entry.value) && Number.isFinite(entry.weight) && entry.weight > 0);
+    if (weighted.length) {
+      const weight = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+      if (weight > 0) return weighted.reduce((sum, entry) => sum + entry.value * entry.weight, 0) / weight;
+    }
+    return mean((entries || []).map(entry => entry && entry.value));
   }
 
   function createPreparedSkeleton(people, records) {
@@ -155,10 +282,10 @@
 
   function indexPerformance(prepared, type, record) {
     linkWeeklyRoster(prepared, type, record);
-    const rows = test.canonicalizePerformance(record, prepared.resolvePerson).filter(row => row.role === 'representative');
+    const rows = profilePerformanceRows(record, prepared.resolvePerson, type).filter(row => row.role === 'representative');
     prepared.performanceBySource[type] = rows;
     for (const row of rows) {
-      aggregateInto(prepared.currentMetricAgg, row.personId, row.metric, row.value, row.provenance);
+      aggregateInto(prepared.currentMetricAgg, row.personId, row.metric, row.value, row.provenance, row.weight);
       noteSource(prepared, row.personId, type);
     }
   }
@@ -222,11 +349,11 @@
     };
   }
 
-  function addHistoryPoint(index, personId, metric, value, label, sort) {
+  function addHistoryPoint(index, personId, metric, value, label, sort, weight) {
     if (!personId || !metric || !Number.isFinite(value)) return;
     const key = metricKey(personId, metric.id);
-    mapPush(index.pointsByPersonMetric, key, { value, label: label || '', sort: sort || '' });
-    aggregateInto(index.aggregate, personId, metric, value, null);
+    mapPush(index.pointsByPersonMetric, key, { value, weight: Number.isFinite(weight) ? weight : 0, label: label || '', sort: sort || '' });
+    aggregateInto(index.aggregate, personId, metric, value, null, weight);
   }
 
   function recordMeta(record) {
@@ -243,18 +370,21 @@
       for (const row of test.canonicalizeQA(record, index.resolvePerson)) {
         if (!row.representativeId) continue;
         const key = metricKey(row.representativeId, 'qa-score');
-        if (!grouped.has(key)) grouped.set(key, { personId: row.representativeId, metric: QA_METRIC, values: [] });
-        grouped.get(key).values.push(row.score);
+        if (!grouped.has(key)) grouped.set(key, { personId: row.representativeId, metric: QA_METRIC, rows: [] });
+        grouped.get(key).rows.push({ value: row.score, weight: 0 });
       }
     } else {
-      for (const row of test.canonicalizePerformance(record, index.resolvePerson)) {
+      for (const row of profilePerformanceRows(record, index.resolvePerson, type)) {
         if (row.role !== 'representative' || !row.personId) continue;
         const key = metricKey(row.personId, row.metric.id);
-        if (!grouped.has(key)) grouped.set(key, { personId: row.personId, metric: row.metric, values: [] });
-        grouped.get(key).values.push(row.value);
+        if (!grouped.has(key)) grouped.set(key, { personId: row.personId, metric: row.metric, rows: [] });
+        grouped.get(key).rows.push(row);
       }
     }
-    for (const group of grouped.values()) addHistoryPoint(index, group.personId, group.metric, mean(group.values), meta.label, meta.sort);
+    for (const group of grouped.values()) {
+      const summary = summarizeMetricRows(group.rows);
+      addHistoryPoint(index, group.personId, group.metric, summary.value, meta.label, meta.sort, summary.weight);
+    }
     index.recordCount += 1;
     index.sourceCounts[type] = (index.sourceCounts[type] || 0) + 1;
   }
@@ -327,7 +457,7 @@
       const points = historyIndex ? historyIndex.pointsByPersonMetric.get(metricKey(id, metric.id)) || [] : [];
       const trend = trendStatus(points, metric.higher);
       details.push({
-        id: metric.id, name: metric.name, category: metric.category, value: own.value,
+        id: metric.id, name: metric.name, category: metric.category, value: own.value, weight: own.weight || 0,
         displayValue: metric.percent ? fmtPct(own.value) : String(own.value),
         departmentAverage: mean(values), departmentAverageDisplay: metric.percent ? fmtPct(mean(values)) : String(mean(values)),
         higherBetter: metric.higher, trend, ...relative, provenance: own.provenance
@@ -423,7 +553,7 @@
         const valuesByCoach = new Map();
         for (const coach of coaches) {
           const reps = prepared.repsByCoach.get(coach.personId) || [];
-          const teamValue = mean(reps.map(rep => values.get(metricKey(rep.personId, metric.id))?.value));
+          const teamValue = weightedEntryValue(reps.map(rep => values.get(metricKey(rep.personId, metric.id))).filter(Boolean));
           if (Number.isFinite(teamValue)) valuesByCoach.set(coach.personId, teamValue);
         }
         if (!valuesByCoach.has(person.personId)) continue;
@@ -448,7 +578,7 @@
   }
 
   root.CoachToolsProfileFast = Object.freeze({
-    VERSION: '1.0.1', WEEKLY_TYPES, prepareWeeklyAsync, createHistoryIndex, addHistoryRecord, buildProfile, buildWindowRankings,
-    _test: Object.freeze({ trendStatus, historyValueMap, metricKey, resolveWeeklyCoach })
+    VERSION: '1.0.2', WEEKLY_TYPES, prepareWeeklyAsync, createHistoryIndex, addHistoryRecord, buildProfile, buildWindowRankings,
+    _test: Object.freeze({ trendStatus, historyValueMap, metricKey, resolveWeeklyCoach, profilePerformanceRows, derivedPerformanceRows, summarizeMetricRows })
   });
 })(typeof window !== 'undefined' ? window : globalThis);
