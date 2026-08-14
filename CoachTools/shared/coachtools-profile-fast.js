@@ -25,6 +25,17 @@
   const fmtDays = value => Number.isFinite(value) ? `${value.toFixed(1)} days` : '—';
   const cutoff = days => new Date(Date.now() - days * DAY);
 
+  function applyPeopleProfilesViewportFix() {
+    if (!root.document) return;
+    const meta = root.document.querySelector('meta[name="coachtools-id"]');
+    if (!meta || meta.content !== 'people-profiles' || root.document.getElementById('people-profiles-scroll-fix')) return;
+    const style = root.document.createElement('style');
+    style.id = 'people-profiles-scroll-fix';
+    style.textContent = '@media (min-width:721px){html,body{height:100%;overflow:hidden}.app{height:100vh;min-height:0;overflow:hidden}.layout{min-height:0;overflow:hidden}.sidebar,.content{min-height:0;overflow:auto}}';
+    root.document.head.appendChild(style);
+  }
+  applyPeopleProfilesViewportFix();
+
   function resolverFor(people) {
     const exact = new Map();
     for (const person of people || []) {
@@ -40,6 +51,62 @@
     if (!key) return;
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(value);
+  }
+
+  function mapPushUnique(map, key, value) {
+    if (!key || !value) return;
+    const rows = map.get(key) || [];
+    if (!rows.some(row => row && row.personId === value.personId)) rows.push(value);
+    map.set(key, rows);
+  }
+
+  function normalizedHeader(value) { return clean(value).toLowerCase().replace(/[^a-z0-9%]/g, ''); }
+  function rowPick(row, candidates) {
+    const keys = new Map(Object.keys(row || {}).map(key => [normalizedHeader(key), key]));
+    for (const candidate of candidates) {
+      const key = keys.get(normalizedHeader(candidate));
+      if (key != null) return row[key];
+    }
+    return undefined;
+  }
+
+  function weeklyDepartment(type) {
+    if (type === 'weeklyRetail') return 'Retail';
+    if (type === 'weeklyReferral') return 'Referral';
+    return '';
+  }
+
+  function resolveWeeklyCoach(prepared, rawName, type) {
+    const raw = clean(rawName), directId = prepared.resolvePerson(raw);
+    if (directId) {
+      const direct = prepared.byId.get(directId);
+      if (direct && direct.role === 'coach') return directId;
+    }
+    const key = normalizeName(raw);
+    if (!key || key.includes(' ')) return '';
+    const department = weeklyDepartment(type);
+    const pool = department ? prepared.departmentCoaches.get(department) || [] : prepared.people.filter(person => person.role === 'coach');
+    const candidates = pool.filter(person => {
+      const full = normalizeName(person.displayName || person.normalizedName);
+      const parts = full.split(' ').filter(Boolean);
+      return parts.length && parts[parts.length - 1] === key;
+    });
+    return candidates.length === 1 ? candidates[0].personId : '';
+  }
+
+  function linkWeeklyRoster(prepared, type, record) {
+    if (!record || !record.data || !test.extractRows) return;
+    for (const pack of test.extractRows(record.data)) {
+      for (const row of pack.rows || []) {
+        const repRaw = rowPick(row, ['Representative', 'Associate Name', 'Agent Name', 'AgentName', 'Employee']);
+        const coachRaw = rowPick(row, ['Job Coach', 'Coach Assigned', 'Coach', 'Sheet', 'Team']) || pack.sheet;
+        if (!clean(repRaw) || !clean(coachRaw)) continue;
+        const repId = prepared.resolvePerson(repRaw), coachId = resolveWeeklyCoach(prepared, coachRaw, type);
+        const rep = repId && prepared.byId.get(repId), coach = coachId && prepared.byId.get(coachId);
+        if (!rep || rep.role !== 'representative' || !coach || coach.role !== 'coach') continue;
+        mapPushUnique(prepared.repsByCoach, coachId, rep);
+      }
+    }
   }
 
   function metricKey(personId, metricId) { return `${personId}|${metricId}`; }
@@ -75,7 +142,7 @@
     for (const person of list) {
       const deptMap = person.role === 'coach' ? prepared.departmentCoaches : prepared.departmentReps;
       mapPush(deptMap, person.department || '', person);
-      if (person.role === 'representative' && person.currentCoachId) mapPush(prepared.repsByCoach, person.currentCoachId, person);
+      if (person.role === 'representative' && person.currentCoachId) mapPushUnique(prepared.repsByCoach, person.currentCoachId, person);
     }
     return prepared;
   }
@@ -87,6 +154,7 @@
   }
 
   function indexPerformance(prepared, type, record) {
+    linkWeeklyRoster(prepared, type, record);
     const rows = test.canonicalizePerformance(record, prepared.resolvePerson).filter(row => row.role === 'representative');
     prepared.performanceBySource[type] = rows;
     for (const row of rows) {
@@ -380,7 +448,7 @@
   }
 
   root.CoachToolsProfileFast = Object.freeze({
-    VERSION: '1.0.0', WEEKLY_TYPES, prepareWeeklyAsync, createHistoryIndex, addHistoryRecord, buildProfile, buildWindowRankings,
-    _test: Object.freeze({ trendStatus, historyValueMap, metricKey })
+    VERSION: '1.0.1', WEEKLY_TYPES, prepareWeeklyAsync, createHistoryIndex, addHistoryRecord, buildProfile, buildWindowRankings,
+    _test: Object.freeze({ trendStatus, historyValueMap, metricKey, resolveWeeklyCoach })
   });
 })(typeof window !== 'undefined' ? window : globalThis);
