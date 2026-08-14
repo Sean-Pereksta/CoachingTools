@@ -12,6 +12,28 @@
     return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : NaN;
   };
 
+  function quietCommandCenterIdentityStartup() {
+    const appId = clean(document.querySelector('meta[name="coachtools-id"]')?.content);
+    const identity = root.CoachToolsIdentity;
+    if (appId !== 'coaching-command-center' || !identity || typeof identity.subscribe !== 'function' || typeof identity.ready !== 'function') return;
+
+    const originalSubscribe = identity.subscribe.bind(identity);
+    root.CoachToolsIdentity = Object.freeze({
+      ...identity,
+      subscribe(listener) {
+        let startupReady = false;
+        Promise.resolve(identity.ready()).then(() => { startupReady = true; }).catch(() => { startupReady = true; });
+        return originalSubscribe(detail => {
+          const reason = clean(detail && detail.reason);
+          if (!startupReady && (reason === 'dataset-ingested' || reason === 'team-setup-synced' || reason === 'person-updated')) return;
+          listener(detail);
+        });
+      }
+    });
+  }
+
+  quietCommandCenterIdentityStartup();
+
   function topicMatchesMetric(topic, metric) {
     return Boolean(metric && metric.topic && metric.topic.test(clean(topic)));
   }
@@ -258,7 +280,7 @@
 
   root.CoachToolsIntelligence = Object.freeze({
     ...base,
-    VERSION: '1.1.0',
+    VERSION: '1.1.1',
     commandCenter,
     insightForApp,
     personStory,
