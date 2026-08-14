@@ -490,6 +490,10 @@
     if (!priority || !priority.globalRankings) return;
     const cash = new Map((priority.globalRankings.consumerAppointmentRate || []).map(row => [clean(row.personName).toLowerCase(), row]));
     const wipers = new Map((priority.globalRankings.wiperRate || []).map(row => [clean(row.personName).toLowerCase(), row]));
+    const paintWeightedKpi = (cell, rank) => {
+      if (!cell || !rank || !Number.isFinite(rank.value) || cell.querySelector('.globalKpiRank')) return;
+      cell.innerHTML = `${(rank.value * 100).toFixed(1)}%<small class="globalKpiRank">Global #${rank.rank}/${rank.total} · weighted</small>`;
+    };
     for (const table of content.querySelectorAll('table.table')) {
       const headers = Array.from(table.querySelectorAll('thead th')).map(th => clean(th.textContent));
       const cashIndex = headers.indexOf('Cash AR'), wiperIndex = headers.indexOf('Wipers');
@@ -498,14 +502,8 @@
         const cells = row.cells;
         if (!cells || !cells.length) continue;
         const key = clean(cells[0].textContent).toLowerCase();
-        if (cashIndex >= 0 && cells[cashIndex] && !cells[cashIndex].querySelector('.globalKpiRank')) {
-          const rank = cash.get(key);
-          if (rank) cells[cashIndex].insertAdjacentHTML('beforeend', `<small class="globalKpiRank">Global #${rank.rank}/${rank.total}</small>`);
-        }
-        if (wiperIndex >= 0 && cells[wiperIndex] && !cells[wiperIndex].querySelector('.globalKpiRank')) {
-          const rank = wipers.get(key);
-          if (rank) cells[wiperIndex].insertAdjacentHTML('beforeend', `<small class="globalKpiRank">Global #${rank.rank}/${rank.total}</small>`);
-        }
+        if (cashIndex >= 0) paintWeightedKpi(cells[cashIndex], cash.get(key));
+        if (wiperIndex >= 0) paintWeightedKpi(cells[wiperIndex], wipers.get(key));
       }
     }
   }
@@ -613,7 +611,7 @@
 
   root.CoachToolsIntelligence = Object.freeze({
     ...base,
-    VERSION: '1.2.0',
+    VERSION: '1.2.1',
     commandCenter,
     insightForApp,
     personStory,
