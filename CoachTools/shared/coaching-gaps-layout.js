@@ -111,12 +111,11 @@
     const primaryTypeGrid = coachingTypeSelect.closest('.filterGrid');
     if (primaryTypeGrid) primaryTypeGrid.classList.add('coachingTypePrimaryGrid');
 
-    // Bulk chip controls belong under Additional options, next to the coaching-type
-    // customization they affect, rather than beside the primary selector.
+    // Keep bulk chip controls always visible directly below Additional options and
+    // directly above the coaching chips. The details content can remain collapsed.
     const coachingPanel = coachingTypeSelect.closest('.filterPanel');
     const additionalOptions = coachingPanel?.querySelector('details');
-    const additionalSummary = additionalOptions?.querySelector('summary');
-    if (additionalOptions && additionalSummary) {
+    if (additionalOptions) {
       const bulkActions = document.createElement('div');
       bulkActions.className = 'coachingBulkActions';
       bulkActions.setAttribute('aria-label', 'Documented coaching type chip options');
@@ -126,7 +125,7 @@
       bulkLabel.textContent = 'Coaching type chips';
 
       bulkActions.append(bulkLabel, selectAllBtn, selectNoneBtn);
-      additionalSummary.insertAdjacentElement('afterend', bulkActions);
+      additionalOptions.insertAdjacentElement('afterend', bulkActions);
     }
 
     // Coverage is no longer an advanced setting, so keep that description accurate.
