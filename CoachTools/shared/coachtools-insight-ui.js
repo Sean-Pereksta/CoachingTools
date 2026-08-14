@@ -3,6 +3,8 @@
 
   const VERSION = '1.0.0';
   const state = { appId:'', personId:'', payload:null, refreshTimer:null, mounted:false };
+  const insightScript = document.currentScript;
+  const sharedBase = insightScript && insightScript.src ? new URL('.', insightScript.src) : null;
 
   function esc(value){ return String(value==null?'':value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
   function dateText(value){ if(!value)return '—'; const d=value instanceof Date?value:new Date(value); return Number.isNaN(d.getTime())?'—':d.toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}); }
@@ -89,8 +91,19 @@
   }
   function scheduleRefresh(delay){ clearTimeout(state.refreshTimer);state.refreshTimer=setTimeout(refresh,delay==null?120:delay); }
 
+  function loadCoachingGapsLayout(){
+    if(state.appId!=='coaching-gaps'||!sharedBase||document.getElementById('coaching-gaps-layout-script'))return;
+    const script=document.createElement('script');
+    script.id='coaching-gaps-layout-script';
+    script.src=new URL('coaching-gaps-layout.js',sharedBase).href;
+    script.async=true;
+    script.onerror=()=>{ try{console.warn('Coaching Gaps layout patch unavailable.');}catch(_){} };
+    document.head.appendChild(script);
+  }
+
   function mount(appId){
     if(state.mounted)return; state.mounted=true;state.appId=appId||root.CoachToolsShell&&root.CoachToolsShell.app&&root.CoachToolsShell.app.id||''; if(!state.appId)return;
+    loadCoachingGapsLayout();
     ensureUi();
     if(state.appId==='people-profiles'){
       document.addEventListener('click',event=>{ const target=event.target&&event.target.closest&&event.target.closest('[data-person-id]'); if(!target)return;state.personId=target.dataset.personId||'';scheduleRefresh(220); },true);
