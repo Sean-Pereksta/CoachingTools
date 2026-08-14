@@ -1,10 +1,11 @@
 (function attachCoachToolsProfiles(root) {
   'use strict';
 
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const MIN_REP_COHORT = 5;
   const MIN_COACH_COHORT = 3;
   const TARGET_CHECKLIST_DAYS = 3;
+  const PERFORMANCE_TYPES = ['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral'];
 
   function clean(value) { return String(value == null ? '' : value).trim().replace(/\s+/g, ' '); }
   function normHeader(value) { return clean(value).toLowerCase().replace(/[^a-z0-9%]/g, ''); }
@@ -75,7 +76,7 @@
   function resolverFor(people) {
     const exact = new Map();
     for (const person of people || []) {
-      for (const value of [person.displayName, person.normalizedName, ...(person.aliases || [])]) {
+      for (const value of [person.displayName, person.normalizedName, ...(person.aliases || []), ...Object.values(person.sourceNames || {}).flat()]) {
         const key = normalizeName(value); if (key && !exact.has(key)) exact.set(key, person.personId);
       }
     }
@@ -132,6 +133,7 @@
     { id: 'cash-appointment-rate', name: 'Cash Appointment Rate', category: 'Appointments', pattern: /cash.*appointment.*rate|cash.*appt|appointment.*rate|schedule.*rate/i, higher: true, percent: true },
     { id: 'referral-appointment-rate', name: 'Referral Appointment Rate', category: 'Appointments', pattern: /referral.*appointment.*rate|referral.*appt/i, higher: true, percent: true },
     { id: 'call-quality', name: 'Call Quality', category: 'Quality', pattern: /call.*quality|quality.*score/i, higher: true, percent: true },
+    { id: 'wiper-rate', name: 'Wiper Rate', category: 'Sales Behaviors', pattern: /wiper(?:s)?(?:.*rate)?|vaps/i, higher: true, percent: true },
     { id: 'qa-score', name: 'QA Score', category: 'Quality', pattern: /^qa.*score|score\s*%/i, higher: true, percent: true },
     { id: 'afterpay', name: 'Afterpay', category: 'Sales Behaviors', pattern: /afterpay/i, higher: true, percent: true },
     { id: 'save-the-sale', name: 'Save the Sale', category: 'Sales Behaviors', pattern: /save.*sale/i, higher: true, percent: true },
@@ -232,7 +234,53 @@
     return { status: raw === 'stable' ? 'stable' : favorable ? 'improving' : 'declining', change, earlier, recent, points: ordered.slice(-12), reason: '' };
   }
 
-  function representativeTrends(personId, historyRecords, resolvePerson) {
+  function recordLabel(record) { return record && record.detectedPeriod && (record.detectedPeriod.label || record.detectedPeriod.periodKey) || record && record.periodKey || ''; }
+  function recordSort(record) { return record && (record.periodSort || record.detectedPeriod && record.detectedPeriod.periodKey || record.importedAt) || ''; }
+
+  function createHistoryIndex(people) {
+    return { people: people || [], resolvePerson: resolverFor(people || []), byType: Object.create(null), recordCount: 0 };
+  }
+
+  function addHistoryRecord(index, type, record) {
+    if (!index || !type || !record) return null;
+    if (!index.byType[type]) index.byType[type] = [];
+    const entry = { record, label: recordLabel(record), sort: recordSort(record), performance: [], qa: [] };
+    if (type === 'qa') entry.qa = canonicalizeQA(record, index.resolvePerson);
+    else entry.performance = canonicalizePerformance(record, index.resolvePerson);
+    index.byType[type].push(entry);
+    index.byType[type].sort((a, b) => String(b.sort).localeCompare(String(a.sort)));
+    index.recordCount += 1;
+    return entry;
+  }
+
+  function representativeTrendsFromIndex(personId, historyIndex) {
+    const grouped = new Map();
+    if (!historyIndex) return new Map();
+    for (const [type, entries] of Object.entries(historyIndex.byType || {})) for (const entry of entries || []) {
+      let observations = [];
+      if (type === 'qa') {
+        const values = (entry.qa || []).filter(row => row.representativeId === personId).map(row => row.score);
+        if (values.length) observations = [{ metric: METRICS.find(metric => metric.id === 'qa-score'), value: mean(values) }];
+      } else {
+        observations = (entry.performance || []).filter(row => row.personId === personId);
+      }
+      const perMetric = new Map();
+      for (const observation of observations) {
+        if (!perMetric.has(observation.metric.id)) perMetric.set(observation.metric.id, []);
+        perMetric.get(observation.metric.id).push(observation.value);
+      }
+      for (const [metricId, values] of perMetric) {
+        if (!grouped.has(metricId)) grouped.set(metricId, []);
+        grouped.get(metricId).push({ value: mean(values), label: entry.label, sort: entry.sort });
+      }
+    }
+    const result = new Map();
+    for (const metric of METRICS) if (grouped.has(metric.id)) result.set(metric.id, trendStatus(grouped.get(metric.id), metric.higher));
+    return result;
+  }
+
+  function representativeTrends(personId, historyRecords, resolvePerson, historyIndex) {
+    if (historyIndex) return representativeTrendsFromIndex(personId, historyIndex);
     const grouped = new Map();
     for (const [type, records] of Object.entries(historyRecords || {})) for (const record of records || []) {
       let observations = [];
@@ -249,7 +297,7 @@
       }
       for (const [metricId, values] of perMetric) {
         if (!grouped.has(metricId)) grouped.set(metricId, []);
-        grouped.get(metricId).push({ value: mean(values), label: record.detectedPeriod && record.detectedPeriod.label || '', sort: record.periodSort || record.importedAt || '' });
+        grouped.get(metricId).push({ value: mean(values), label: recordLabel(record), sort: recordSort(record) });
       }
     }
     const result = new Map();
@@ -262,19 +310,60 @@
   function formatPercent(value) { return Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : '—'; }
   function formatDays(value) { return Number.isFinite(value) ? `${value.toFixed(1)} days` : '—'; }
 
-  function representativeProfile(person, people, records, historyRecords, resolvePerson) {
-    const coaching = canonicalizeCoaching(records.documentedCoaching, resolvePerson).filter(event => event.representativeId === person.personId);
-    const checklist = canonicalizeChecklist(records.checklist, resolvePerson).filter(item => item.representativeId === person.personId);
-    const qaAll = canonicalizeQA(records.qa, resolvePerson);
+  function createPreparedSkeleton(people, records) {
+    const list = people || [];
+    return {
+      people: list,
+      records: records || {},
+      resolvePerson: resolverFor(list),
+      byId: new Map(list.map(person => [person.personId, person])),
+      coaching: [], checklist: [], qa: [], performanceBySource: Object.fromEntries(PERFORMANCE_TYPES.map(type => [type, []])), performance: []
+    };
+  }
+
+  function prepareCurrent(people, records) {
+    const prepared = createPreparedSkeleton(people, records);
+    prepared.coaching = canonicalizeCoaching(records && records.documentedCoaching, prepared.resolvePerson);
+    prepared.checklist = canonicalizeChecklist(records && records.checklist, prepared.resolvePerson);
+    prepared.qa = canonicalizeQA(records && records.qa, prepared.resolvePerson);
+    for (const type of PERFORMANCE_TYPES) prepared.performanceBySource[type] = canonicalizePerformance(records && records[type], prepared.resolvePerson);
+    prepared.performance = Object.values(prepared.performanceBySource).flat();
+    return prepared;
+  }
+
+  async function prepareCurrentAsync(people, records, options) {
+    const prepared = createPreparedSkeleton(people, records), opts = options || {};
+    const steps = [
+      ['documentedCoaching', 'Indexing documented coaching', () => { prepared.coaching = canonicalizeCoaching(records && records.documentedCoaching, prepared.resolvePerson); }],
+      ['checklist', 'Indexing checklist history', () => { prepared.checklist = canonicalizeChecklist(records && records.checklist, prepared.resolvePerson); }],
+      ['qa', 'Indexing QA evaluations', () => { prepared.qa = canonicalizeQA(records && records.qa, prepared.resolvePerson); }],
+      ...PERFORMANCE_TYPES.map(type => [type, `Indexing ${type.replace(/([A-Z])/g, ' $1').toLowerCase()}`, () => { prepared.performanceBySource[type] = canonicalizePerformance(records && records[type], prepared.resolvePerson); }])
+    ];
+    for (let index = 0; index < steps.length; index += 1) {
+      const [, label, run] = steps[index];
+      if (opts.onProgress) opts.onProgress(index / steps.length, label);
+      if (opts.yieldFn) await opts.yieldFn();
+      run();
+    }
+    prepared.performance = Object.values(prepared.performanceBySource).flat();
+    if (opts.onProgress) opts.onProgress(1, 'Profile analytics indexed');
+    if (opts.yieldFn) await opts.yieldFn();
+    return prepared;
+  }
+
+  function representativeProfile(person, people, records, historyRecords, resolvePerson, prepared, historyIndex) {
+    const coaching = (prepared ? prepared.coaching : canonicalizeCoaching(records.documentedCoaching, resolvePerson)).filter(event => event.representativeId === person.personId);
+    const checklist = (prepared ? prepared.checklist : canonicalizeChecklist(records.checklist, resolvePerson)).filter(item => item.representativeId === person.personId);
+    const qaAll = prepared ? prepared.qa : canonicalizeQA(records.qa, resolvePerson);
     const qa = qaAll.filter(row => row.representativeId === person.personId);
-    const performanceBySource = Object.fromEntries(['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral'].map(type => [type, canonicalizePerformance(records[type], resolvePerson)]));
-    const observations = Object.values(performanceBySource).flat();
+    const performanceBySource = prepared ? prepared.performanceBySource : Object.fromEntries(PERFORMANCE_TYPES.map(type => [type, canonicalizePerformance(records[type], resolvePerson)]));
+    const observations = (prepared ? prepared.performance : Object.values(performanceBySource).flat()).slice();
     if (qa.length) observations.push({ personId: person.personId, role: 'representative', metric: METRICS.find(metric => metric.id === 'qa-score'), value: mean(qa.map(row => row.score)), provenance: qa[0].provenance });
     for (const candidate of departmentPeople(person, people, 'representative')) {
       const candidateQa = qaAll.filter(row => row.representativeId === candidate.personId);
       if (candidateQa.length) observations.push({ personId: candidate.personId, role: 'representative', metric: METRICS.find(metric => metric.id === 'qa-score'), value: mean(candidateQa.map(row => row.score)), provenance: candidateQa[0].provenance });
     }
-    const latest = latestByMetric(observations), cohort = departmentPeople(person, people, 'representative'), trends = representativeTrends(person.personId, historyRecords, resolvePerson), details = [];
+    const latest = latestByMetric(observations), cohort = departmentPeople(person, people, 'representative'), trends = representativeTrends(person.personId, historyRecords, resolvePerson, historyIndex), details = [];
     for (const metric of METRICS) {
       const own = latest.get(`${person.personId}|${metric.id}`);
       if (!own) continue;
@@ -310,10 +399,11 @@
     };
   }
 
-  function coachProfile(person, people, records, resolvePerson) {
+  function coachProfile(person, people, records, resolvePerson, prepared) {
     const coaches = departmentPeople(person, people, 'coach'), cutoff = dateCutoff(30);
-    const allCoaching = canonicalizeCoaching(records.documentedCoaching, resolvePerson), allChecklist = canonicalizeChecklist(records.checklist, resolvePerson), allQA = canonicalizeQA(records.qa, resolvePerson);
-    const performanceBySource = Object.fromEntries(['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral'].map(type => [type, canonicalizePerformance(records[type], resolvePerson).filter(row => row.role === 'coach')]));
+    const allCoaching = prepared ? prepared.coaching : canonicalizeCoaching(records.documentedCoaching, resolvePerson), allChecklist = prepared ? prepared.checklist : canonicalizeChecklist(records.checklist, resolvePerson), allQA = prepared ? prepared.qa : canonicalizeQA(records.qa, resolvePerson);
+    const rawPerformanceBySource = prepared ? prepared.performanceBySource : Object.fromEntries(PERFORMANCE_TYPES.map(type => [type, canonicalizePerformance(records[type], resolvePerson)]));
+    const performanceBySource = Object.fromEntries(PERFORMANCE_TYPES.map(type => [type, (rawPerformanceBySource[type] || []).filter(row => row.role === 'coach')]));
     const performance = Object.values(performanceBySource).flat();
     const coaching = allCoaching.filter(event => event.coachId === person.personId), checklist = allChecklist.filter(item => item.coachId === person.personId), qa = allQA.filter(row => row.coachId === person.personId);
     const recentCoaching = coaching.filter(event => event.date >= cutoff), recentChecklist = checklist.filter(item => item.created >= cutoff), recentQA = qa.filter(row => row.date >= cutoff);
@@ -370,19 +460,85 @@
     return Array.from(grouped, ([name, values]) => ({ name, averageDays: mean(values), count: values.length })).sort((a, b) => descending ? b.averageDays - a.averageDays : a.averageDays - b.averageDays).slice(0, 5);
   }
 
-  function buildProfile(personId, people, records, historyRecords) {
+  function buildProfile(personId, people, records, historyRecords, prepared, historyIndex) {
     const person = (people || []).find(candidate => candidate.personId === personId);
     if (!person) throw new Error('Person was not found in the identity registry.');
-    const resolvePerson = resolverFor(people), byId = new Map(people.map(candidate => [candidate.personId, candidate]));
+    const resolvePerson = prepared && prepared.resolvePerson || resolverFor(people), byId = prepared && prepared.byId || new Map(people.map(candidate => [candidate.personId, candidate]));
     const relationships = { coach: person.currentCoachId ? byId.get(person.currentCoachId) || null : null, representatives: people.filter(candidate => candidate.currentCoachId === person.personId) };
-    const analytics = person.role === 'coach' ? coachProfile(person, people, records || {}, resolvePerson) : representativeProfile(person, people, records || {}, historyRecords || {}, resolvePerson);
+    const analytics = person.role === 'coach' ? coachProfile(person, people, records || {}, resolvePerson, prepared) : representativeProfile(person, people, records || {}, historyRecords || {}, resolvePerson, prepared, historyIndex);
     const { sourcePresence: sources, ...profile } = analytics;
     return { person, relationships, sources, currentDataThrough: latestPeriod(records, sources), ...profile };
+  }
+
+  function buildPreparedProfile(personId, prepared, historyIndex) {
+    if (!prepared) throw new Error('Prepared profile data is required.');
+    return buildProfile(personId, prepared.people, prepared.records, {}, prepared, historyIndex);
   }
 
   function latestPeriod(records, sources) {
     const values = Object.entries(records || {}).filter(([type, record]) => record && (!sources || sources[type])).map(([, record]) => ({ label: record.detectedPeriod && record.detectedPeriod.label || '', sort: record.periodSort || record.importedAt || '' })).filter(value => value.label);
     return values.sort((a, b) => String(b.sort).localeCompare(String(a.sort)))[0]?.label || '';
+  }
+
+  function aggregateWindowValues(prepared, historyIndex) {
+    const groups = new Map();
+    const weeklyEntries = [...(historyIndex && historyIndex.byType.weeklyRetail || []), ...(historyIndex && historyIndex.byType.weeklyReferral || [])];
+    const monthlyEntries = [...(historyIndex && historyIndex.byType.monthlyRetail || []), ...(historyIndex && historyIndex.byType.monthlyReferral || [])];
+    const performanceEntries = weeklyEntries.length ? weeklyEntries : monthlyEntries;
+    const performanceRows = performanceEntries.length ? performanceEntries.flatMap(entry => entry.performance || []) : (prepared && prepared.performance || []);
+    for (const row of performanceRows) {
+      if (row.role !== 'representative') continue;
+      const key = `${row.personId}|${row.metric.id}`;
+      if (!groups.has(key)) groups.set(key, { metric: row.metric, values: [] });
+      groups.get(key).values.push(row.value);
+    }
+    const qaEntries = historyIndex && historyIndex.byType.qa || [];
+    const qaRows = qaEntries.length ? qaEntries.flatMap(entry => entry.qa || []) : (prepared && prepared.qa || []);
+    const qaMetric = METRICS.find(metric => metric.id === 'qa-score');
+    for (const row of qaRows) {
+      if (!row.representativeId) continue;
+      const key = `${row.representativeId}|qa-score`;
+      if (!groups.has(key)) groups.set(key, { metric: qaMetric, values: [] });
+      groups.get(key).values.push(row.score);
+    }
+    const result = new Map();
+    for (const [key, group] of groups) result.set(key, { metric: group.metric, value: mean(group.values) });
+    return result;
+  }
+
+  function buildWindowRankings(personId, prepared, historyIndex, weeks) {
+    if (!prepared) return { mode: '', weeks: Number(weeks) || 0, rankings: [] };
+    const person = prepared.byId.get(personId);
+    if (!person) return { mode: '', weeks: Number(weeks) || 0, rankings: [] };
+    const values = aggregateWindowValues(prepared, historyIndex), windowWeeks = Math.max(1, Number(weeks) || 8), rankings = [];
+    if (person.role === 'coach') {
+      const coaches = departmentPeople(person, prepared.people, 'coach');
+      for (const metric of METRICS) {
+        const valuesByCoach = new Map();
+        for (const coach of coaches) {
+          const repIds = prepared.people.filter(candidate => candidate.role === 'representative' && candidate.currentCoachId === coach.personId).map(candidate => candidate.personId);
+          const teamValue = mean(repIds.map(id => values.get(`${id}|${metric.id}`)?.value));
+          if (Number.isFinite(teamValue)) valuesByCoach.set(coach.personId, teamValue);
+        }
+        if (!valuesByCoach.has(person.personId)) continue;
+        const ranked = rankMetric(person.personId, valuesByCoach, metric.higher, MIN_COACH_COHORT);
+        rankings.push({ id: metric.id, name: metric.name, category: metric.category, higherBetter: metric.higher, displayValue: metric.percent ? formatPercent(valuesByCoach.get(person.personId)) : String(valuesByCoach.get(person.personId)), source: `Last ${windowWeeks} weeks · current team roster`, ...ranked });
+      }
+      return { mode: 'coach', weeks: windowWeeks, rankings };
+    }
+    const cohort = departmentPeople(person, prepared.people, 'representative');
+    for (const metric of METRICS) {
+      const valuesByPerson = new Map();
+      for (const candidate of cohort) {
+        const value = values.get(`${candidate.personId}|${metric.id}`)?.value;
+        if (Number.isFinite(value)) valuesByPerson.set(candidate.personId, value);
+      }
+      if (!valuesByPerson.has(person.personId)) continue;
+      const ranked = rankMetric(person.personId, valuesByPerson, metric.higher, MIN_REP_COHORT);
+      const relative = percentileScore(valuesByPerson.get(person.personId), Array.from(valuesByPerson.values()), metric.higher, MIN_REP_COHORT);
+      rankings.push({ id: metric.id, name: metric.name, category: metric.category, higherBetter: metric.higher, displayValue: metric.percent ? formatPercent(valuesByPerson.get(person.personId)) : String(valuesByPerson.get(person.personId)), source: `Last ${windowWeeks} weeks · ${person.department || 'department'} peers`, score: relative.score, performancePercentile: relative.percentile, ...ranked });
+    }
+    return { mode: 'representative', weeks: windowWeeks, rankings };
   }
 
   async function loadProfile(personId) {
@@ -391,12 +547,14 @@
     const people = await root.CoachToolsIdentity.getAllPeople(), historyRecords = {};
     const records = await root.CoachToolsAppData.getMany(['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'qa', 'documentedCoaching', 'checklist'], { includeRecord: true });
     for (const type of ['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'qa']) historyRecords[type] = (await root.CoachToolsData.getHistory(type, { activeOnly: true })).slice(0, 13);
-    return buildProfile(personId, people, records, historyRecords);
+    const prepared = prepareCurrent(people, records), historyIndex = createHistoryIndex(people);
+    for (const [type, rows] of Object.entries(historyRecords)) for (const record of rows || []) addHistoryRecord(historyIndex, type, record);
+    return buildProfile(personId, people, records, historyRecords, prepared, historyIndex);
   }
 
   root.CoachToolsProfiles = Object.freeze({
-    VERSION, MIN_REP_COHORT, MIN_COACH_COHORT, TARGET_CHECKLIST_DAYS,
-    loadProfile, buildProfile, percentileScore, rankMetric,
-    _test: Object.freeze({ extractRows, canonicalizeCoaching, canonicalizeChecklist, canonicalizeQA, canonicalizePerformance, parseDate, parseNumber, mean, median })
+    VERSION, MIN_REP_COHORT, MIN_COACH_COHORT, TARGET_CHECKLIST_DAYS, METRICS,
+    loadProfile, buildProfile, buildPreparedProfile, prepareCurrent, prepareCurrentAsync, createHistoryIndex, addHistoryRecord, buildWindowRankings, percentileScore, rankMetric,
+    _test: Object.freeze({ extractRows, canonicalizeCoaching, canonicalizeChecklist, canonicalizeQA, canonicalizePerformance, parseDate, parseNumber, mean, median, representativeTrendsFromIndex, aggregateWindowValues })
   });
 })(typeof window !== 'undefined' ? window : globalThis);
