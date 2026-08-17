@@ -90,12 +90,19 @@
   function prepareUpdateSession(result) {
     const baseline = readBaseline();
     const recognized = Array.isArray(result && result.recognized) ? result.recognized : [];
+    if (!recognized.length) {
+      updateSession = null;
+      return;
+    }
     if (!baseline || !Array.isArray(baseline.datasetTypes) || !baseline.datasetTypes.length) {
       updateSession = { baseline: null, remaining: recognized.length };
       return;
     }
 
     const selected = new Set(baseline.datasetTypes);
+    // Checklist / All Items and Documented Coaching / MyOne2View are rotating
+    // exports. If several changed copies are present, only the newest one should
+    // become the current replacement. Exact filename continuity is not required.
     const newestChecklist = selected.has('checklist') ? newestEntry(recognized.filter(entry => entry.classification && entry.classification.id === 'checklist')) : null;
     const newestMyOne = selected.has('documentedCoaching') ? newestEntry(recognized.filter(entry => entry.classification && entry.classification.id === 'documentedCoaching')) : null;
 
@@ -177,8 +184,7 @@
       const iconWrap = root.document.createElement('span');
       const icon = root.document.createElement('span');
       icon.className = 'system-icon menu-size';
-      icon.dataset.systemIcon = 'shared-data';
-      icon.dataset.iconFallback = '↥';
+      icon.textContent = '↥';
       iconWrap.appendChild(icon);
       const copy = root.document.createElement('div');
       const strong = root.document.createElement('strong');
@@ -221,7 +227,7 @@
   }
 
   root.CoachToolsCleanUploadBaseline = Object.freeze({
-    VERSION: '2.0.0',
+    VERSION: '2.0.1',
     getBaseline: readBaseline,
     clearBaseline() {
       try { root.localStorage.removeItem(BASELINE_KEY); } catch (_) {}
