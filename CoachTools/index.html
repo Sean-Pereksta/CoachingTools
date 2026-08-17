@@ -56,6 +56,7 @@
         <span class="system-icon small" data-system-icon="shared-data" data-icon-fallback="◫"></span><span class="status-dot"></span><span id="readyCount">0/8 Data</span>
       </button>
       <button class="command-button" type="button" data-action="update-data">Update Data</button>
+      <button class="command-button secondary" type="button" data-action="quick-upload-data" title="Manually select data files like the original upload flow">Clean Upload</button>
       <button class="command-more" type="button" data-action="diagnostics" aria-label="Open diagnostics" title="Diagnostics"><span class="system-icon small" data-system-icon="settings" data-icon-fallback="•••"></span></button>
     </header>
 
@@ -100,6 +101,7 @@
   <section id="startMenu" class="start-menu" hidden>
     <div class="start-heading"><span class="mini-mark"><span class="system-icon menu-size" data-system-icon="coachtools-home" data-icon-fallback="✦"></span></span><div><strong>CoachTools</strong><small id="startVersion">Version 2.0</small></div></div>
     <button type="button" data-action="update-data"><span><span class="system-icon menu-size" data-system-icon="shared-data" data-icon-fallback="↥"></span></span><div><strong>Update Data</strong><small>Refresh changed weekly, monthly, QA, coaching, and checklist files from the remembered storage folder</small></div></button>
+    <button type="button" data-action="quick-upload-data"><span><span class="system-icon menu-size" data-system-icon="shared-data" data-icon-fallback="↥"></span></span><div><strong>Clean Upload</strong><small>Manually select weekly, monthly, QA, coaching, and checklist files just like the original upload flow</small></div></button>
     <button type="button" data-action="open-weekly-data"><span><span class="system-icon menu-size" data-system-icon="weekly-data" data-icon-fallback="↥"></span></span><div><strong>Data Manager / Update Data</strong><small>Review imports, identities, teams, and current scope</small></div></button>
     <button type="button" data-action="scan-storage"><span><span class="system-icon menu-size" data-system-icon="shared-data" data-icon-fallback="⌕"></span></span><div><strong>Scan Storage Folder</strong><small>Launcher-mode storage scan and troubleshooting</small></div></button>
     <div class="menu-divider"></div>
@@ -117,6 +119,7 @@
     <p id="storageAvailability" class="panel-note"></p>
     <div class="panel-actions">
       <button class="command-button" type="button" data-action="update-data">Update Data</button>
+      <button class="command-button secondary" type="button" data-action="quick-upload-data">Clean Upload</button>
       <button class="command-button secondary" type="button" data-action="open-weekly-data">Data Manager</button>
       <button class="command-button secondary" type="button" data-action="scan-storage">Scan Storage</button>
     </div>
@@ -161,7 +164,7 @@
     <h2>CoachTools</h2>
     <p id="aboutSummary">A portable desktop for your coaching analytics tools.</p>
     <div id="aboutFacts" class="about-facts"></div>
-    <p class="dialog-note">Direct file opening is supported. On first use, Update Data can connect a storage folder; later updates reuse that saved folder. The included launcher can still scan CoachTools/storage automatically.</p>
+    <p class="dialog-note">Direct file opening is supported. On first use, Update Data can connect a storage folder; later updates reuse that saved folder. Clean Upload keeps the original manual multi-file selection available at any time. The included launcher can still scan CoachTools/storage automatically.</p>
   </dialog>
 
   <input id="restoreInput" type="file" accept=".json,application/json" hidden>
