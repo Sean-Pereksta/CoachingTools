@@ -23,7 +23,7 @@
   }
 
   function writeBaseline(value) {
-    try { root.localStorage && root.localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+    try { root.localStorage && root.localStorage.setItem(BASELINE_KEY, JSON.stringify(value)); } catch (_) {}
   }
 
   function clone(value) {
