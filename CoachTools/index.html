@@ -19,6 +19,7 @@
   <script src="shared/coachtools-app-data.js" defer></script>
   <script src="apps-manifest.js" defer></script>
   <script src="shared/coachtools-desktop.js" defer></script>
+  <script src="shared/coachtools-remembered-data.js" defer></script>
   <script src="shared/coachtools-stale-data-reminder.js" defer></script>
   <script src="shared/coachtools-folders.js" defer></script>
 </head>
@@ -53,7 +54,7 @@
       <button id="readinessButton" class="readiness-button" type="button" data-action="toggle-data-panel" aria-expanded="false" aria-controls="dataPanel">
         <span class="system-icon small" data-system-icon="shared-data" data-icon-fallback="◫"></span><span class="status-dot"></span><span id="readyCount">0/8 Data</span>
       </button>
-      <button class="command-button" type="button" data-action="quick-upload-data">Update Data</button>
+      <button class="command-button" type="button" data-action="update-data">Update Data</button>
       <button class="command-more" type="button" data-action="diagnostics" aria-label="Open diagnostics" title="Diagnostics"><span class="system-icon small" data-system-icon="settings" data-icon-fallback="•••"></span></button>
     </header>
 
@@ -97,9 +98,9 @@
 
   <section id="startMenu" class="start-menu" hidden>
     <div class="start-heading"><span class="mini-mark"><span class="system-icon menu-size" data-system-icon="coachtools-home" data-icon-fallback="✦"></span></span><div><strong>CoachTools</strong><small id="startVersion">Version 2.0</small></div></div>
-    <button type="button" data-action="quick-upload-data"><span><span class="system-icon menu-size" data-system-icon="shared-data" data-icon-fallback="↥"></span></span><div><strong>Load All Data Files</strong><small>Select weekly, monthly, QA, coaching, and checklist files together</small></div></button>
+    <button type="button" data-action="update-data"><span><span class="system-icon menu-size" data-system-icon="shared-data" data-icon-fallback="↥"></span></span><div><strong>Update Data</strong><small>Refresh changed weekly, monthly, QA, coaching, and checklist files from the remembered storage folder</small></div></button>
     <button type="button" data-action="open-weekly-data"><span><span class="system-icon menu-size" data-system-icon="weekly-data" data-icon-fallback="↥"></span></span><div><strong>Data Manager / Update Data</strong><small>Review imports, identities, teams, and current scope</small></div></button>
-    <button type="button" data-action="scan-storage"><span><span class="system-icon menu-size" data-system-icon="shared-data" data-icon-fallback="⌕"></span></span><div><strong>Scan Storage Folder</strong><small>Load all recognizable new or updated data files</small></div></button>
+    <button type="button" data-action="scan-storage"><span><span class="system-icon menu-size" data-system-icon="shared-data" data-icon-fallback="⌕"></span></span><div><strong>Scan Storage Folder</strong><small>Launcher-mode storage scan and troubleshooting</small></div></button>
     <div class="menu-divider"></div>
     <button type="button" data-action="backup"><span><span class="system-icon menu-size" data-system-icon="backup-restore" data-icon-fallback="⇩"></span></span><div><strong>Backup CoachTools</strong><small>Shared data and lightweight settings</small></div></button>
     <button type="button" data-action="restore"><span><span class="system-icon menu-size" data-system-icon="backup-restore" data-icon-fallback="⇧"></span></span><div><strong>Restore CoachTools</strong><small>Load a CoachTools backup</small></div></button>
@@ -114,7 +115,7 @@
     <div id="datasetStatus" class="dataset-status" aria-live="polite"></div>
     <p id="storageAvailability" class="panel-note"></p>
     <div class="panel-actions">
-      <button class="command-button" type="button" data-action="quick-upload-data">Load All Files</button>
+      <button class="command-button" type="button" data-action="update-data">Update Data</button>
       <button class="command-button secondary" type="button" data-action="open-weekly-data">Data Manager</button>
       <button class="command-button secondary" type="button" data-action="scan-storage">Scan Storage</button>
     </div>
@@ -159,7 +160,7 @@
     <h2>CoachTools</h2>
     <p id="aboutSummary">A portable desktop for your coaching analytics tools.</p>
     <div id="aboutFacts" class="about-facts"></div>
-    <p class="dialog-note">Direct file opening remains supported. Start CoachTools with the included launcher to enable automatic storage-folder scanning.</p>
+    <p class="dialog-note">Direct file opening is supported. On first use, Update Data can connect a storage folder; later updates reuse that saved folder. The included launcher can still scan CoachTools/storage automatically.</p>
   </dialog>
 
   <input id="restoreInput" type="file" accept=".json,application/json" hidden>
