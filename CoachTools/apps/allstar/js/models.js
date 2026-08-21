@@ -559,30 +559,87 @@ function renderColumnPreviewValues(){
 }
 function closeColumnPreview(){ closeModal('columnPreviewModal'); }
 function setStatus(){
+  if(state.lifecycle?.closing) return;
   els.topStatus.textContent = 'Allstar Report';
 }
 function clampPct(p){ return Math.max(0,Math.min(100,Math.round(Number(p)||0))); }
-function showProgress(text='Working...', pct=0){
-  if(!els.loadingOverlay) return;
+function activeAllStarProgressJob(){
+  const job=state.progressJob;
+  return job && !job.cancelled && !job.complete ? job : null;
+}
+function renderProgressValue(text,p){
+  if(state.lifecycle?.closing || !els.loadingOverlay) return;
   els.loadingOverlay.classList.add('open');
   els.loadingOverlay.setAttribute('aria-hidden','false');
-  updateProgress(text,pct,{force:true});
-}
-let lastProgressUpdateAt=0, lastProgressText='', lastProgressPct=-1;
-function updateProgress(text,pct, opts={}){
-  const p=clampPct(pct);
-  const now=performance.now();
-  const force=!!opts.force || p>=100 || p<=0;
-  if(!force && text===lastProgressText && Math.abs(p-lastProgressPct)<2 && now-lastProgressUpdateAt<160) return;
-  lastProgressUpdateAt=now; lastProgressText=text; lastProgressPct=p;
   if(els.loadingText) els.loadingText.textContent=text||'Working...';
   if(els.loadingBarFill) els.loadingBarFill.style.width=p+'%';
   if(els.loadingPct) els.loadingPct.textContent=p+'%';
 }
-function hideProgress(){
+function createAllStarStartupJob(label='Opening Allstar…'){
+  const previous=activeAllStarProgressJob(); if(previous) previous.cancelled=true;
+  const job={id:`startup-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,kind:'startup',label,lastPct:0,phaseStart:0,phaseEnd:100,regressions:0,preventedRegressions:0,updates:[],cancelled:false,complete:false};
+  state.progressJob=job; state.startup.job=job;
+  renderProgressValue(label,0);
+  return job;
+}
+function setAllStarStartupPhase(job,start,end,label=''){
+  if(!job || activeAllStarProgressJob()!==job) return false;
+  job.phaseStart=clampPct(start); job.phaseEnd=Math.max(job.phaseStart,clampPct(end));
+  if(label) updateAllStarStartupProgress(job,label,job.phaseStart);
+  return true;
+}
+function updateAllStarStartupProgress(job,text,pct){
+  if(!job || activeAllStarProgressJob()!==job) return false;
+  updateProgress(text,pct,{force:true,jobDirect:true,job});
+  return true;
+}
+function finishAllStarStartupProgress(job,text='Ready.'){
+  if(!job || activeAllStarProgressJob()!==job) return false;
+  updateProgress(text,100,{force:true,jobDirect:true,job}); job.complete=true;
+  state.startup.diagnostics={...(state.startup.diagnostics||{}),progressRegressions:job.regressions,preventedProgressRegressions:job.preventedRegressions,progressUpdates:job.updates.slice(-30)};
+  state.progressJob=null;
+  setTimeout(()=>{ if(!state.lifecycle?.closing && !activeAllStarProgressJob()) hideProgress({force:true}); },180);
+  return true;
+}
+function cancelAllStarProgressJob(reason='cancelled'){
+  const job=activeAllStarProgressJob(); if(!job) return false;
+  job.cancelled=true; job.cancelReason=reason; state.progressJob=null;
+  hideProgress({force:true}); return true;
+}
+function showProgress(text='Working...', pct=0, opts={}){
+  if(state.lifecycle?.closing || !els.loadingOverlay) return;
+  els.loadingOverlay.classList.add('open');
+  els.loadingOverlay.setAttribute('aria-hidden','false');
+  updateProgress(text,pct,{...opts,force:true});
+}
+let lastProgressUpdateAt=0, lastProgressText='', lastProgressPct=-1;
+function updateProgress(text,pct, opts={}){
+  if(state.lifecycle?.closing) return false;
+  const job=activeAllStarProgressJob();
+  if(opts.job && job!==opts.job) return false;
+  let requested=clampPct(pct), p=requested;
+  if(job){
+    if(!opts.jobDirect) p=job.phaseStart+(job.phaseEnd-job.phaseStart)*(requested/100);
+    p=clampPct(p);
+    if(p<job.lastPct){ job.preventedRegressions++; p=job.lastPct; }
+    job.lastPct=Math.max(job.lastPct,p);
+    job.updates.push({pct:job.lastPct,text:String(text||''),at:Date.now()});
+    if(job.updates.length>100) job.updates.splice(0,job.updates.length-100);
+    p=job.lastPct;
+  }
+  const now=performance.now();
+  const force=!!opts.force || p>=100 || p<=0;
+  if(!force && text===lastProgressText && Math.abs(p-lastProgressPct)<2 && now-lastProgressUpdateAt<160) return;
+  lastProgressUpdateAt=now; lastProgressText=text; lastProgressPct=p;
+  renderProgressValue(text,p);
+  return true;
+}
+function hideProgress(opts={}){
+  if(activeAllStarProgressJob() && !opts.force) return false;
   if(!els.loadingOverlay) return;
   els.loadingOverlay.classList.remove('open');
   els.loadingOverlay.setAttribute('aria-hidden','true');
+  return true;
 }
 
 const researchProgressController={token:null,lastPct:0,visible:false};
@@ -648,6 +705,7 @@ async function mapRowsChunked(rows, mapper, keep, label='Processing rows', start
   const total=Math.max(1,rows.length);
   let sliceStart=performance.now();
   for(let i=0;i<rows.length;i++){
+    if(state.lifecycle?.closing || state.lifecycle?.hidden) throw Object.assign(new Error('Allstar work cancelled by the application lifecycle.'),{cancelled:true});
     const mapped=mapper(rows[i],i);
     if(!keep || keep(mapped)) out.push(mapped);
     if(performance.now()-sliceStart>=10){
@@ -665,6 +723,7 @@ async function forEachChunked(items, fn, label='Processing', start=0, end=100, c
   const total=Math.max(1,items.length), span=end-start;
   let sliceStart=performance.now();
   for(let i=0;i<items.length;i++){
+    if(state.lifecycle?.closing || state.lifecycle?.hidden) throw Object.assign(new Error('Allstar work cancelled by the application lifecycle.'),{cancelled:true});
     fn(items[i],i);
     if(performance.now()-sliceStart>=10 || i===items.length-1){
       updateProgress(`${label} (${Math.min(i+1,items.length).toLocaleString()} / ${items.length.toLocaleString()})`, start + span*((i+1)/total));

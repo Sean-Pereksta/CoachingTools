@@ -10,7 +10,7 @@ let failed=false;
 function check(name,pass,detail=''){ console.log((pass?'PASS':'FAIL')+' '+name+(detail?' — '+detail:'')); if(!pass) failed=true; }
 for(const file of files) check('exists: '+file,fs.existsSync(sourcePath(file)));
 const html=read('allstar.html'), generator=read('qualtrics/generator.html'), portable=read('dist/All-Star-Portable.html');
-const imports=read('js/imports.js'), app=read('js/app.js');
+const imports=read('js/imports.js'), app=read('js/app.js'), models=read('js/models.js'), regressionTests=read('tests/regression-tests.js');
 check('modular HTML has no embedded legacy generator',!html.includes('qualtricsGeneratorSource'));
 check('modular source has no runtime patch engine',!files.filter(f=>f.startsWith('js/')).some(f=>read(f).includes('patchQualtricsGeneratorSource')));
 check('generator is permanently patched',['ruleDisplayColumnEnabled','ruleDisplayTextTemplate','Representatives Identified','Rule-specific evidence:','correctiveContextEnabled','Organization Opportunity Summary','QualtricsInsights','allstar-clear-data','exportUrgencyPdfBtn','simpleQualtricsExecutiveMatrixHtml'].every(x=>generator.includes(x))&&read('qualtrics/insights.js').includes('Corrective History + Current Need'));
@@ -23,7 +23,12 @@ const code=files.filter(f=>f.startsWith('js/')||f==='qualtrics/generator.html').
 check('generalized lookup display fields present',['lookupDisplayIndex','lookupSelection','lookupMatchEntity','Coach Name Expected In'].every(x=>code.includes(x)));
 check('normalized JSON package contract present',['All_Star_Data_Package.json','allstar-data-package','stageAllStarJsonPackage','loadJsonPackageFile'].every(x=>code.includes(x)));
 check('lazy import and versioned Research caches present',['workbookAoaCache','sheetAoaPreview','workbookSheetsNeededForImport','researchQueryFilterCacheKey','baseCohortSignature','versioned filter-position cache'].every(x=>code.includes(x)));
-check('shared data changes automatically rebuild Dated and Non-Date databases',imports.includes("categorizeImportedData({automatic:true,reason:options.reason||'central IndexedDB synchronization'})")&&imports.includes("categorizeImportedData({automatic:true,reason:'shared multi-file upload'})")&&app.includes("window.addEventListener('coachtools:data-updated'")&&portable.includes('Auto-categorizing Dated and Non-Date data'));
+check('shared data changes automatically rebuild Dated and Non-Date databases',imports.includes("reason:options.reason||'central IndexedDB synchronization'")&&imports.includes("categorizeImportedData({automatic:true,reason:'shared multi-file upload'})")&&app.includes("window.addEventListener('coachtools:data-updated'")&&portable.includes('Auto-categorizing Dated and Non-Date data'));
+check('Allstar startup has one monotonic progress owner',models.includes('createAllStarStartupJob')&&models.includes('job.preventedRegressions++')&&app.includes('async function startAllStar()'));
+check('Allstar regression suite instruments monotonic startup progress',regressionTests.includes('runAllStarStartupLifecycleRegressionTests')&&regressionTests.includes('nextPercent>=percentages[index-1]'));
+check('central reconciliation is metadata-first and direct',imports.includes('getDatasetVersion(datasetType)')&&imports.includes('directWorkbookFromCoachToolsDataset')&&!imports.includes('function sheetJsWorkbookFromCoachToolsDataset'));
+check('central refresh batches one persistence commit and final render',imports.includes("flushImportCacheSave('central CoachTools batch complete'")&&imports.includes('renderAllStarAfterDataBatch')&&imports.includes('beginAllStarCentralStage'));
+check('close lifecycle uses handshake and no duplicate full flush',app.includes("type:'coachtools:close-ready'")&&app.includes("type==='coachtools:prepare-close'")&&!app.includes("flushImportCacheSave('pagehide flush')")&&!app.includes("flushImportCacheSave('visibilitychange flush')"));
 for(const contract of contracts) check('persistence contract: '+contract,code.includes(contract));
 try{ new Function(files.filter(f=>f.startsWith('js/')).map(read).join('\n')); check('combined application JavaScript parses',true); }catch(error){ check('combined application JavaScript parses',false,error.message); }
 try{ new Function(read('qualtrics/insights.js')); check('Qualtrics insights module parses',true); }catch(error){ check('Qualtrics insights module parses',false,error.message); }

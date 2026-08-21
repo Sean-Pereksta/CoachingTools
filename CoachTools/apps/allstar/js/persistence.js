@@ -59,12 +59,13 @@ function markBookCacheDirty(bookKey, reason='workbook changed'){
 function scheduleImportedDataSave(reason='automatic save', opts={}){
   // Save scheduling debounces connected edits, merges dirty sets, and queues exactly
   // one follow-up save if another edit arrives while IndexedDB is committing.
+  if(state.lifecycle?.closing) return false;
   if(state.importCacheLoading){ state.importCachePostLoadSave=true; if(reason) state.importCacheSaveReasons=[...(state.importCacheSaveReasons||[]),reason].slice(-8); return true; }
   if(reason) state.importCacheSaveReasons=[...(state.importCacheSaveReasons||[]),reason].slice(-8);
   const delay=opts.priority==='manual'||opts.flush ? 0 : Number(opts.delay??500);
   if(state.importCacheSaving){ state.importCacheSaveQueued=true; return true; }
   if(state.importCacheSaveTimer) clearTimeout(state.importCacheSaveTimer);
-  state.importCacheSaveTimer=setTimeout(()=>{ state.importCacheSaveTimer=null; saveImportedDataToIndexedDB((state.importCacheSaveReasons||[reason]).join('; ')||reason,{silent:opts.silent!==false}); },delay);
+  state.importCacheSaveTimer=setTimeout(()=>{ state.importCacheSaveTimer=null; saveImportedDataToIndexedDB((state.importCacheSaveReasons||[reason]).join('; ')||reason,{silent:opts.silent!==false,dirtyOnly:!!opts.dirtyOnly,noRender:!!opts.noRender,noCompaction:!!opts.noCompaction,lifecycleSave:!!opts.lifecycleSave}); },delay);
   return true;
 }
 function sourceCacheRecordId(source){
@@ -133,11 +134,13 @@ function recordPersistenceMutation({reason='data changed',sources=[],books=[],sh
   return critical ? flushImportCacheSave(reason) : (scheduleImportedDataSave(reason), Promise.resolve(true));
 }
 async function persistCriticalMutation(args={}){ recordPersistenceMutation({...args,critical:false}); return flushImportCacheSave(args.reason||'critical save'); }
-async function flushImportCacheSave(reason='flush import cache'){
+async function flushImportCacheSave(reason='flush import cache', opts={}){
   if(state.importCacheSaveTimer){ clearTimeout(state.importCacheSaveTimer); state.importCacheSaveTimer=null; }
-  while(state.importCacheSaving) await state.importCacheSavePromise?.catch(()=>{}) || new Promise(r=>setTimeout(r,50));
+  // Lifecycle callers never poll an existing transaction. IndexedDB may finish it
+  // safely after the iframe starts closing; starting a second flush is worse.
+  if(state.importCacheSaving) return true;
   if(!importCacheHasDirty() && state.importCache?.status==='saved') return true;
-  return saveImportedDataToIndexedDB(reason,{silent:true,force:true});
+  return saveImportedDataToIndexedDB(reason,{silent:true,force:true,...opts});
 }
 function workbookMetadataRecord(bookKey){
   const b=state.books?.[bookKey]||{}; return {fileName:b.fileName||'',sheetNames:[...new Set(b.sheetNames||[])],selectedSheets:b.selectedSheets||{},sheetVersions:b.sheetVersions||{},packageLayoutVersion:b.packageLayoutVersion||0,updatedAt:new Date().toISOString()};
@@ -239,7 +242,7 @@ function importCacheSummaryText(meta){
   return `Local cache saved ${saved}: ${rows} rows, ${sheets} sheets${files?' · '+files:''}.`;
 }
 async function renderImportCacheStatus(extra=''){
-  if(!els.importCacheStatus) return;
+  if(state.lifecycle?.closing || !els.importCacheStatus) return;
   const meta=state.importCache?.meta || await importCacheReadMeta().catch(()=>null);
   if(meta && !state.importCache.meta) state.importCache.meta=meta;
   const est=await importCacheStorageEstimate();
@@ -258,6 +261,7 @@ function importCacheOpenDb(){
       if(!db.objectStoreNames.contains(IMPORT_CACHE_BOOK_STORE)) db.createObjectStore(IMPORT_CACHE_BOOK_STORE,{keyPath:'id'});
       if(!db.objectStoreNames.contains(IMPORT_CACHE_MISC_STORE)) db.createObjectStore(IMPORT_CACHE_MISC_STORE,{keyPath:'id'});
       if(!db.objectStoreNames.contains('coachtoolsDatasets')){ const store=db.createObjectStore('coachtoolsDatasets',{keyPath:'id'}); store.createIndex('datasetType','datasetType',{unique:false}); store.createIndex('periodKey',['datasetType','periodKey'],{unique:false}); store.createIndex('fingerprint',['datasetType','fingerprint'],{unique:false}); }
+      if(!db.objectStoreNames.contains('coachtoolsDatasetChunks')){ const store=db.createObjectStore('coachtoolsDatasetChunks',{keyPath:'id'}); store.createIndex('datasetId','datasetId',{unique:false}); store.createIndex('datasetOrder',['datasetId','index'],{unique:true}); }
       if(!db.objectStoreNames.contains('coachtoolsCurrent')) db.createObjectStore('coachtoolsCurrent',{keyPath:'datasetType'});
       if(!db.objectStoreNames.contains('coachtoolsImports')){ const store=db.createObjectStore('coachtoolsImports',{keyPath:'id'}); store.createIndex('datasetType','datasetType',{unique:false}); store.createIndex('importedAt','importedAt',{unique:false}); }
       if(!db.objectStoreNames.contains('coachtoolsPeople')){ const store=db.createObjectStore('coachtoolsPeople',{keyPath:'personId'}); store.createIndex('normalizedName','normalizedName',{unique:false}); store.createIndex('role','role',{unique:false}); store.createIndex('department','department',{unique:false}); store.createIndex('currentCoachId','currentCoachId',{unique:false}); }
@@ -300,11 +304,16 @@ function mergeImportCacheDirtySnapshot(snapshot){
   ['sources','books','sheets','misc','deletedSources','deletedBooks','deletedSheets'].forEach(k=>{ (snapshot[k]||new Set()).forEach(v=>d[k].add(v)); });
 }
 function scheduleImportCacheRetry(reason='retry import cache save'){
+  if(state.lifecycle?.closing) return false;
   const delays=[500,1500,4000]; state.importCache.retryCount=Number(state.importCache.retryCount||0);
   if(state.importCache.retryCount>=delays.length){ state.importCache.status='manual_action_required'; return false; }
   const delay=delays[state.importCache.retryCount++]; state.importCache.status='retrying';
-  setTimeout(()=>{ if(importCacheHasDirty()) saveImportedDataToIndexedDB(reason+' retry '+state.importCache.retryCount,{silent:true}); },delay);
+  setTimeout(()=>{ if(!state.lifecycle?.closing && importCacheHasDirty()) saveImportedDataToIndexedDB(reason+' retry '+state.importCache.retryCount,{silent:true}); },delay);
   return true;
+}
+function lightweightImportCacheManifest(meta={}, snapshot={}){
+  const previous=state.importCache?.meta?.manifest||{};
+  return {...previous,schemaVersion:IMPORT_CACHE_SCHEMA_VERSION,generationId:state.importCache?.generationId||(state.importCache.generationId=id()),revision:Number(state.importCache?.revision||0)+1,savedAt:meta.savedAt,reason:meta.reason,dirtyOnly:true,changed:{sources:[...(snapshot.sources||[])].sort(),books:[...(snapshot.books||[])].sort(),sheets:[...(snapshot.sheets||[])].sort(),misc:[...(snapshot.misc||[])].sort()}};
 }
 function importCacheManifest(meta={}, snapshot={}){
   const sourceIds=[...new Set([...(snapshot.sources||[]),...Object.keys(state.sourceMeta||{}).map(sourceCacheRecordId)])].sort();
@@ -321,31 +330,32 @@ function restoreAliasesFromImportCache(value){
   const active=Array.isArray(value)?value:(value?.active||[]); state.repAliases=new Map(); active.forEach(a=>{ const key=a?.alias||a?.aliasKey||a?.aliasName; if(key) state.repAliases.set(key,a); }); state.quarantinedRepAliases=Array.isArray(value?.quarantined)?value.quarantined:(state.quarantinedRepAliases||[]); if(value?.sourceArea) state.aliasSourceArea=value.sourceArea;
 }
 async function saveImportedDataToIndexedDB(reason='manual save', opts={}){
+  if(state.lifecycle?.closing && !opts.lifecycleSave) return false;
   if(state.importCacheLoading && !opts.force) return false;
   if(state.importCacheSaving){ state.importCacheSaveQueued=true; return false; }
   if(state.importCacheSaveTimer){ clearTimeout(state.importCacheSaveTimer); state.importCacheSaveTimer=null; }
-  compactPackagedWorkbookViews({markDirty:true});
+  if(!opts.noCompaction) compactPackagedWorkbookViews({markDirty:true});
   const dirty=ensureImportCacheDirty();
-  if(opts.full || !state.importCache.meta){
+  if(opts.full || (!state.importCache.meta && !opts.dirtyOnly)){
     allSourceKeys().forEach(src=>markSourceCacheDirty(src,reason));
     ['retail:metadata','retail:controlRoster','referral:metadata','referral:itac','referral:controlRoster'].forEach(k=>markImportCacheDirty('source',k,reason));
     Object.keys(state.books||{}).forEach(k=>markBookCacheDirty(k,reason));
     ['categorized','customSources','teamIndex','sourceMeta','sourceSettings','aliases','manifest'].forEach(k=>markImportCacheDirty('misc',k,reason));
   }
-  if(dirty.sources.size || dirty.misc.has('categorized') || dirty.misc.has('aliases') || dirty.misc.has('customSources')) dirty.misc.add('teamIndex');
-  if(!importCacheHasDirty(dirty) && !opts.force){ await renderImportCacheStatus('Local cache already up to date.'); return true; }
+  if(!opts.lifecycleSave && (dirty.sources.size || dirty.misc.has('categorized') || dirty.misc.has('aliases') || dirty.misc.has('customSources'))) dirty.misc.add('teamIndex');
+  if(!importCacheHasDirty(dirty) && !opts.force){ if(!opts.noRender) await renderImportCacheStatus('Local cache already up to date.'); return true; }
   state.importCacheSaving=true; state.importCache.status='saving'; state.importCacheSavePromise=null;
   let snapshot=null;
   let db;
   try{
     db=await importCacheOpenDb();
-    const existingBookKeys=await importCacheBookStoreKeys(db);
-    const expectedBookIds=expectedImportCacheBookIds();
+    const existingBookKeys=opts.dirtyOnly||opts.noCompaction?[]:await importCacheBookStoreKeys(db);
+    const expectedBookIds=opts.dirtyOnly||opts.noCompaction?new Set():expectedImportCacheBookIds();
     const obsoleteBookKeys=existingBookKeys.filter(k=>!expectedBookIds.has(String(k)));
     const meta=importCacheMetadata(reason);
-    const teamIndex=serializeTeamIndex(state.teamIndexCache || buildCompactTeamIndexFromRows(reason));
-    state.teamIndexCache=restoreTeamIndex(teamIndex);
     snapshot={sources:new Set(dirty.sources),books:new Set(dirty.books),sheets:new Set(dirty.sheets),misc:new Set(dirty.misc),deletedSources:new Set(dirty.deletedSources),deletedBooks:new Set(dirty.deletedBooks),deletedSheets:new Set(dirty.deletedSheets)};
+    const teamIndex=snapshot.misc.has('teamIndex') ? serializeTeamIndex(state.teamIndexCache || buildCompactTeamIndexFromRows(reason,{mutateRows:opts.mutateRows!==false && !opts.lifecycleSave})) : null;
+    if(teamIndex) state.teamIndexCache=restoreTeamIndex(teamIndex);
     const tx=db.transaction([IMPORT_CACHE_META_STORE,IMPORT_CACHE_SOURCE_STORE,IMPORT_CACHE_BOOK_STORE,IMPORT_CACHE_MISC_STORE],'readwrite');
     const done=idbTxDone(tx); state.importCacheSavePromise=done;
     const metaStore=tx.objectStore(IMPORT_CACHE_META_STORE), sourceStore=tx.objectStore(IMPORT_CACHE_SOURCE_STORE), bookStore=tx.objectStore(IMPORT_CACHE_BOOK_STORE), miscStore=tx.objectStore(IMPORT_CACHE_MISC_STORE);
@@ -359,18 +369,18 @@ async function saveImportedDataToIndexedDB(reason='manual save', opts={}){
     snapshot.sheets.forEach(k=>{ const [bookKey,sheetName]=splitSheetDirtyKey(k); if(!sheetName) return; bookStore.put({id:sheetRecordId(bookKey,sheetName),type:'sheet',bookKey,sheetName,value:{aoa:importCacheClone(getBookSheetAoa(bookKey,sheetName)),version:Date.now()}}); });
     if(snapshot.misc.has('categorized')) miscStore.put({id:'categorized',value:importCacheClone(state.categorized||{})});
     if(snapshot.misc.has('customSources')) miscStore.put({id:'customSources',value:importCacheClone(normalizedCustomSourceDefinitions())});
-    if(snapshot.misc.has('teamIndex')) miscStore.put({id:'teamIndex',value:importCacheClone(teamIndex)});
+    if(snapshot.misc.has('teamIndex') && teamIndex) miscStore.put({id:'teamIndex',value:importCacheClone(teamIndex)});
     if(snapshot.misc.has('sourceMeta')) miscStore.put({id:'sourceMeta',value:importCacheClone(state.sourceMeta||{})});
     if(snapshot.misc.has('sourceSettings')) miscStore.put({id:'sourceSettings',value:importCacheClone((state.models||[]).map(m=>({id:m.id,sourceSettings:m.sourceSettings||{}})))});
     if(snapshot.misc.has('aliases')) miscStore.put({id:'aliases',value:importCacheClone({active:[...(state.repAliases||new Map()).values()],quarantined:state.quarantinedRepAliases||[],sourceArea:state.aliasSourceArea||''})});
-    const manifest=importCacheManifest(meta, snapshot); meta.manifest=manifest; meta.revision=manifest.revision; meta.generationId=manifest.generationId;
+    const manifest=opts.lifecycleSave?lightweightImportCacheManifest(meta,snapshot):importCacheManifest(meta, snapshot); meta.manifest=manifest; meta.revision=manifest.revision; meta.generationId=manifest.generationId;
     miscStore.put({id:'manifest',value:manifest});
     metaStore.put(meta); // metadata last is the commit marker for the completed dirty batch.
     await done;
-    Object.keys(state.books||{}).forEach(releaseInactiveWorkbookSheets);
+    if(!opts.noCompaction) Object.keys(state.books||{}).forEach(releaseInactiveWorkbookSheets);
     clearImportCacheDirty(); state.importCache.meta=meta; state.importCache.generationId=manifest.generationId; state.importCache.revision=manifest.revision; state.importCache.status='saved'; state.importCache.lastError=''; state.importCache.retryCount=0; state.importCacheSaveReasons=[];
     if(!opts.silent) alert('Imported data saved locally in IndexedDB.');
-    await renderImportCacheStatus(obsoleteBookKeys.length?`Saved imported data locally and removed ${obsoleteBookKeys.length.toLocaleString()} obsolete duplicated workbook cache records.`:'Saved imported data locally.');
+    if(!opts.noRender) await renderImportCacheStatus(obsoleteBookKeys.length?`Saved imported data locally and removed ${obsoleteBookKeys.length.toLocaleString()} obsolete duplicated workbook cache records.`:'Saved imported data locally.');
     return true;
   }catch(err){
     console.error('[Import Cache] Save failed',err);
@@ -378,13 +388,16 @@ async function saveImportedDataToIndexedDB(reason='manual save', opts={}){
     const estimate=await importCacheStorageEstimate();
     state.importCache.status='error'; state.importCache.lastError=describeImportCacheError(err,estimate);
     if(!opts.silent) alert('Could not save local IndexedDB import cache. '+state.importCache.lastError+' The previous valid cache was left in place.');
-    await renderImportCacheStatus('Local cache save failed; previous cache retained: '+state.importCache.lastError);
-    scheduleImportCacheRetry(reason);
+    if(!opts.noRender) await renderImportCacheStatus('Local cache save failed; previous cache retained: '+state.importCache.lastError);
+    if(!opts.lifecycleSave) scheduleImportCacheRetry(reason);
     return false;
   }finally{
     if(db) db.close();
     state.importCacheSaving=false; state.importCacheSavePromise=null;
-    if(state.importCacheSaveQueued || importCacheHasDirty()){ state.importCacheSaveQueued=false; scheduleImportedDataSave('changes queued during save',{delay:250}); }
+    if(!state.lifecycle?.closing && (state.importCacheSaveQueued || importCacheHasDirty())){
+      state.importCacheSaveQueued=false;
+      scheduleImportedDataSave('changes queued during save',state.lifecycle?.hidden?{delay:0,silent:true,dirtyOnly:true,noRender:true,noCompaction:true,lifecycleSave:true}:{delay:250});
+    }
   }
 }
 function restoreImportFileLabels(){
@@ -406,17 +419,31 @@ function restoreImportFileLabels(){
   set(els.rosterReassignmentFileName, areaData.rosterFileName ? `${areaData.rosterFileName} · active roster override · ${(areaData.controlRoster||[]).length.toLocaleString()} representatives` : '');
 }
 
-function afterImportedDataRestored(reason='local cache loaded'){
+function renderAllStarAfterDataBatch({sourcesChanged=[],teamsChanged=false,aliasesChanged=false,reason='data batch'}={}){
+  if(state.lifecycle?.closing) return false;
+  const changed=new Set(sourcesChanged||[]);
+  restoreImportFileLabels();
+  if(changed.size || aliasesChanged) renderCustomSourcesList();
+  if(changed.size) renderCategorizedSummary();
+  if(teamsChanged || [...changed].some(source=>source.startsWith('retail')||source.startsWith('referral'))) renderTeamTotalsImportControls();
+  if(changed.size || teamsChanged || aliasesChanged){ renderModelList(); populateRunModels(); renderTeamSelect(); renderEditModelSafe(); }
+  setStatus(); updateResearchCacheBadge();
+  state.startup.diagnostics={...(state.startup.diagnostics||{}),fullRenders:Number(state.startup.diagnostics?.fullRenders||0)+1,lastRenderReason:reason};
+  return true;
+}
+function afterImportedDataRestored(reason='local cache loaded', opts={}){
   state.data={...defaultImportedDataState(),...(state.data||{})};
   state.books={...defaultImportedBooksState(),...(state.books||{})};
   state.data.retail.teamTotals=rebuildTeamTotalsIndex(state.data.retail.teamTotals||emptyTeamTotalsDataset('retail'));
   state.data.referral.teamTotals=rebuildTeamTotalsIndex(state.data.referral.teamTotals||emptyTeamTotalsDataset('referral'));
   state.categorized=state.categorized||{nondated:{headers:['Representative','Coach'],rows:[],builtAt:'',sourceStats:[]},dated:{headers:['Representative','Coach','Date'],rows:[],builtAt:'',sourceStats:[]},warnings:[]};
-  applyRepAliasMappingsToAllRows(); markDataIndexDirty(reason); state.teamIndexCache=buildCompactTeamIndexFromRows(reason); selectiveResearchInvalidation({reason,aliases:true,teams:true,mappings:true});
-  restoreImportFileLabels(); renderCustomSourcesList(); renderCategorizedSummary(); renderModelList(); populateRunModels(); renderTeamSelect(); renderEditModelSafe(); updateResearchCacheBadge();
+  applyRepAliasMappingsToAllRows(); markDataIndexDirty(reason); state.teamIndexCache=buildCompactTeamIndexFromRows(reason); selectiveResearchInvalidation({reason,aliases:true,teams:true,mappings:true,silent:!!opts.deferRender});
+  if(!opts.deferRender) renderAllStarAfterDataBatch({sourcesChanged:allSourceKeys(),teamsChanged:true,aliasesChanged:true,reason});
 }
 async function loadImportedDataFromIndexedDB(opts={}){
-  if(state.importCacheSaving) return false;
+  const generation=Number(opts.generation??state.lifecycle?.generation??0);
+  const stillActive=()=>!state.lifecycle?.closing && !state.lifecycle?.hidden && generation===Number(state.lifecycle?.generation||0);
+  if(state.importCacheSaving || !stillActive()) return false;
   state.importCacheLoading=true; state.importCache.status='loading';
   if(opts.showProgress) showProgress('Loading local IndexedDB import cache...',6);
   let db;
@@ -425,11 +452,14 @@ async function loadImportedDataFromIndexedDB(opts={}){
     const tx=db.transaction([IMPORT_CACHE_META_STORE,IMPORT_CACHE_SOURCE_STORE,IMPORT_CACHE_BOOK_STORE,IMPORT_CACHE_MISC_STORE],'readonly');
     const metaStore=tx.objectStore(IMPORT_CACHE_META_STORE), sourceStore=tx.objectStore(IMPORT_CACHE_SOURCE_STORE), bookStore=tx.objectStore(IMPORT_CACHE_BOOK_STORE), miscStore=tx.objectStore(IMPORT_CACHE_MISC_STORE);
     const meta=await idbReq(metaStore.get('current'));
-    if(!meta){ state.importCache.status='empty'; if(opts.showProgress) hideProgress(); await renderImportCacheStatus(); if(opts.alert) alert('No local IndexedDB import cache has been saved yet.'); return false; }
+    if(!stillActive()) return false;
+    if(!meta){ state.importCache.status='empty'; if(opts.showProgress) hideProgress(); if(!opts.deferRender) await renderImportCacheStatus(); if(opts.alert) alert('No local IndexedDB import cache has been saved yet.'); return false; }
     if(opts.showProgress) updateProgress('Loading cached source rows...',28);
     const sourceRecords=await idbReq(sourceStore.getAll());
+    if(!stillActive()) return false;
     if(opts.showProgress) updateProgress('Loading cached workbook metadata...',54);
     const bookRecords=await idbReq(bookStore.getAll());
+    if(!stillActive()) return false;
     if(opts.showProgress) updateProgress('Restoring categorized/custom sources...',76);
     const categorized=await idbReq(miscStore.get('categorized'));
     const customSources=await idbReq(miscStore.get('customSources'));
@@ -438,6 +468,7 @@ async function loadImportedDataFromIndexedDB(opts={}){
     const sourceSettings=await idbReq(miscStore.get('sourceSettings'));
     const aliases=await idbReq(miscStore.get('aliases'));
     const manifest=await idbReq(miscStore.get('manifest'));
+    if(!stillActive()) return false;
     const nextData=defaultImportedDataState();
     const customData={};
     const legacySourceRecordIds=hydrateSourceCacheRecords(nextData,sourceRecords,customData);
@@ -462,24 +493,24 @@ async function loadImportedDataFromIndexedDB(opts={}){
     const teamTotalsBefore=[teamTotalsPersistedIdentitySignature(state.data.retail.teamTotals),teamTotalsPersistedIdentitySignature(state.data.referral.teamTotals)];
     const teamTotalsIdentityMigrated=[state.data.retail.teamTotals,state.data.referral.teamTotals].some(ds=>(ds?.rows||[]).length && Number(ds.identitySchemaVersion||0)<TEAM_TOTAL_IDENTITY_SCHEMA_VERSION);
     revalidateRepAliases();
-    state.data.retail.teamTotals=rebuildTeamTotalsIndex(state.data.retail.teamTotals||emptyTeamTotalsDataset('retail')); state.data.referral.teamTotals=rebuildTeamTotalsIndex(state.data.referral.teamTotals||emptyTeamTotalsDataset('referral')); afterImportedDataRestored('local IndexedDB import cache loaded'); renderTeamTotalsImportControls();
+    state.data.retail.teamTotals=rebuildTeamTotalsIndex(state.data.retail.teamTotals||emptyTeamTotalsDataset('retail')); state.data.referral.teamTotals=rebuildTeamTotalsIndex(state.data.referral.teamTotals||emptyTeamTotalsDataset('referral')); afterImportedDataRestored('local IndexedDB import cache loaded',{deferRender:!!opts.deferRender}); if(!opts.deferRender) renderTeamTotalsImportControls();
     const teamTotalsIdentityChanged=teamTotalsBefore.some((signature,i)=>signature!==teamTotalsPersistedIdentitySignature(i===0?state.data.retail.teamTotals:state.data.referral.teamTotals));
     clearImportCacheDirty();
     legacySourceRecordIds.forEach(id=>markImportCacheDirty('deletedSource',id,'obsolete aggregate source cache migrated'));
     const compactedPackageCache=compactPackagedWorkbookViews({markDirty:true});
-    if(Number(meta.version||0)<IMPORT_CACHE_SCHEMA_VERSION || migrated || compactedPackageCache){ ['retail:metadata','retail:sv2','retail:wiper','retail:controlRoster','retail:teamTotals','referral:metadata','referral:sv2','referral:wiper','referral:itac','referral:controlRoster','referral:teamTotals'].forEach(k=>markImportCacheDirty('source',k,'schema v6 migration')); markImportCacheDirty('misc','customSources','schema v6 migration'); markImportCacheDirty('misc','manifest','schema v6 migration'); migrated=true; }
+    if(Number(meta.version||0)<IMPORT_CACHE_SCHEMA_VERSION || migrated || compactedPackageCache){ ['retail:metadata','retail:sv2','retail:wiper','retail:controlRoster','retail:teamTotals','referral:metadata','referral:sv2','referral:wiper','referral:itac','referral:controlRoster','referral:teamTotals'].forEach(k=>markImportCacheDirty('source',k,'schema v7 migration')); markImportCacheDirty('misc','customSources','schema v7 migration'); markImportCacheDirty('misc','manifest','schema v7 migration'); migrated=true; }
     if(teamTotalsIdentityMigrated || teamTotalsIdentityChanged){ ['retail:teamTotals','referral:teamTotals'].forEach(k=>markImportCacheDirty('source',k,'canonical Team Totals coach-name migration')); migrated=true; }
-    if(migrated){ legacyBookRecords.forEach(r=>{ markBookCacheDirty(r.id,'legacy cache migrated to sheet records'); }); scheduleImportedDataSave(compactedPackageCache?'compacting duplicated packaged workbook cache':'legacy cache migrated to sheet records',{delay:500}); }
+    if(migrated){ legacyBookRecords.forEach(r=>{ markBookCacheDirty(r.id,'legacy cache migrated to sheet records'); }); if(!opts.deferRender) scheduleImportedDataSave(compactedPackageCache?'compacting duplicated packaged workbook cache':'legacy cache migrated to sheet records',{delay:500}); }
     if(opts.showProgress) updateProgress('Local data loaded',100,{force:true});
     if(opts.showProgress) setTimeout(hideProgress,250);
-    await renderImportCacheStatus(migrated?'Loaded and scheduled one cache migration save.':'Loaded local IndexedDB data.');
+    if(!opts.deferRender) await renderImportCacheStatus(migrated?'Loaded and scheduled one cache migration save.':'Loaded local IndexedDB data.');
     if(opts.alert) alert('Local IndexedDB data loaded.');
     return true;
   }catch(err){
     console.error('[Import Cache] Load failed',err);
     state.importCache.status='error'; state.importCache.lastError=String(err?.message||err);
     if(opts.showProgress) hideProgress();
-    await renderImportCacheStatus('Local cache load failed: '+state.importCache.lastError);
+    if(!opts.deferRender) await renderImportCacheStatus('Local cache load failed: '+state.importCache.lastError);
     if(opts.alert) alert('Could not load local IndexedDB data.');
     return false;
   }finally{
@@ -519,19 +550,19 @@ async function requestImportCachePersistence(){
     return granted;
   }catch(err){ console.error('[Import Cache] Persistence request failed',err); alert('Persistent storage request failed.'); return false; }
 }
-async function loadImportCacheOnStartup(){
+async function loadImportCacheOnStartup(opts={}){
   try{
     const meta=await importCacheReadMeta();
     state.importCache.meta=meta||null;
-    await renderImportCacheStatus(meta ? 'Found saved local import data. Loading it automatically...' : 'No saved local import data yet.');
+    if(!opts.deferRender) await renderImportCacheStatus(meta ? 'Found saved local import data. Loading it automatically...' : 'No saved local import data yet.');
     if(!meta) return false;
-    const loaded=await loadImportedDataFromIndexedDB({showProgress:true});
-    if(loaded) await renderImportCacheStatus('Automatically loaded the last valid local import cache.');
+    const loaded=await loadImportedDataFromIndexedDB({showProgress:!!opts.showProgress,deferRender:!!opts.deferRender,generation:opts.generation});
+    if(loaded && !opts.deferRender) await renderImportCacheStatus('Automatically loaded the last valid local import cache.');
     return loaded;
   }catch(err){
     console.warn('[Import Cache] Startup check failed',err);
     state.importCache.status='error'; state.importCache.lastError=String(err?.message||err);
-    await renderImportCacheStatus('Could not check or auto-load local IndexedDB cache: '+state.importCache.lastError);
+    if(!opts.deferRender) await renderImportCacheStatus('Could not check or auto-load local IndexedDB cache: '+state.importCache.lastError);
     return false;
   }
 }

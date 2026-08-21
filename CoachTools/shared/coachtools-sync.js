@@ -1,7 +1,8 @@
 (function attachCoachToolsSync(root) {
   'use strict';
 
-  const ALLSTAR_SYNC_KEY = 'allStarCoachToolsSync.v1';
+  const ALLSTAR_SYNC_KEY = 'allStarCoachToolsSync.v2';
+  const LEGACY_ALLSTAR_SYNC_KEY = 'allStarCoachToolsSync.v1';
   const ALLSTAR_SYNC_GUARD_KEY = 'allStarCoachToolsSyncGuard.v1';
   const ALLSTAR_SYNC_GUARD_VERSION = '2';
   const ALLSTAR_CENTRAL_DATASETS = Object.freeze([
@@ -34,16 +35,22 @@
       return { status: 'needs-review', reason: 'Dataset type or fingerprint is missing.', becomesCurrent: false };
     }
 
-    const duplicate = existing.find(record => text(record.fingerprint) === fingerprint);
-    if (duplicate) {
-      return { status: 'current', reason: 'Identical fingerprint already imported.', becomesCurrent: false, matchingDatasetId: duplicate.id || duplicate.datasetId || '' };
+    const scopeHash = text(next.scopeHash);
+    if (current && scopeHash && scopeHash === text(current.scopeHash) && Number(current.scopedRowCount) > 0 && Number(next.scopedRowCount) === 0) {
+      return { status: 'needs-review', reason: `Scoped rows collapsed from ${Number(current.scopedRowCount)} to 0.`, becomesCurrent: false };
     }
-
     if (!current) return { status: 'new', reason: 'No current dataset exists.', becomesCurrent: true };
 
+    if (scopeHash && scopeHash !== text(current.scopeHash)) {
+      return { status: 'new', reason: 'This physical source has not been evaluated for the selected scope.', becomesCurrent: true };
+    }
     const currentKey = text(current.periodKey);
     const currentSort = periodSort(current.periodSort || current.sortKey || currentKey || current.importedAt);
     if (periodKey && currentKey && periodKey === currentKey) {
+      const duplicate = existing.find(record => text(record.fingerprint) === fingerprint && text(record.periodKey) === periodKey && text(record.scopeHash) === scopeHash);
+      if (duplicate) {
+        return { status: 'current', reason: 'Identical scoped fingerprint already imported.', becomesCurrent: false, matchingDatasetId: duplicate.id || duplicate.datasetId || '' };
+      }
       return { status: 'updated', reason: 'The reporting period matches but the contents changed.', becomesCurrent: true, replacesDatasetId: current.datasetId || current.id || '' };
     }
     if (nextSort && currentSort && nextSort > currentSort) {
@@ -65,7 +72,7 @@
 
   function readAllStarSyncMarkers() {
     try {
-      const parsed = JSON.parse(root.localStorage.getItem(ALLSTAR_SYNC_KEY) || '{}');
+      const parsed = JSON.parse(root.localStorage.getItem(ALLSTAR_SYNC_KEY) || root.localStorage.getItem(LEGACY_ALLSTAR_SYNC_KEY) || '{}');
       return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
     } catch (_) { return {}; }
   }
@@ -84,7 +91,7 @@
     const datasetType = text(source || 'all').trim() || 'all';
     if (datasetType !== 'all' && !ALLSTAR_CENTRAL_DATASET_SET.has(datasetType)) return false;
     if (datasetType === 'all') {
-      try { root.localStorage.removeItem(ALLSTAR_SYNC_KEY); return true; } catch (_) { return false; }
+      try { root.localStorage.removeItem(ALLSTAR_SYNC_KEY); root.localStorage.removeItem(LEGACY_ALLSTAR_SYNC_KEY); return true; } catch (_) { return false; }
     }
     const markers = readAllStarSyncMarkers();
     if (!Object.prototype.hasOwnProperty.call(markers, datasetType)) return false;
@@ -124,6 +131,7 @@
     try {
       if (root.localStorage.getItem(ALLSTAR_SYNC_GUARD_KEY) === ALLSTAR_SYNC_GUARD_VERSION) return false;
       root.localStorage.removeItem(ALLSTAR_SYNC_KEY);
+      root.localStorage.removeItem(LEGACY_ALLSTAR_SYNC_KEY);
       root.localStorage.setItem(ALLSTAR_SYNC_GUARD_KEY, ALLSTAR_SYNC_GUARD_VERSION);
       return true;
     } catch (_) { return false; }
@@ -337,7 +345,7 @@
   installPeopleProfilesKpiPatch();
 
   root.CoachToolsSync = Object.freeze({
-    VERSION: '1.2.0',
+    VERSION: '1.3.0',
     compareCandidate,
     periodSort,
     allStarCentralDatasets: ALLSTAR_CENTRAL_DATASETS,

@@ -10,6 +10,7 @@
   let pendingScope = null;
   let pendingFiles = [];
   let updateSession = null;
+  let cleanSession = null;
 
   function $(id) { return root.document && root.document.getElementById(id); }
 
@@ -169,63 +170,142 @@
     return { recognized, needsReview, errors };
   }
 
-  function newestEntry(entries) {
-    return (entries || []).slice().sort((left, right) => {
-      const leftTime = Number(left && left.file && left.file.lastModified) || 0;
-      const rightTime = Number(right && right.file && right.file.lastModified) || 0;
-      return rightTime - leftTime || String(right && right.file && right.file.name || '').localeCompare(String(left && left.file && left.file.name || ''));
-    })[0] || null;
-  }
-
-  function captureCleanBaseline(result) {
+  async function beginCleanSession(result) {
     const recognized = Array.isArray(result && result.recognized) ? result.recognized : [];
+    const needsReview = Array.isArray(result && result.needsReview) ? result.needsReview : [];
+    const errors = Array.isArray(result && result.errors) ? result.errors : [];
     const datasetTypes = Array.from(new Set(recognized.map(entry => entry && entry.classification && entry.classification.id).filter(Boolean)));
-    const baseline = {
-      version: 2,
-      createdAt: new Date().toISOString(),
-      scope: clone(pendingScope || currentScope()),
+    if (!recognized.length) {
+      cleanSession = null;
+      pendingFiles = [];
+      pendingScope = null;
+      return null;
+    }
+    const scope = typeof importer.resolveScopeSnapshot === 'function'
+      ? await importer.resolveScopeSnapshot(pendingScope || currentScope() || { mode: 'all', label: 'All people' })
+      : clone(pendingScope || currentScope());
+    cleanSession = {
+      version: 3,
+      scope,
+      remaining: recognized.length,
+      successfulTypes: new Set(),
+      failed: needsReview.length > 0 || errors.length > 0,
       datasetTypes,
-      files: pendingFiles.map(file => ({
+      files: (pendingFiles.length ? pendingFiles : recognized.map(entry => entry.file).filter(Boolean)).map(file => ({
         name: file.name,
         size: Number(file.size) || 0,
         lastModified: Number(file.lastModified) || 0
       }))
     };
+    return cleanSession;
+  }
+
+  function finalizeCleanSession() {
+    const session = cleanSession;
+    if (!session || session.remaining > 0) return null;
+    cleanSession = null;
+    pendingFiles = [];
+    pendingScope = null;
+    if (session.failed || session.successfulTypes.size !== session.datasetTypes.length) {
+      showToast('Clean Upload needs review · the previous authoritative scope was retained because one or more sources did not save.', 7000);
+      return null;
+    }
+    const baseline = {
+      version: 3,
+      createdAt: new Date().toISOString(),
+      scope: clone(session.scope),
+      scopeHash: session.scope && session.scope.scopeHash || '',
+      datasetTypes: Array.from(session.successfulTypes),
+      files: session.files,
+      completedWithWarnings: Boolean(session.failed)
+    };
     writeBaseline(baseline);
+    const storage = root.CoachToolsStorage;
+    if (storage && typeof storage.setScope === 'function') storage.setScope(baseline.scope);
+    if (storage && typeof storage.setLastCleanScope === 'function') storage.setLastCleanScope(baseline.scope);
     root.dispatchEvent(new CustomEvent('coachtools:clean-upload-baseline', { detail: clone(baseline) }));
-    showToast(`Clean Upload saved · ${datasetTypes.length} data source${datasetTypes.length === 1 ? '' : 's'} · ${scopeLabel(baseline.scope)}. Update Data will follow this baseline.`);
+    showToast(`Clean Upload saved · ${baseline.datasetTypes.length} data source${baseline.datasetTypes.length === 1 ? '' : 's'} · ${scopeLabel(baseline.scope)}. Update Data will follow this baseline.`);
     return baseline;
   }
 
-  function prepareUpdateSession(result) {
+  async function adoptCleanScope(scope) {
+    if (!cleanSession || !scope) return scope;
+    const normalized = typeof importer.resolveScopeSnapshot === 'function' ? await importer.resolveScopeSnapshot(scope) : clone(scope);
+    if (cleanSession.successfulTypes.size && cleanSession.scope && cleanSession.scope.scopeHash !== normalized.scopeHash) {
+      cleanSession.failed = true;
+      throw new Error('Clean Upload used more than one scope. The previous authoritative scope was retained.');
+    }
+    cleanSession.scope = normalized;
+    return normalized;
+  }
+
+  function cancelPendingCleanSession() {
+    cleanSession = null;
+    updateSession = null;
+    pendingFiles = [];
+    pendingScope = null;
+    mode = '';
+  }
+
+  async function prepareUpdateSession(result) {
     const baseline = readBaseline();
     const recognized = Array.isArray(result && result.recognized) ? result.recognized : [];
     if (!recognized.length) {
       updateSession = null;
       return;
     }
-    if (!baseline || !Array.isArray(baseline.datasetTypes) || !baseline.datasetTypes.length) {
-      updateSession = { baseline: null, remaining: recognized.length };
-      return;
-    }
-
-    const selected = new Set(baseline.datasetTypes);
-    // Checklist / All Items and Documented Coaching / MyOne2View are rotating
-    // exports. If several changed copies are present, only the newest one should
-    // become the current replacement. Exact filename continuity is not required.
-    const newestChecklist = selected.has('checklist') ? newestEntry(recognized.filter(entry => entry.classification && entry.classification.id === 'checklist')) : null;
-    const newestMyOne = selected.has('documentedCoaching') ? newestEntry(recognized.filter(entry => entry.classification && entry.classification.id === 'documentedCoaching')) : null;
+    const selected = baseline && Array.isArray(baseline.datasetTypes) && baseline.datasetTypes.length
+      ? new Set(baseline.datasetTypes)
+      : null;
+    const resolution = root.CoachToolsData && typeof root.CoachToolsData.resolveUpdateScope === 'function'
+      ? await root.CoachToolsData.resolveUpdateScope(selected ? Array.from(selected) : undefined)
+      : { needsReview: false, scope: reusableScope(baseline && baseline.scope) || reusableScope(currentScope()), source: baseline ? 'clean-baseline' : 'global-scope' };
+    updateSession = { baseline: baseline || null, resolution, remaining: recognized.length, plannedAt: new Date().toISOString() };
 
     for (const entry of recognized) {
       const type = entry && entry.classification && entry.classification.id;
-      entry._coachtoolsBaselineSkip = !selected.has(type)
-        || (type === 'checklist' && newestChecklist && entry !== newestChecklist)
-        || (type === 'documentedCoaching' && newestMyOne && entry !== newestMyOne);
-      // Do not keep giant parsed workbooks alive when this update will skip them.
+      entry._coachtoolsBaselineSkip = Boolean(selected && !selected.has(type));
+      entry._coachtoolsUpdatePlan = null;
       if (entry._coachtoolsBaselineSkip) entry.parsed = null;
     }
+    if (resolution.needsReview) return;
 
-    updateSession = { baseline, remaining: recognized.length };
+    const plansByType = new Map();
+    for (const entry of recognized) {
+      if (entry._coachtoolsBaselineSkip) continue;
+      const type = entry.classification.id;
+      try {
+        const prepared = await prepareUpdateDataset(entry, { scope: resolution.scope });
+        const metadata = updateMetadata(entry, prepared);
+        const inspection = root.CoachToolsData && typeof root.CoachToolsData.inspectDataset === 'function'
+          ? await root.CoachToolsData.inspectDataset(type, prepared.dataset, metadata)
+          : { status: 'new', reason: 'No comparison service was available.', becomesCurrent: true, candidate: { periodSort: entry.classification.detectedPeriod && entry.classification.detectedPeriod.sortKey || '' } };
+        const plan = { prepared, metadata, inspection, selected: false };
+        entry._coachtoolsUpdatePlan = plan;
+        if (!plansByType.has(type)) plansByType.set(type, []);
+        plansByType.get(type).push({ entry, plan });
+      } catch (error) {
+        entry._coachtoolsUpdatePlan = {
+          error,
+          selected: false,
+          inspection: { status: 'needs-review', reason: error && error.message || String(error), becomesCurrent: false }
+        };
+      }
+      await yieldMainThread();
+    }
+
+    for (const plans of plansByType.values()) {
+      const actionable = plans
+        .filter(item => ['new', 'updated'].includes(item.plan.inspection && item.plan.inspection.status))
+        .sort((left, right) => {
+          const leftPeriod = String(left.plan.inspection.candidate && left.plan.inspection.candidate.periodSort || '');
+          const rightPeriod = String(right.plan.inspection.candidate && right.plan.inspection.candidate.periodSort || '');
+          return rightPeriod.localeCompare(leftPeriod)
+            || (Number(right.entry.file && right.entry.file.lastModified) || 0) - (Number(left.entry.file && left.entry.file.lastModified) || 0)
+            || String(right.entry.file && right.entry.file.name || '').localeCompare(String(left.entry.file && left.entry.file.name || ''));
+        });
+      if (actionable[0]) actionable[0].plan.selected = true;
+    }
   }
 
   async function prepareUpdateDataset(entry, options) {
@@ -233,59 +313,39 @@
       throw new Error('The file has not been safely classified.');
     }
     const type = entry.classification.id;
-    const prepared = entry.parsed;
-    if (type === 'documentedCoaching') importer.convertCoachingDateHeader(prepared);
-
-    const selectedNames = new Set(type === 'qa' ? [] : importer.scopeNames(options && options.scope));
-    let matchedRows = 0;
-    let totalRows = 0;
-
-    for (let sheetIndex = 0; sheetIndex < (prepared.workbook.sheets || []).length; sheetIndex += 1) {
-      if (sheetIndex > 0) await yieldMainThread();
-      const sheetName = prepared.workbook.sheets[sheetIndex];
-      const sheet = prepared.workbook.data[sheetName];
-      const aoa = sheet && sheet.aoa;
-      if (!Array.isArray(aoa)) continue;
-      if (!selectedNames.size) {
-        totalRows += aoa.length;
-        continue;
-      }
-
-      const header = importer.findHeader(aoa, importer.SOURCES[type].header);
-      if (!header) {
-        totalRows += aoa.length;
-        continue;
-      }
-
-      const selectedRows = [];
-      for (let rowIndex = header.headerRow + 1; rowIndex < aoa.length; rowIndex += 1) {
-        const row = aoa[rowIndex];
-        const matches = Array.isArray(row) && selectedNames.has(importer.normalizeName(row[header.colIndex]));
-        if (matches) {
-          matchedRows += 1;
-          selectedRows.push(row);
-        }
-        if ((rowIndex - header.headerRow) % ROW_YIELD_INTERVAL === 0) await yieldMainThread();
-      }
-
-      const filtered = aoa.slice(0, header.headerRow + 1);
-      for (const row of selectedRows) filtered.push(row);
-      sheet.aoa = filtered;
-      totalRows += filtered.length;
-      await yieldMainThread();
+    const scopeSnapshot = typeof importer.resolveScopeSnapshot === 'function'
+      ? await importer.resolveScopeSnapshot(options && options.scope || { mode: 'all', label: 'All people' })
+      : options && options.scope;
+    await yieldMainThread();
+    const result = importer.prepareScopedDataset(entry.parsed, type, scopeSnapshot, { ...(options || {}), clone: false, detectedPeriod: entry.classification.detectedPeriod });
+    if (!result.valid) {
+      const error = new Error(result.reason);
+      error.name = 'CoachToolsScopeValidationError';
+      error.code = 'COACHTOOLS_SCOPE_REVIEW';
+      error.scopeMatchDiagnostics = result.diagnostics;
+      throw error;
     }
+    return result;
+  }
 
-    prepared.meta = {
-      ...(prepared.meta || {}),
-      source: type,
-      sourceLabel: importer.SOURCES[type].label,
-      detectedPeriod: entry.classification.detectedPeriod || importer.detectPeriod(prepared.meta && prepared.meta.fileName, type),
-      totalRows,
+  function updateMetadata(entry, prepared) {
+    const dataset = prepared.dataset;
+    return {
+      originalFileName: entry.file && entry.file.name || dataset.meta && dataset.meta.fileName || '',
+      fileSize: entry.file && entry.file.size || dataset.meta && dataset.meta.fileSize || 0,
+      fileModifiedDate: entry.file && entry.file.lastModified ? new Date(entry.file.lastModified).toISOString() : dataset.meta && dataset.meta.fileModifiedDate || '',
+      rowCount: dataset.meta && dataset.meta.totalRows || 0,
+      detectedPeriod: entry.classification.detectedPeriod,
+      classificationMethod: entry.classification.classificationMethod || entry.classification.reason || 'filename+headers',
+      validationStatus: entry.classification.validation && entry.classification.validation.valid === false ? 'needs-review' : 'ready',
       automaticImport: true,
-      automaticImportScope: selectedNames.size ? Array.from(selectedNames) : [],
-      automaticImportMatchedRows: matchedRows
+      scopeSnapshot: prepared.scopeSnapshot,
+      scopeHash: prepared.scopeHash,
+      scopeMode: prepared.scopeSnapshot.mode,
+      scopedRowCount: prepared.matchedRows,
+      scopeMatchDiagnostics: prepared.diagnostics,
+      scopedFingerprint: prepared.scopedFingerprint
     };
-    return prepared;
   }
 
   async function saveUpdateEntryResponsive(entry, options) {
@@ -293,21 +353,27 @@
       throw new Error('The central CoachTools data API is unavailable.');
     }
     const type = entry.classification.id;
-    const dataset = await prepareUpdateDataset(entry, options);
+    const plan = entry._coachtoolsUpdatePlan;
+    if (plan && plan.inspection && plan.inspection.status === 'needs-review') {
+      throw plan.error || new Error(plan.inspection.reason || 'Update needs review. The existing dataset was retained.');
+    }
+    if (plan && !plan.selected) {
+      entry.parsed = null;
+      return {
+        status: 'duplicate',
+        comparisonStatus: plan.inspection && plan.inspection.status || 'current',
+        skippedByUpdatePlan: true,
+        dataset: plan.inspection && (plan.inspection.current || plan.inspection.candidate) || null
+      };
+    }
+    const prepared = plan && plan.prepared || await prepareUpdateDataset(entry, options);
+    const dataset = prepared.dataset;
     await nextPaint();
-    const result = await root.CoachToolsData.importDataset(type, dataset, {
-      originalFileName: entry.file && entry.file.name || dataset.meta && dataset.meta.fileName || '',
-      fileSize: entry.file && entry.file.size || dataset.meta && dataset.meta.fileSize || 0,
-      fileModifiedDate: entry.file && entry.file.lastModified ? new Date(entry.file.lastModified).toISOString() : dataset.meta && dataset.meta.fileModifiedDate || '',
-      rowCount: dataset.meta && dataset.meta.totalRows || 0,
-      detectedPeriod: entry.classification.detectedPeriod,
-      classificationMethod: entry.classification.classificationMethod || entry.classification.reason || 'filename+headers',
-      validationStatus: entry.classification.validation && entry.classification.validation.valid === false ? 'needs-review' : 'ready'
-    });
+    const result = await root.CoachToolsData.importDataset(type, dataset, plan && plan.metadata || updateMetadata(entry, prepared));
     // Once IndexedDB owns the update, release the parsed workbook before the next
     // file is prepared. This keeps multi-file updates from accumulating huge trees.
     entry.parsed = null;
-    return result;
+    return { ...result, comparisonStatus: plan && plan.inspection && plan.inspection.status || result.status };
   }
 
   const originalAnalyzeFiles = importer.analyzeFiles.bind(importer);
@@ -321,11 +387,14 @@
         ? await analyzeFilesResponsive(files, options)
         : await originalAnalyzeFiles(files, options);
       if (mode === 'clean') {
-        captureCleanBaseline(result);
+        await beginCleanSession(result);
         mode = '';
-        pendingFiles = [];
       } else if (mode === 'update') {
-        prepareUpdateSession(result);
+        await prepareUpdateSession(result);
+        result.updateMode = true;
+        result.authoritativeUpdateScope = updateSession && updateSession.resolution && clone(updateSession.resolution.scope);
+        result.updateScopeNeedsReview = Boolean(updateSession && updateSession.resolution && updateSession.resolution.needsReview);
+        result.updateScopeReason = updateSession && updateSession.resolution && updateSession.resolution.reason || '';
         mode = '';
       }
       return result;
@@ -333,26 +402,42 @@
     async saveRecognizedEntry(entry, options) {
       const nextOptions = { ...(options || {}) };
       const session = updateSession;
-      const baselineScope = session && session.baseline && reusableScope(session.baseline.scope);
+      const baselineScope = session && session.resolution && reusableScope(session.resolution.scope);
       const savedBaseline = readBaseline();
       const cleanScope = reusableScope(savedBaseline && savedBaseline.scope);
-      if (Object.prototype.hasOwnProperty.call(nextOptions, 'scope') && nextOptions.scope === null) {
-        nextOptions.scope = baselineScope || cleanScope || reusableScope(currentScope());
+      if (session && baselineScope) {
+        nextOptions.scope = baselineScope;
+      } else if (Object.prototype.hasOwnProperty.call(nextOptions, 'scope') && nextOptions.scope === null) {
+        nextOptions.scope = cleanSession && cleanSession.scope || baselineScope || cleanScope || reusableScope(currentScope());
       }
 
+      let result = null;
       try {
+        if (cleanSession && nextOptions.scope) nextOptions.scope = await adoptCleanScope(nextOptions.scope);
+        if (session && session.resolution && session.resolution.needsReview) throw new Error(session.resolution.reason || 'Update needs scope review.');
         if (entry && entry._coachtoolsBaselineSkip) {
-          return { status: 'duplicate', skippedByCleanUploadBaseline: true };
+          result = { status: 'duplicate', comparisonStatus: 'skipped', skippedByCleanUploadBaseline: true };
+          return result;
         }
         if (session) {
           // Give the progress UI a frame before each expensive persistence stage,
           // then use the update-specific preparation path that filters in chunks
           // instead of JSON-cloning the entire parsed workbook first.
           await nextPaint();
-          return await saveUpdateEntryResponsive(entry, nextOptions);
+          result = await saveUpdateEntryResponsive(entry, nextOptions);
+          return result;
         }
-        return await originalSaveRecognizedEntry(entry, nextOptions);
+        result = await originalSaveRecognizedEntry(entry, nextOptions);
+        return result;
+      } catch (error) {
+        if (cleanSession) cleanSession.failed = true;
+        throw error;
       } finally {
+        if (cleanSession && cleanSession.remaining > 0) {
+          if (result && entry && entry.classification && entry.classification.id) cleanSession.successfulTypes.add(entry.classification.id);
+          cleanSession.remaining -= 1;
+          if (cleanSession.remaining <= 0) finalizeCleanSession();
+        }
         if (updateSession && updateSession.remaining > 0) {
           updateSession.remaining -= 1;
           if (updateSession.remaining <= 0) updateSession = null;
@@ -414,15 +499,22 @@
         pendingScope = null;
       }
     }, true);
+    if (input) input.addEventListener('cancel', () => {
+      if (mode === 'clean') cancelPendingCleanSession();
+      else if (mode === 'update') { mode = ''; updateSession = null; }
+    }, true);
   }
 
   root.CoachToolsCleanUploadBaseline = Object.freeze({
-    VERSION: '2.1.0',
+    VERSION: '3.0.0',
     getBaseline: readBaseline,
     clearBaseline() {
       try { root.localStorage.removeItem(BASELINE_KEY); } catch (_) {}
       updateSession = null;
-    }
+      cancelPendingCleanSession();
+    },
+    cancelPending: cancelPendingCleanSession,
+    hasPending: () => Boolean(cleanSession)
   });
 
   if (root.document.readyState === 'loading') root.document.addEventListener('DOMContentLoaded', bind, { once: true });

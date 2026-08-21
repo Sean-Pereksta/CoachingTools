@@ -9,12 +9,13 @@ const RESEARCH_RENDER_DB = 'allStarResearchRenderedResults.v1';
 const RESEARCH_RENDER_META_STORE = 'renderMeta';
 const RESEARCH_RENDER_CHUNK_STORE = 'renderChunks';
 const RESEARCH_RENDER_CHUNK_SIZE = 1000;
-const IMPORT_CACHE_DB = 'allStarImportedDataCache.v1';
+const COACHTOOLS_STORAGE_CONTRACT = window.CoachToolsData?.storageContract || null;
+const IMPORT_CACHE_DB = COACHTOOLS_STORAGE_CONTRACT?.dbName || 'allStarImportedDataCache.v1';
 const IMPORT_CACHE_META_STORE = 'meta';
 const IMPORT_CACHE_SOURCE_STORE = 'sourceData';
 const IMPORT_CACHE_BOOK_STORE = 'books';
 const IMPORT_CACHE_MISC_STORE = 'misc';
-const IMPORT_CACHE_SCHEMA_VERSION = 7;
+const IMPORT_CACHE_SCHEMA_VERSION = Number(COACHTOOLS_STORAGE_CONTRACT?.dbVersion) || 7;
 const CONTROL_ROSTER_SCHEMA_VERSION = 2;
 const METRICS_KEY = 'allStarResearchMetrics.v1';
 const METRICS_DB = 'allStarResearchMetricsDb.v1';
@@ -162,6 +163,11 @@ const state = {
   importCacheSaveTimer: null,
   importCacheSaveQueued: false,
   importCacheSaveReasons: [],
+  lifecycle: {closing:false,hidden:false,generation:0},
+  startup: {job:null,generation:0,running:false,completed:false,diagnostics:null},
+  centralSyncGeneration: 0,
+  progressJob: null,
+  lifecycleSaveQueued: false,
   runPrep: {generation:0,jobs:new Map(),ready:new Map(),dateRangeCache:new Map(),lastRequired:[],lastModelId:''},
   pdfOptions: null,
   pendingRosterReassignment: null

@@ -81,8 +81,6 @@
       "data": [
         "weeklyRetail",
         "weeklyReferral",
-        "monthlyRetail",
-        "monthlyReferral",
         "qa",
         "documentedCoaching",
         "checklist"

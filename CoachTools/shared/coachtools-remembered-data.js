@@ -4,7 +4,7 @@
   const HANDLE_DB = 'coachtools.desktop.directory.v1';
   const HANDLE_STORE = 'handles';
   const HANDLE_KEY = 'storage-directory';
-  const FILE_SIGNATURES_KEY = 'coachtools.desktop.rememberedFolderFiles.v1';
+  const FILE_SIGNATURES_KEY = 'coachtools.desktop.rememberedFolderFiles.v2';
   const SUPPORTED_EXTENSIONS = new Set(['.xlsx', '.xls', '.csv']);
 
   let cachedDirectoryHandle = null;
@@ -35,6 +35,10 @@
 
   function writeJson(key, value) {
     try { root.localStorage && root.localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+  }
+
+  function scopedFileKey(path, datasetType, scopeHash) {
+    return `${String(scopeHash || 'legacy-unscoped')}|${String(datasetType || 'unknown')}|${String(path || '').replace(/\\/g, '/')}`;
   }
 
   function openHandleDb() {
@@ -266,8 +270,21 @@
       return;
     }
 
+    const baseline = root.CoachToolsCleanUploadBaseline && typeof root.CoachToolsCleanUploadBaseline.getBaseline === 'function' ? root.CoachToolsCleanUploadBaseline.getBaseline() : null;
+    const resolution = typeof data.resolveUpdateScope === 'function'
+      ? await data.resolveUpdateScope(baseline && baseline.datasetTypes)
+      : { needsReview: false, scope: root.CoachToolsStorage && root.CoachToolsStorage.getScope ? root.CoachToolsStorage.getScope() : { mode: 'all', label: 'All people' } };
+    if (resolution.needsReview) {
+      finishProgress(resolution.reason || 'Update needs scope review. Existing data was retained.', { warning: true });
+      showToast(resolution.reason || 'Update needs scope review.', 6500);
+      return;
+    }
+    const scope = typeof importer.resolveScopeSnapshot === 'function' ? await importer.resolveScopeSnapshot(resolution.scope) : resolution.scope;
+    const scopeHash = scope && scope.scopeHash || 'legacy-unscoped';
+    const scopeName = scope && (scope.label || scope.mode) || 'All people';
+
     setSteps([{ label: 'Checking remembered storage folder', status: 'active' }]);
-    setProgress(4, 'Checking storage folder', directory.name || 'storage', '', 'Looking for changed Excel and CSV files…');
+    setProgress(4, `Updating scope: ${scopeName}`, directory.name || 'storage', '', 'Looking for changed Excel and CSV files inside the authoritative scope…');
 
     const records = await walkDirectory(directory, '', 0, []);
     if (!records.length) {
@@ -277,14 +294,17 @@
     }
 
     const previous = readJson(FILE_SIGNATURES_KEY, {});
-    const changed = records.filter(record => previous[record.path] !== record.signature);
+    const changed = records.filter(record => {
+      const saved = Object.values(previous).find(value => value && value.path === record.path && value.scopeHash === scopeHash && value.fileSignature === record.signature);
+      return !saved;
+    });
     if (!changed.length) {
       const counts = currentReadyCount();
       setSteps([
         { label: 'Checking remembered storage folder', status: 'success' },
         { label: 'No file changes found', status: 'success' }
       ]);
-      finishProgress(`Storage checked · ${records.length} file${records.length === 1 ? '' : 's'} unchanged · existing CoachTools data kept.`, { count: `${counts.ready} of ${counts.total}` });
+      finishProgress(`Scope preserved: ${scopeName} · ${records.length} file${records.length === 1 ? '' : 's'} unchanged · existing CoachTools data kept.`, { count: `${counts.ready} of ${counts.total}` });
       showToast(`Update complete · ${records.length} file${records.length === 1 ? '' : 's'} unchanged.`);
       refreshAvailabilityNote();
       return;
@@ -321,9 +341,19 @@
       try {
         const label = importer.SOURCES && importer.SOURCES[type] ? importer.SOURCES[type].label : type || 'data';
         setProgress(66 + ((index + 1) / Math.max(1, analysis.recognized.length)) * 30, `Saving ${label}`, entry.file.name, `${index + 1} of ${analysis.recognized.length}`, 'Writing changed data to CoachTools IndexedDB…');
-        const result = await importer.saveRecognizedEntry(entry, { scope: null });
+        const result = await importer.saveRecognizedEntry(entry, { scope });
         imported.push({ type, fileName: entry.file.name, status: result && result.status || 'saved' });
-        if (record) previous[record.path] = record.signature;
+        if (record && !(result && result.skippedByCleanUploadBaseline)) previous[scopedFileKey(record.path, type, scopeHash)] = {
+          path: record.path,
+          filename: entry.file.name,
+          fileSignature: record.signature,
+          datasetType: type,
+          scopeHash,
+          scopedFingerprint: result && result.dataset && (result.dataset.scopedFingerprint || result.dataset.fingerprint) || '',
+          scopedRowCount: result && result.dataset && Number(result.dataset.scopedRowCount) || 0,
+          datasetId: result && result.dataset && (result.dataset.datasetId || result.dataset.id) || '',
+          lastCheckedAt: new Date().toISOString()
+        };
       } catch (error) {
         errors.push(`${entry.file.name}: ${error && error.message || error}`);
       }
@@ -335,6 +365,7 @@
     const savedCount = imported.filter(item => item.status !== 'duplicate').length;
     const duplicateCount = imported.filter(item => item.status === 'duplicate').length;
     const summaryParts = [
+      `Scope preserved: ${scopeName}`,
       `${counts.ready} of ${counts.total} data sources ready`,
       savedCount ? `${savedCount} changed file${savedCount === 1 ? '' : 's'} imported` : '',
       duplicateCount ? `${duplicateCount} already current` : '',
@@ -375,6 +406,7 @@
       }
     } finally {
       updateRunning = false;
+      if (root.CoachToolsCleanUploadBaseline && typeof root.CoachToolsCleanUploadBaseline.cancelPending === 'function') root.CoachToolsCleanUploadBaseline.cancelPending();
     }
   }
 

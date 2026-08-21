@@ -13,6 +13,12 @@ const desktopHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'apps.json'), 'utf8'));
 const storageScript = fs.readFileSync(path.join(root, 'shared', 'coachtools-storage.js'), 'utf8');
 const appDataScript = fs.readFileSync(path.join(root, 'shared', 'coachtools-app-data.js'), 'utf8');
+const smartImportScript = fs.readFileSync(path.join(root, 'shared', 'coachtools-smart-import.js'), 'utf8');
+const rememberedScopeScript = fs.readFileSync(path.join(root, 'shared', 'coachtools-remembered-scope.js'), 'utf8');
+const allstarAppScript = fs.readFileSync(path.join(root, 'apps', 'allstar', 'js', 'app.js'), 'utf8');
+const allstarImportsScript = fs.readFileSync(path.join(root, 'apps', 'allstar', 'js', 'imports.js'), 'utf8');
+const allstarModelsScript = fs.readFileSync(path.join(root, 'apps', 'allstar', 'js', 'models.js'), 'utf8');
+const allstarPersistenceScript = fs.readFileSync(path.join(root, 'apps', 'allstar', 'js', 'persistence.js'), 'utf8');
 const context = { console, TextEncoder, TextDecoder };
 context.window = context;
 vm.createContext(context);
@@ -102,6 +108,21 @@ assert(storageScript.includes('cacheCurrentRecord'), 'Requested datasets should 
 assert(storageScript.includes('materializeLegacyCompatibility'), 'Legacy localStorage docks should require an explicit compatibility request.');
 assert(imports.readWorkbook || fs.readFileSync(path.join(root, 'shared', 'coachtools-import.js'), 'utf8').includes('ensureXlsx'), 'SheetJS should load only when a workbook is actually read.');
 assert(desktopScript.includes("type: 'coachtools:scope-updated'"), 'The desktop should relay scope changes to open applications.');
+assert(desktopScript.includes("type: 'coachtools:prepare-close'") && desktopScript.includes('APP_CLOSE_DEADLINE_MS'), 'Allstar close should use a bounded prepare/ready handshake.');
+assert(storageScript.includes('scopeSnapshot') && storageScript.includes('scopedRowCount') && storageScript.includes('scopeMatchDiagnostics'), 'Current dataset metadata should retain the scope that created it.');
+assert(storageScript.includes('storageContract: Object.freeze'), 'The shared data API should expose its schema-7 storage contract.');
+assert(desktopScript.includes("coachtools.storage.processed.v2"), 'Processed storage files should be keyed by the scope-aware v2 contract.');
+assert(smartImportScript.includes("'weeklyReferral', 'qa'") && smartImportScript.includes('importer.saveRecognizedEntry(entry, { scope })'), 'The smart chooser should route QA and every save through the shared scoped importer.');
+assert(!smartImportScript.includes('sheet.aoa = headerRows.concat(selectedRows)'), 'The smart chooser must not retain a second legacy scope-filter implementation.');
+assert(rememberedScopeScript.includes('adoptCleanScope') && rememberedScopeScript.includes('cancelPending'), 'Clean Upload should adopt the chooser scope and safely cancel incomplete sessions.');
+assert(rememberedScopeScript.includes('inspectDataset(type, prepared.dataset, metadata)') && rememberedScopeScript.includes("['new', 'updated'].includes"), 'Direct-file Auto Update should build a comparison plan before it commits accepted changes.');
+assert(smartImportScript.includes('analysis.authoritativeUpdateScope'), 'The smart chooser must preserve the authoritative Auto Update scope instead of asking to widen it.');
+assert(allstarImportsScript.includes("const ALLSTAR_SYNC_KEY='allStarCoachToolsSync.v2'"), 'Allstar should use the metadata-rich central sync map.');
+assert(allstarImportsScript.includes('directWorkbookFromCoachToolsDataset') && !allstarImportsScript.includes('function sheetJsWorkbookFromCoachToolsDataset'), 'Central datasets should use the direct AOA adapter instead of rebuilding SheetJS workbooks.');
+assert(allstarModelsScript.includes('createAllStarStartupJob') && allstarModelsScript.includes('job.preventedRegressions++'), 'Allstar startup progress should have one monotonic owner.');
+assert(allstarAppScript.includes('async function startAllStar()') && allstarAppScript.includes("type:'coachtools:close-ready'"), 'Allstar should coordinate startup and acknowledge close preparation.');
+assert(!allstarAppScript.includes("flushImportCacheSave('pagehide flush')") && !allstarAppScript.includes("flushImportCacheSave('visibilitychange flush')"), 'Allstar lifecycle events should not perform duplicate full flushes.');
+assert(allstarPersistenceScript.includes('dirtyOnly:true,noRender:true,noCompaction:true,lifecycleSave:true') || allstarAppScript.includes('dirtyOnly:true,noRender:true,noCompaction:true,lifecycleSave:true'), 'Close persistence should use the lightweight dirty-record mode.');
 assert(desktopStyles.includes('.startup-progress'), 'Startup readiness should include a visible progress bar.');
 assert(desktopStyles.includes('.app-card:hover .app-icon'), 'Application icons should respond to pointer hover.');
 assert(desktopStyles.includes('scale(1.065)'), 'Application hover should expand icons slightly.');
@@ -143,6 +164,75 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(scoped.workbook.data.Data.aoa))
   ['Sheet', 'Metric'],
   ['JOHN DOE', 1]
 ]);
+
+const stableScopeA = imports.normalizeScopeSnapshot({ mode: 'coach', personId: 'coach-1', coaches: ['Sean Pereksta'], capturedAt: '2026-08-20T00:00:00.000Z' });
+const stableScopeB = imports.normalizeScopeSnapshot({ mode: 'coach', personId: 'coach-1', coaches: ['Sean Pereksta'], capturedAt: '2026-08-21T00:00:00.000Z' });
+assert.strictEqual(stableScopeA.scopeHash, stableScopeB.scopeHash, 'Scope hashes must exclude capturedAt.');
+const stableScopeAliasChange = imports.normalizeScopeSnapshot({ mode: 'coach', personId: 'coach-1', coaches: ['S. Pereksta'] });
+assert.strictEqual(stableScopeA.scopeHash, stableScopeAliasChange.scopeHash, 'Stable person ids should keep a coach scope hash unchanged when display aliases change.');
+
+const aliasedScope = imports.normalizeScopeSnapshot({ mode: 'coach', personId: 'coach-1', label: 'Sean Pereksta' }, { identityPeople: [{ personId: 'coach-1', role: 'coach', displayName: 'Sean Pereksta', aliases: ['S. Pereksta'], sourceNames: { qa: ['PEREKSTA, SEAN'] } }] });
+const qaSource = parsed('QA.xlsx', [
+  ['Team', 'Agent Name', 'Score %'],
+  ['Sean Pereksta', 'Rep A', 90],
+  ['PEREKSTA, SEAN', 'Rep B', 91],
+  ['S. Pereksta', 'Rep C', 92],
+  ['Other Coach', 'Rep D', 93]
+]);
+const scopedQa = imports.prepareScopedDataset(qaSource, 'qa', aliasedScope);
+assert.strictEqual(scopedQa.valid, true);
+assert.strictEqual(scopedQa.matchedRows, 3, 'QA should match canonical names and known aliases through Team.');
+assert.strictEqual(scopedQa.diagnostics.outOfScopeRows, 1);
+assert.strictEqual(scopedQa.dataset.workbook.data.Data.aoa.length, 4);
+
+const teamScope = imports.normalizeScopeSnapshot({ mode: 'team', team: 'North', label: 'North' }, { identityPeople: [
+  { personId: 'coach-1', role: 'coach', displayName: 'Sean Pereksta', currentTeam: 'North', aliases: ['S. Pereksta'] },
+  { personId: 'coach-2', role: 'coach', displayName: 'Jamie Smith', currentTeam: 'North', sourceNames: { qa: ['SMITH, JAMIE'] } },
+  { personId: 'coach-3', role: 'coach', displayName: 'Other Coach', currentTeam: 'South' }
+] });
+const teamQa = imports.prepareScopedDataset(parsed('QA Team.xlsx', [
+  ['Team', 'Agent Name', 'Score %'],
+  ['Sean Pereksta', 'Rep A', 90],
+  ['S. Pereksta', 'Rep B', 91],
+  ['SMITH, JAMIE', 'Rep C', 92],
+  ['Other Coach', 'Rep D', 93]
+]), 'qa', teamScope);
+assert.strictEqual(teamScope.coachPersonIds.length, 2, 'A saved team scope should expand to all canonical coaches in that team.');
+assert.strictEqual(teamQa.matchedRows, 3, 'A multi-coach QA scope should match every selected coach alias and no others.');
+
+const missingQaTeam = imports.prepareScopedDataset(parsed('QA.xlsx', [['Agent Name', 'Score %'], ['Rep A', 90]]), 'qa', aliasedScope);
+assert.strictEqual(missingQaTeam.needsReview, true, 'Scoped QA without Team must retain the existing dataset for review.');
+assert.match(missingQaTeam.reason, /column not found/i);
+
+const zeroQa = imports.prepareScopedDataset(parsed('QA.xlsx', [['Team', 'Score %'], ['Other Coach', 90]]), 'qa', aliasedScope);
+assert.strictEqual(zeroQa.needsReview, true, 'A zero-row scoped collapse must not be accepted automatically.');
+const missingOwnership = imports.prepareScopedDataset(parsed('Checklist.xlsx', [['Associate Name', 'Action'], ['Rep A', 'Call']]), 'checklist', { mode: 'coach', coaches: ['Coach A'] });
+assert.strictEqual(missingOwnership.needsReview, true, 'A scoped source must never pass through a sheet with no ownership column.');
+const tabScoped = { meta: { fileName: 'Retail Monthly.xlsx' }, workbook: { sheets: ['Coach A', 'Coach B'], data: { 'Coach A': { aoa: [['Representative', 'Metric'], ['Rep A', 1]] }, 'Coach B': { aoa: [['Representative', 'Metric'], ['Rep B', 2]] } } } };
+const selectedTab = imports.prepareScopedDataset(tabScoped, 'monthlyRetail', { mode: 'coach', coaches: ['Coach A'] });
+assert.strictEqual(selectedTab.valid, true);
+assert.strictEqual(selectedTab.matchedRows, 1, 'A coach-named worksheet should be treated as explicit ownership.');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(selectedTab.dataset.workbook.data['Coach B'].aoa)), [], 'Unowned headerless worksheets must be removed from a scoped dataset.');
+const splitQaA = { meta: { fileName: 'QA.xlsx' }, workbook: { sheets: ['Current', 'Other'], data: { Current: { aoa: [['Team', 'Score %'], ['Coach A', 90]] }, Other: { aoa: [['Team', 'Score %'], ['Coach B', 80]] } } } };
+const splitQaB = { meta: { fileName: 'QA.xlsx' }, workbook: { sheets: ['Current', 'Other Renamed'], data: { Current: { aoa: [['Team', 'Score %'], ['Coach A', 90]] }, 'Other Renamed': { aoa: [['Team', 'Score %'], ['Coach B', 5]] } } } };
+const scopedSplitQaA = imports.prepareScopedDataset(splitQaA, 'qa', { mode: 'coach', coaches: ['Coach A'] });
+const scopedSplitQaB = imports.prepareScopedDataset(splitQaB, 'qa', { mode: 'coach', coaches: ['Coach A'] });
+assert.strictEqual(scopedSplitQaA.scopedFingerprint, scopedSplitQaB.scopedFingerprint, 'Out-of-scope worksheets and their names must not affect the scoped fingerprint.');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(scopedSplitQaB.dataset.workbook.data['Other Renamed'].aoa)), [], 'Worksheets with ownership headers but no selected rows should be dropped from scoped data.');
+
+const qaCoachA1 = imports.prepareScopedDataset(parsed('QA.xlsx', [['Team', 'Score %'], ['Coach A', 90], ['Coach B', 80]]), 'qa', { mode: 'coach', coaches: ['Coach A'] });
+const qaCoachA2 = imports.prepareScopedDataset(parsed('QA.xlsx', [['Team', 'Score %'], ['Coach A', 90], ['Coach B', 10]]), 'qa', { mode: 'coach', coaches: ['Coach A'] });
+const qaCoachA3 = imports.prepareScopedDataset(parsed('QA.xlsx', [['Team', 'Score %'], ['Coach A', 95], ['Coach B', 10]]), 'qa', { mode: 'coach', coaches: ['Coach A'] });
+const qaCoachAAdded = imports.prepareScopedDataset(parsed('QA.xlsx', [['Team', 'Score %'], ['Coach A', 90], ['Coach A', 91], ['Coach B', 80]]), 'qa', { mode: 'coach', coaches: ['Coach A'] });
+assert.strictEqual(qaCoachA1.scopedFingerprint, qaCoachA2.scopedFingerprint, 'Out-of-scope changes must not change the active coach fingerprint.');
+assert.notStrictEqual(qaCoachA2.scopedFingerprint, qaCoachA3.scopedFingerprint, 'In-scope changes must change the active coach fingerprint.');
+assert.strictEqual(qaCoachAAdded.matchedRows, 2, 'Adding an in-scope row must update the scoped row count.');
+assert.notStrictEqual(qaCoachA1.scopedFingerprint, qaCoachAAdded.scopedFingerprint, 'Adding an in-scope row must change the scoped fingerprint.');
+const qaCoachB = imports.prepareScopedDataset(parsed('QA.xlsx', [['Team', 'Score %'], ['Coach A', 90], ['Coach B', 80]]), 'qa', { mode: 'coach', coaches: ['Coach B'] });
+assert.notStrictEqual(qaCoachA1.scopeHash, qaCoachB.scopeHash, 'The same physical file must be re-evaluated when scope changes.');
+const allQa = imports.prepareScopedDataset(qaSource, 'qa', { mode: 'all', label: 'All people' });
+assert.strictEqual(allQa.valid, true);
+assert.strictEqual(allQa.dataset.workbook.data.Data.aoa.length, 5, 'All People should retain department-wide QA.');
 
 const coaching = imports.prepareDataset(parsed('Documented Coaching.xlsx', [
   ['Job Coach', 'Coaching Date'],

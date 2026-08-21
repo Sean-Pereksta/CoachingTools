@@ -372,6 +372,36 @@ window.runLookupPackagePerformanceRegressionTests=function(){
   }finally{ state.data=saved.data;state.customSources=saved.customSources;state.sourceMeta=saved.sourceMeta;state.categorized=saved.categorized;state.orgs=saved.orgs;state.models=saved.models;state.books=saved.books;markDataIndexDirty('lookup/package regression restore'); }
   console.table(results); if(results.some(r=>!r.pass)) throw new Error('Lookup/package/performance regression tests failed.'); return results;
 };
+window.runAllStarStartupLifecycleRegressionTests=function(){
+  const results=[], check=(name,pass,detail='')=>results.push({name,pass:!!pass,detail});
+  const previousJob=state.progressJob, previousStartupJob=state.startup?.job, previousJobCancelled=previousJob?.cancelled;
+  const previousClosing=state.lifecycle?.closing, previousProgress={at:lastProgressUpdateAt,text:lastProgressText,pct:lastProgressPct};
+  const overlay=els.loadingOverlay, overlayState=overlay?{open:overlay.classList.contains('open'),aria:overlay.getAttribute('aria-hidden'),text:els.loadingText?.textContent||'',width:els.loadingBarFill?.style.width||'',pct:els.loadingPct?.textContent||''}:null;
+  try{
+    if(state.lifecycle) state.lifecycle.closing=false;
+    const job=createAllStarStartupJob('Progress monotonicity regression');
+    [5,35,20,70,55,100].forEach((percent,index)=>updateAllStarStartupProgress(job,`Progress update ${index+1}`,percent));
+    const percentages=job.updates.map(update=>update.pct);
+    check('Visible startup progress never moves backward',percentages.every((nextPercent,index)=>!index || nextPercent>=percentages[index-1]),percentages.join(' → '));
+    check('Backward requests are clamped before they become visible',job.preventedRegressions===2,job.preventedRegressions);
+    check('One startup job owns every instrumented update',job.updates.length===6&&activeAllStarProgressJob()===job,job.updates.length);
+    job.complete=true; state.progressJob=null;
+  }finally{
+    state.progressJob=previousJob;
+    if(state.startup) state.startup.job=previousStartupJob;
+    if(previousJob) previousJob.cancelled=previousJobCancelled;
+    if(state.lifecycle) state.lifecycle.closing=previousClosing;
+    lastProgressUpdateAt=previousProgress.at; lastProgressText=previousProgress.text; lastProgressPct=previousProgress.pct;
+    if(overlay&&overlayState){
+      overlay.classList.toggle('open',overlayState.open);
+      if(overlayState.aria==null) overlay.removeAttribute('aria-hidden'); else overlay.setAttribute('aria-hidden',overlayState.aria);
+      if(els.loadingText) els.loadingText.textContent=overlayState.text;
+      if(els.loadingBarFill) els.loadingBarFill.style.width=overlayState.width;
+      if(els.loadingPct) els.loadingPct.textContent=overlayState.pct;
+    }
+  }
+  console.table(results); if(results.some(result=>!result.pass)) throw new Error('Allstar startup lifecycle regression tests failed.'); return results;
+};
 const allStarRegressionTests=[
   ['researchSourceFieldRefRegressionCases',()=>researchSourceFieldRefRegressionCases()],
   ['runTeamTotalsRegressionTests',()=>runTeamTotalsRegressionTests()],
@@ -384,7 +414,8 @@ const allStarRegressionTests=[
   ['runInitialWorkflowRegressionTests',()=>window.runInitialWorkflowRegressionTests()],
   ['runWorkflowModernizationRegressionTests',()=>window.runWorkflowModernizationRegressionTests()],
   ['runResearchArchitectureV4RegressionTests',()=>window.runResearchArchitectureV4RegressionTests()],
-  ['runLookupPackagePerformanceRegressionTests',()=>window.runLookupPackagePerformanceRegressionTests()]
+  ['runLookupPackagePerformanceRegressionTests',()=>window.runLookupPackagePerformanceRegressionTests()],
+  ['runAllStarStartupLifecycleRegressionTests',()=>window.runAllStarStartupLifecycleRegressionTests()]
 ];
 window.allStarRegressionTestNames=allStarRegressionTests.map(([name])=>name);
 window.runAllStarRegressionTests=async function(){

@@ -51,7 +51,120 @@
   }
 
   function normalizeName(value) {
-    return display(value).replace(/,/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+    if (root.CoachToolsIdentity && typeof root.CoachToolsIdentity.normalizeName === 'function') {
+      return root.CoachToolsIdentity.normalizeName(value);
+    }
+    let normalized = display(value);
+    if (normalized.includes(',')) {
+      const parts = normalized.split(','), last = parts.shift().trim(), given = parts.join(' ').trim();
+      if (last && given) normalized = `${given} ${last}`;
+    }
+    return normalized.normalize ? normalized.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[.’'`]/g, '').replace(/[^a-zA-Z0-9]+/g, ' ').trim().replace(/\s+/g, ' ').toLowerCase() : normalized.replace(/,/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+  }
+
+  function stableHash(value) {
+    let hash = 2166136261;
+    const text = String(value == null ? '' : value);
+    for (let index = 0; index < text.length; index += 1) {
+      hash ^= text.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  function uniqueDisplay(values) {
+    const seen = new Set(), result = [];
+    for (const value of values || []) {
+      const raw = display(value), key = normalizeName(raw);
+      if (!raw || !key || seen.has(key)) continue;
+      seen.add(key);
+      result.push(raw);
+    }
+    return result;
+  }
+
+  function personIdentityNames(person) {
+    const sourceNames = person && person.sourceNames && typeof person.sourceNames === 'object'
+      ? Object.values(person.sourceNames).flatMap(value => Array.isArray(value) ? value : value ? [value] : [])
+      : [];
+    return uniqueDisplay([person && person.displayName, person && person.normalizedName, ...(person && person.aliases || []), ...sourceNames]);
+  }
+
+  function normalizeScopeSnapshot(scope, options) {
+    const raw = scope && typeof scope === 'object' ? scope : {};
+    const mode = String(raw.mode || 'all').trim().toLowerCase() || 'all';
+    const people = Array.isArray(options && options.identityPeople) ? options.identityPeople : [];
+    const peopleById = new Map(people.map(person => [person.personId, person]));
+    const explicitCoachPersonIds = new Set(raw.coachPersonIds || []);
+    const explicitCoachKeys = new Set([...(raw.coachKeys || []), ...(raw.coaches || [])].map(normalizeName).filter(Boolean));
+    const selectedPeople = [];
+    const addPerson = person => {
+      if (!person || selectedPeople.some(candidate => candidate.personId === person.personId)) return;
+      selectedPeople.push(person);
+    };
+
+    if (mode !== 'all') {
+      if (mode === 'coach' && raw.personId) addPerson(peopleById.get(raw.personId));
+      explicitCoachPersonIds.forEach(personId => addPerson(peopleById.get(personId)));
+      if (mode === 'representative' && raw.personId) {
+        const representative = peopleById.get(raw.personId);
+        if (representative && representative.currentCoachId) addPerson(peopleById.get(representative.currentCoachId));
+      }
+      for (const person of people) {
+        if (!person || person.role !== 'coach') continue;
+        const identityKeys = personIdentityNames(person).map(normalizeName);
+        if (explicitCoachKeys.size && identityKeys.some(key => explicitCoachKeys.has(key))) addPerson(person);
+        if (mode === 'team' && normalizeName(person.currentTeam || person.team) === normalizeName(raw.team || raw.label)) addPerson(person);
+        if (mode === 'department' && normalizeName(person.department) === normalizeName(raw.department || raw.label)) addPerson(person);
+        if (mode === 'coordinator' && normalizeName(person.coordinator) === normalizeName(raw.coordinator || raw.label)) addPerson(person);
+      }
+    }
+
+    const canonicalCoachNames = mode === 'all' ? [] : uniqueDisplay([
+      ...(selectedPeople.length ? selectedPeople.map(person => person.displayName) : (raw.coaches || [])),
+      mode === 'coach' && !raw.personId ? raw.label : ''
+    ]);
+    const coachKeys = mode === 'all' ? [] : Array.from(new Set([
+      ...(raw.coachKeys || []).map(normalizeName),
+      ...canonicalCoachNames.map(normalizeName),
+      ...selectedPeople.flatMap(person => personIdentityNames(person).map(normalizeName))
+    ].filter(Boolean))).sort();
+    const representatives = mode === 'all' ? [] : uniqueDisplay(raw.representatives || []);
+    const personId = mode === 'all' ? '' : display(raw.personId);
+    const coachPersonIds = mode === 'all' ? [] : Array.from(new Set([...(raw.coachPersonIds || []), ...selectedPeople.map(person => person.personId)].filter(Boolean))).sort();
+    const stableIdentity = JSON.stringify({ mode, personId, coachPersonIds, coachKeys: personId || coachPersonIds.length ? [] : canonicalCoachNames.map(normalizeName).filter(Boolean).sort() });
+    const snapshot = {
+      schemaVersion: 1,
+      mode,
+      label: display(raw.label) || (mode === 'all' ? 'All people' : canonicalCoachNames.length === 1 ? canonicalCoachNames[0] : display(raw[mode]) || mode),
+      personId,
+      coaches: canonicalCoachNames,
+      coachPersonIds,
+      coachKeys,
+      representatives,
+      team: display(raw.team),
+      department: display(raw.department),
+      coordinator: display(raw.coordinator),
+      scopeHash: `scope-v1-${stableHash(stableIdentity)}`,
+      capturedAt: display(raw.capturedAt) || new Date().toISOString()
+    };
+    return snapshot;
+  }
+
+  async function resolveScopeSnapshot(scope) {
+    let identityPeople = [];
+    const identity = root.CoachToolsIdentity;
+    if (identity && typeof identity.getAllPeople === 'function') {
+      try {
+        if (typeof identity.ready === 'function') await identity.ready();
+        identityPeople = await identity.getAllPeople();
+      } catch (_) { identityPeople = []; }
+    }
+    return normalizeScopeSnapshot(scope, { identityPeople });
+  }
+
+  function isNarrowScope(scope) {
+    return Boolean(scope && scope.mode && scope.mode !== 'all');
   }
 
   function normalizeHeader(value) {
@@ -294,45 +407,155 @@
     return parsed;
   }
 
+  const OWNERSHIP_HEADERS = Object.freeze({
+    documentedCoaching: Object.freeze(['Job Coach', 'Coach Assigned', 'Coach', 'Team']),
+    weeklyRetail: Object.freeze(['Sheet', 'Team', 'Coach', 'Job Coach']),
+    weeklyReferral: Object.freeze(['Sheet', 'Team', 'Coach', 'Job Coach']),
+    qa: Object.freeze(['Team']),
+    checklist: Object.freeze(['Coach Assigned', 'Coach', 'Job Coach', 'Team']),
+    monthlyRetail: Object.freeze(['Sheet', 'Team', 'Coach', 'Job Coach']),
+    monthlyReferral: Object.freeze(['Sheet', 'Team', 'Coach', 'Job Coach']),
+    compCoaching: Object.freeze(['CSR Team/Coach', 'Coach Assigned', 'Coach', 'Team'])
+  });
+
   function scopeNames(scope) {
     if (!scope || scope.mode === 'all') return [];
-    return Array.isArray(scope.coaches) ? scope.coaches.map(normalizeName).filter(Boolean) : [];
+    const keys = Array.isArray(scope.coachKeys) && scope.coachKeys.length ? scope.coachKeys : scope.coaches;
+    return Array.from(new Set((keys || []).map(normalizeName).filter(Boolean)));
   }
 
-  function prepareDataset(parsed, source, options) {
+  function findOwnershipHeader(aoa, source) {
+    for (const headerName of OWNERSHIP_HEADERS[source] || [SOURCES[source] && SOURCES[source].header]) {
+      const found = headerName && findHeader(aoa, headerName);
+      if (found) return { ...found, headerName };
+    }
+    return null;
+  }
+
+  function fingerprintRows(parts) {
+    let hash = 2166136261;
+    for (const part of parts || []) {
+      const text = typeof part === 'string' ? part : JSON.stringify(part);
+      for (let index = 0; index < text.length; index += 1) {
+        hash ^= text.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+      }
+      hash ^= 31;
+      hash = Math.imul(hash, 16777619);
+    }
+    return `scoped-fnv1a-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+  }
+
+  function scopeValidationError(message, diagnostics) {
+    const error = new Error(message);
+    error.name = 'CoachToolsScopeValidationError';
+    error.code = 'COACHTOOLS_SCOPE_REVIEW';
+    error.scopeMatchDiagnostics = diagnostics || null;
+    return error;
+  }
+
+  function prepareScopedDataset(parsed, source, scope, options) {
     const aliases = { retail: 'weeklyRetail', referral: 'weeklyReferral', coaching: 'documentedCoaching' };
     source = aliases[source] || source;
     if (!SOURCES[source]) throw new Error('Unknown CoachTools source: ' + source);
-    const prepared = clone(parsed);
+    const scopeSnapshot = normalizeScopeSnapshot(scope || { mode: 'all', label: 'All people' }, options);
+    const narrow = isNarrowScope(scopeSnapshot);
+    const selectedNames = new Set(scopeNames(scopeSnapshot));
+    const prepared = options && options.clone === false ? parsed : clone(parsed);
     if (source === 'documentedCoaching') convertCoachingDateHeader(prepared);
-    // QA is intentionally department-wide. Scope selection narrows coach-owned
-    // operational datasets, but QA must always retain every uploaded evaluation.
-    const selectedNames = new Set(source === 'qa' ? [] : scopeNames(options && options.scope));
     let matchedRows = 0;
+    let sourceRows = 0;
     let totalRows = 0;
+    let headerFound = false;
+    let ownershipColumn = '';
+    const sheetsChecked = [];
+    const warnings = [];
+    const fingerprintParts = [`source:${source}`, `scope:${scopeSnapshot.scopeHash}`];
+
+    if (narrow && !selectedNames.size) {
+      const diagnostics = { headerFound: false, ownershipColumn: '', matchedCoachKeys: [], unmatchedCoachKeys: [], sheetsChecked: [], warnings: ['The selected scope did not resolve to a canonical coach identity.'] };
+      return { valid: false, needsReview: true, reason: 'Update needs review — the selected scope could not be safely restored.', dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows: 0, sourceRows: 0, scopedFingerprint: '', diagnostics };
+    }
 
     for (const sheetName of prepared.workbook.sheets) {
       const sheet = prepared.workbook.data[sheetName];
       const aoa = sheet && sheet.aoa;
       if (!Array.isArray(aoa)) continue;
-      if (!selectedNames.size) {
+      if (!narrow) {
         totalRows += aoa.length;
+        const dataHeader = findHeader(aoa, SOURCES[source] && SOURCES[source].header);
+        sourceRows += dataHeader
+          ? aoa.slice(dataHeader.headerRow + 1).filter(row => Array.isArray(row) && row.some(cell => !isBlank(cell))).length
+          : aoa.filter(row => Array.isArray(row) && row.some(cell => !isBlank(cell))).length;
+        fingerprintParts.push(`sheet:${sheetName}`);
+        for (const row of aoa) fingerprintParts.push(row);
+        sheetsChecked.push({ sheetName, headerFound: Boolean(findOwnershipHeader(aoa, source)), rows: aoa.length, passthrough: true });
         continue;
       }
-      const header = findHeader(aoa, SOURCES[source].header);
+      const nonEmptySheetRows = aoa.filter(row => Array.isArray(row) && row.some(cell => !isBlank(cell)));
+      if (selectedNames.has(normalizeName(sheetName))) {
+        const dataHeader = findHeader(aoa, SOURCES[source] && SOURCES[source].header);
+        const ownedRows = dataHeader
+          ? aoa.slice(dataHeader.headerRow + 1).filter(row => Array.isArray(row) && row.some(cell => !isBlank(cell))).length
+          : nonEmptySheetRows.length;
+        headerFound = true;
+        ownershipColumn = ownershipColumn || 'Worksheet name';
+        sourceRows += ownedRows;
+        matchedRows += ownedRows;
+        totalRows += aoa.length;
+        fingerprintParts.push(`sheet:${sheetName}`);
+        for (const row of aoa) fingerprintParts.push(row);
+        sheetsChecked.push({ sheetName, headerFound: true, ownershipColumn: 'Worksheet name', sourceRows: ownedRows, matchedRows: ownedRows, passthrough: false });
+        continue;
+      }
+      const header = findOwnershipHeader(aoa, source);
       if (!header) {
-        totalRows += aoa.length;
+        sourceRows += nonEmptySheetRows.length;
+        sheet.aoa = [];
+        sheetsChecked.push({ sheetName, headerFound: false, rows: aoa.length, sourceRows: nonEmptySheetRows.length, matchedRows: 0, dropped: true, passthrough: false });
         continue;
       }
+      headerFound = true;
+      ownershipColumn = ownershipColumn || header.headerName;
       const headerRows = aoa.slice(0, header.headerRow + 1);
-      const selectedRows = aoa.slice(header.headerRow + 1).filter(row => {
-        const matches = Array.isArray(row) && selectedNames.has(normalizeName(row[header.colIndex]));
+      const candidateRows = aoa.slice(header.headerRow + 1).filter(row => Array.isArray(row) && row.some(cell => !isBlank(cell)));
+      sourceRows += candidateRows.length;
+      const selectedRows = candidateRows.filter(row => {
+        const matches = selectedNames.has(normalizeName(row[header.colIndex]));
         if (matches) matchedRows += 1;
         return matches;
       });
-      sheet.aoa = headerRows.concat(selectedRows);
+      sheet.aoa = selectedRows.length ? headerRows.concat(selectedRows) : [];
       totalRows += sheet.aoa.length;
+      if (selectedRows.length) {
+        fingerprintParts.push(`sheet:${sheetName}`);
+        for (const row of headerRows) fingerprintParts.push(row);
+        for (const row of selectedRows) fingerprintParts.push(row);
+      }
+      sheetsChecked.push({ sheetName, headerFound: true, ownershipColumn: header.headerName, sourceRows: candidateRows.length, matchedRows: selectedRows.length, passthrough: false });
     }
+
+    const diagnostics = {
+      headerFound: narrow ? headerFound : true,
+      ownershipColumn,
+      matchedCoachKeys: narrow && matchedRows ? Array.from(selectedNames) : [],
+      unmatchedCoachKeys: narrow && !matchedRows ? Array.from(selectedNames) : [],
+      sheetsChecked,
+      warnings,
+      sourceRows,
+      matchedRows: narrow ? matchedRows : sourceRows,
+      outOfScopeRows: narrow ? Math.max(0, sourceRows - matchedRows) : 0
+    };
+    if (narrow && !headerFound) {
+      diagnostics.warnings.push(`Required scope column not found. Expected ${source === 'qa' ? 'Team' : (OWNERSHIP_HEADERS[source] || []).join(', ')}.`);
+      return { valid: false, needsReview: true, reason: `Scoped import failed validation: required ${source === 'qa' ? 'Team' : 'ownership'} column not found. No replacement was performed.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics };
+    }
+    if (narrow && matchedRows === 0 && !(options && options.allowZeroRows)) {
+      diagnostics.warnings.push('The scoped source contained zero matching rows. The existing dataset must be retained until the scope is reviewed.');
+      return { valid: false, needsReview: true, reason: `Update needs review — no rows matched ${scopeSnapshot.label || 'the selected scope'}.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics };
+    }
+
+    const scopedFingerprint = fingerprintRows(fingerprintParts);
 
     prepared.meta = {
       ...(prepared.meta || {}),
@@ -341,10 +564,22 @@
       detectedPeriod: options && options.detectedPeriod || detectPeriod(prepared.meta && prepared.meta.fileName, source),
       totalRows,
       automaticImport: true,
-      automaticImportScope: selectedNames.size ? Array.from(selectedNames) : [],
-      automaticImportMatchedRows: matchedRows
+      automaticImportScope: narrow ? Array.from(selectedNames) : [],
+      automaticImportMatchedRows: narrow ? matchedRows : sourceRows,
+      scopeSnapshot,
+      scopeHash: scopeSnapshot.scopeHash,
+      scopeMode: scopeSnapshot.mode,
+      scopedRowCount: narrow ? matchedRows : sourceRows,
+      scopeMatchDiagnostics: diagnostics,
+      scopedFingerprint
     };
-    return prepared;
+    return { valid: true, needsReview: false, reason: '', dataset: prepared, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows: narrow ? matchedRows : sourceRows, sourceRows, scopedFingerprint, diagnostics };
+  }
+
+  function prepareDataset(parsed, source, options) {
+    const prepared = prepareScopedDataset(parsed, source, options && options.scope, options);
+    if (!prepared.valid) throw scopeValidationError(prepared.reason, prepared.diagnostics);
+    return prepared.dataset;
   }
 
   function packDataset(dataset) {
@@ -374,7 +609,13 @@
     if (!entry || !entry.classification || !entry.classification.id) throw new Error('The file has not been safely classified.');
     if (!root.CoachToolsData || typeof root.CoachToolsData.importDataset !== 'function') throw new Error('The central CoachTools data API is unavailable.');
     const type = entry.classification.id;
-    const dataset = prepareDataset(entry.parsed, type, { ...(options || {}), detectedPeriod: entry.classification.detectedPeriod });
+    const requestedScope = options && Object.prototype.hasOwnProperty.call(options, 'scope') && options.scope
+      ? options.scope
+      : root.CoachToolsStorage && typeof root.CoachToolsStorage.getScope === 'function' ? root.CoachToolsStorage.getScope() : { mode: 'all', label: 'All people' };
+    const scopeSnapshot = await resolveScopeSnapshot(requestedScope || { mode: 'all', label: 'All people' });
+    const prepared = prepareScopedDataset(entry.parsed, type, scopeSnapshot, { ...(options || {}), detectedPeriod: entry.classification.detectedPeriod });
+    if (!prepared.valid) throw scopeValidationError(prepared.reason, prepared.diagnostics);
+    const dataset = prepared.dataset;
     return root.CoachToolsData.importDataset(type, dataset, {
       originalFileName: entry.file && entry.file.name || dataset.meta && dataset.meta.fileName || '',
       fileSize: entry.file && entry.file.size || dataset.meta && dataset.meta.fileSize || 0,
@@ -382,7 +623,13 @@
       rowCount: dataset.meta && dataset.meta.totalRows || 0,
       detectedPeriod: entry.classification.detectedPeriod,
       classificationMethod: entry.classification.classificationMethod || entry.classification.reason || 'filename+headers',
-      validationStatus: entry.classification.validation && entry.classification.validation.valid === false ? 'needs-review' : 'ready'
+      validationStatus: entry.classification.validation && entry.classification.validation.valid === false ? 'needs-review' : 'ready',
+      scopeSnapshot: prepared.scopeSnapshot,
+      scopeHash: prepared.scopeHash,
+      scopeMode: prepared.scopeSnapshot.mode,
+      scopedRowCount: prepared.matchedRows,
+      scopeMatchDiagnostics: prepared.diagnostics,
+      scopedFingerprint: prepared.scopedFingerprint
     });
   }
 
@@ -394,13 +641,17 @@
   }
 
   root.CoachToolsImport = Object.freeze({
-    VERSION: '1.1.0',
+    VERSION: '2.0.0',
     SOURCE_ORDER,
     DATASET_ORDER,
     SOURCES,
     SUPPORTED_EXTENSIONS,
     display,
     normalizeName,
+    stableHash,
+    normalizeScopeSnapshot,
+    resolveScopeSnapshot,
+    isNarrowScope,
     normalizeHeader,
     normalizedFileName,
     isBlank,
@@ -417,7 +668,11 @@
     detectPeriod,
     classifyFile,
     convertCoachingDateHeader,
+    OWNERSHIP_HEADERS,
     scopeNames,
+    findOwnershipHeader,
+    fingerprintRows,
+    prepareScopedDataset,
     prepareDataset,
     packDataset,
     analyzeFiles,
