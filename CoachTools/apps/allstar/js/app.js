@@ -219,15 +219,18 @@ let coachToolsCentralSyncTimer=0;
 let coachToolsCentralSyncQueue=Promise.resolve(false);
 const ALLSTAR_CENTRAL_DATASETS=new Set(['all','monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist','compCoaching']);
 function queueAllStarCentralSync(reason){
-  coachToolsCentralSyncQueue=coachToolsCentralSyncQueue.catch(error=>{ console.warn('[All-Star] Previous shared data sync failed.',error); return false; }).then(()=>syncAllStarFromCoachToolsData({reason}));
+  if(state.lifecycle?.closing) return Promise.resolve({changed:false,cancelled:true});
+  const generation=state.lifecycle.generation;
+  coachToolsCentralSyncQueue=coachToolsCentralSyncQueue.catch(error=>{ console.warn('[All-Star] Previous shared data sync failed.',error); return false; }).then(()=>syncAllStarFromCoachToolsData({reason,generation,render:true}));
   return coachToolsCentralSyncQueue;
 }
 function scheduleAllStarCentralSync(detail={}){
-  if(state.coachToolsBatchImportRunning) return;
+  if(state.coachToolsBatchImportRunning || state.startup?.running || state.lifecycle?.closing) return;
   const source=detail.source||'all';
   if(!ALLSTAR_CENTRAL_DATASETS.has(source)) return;
   clearTimeout(coachToolsCentralSyncTimer);
   coachToolsCentralSyncTimer=setTimeout(()=>{
+    if(state.lifecycle?.closing) return;
     const ready=state.importCacheStartupPromise||Promise.resolve();
     ready.then(()=>queueAllStarCentralSync('shared IndexedDB update')).catch(error=>console.warn('[All-Star] Shared CoachTools update sync failed',error));
   },350);
@@ -254,6 +257,102 @@ if(new URLSearchParams(window.location.search).get('debug')==='1'){
   loadAllStarRegressionTests().then(()=>console.info('[All Star] Regression tests loaded. Run await runAllStarRegressionTests() when ready.')).catch(err=>console.error('[All Star] Regression tests could not load',err));
 }
 
-window.addEventListener('pagehide',()=>{ flushImportCacheSave('pagehide flush').catch(err=>console.warn('[Import Cache] pagehide flush failed',err)); });
-document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') flushImportCacheSave('visibilitychange flush').catch(err=>console.warn('[Import Cache] visibility flush failed',err)); });
-loadModels(); loadRepAliases(); loadResearchItems(); loadPdfOptions(); loadOrgs(); wire(); window.addEventListener('coachtools:data-updated',event=>scheduleAllStarCentralSync(event.detail||{})); loadMetrics().then(()=>{ refreshMetricDatalist(); }).catch(err=>console.warn('[Research Metrics] Startup load failed',err)); renderCustomSourcesList(); renderCategorizedSummary(); renderModelList(); populateRunModels(); setStatus(); state.importCacheStartupPromise=loadImportCacheOnStartup(); state.importCacheStartupPromise.then(()=>queueAllStarCentralSync('startup IndexedDB synchronization')).catch(err=>console.warn('[All-Star] Shared CoachTools startup sync failed',err));
+function cancelAllStarBackgroundWork(reason='lifecycle cancellation'){
+  state.lifecycle.generation++;
+  state.centralSyncGeneration++;
+  clearTimeout(coachToolsCentralSyncTimer); coachToolsCentralSyncTimer=0;
+  if(state.importCacheSaveTimer){ clearTimeout(state.importCacheSaveTimer); state.importCacheSaveTimer=null; }
+  if(state.researchWarmToken) state.researchWarmToken.cancelled=true;
+  if(state.researchRenderToken) state.researchRenderToken.cancelled=true;
+  if(state.researchRenderAllToken) state.researchRenderAllToken.cancelled=true;
+  if(state.researchPreviewCancel) state.researchPreviewCancel.cancelled=true;
+  if(state.runPrep){ state.runPrep.generation++; state.runPrep.jobs?.clear?.(); }
+  state.runPreparationJobs?.clear?.();
+  cancelAllStarProgressJob(reason);
+}
+function allStarCloseReply(requestId,dirtySaveQueued){
+  try{ window.parent?.postMessage({type:'coachtools:close-ready',requestId,dirtySaveQueued:!!dirtySaveQueued},'*'); }catch(_){}
+}
+function prepareAllStarClose(requestId=''){
+  if(state.lifecycle.closing){ allStarCloseReply(requestId,state.lifecycleSaveQueued); return; }
+  state.lifecycle.closing=true; state.lifecycle.hidden=true;
+  cancelAllStarBackgroundWork('close preparation');
+  const canQueue=importCacheHasDirty() && !state.centralSyncStageActive && !state.importCacheSaving && !state.importCacheLoading;
+  state.lifecycleSaveQueued=!!canQueue;
+  if(canQueue) flushImportCacheSave('close preparation',{dirtyOnly:true,noRender:true,noCompaction:true,lifecycleSave:true}).catch(error=>console.warn('[Import Cache] Close preparation save failed',error));
+  allStarCloseReply(requestId,canQueue);
+}
+async function startAllStar(){
+  if(state.startup.running || state.lifecycle.closing) return false;
+  state.startup.running=true; state.startup.completed=false; state.startup.diagnostics={startupSource:'defaults',centralCompared:0,centralRefreshed:0,cachedSourcesReused:0,indexedDbWrites:0,fullRenders:0,progressRegressions:0};
+  const generation=++state.lifecycle.generation; state.startup.generation=generation;
+  const job=createAllStarStartupJob('Opening Allstar…');
+  const started=performance.now();
+  try{
+    setAllStarStartupPhase(job,0,10,'Loading settings and model metadata…');
+    if(!state.startup.initialized){
+      loadModels(); loadRepAliases(); loadResearchItems(); loadPdfOptions(); loadOrgs(); wire();
+      window.addEventListener('coachtools:data-updated',event=>scheduleAllStarCentralSync(event.detail||{}));
+      state.startup.initialized=true;
+      await loadMetrics().then(()=>refreshMetricDatalist()).catch(error=>console.warn('[Research Metrics] Startup load failed',error));
+    }
+    updateAllStarStartupProgress(job,'Settings ready.',10);
+    if(state.lifecycle.closing || generation!==state.lifecycle.generation) return false;
+
+    setAllStarStartupPhase(job,10,45,'Restoring local report data…');
+    state.importCacheStartupPromise=loadImportCacheOnStartup({showProgress:false,deferRender:true,generation});
+    const localLoaded=await state.importCacheStartupPromise;
+    state.startup.diagnostics.startupSource=localLoaded?'local cache':'defaults';
+    updateAllStarStartupProgress(job,localLoaded?'Local report data restored.':'No local report cache found.',45);
+    if(state.lifecycle.closing || generation!==state.lifecycle.generation) return false;
+
+    const reconciliation=await syncAllStarFromCoachToolsData({reason:'startup IndexedDB synchronization',generation,job,render:false});
+    if(reconciliation?.cancelled || state.lifecycle.closing || generation!==state.lifecycle.generation) return false;
+    if(importCacheHasDirty()){
+      setAllStarStartupPhase(job,96,98,'Committing local cache updates…');
+      const saved=await flushImportCacheSave('Allstar startup batch complete',{dirtyOnly:true,noCompaction:true,noRender:true});
+      if(saved) state.startup.diagnostics.indexedDbWrites=Number(state.startup.diagnostics.indexedDbWrites||0)+1;
+    }
+    const reconciliationWarning=reconciliation?.error ? 'Shared refresh needs retry; the previous valid state was retained.' : '';
+    setAllStarStartupPhase(job,98,100,reconciliationWarning|| (reconciliation?.changed?'Finalizing refreshed report data…':'Central data already current.'));
+    const changedSources=reconciliation?.changedSources||[];
+    renderAllStarAfterDataBatch({sourcesChanged:localLoaded?allSourceKeys():changedSources,teamsChanged:!!localLoaded||changedSources.some(source=>source.startsWith('retail')||source.startsWith('referral')),aliasesChanged:true,reason:'Allstar startup final render'});
+    await renderImportCacheStatus(reconciliationWarning || (reconciliation?.changed?`${reconciliation.centralRefreshed} shared source${reconciliation.centralRefreshed===1?'':'s'} refreshed.`:'Central data already current.'));
+    state.startup.completed=true;
+    state.startup.diagnostics={...(state.startup.diagnostics||{}),durationMs:Math.round(performance.now()-started)};
+    console.info('[All-Star Startup]',state.startup.diagnostics);
+    finishAllStarStartupProgress(job,'Ready.');
+    return true;
+  }catch(error){
+    console.warn('[All-Star] Startup retained the last valid state.',error);
+    if(!state.lifecycle.closing){ renderAllStarAfterDataBatch({sourcesChanged:[],reason:'startup recovery'}); finishAllStarStartupProgress(job,'Ready with a startup warning.'); }
+    return false;
+  }finally{ state.startup.running=false; }
+}
+
+window.addEventListener('message',event=>{
+  const type=event.data?.type;
+  if(type==='coachtools:prepare-close') prepareAllStarClose(event.data.requestId||'');
+  if(type==='coachtools:cancel-data-loads' && !state.lifecycle.closing) cancelAllStarBackgroundWork('desktop cancellation');
+  if(type==='coachtools:app-hidden' && !state.lifecycle.closing){
+    state.lifecycle.hidden=true; cancelAllStarBackgroundWork('application hidden');
+    if(!state.startup.running && !state.centralSyncStageActive && importCacheHasDirty()) scheduleImportedDataSave('hidden dirty save',{delay:0,silent:true,dirtyOnly:true,noRender:true,noCompaction:true,lifecycleSave:true});
+  }
+  if(type==='coachtools:app-visible' && !state.lifecycle.closing){
+    state.lifecycle.hidden=false;
+    if(!state.startup.completed) Promise.resolve(state.startup.promise).finally(()=>{ if(!state.startup.completed && !state.startup.running && !state.lifecycle.closing) state.startup.promise=startAllStar(); });
+    else scheduleAllStarCentralSync({source:'all',reason:'Allstar became visible'});
+  }
+});
+window.addEventListener('pagehide',()=>{ state.lifecycle.hidden=true; cancelAllStarBackgroundWork('pagehide'); });
+document.addEventListener('visibilitychange',()=>{
+  state.lifecycle.hidden=document.visibilityState==='hidden';
+  if(state.lifecycle.hidden && !state.lifecycle.closing){
+    cancelAllStarBackgroundWork('document hidden');
+    if(!state.startup.running && !state.centralSyncStageActive && importCacheHasDirty()) scheduleImportedDataSave('hidden dirty save',{delay:0,silent:true,dirtyOnly:true,noRender:true,noCompaction:true,lifecycleSave:true});
+  }else if(!state.lifecycle.closing){
+    if(!state.startup.completed && !state.startup.running) state.startup.promise=startAllStar();
+    else if(state.startup.completed) scheduleAllStarCentralSync({source:'all',reason:'document visible'});
+  }
+});
+state.startup.promise=startAllStar();

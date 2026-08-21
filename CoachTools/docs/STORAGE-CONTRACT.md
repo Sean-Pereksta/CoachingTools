@@ -5,7 +5,7 @@ This document defines storage names that must remain backward compatible. Filena
 ## 1. Central CoachTools data
 
 The authoritative home for large shared datasets is IndexedDB database
-`allStarImportedDataCache.v1`, schema version 6. `window.CoachToolsData` is the
+`allStarImportedDataCache.v1`, schema version 7. `window.CoachToolsData` is the
 only supported abstraction for new application code.
 
 Recognized dataset types are:
@@ -89,14 +89,17 @@ Legacy consumers may reread the compatibility dock during the transition.
 | Purpose | Key |
 | --- | --- |
 | Current selected scope | `coachtools.scope.v1` |
+| Last successful Clean Upload scope | `coachtools.scope.clean.v1` |
 | Lightweight update timestamps (canonical) | `coachtools.data.meta.v2` |
 | Migration metadata mirror | `coachtools.data.meta.v1` |
 | Desktop favorites | `coachtools.desktop.favorites.v1` |
 | Recently opened tools | `coachtools.desktop.recent.v1` |
-| Processed storage-file metadata | `coachtools.storage.processed.v1` |
+| Processed storage-file metadata | `coachtools.storage.processed.v2` |
+| Remembered browser-folder file metadata | `coachtools.desktop.rememberedFolderFiles.v2` |
+| Allstar central synchronization identities | `allStarCoachToolsSync.v2` |
 | Future desktop preferences | `coachtools.desktop.preferences.v1` |
 
-`coachtools.scope.v1` describes the current view without changing the meaning of the weekly docks. Its supported modes are All, Department, Team, Coordinator, Coach, and Representative. Fields include `mode`, `label`, `personId`, `department`, `team`, `coordinator`, `coaches`, `representatives`, and `updatedAt`.
+`coachtools.scope.v1` describes the current view without changing the meaning of the weekly docks. Its supported modes are All, Department, Team, Coordinator, Coach, and Representative. A normalized import snapshot includes `mode`, `label`, `personId`, `coachPersonIds`, `coachKeys`, `coaches`, `representatives`, `department`, `team`, `coordinator`, deterministic `scopeHash`, and diagnostic-only `capturedAt`. `capturedAt` is never part of the hash.
 
 ## 3. Tool-specific preferences
 
@@ -128,17 +131,23 @@ The general CoachTools backup includes definitions and lightweight options where
 
 ## 5. All-Star / CoachTools IndexedDB
 
-### `allStarImportedDataCache.v1`, schema version 6
+### `allStarImportedDataCache.v1`, schema version 7
 
 - `meta`, key path `id`
 - `sourceData`, key path `id`
 - `books`, key path `id`
 - `misc`, key path `id`
 - `coachtoolsDatasets`, key path `id`; canonical dated dataset records
+- `coachtoolsDatasetChunks`, key path `id`; large canonical datasets split into ordered chunks
 - `coachtoolsCurrent`, key path `datasetType`; current record pointers only
 - `coachtoolsImports`, key path `id`; import, duplicate, replacement, and removal audit history
 - `coachtoolsPeople`, key path `personId`; canonical people, aliases, source spellings, roles, teams, departments, and relationships
 - `coachtoolsIdentityReviews`, key path `id`; uncertain-match reviews and reversible merge snapshots
+
+Canonical dataset records and current pointers retain `scopeSnapshot`, `scopeHash`,
+`scopeMode`, `scopedRowCount`, `scopeMatchDiagnostics`, and `scopedFingerprint`.
+Automatic comparison and replacement are therefore performed against the active
+scope rather than the full physical workbook.
 
 `CoachToolsIdentity` is the supported identity API. Exact normalized full-name
 and known-alias matches can resolve automatically. Partial or last-name-only
@@ -149,8 +158,8 @@ matches are review candidates and must not be silently merged.
 Files under `storage/` are synchronized source material. Each browser keeps its
 own IndexedDB cache; IndexedDB is never treated as a OneDrive-shared database.
 After the desktop is visible, startup requests only the `/api/storage` listing
-and compares path, filename, size, modified timestamp, and the server's cheap
-fingerprint with `coachtools.storage.processed.v1`. Unchanged files are not
+and compares path, filename, size, modified timestamp, dataset type, and the
+active `scopeHash` with `coachtools.storage.processed.v2`. Unchanged scoped subsets are not
 downloaded or parsed. New or changed files are downloaded lazily, classified,
 and saved through `CoachToolsData.importDataset()`. Newer periods import,
 identical fingerprints remain current without duplication, same-period changed

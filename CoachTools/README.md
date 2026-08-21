@@ -36,7 +36,9 @@ The compact startup bar appears before the desktop or a remembered app session i
 
 Manual and automatic imports use `shared/coachtools-import.js` for workbook reading, filename classification, header validation, period detection, and scoped dataset preparation. **Update Data**, the desktop readiness popup, Data Manager, and All-Star all accept multi-file batches and save recognized sources through the same IndexedDB API. Data Manager retains the prior Weekly Data grouping and scope workflow while adding loaders and current-data cards for every shared dataset.
 
-Large shared data and canonical people are authoritative in `allStarImportedDataCache.v1`, schema version 6. The central API stores dated history once and keeps a pointer to the newest current record for each of these logical datasets:
+A successful **Clean Upload** records the authoritative normalized scope only after every recognized source is saved. Later automatic updates restore that scope, filter before fingerprint comparison, and retain the existing data when ownership columns are missing or a scoped source unexpectedly falls to zero rows. QA follows the same rule through its `Team` column and canonical coach aliases; only **All people** keeps the full QA population.
+
+Large shared data and canonical people are authoritative in `allStarImportedDataCache.v1`, schema version 7. The central API stores dated, scope-aware history once and keeps a pointer to the newest current record for each of these logical datasets:
 
 ```text
 weeklyRetail, weeklyReferral

@@ -10,16 +10,20 @@ Parent application localStorage keys
 - allStarRepAliases.v1
 - allStarRunSettings.v2
 - allStarPdfOptions.v1
+- allStarCoachToolsSync.v2 (metadata identity map; v1 is migration-only)
 
 Parent application IndexedDB
-- allStarImportedDataCache.v1, schema version 6
+- allStarImportedDataCache.v1, schema version 7
   - meta (keyPath: id)
   - sourceData (keyPath: id)
   - books (keyPath: id)
   - misc (keyPath: id)
   - coachtoolsDatasets (keyPath: id)
+  - coachtoolsDatasetChunks (keyPath: id; indexes: datasetId, datasetOrder)
   - coachtoolsCurrent (keyPath: datasetType)
   - coachtoolsImports (keyPath: id)
+  - coachtoolsPeople (keyPath: personId)
+  - coachtoolsIdentityReviews (keyPath: id)
 - allStarResearchRenderedResults.v1, schema version 1
   - renderMeta (keyPath: itemId)
   - renderChunks (keyPath: id)
@@ -46,7 +50,7 @@ Qualtrics generator IndexedDB
   - settings (keyPath: key)
 
 Compatibility policy
-Existing names and stored object structures remain compatible. Schema version 5 only adds the central CoachTools dataset/history stores to All-Star's import database. The modular Qualtrics carrier uses srcdoc so its saved data remains on the same parent-document storage origin used by the previous embedded generator.
+Existing names and stored object structures remain compatible. Schema version 7 adds chunked central datasets plus shared people and identity-review stores. `CoachToolsData.storageContract` is authoritative for the shared database name, version, and store list; Allstar keeps a version-7 fallback for standalone execution. The modular Qualtrics carrier uses srcdoc so its saved data remains on the same parent-document storage origin used by the previous embedded generator.
 
 Portable imported-data package
 - Preferred filename: All_Star_Data_Package.json

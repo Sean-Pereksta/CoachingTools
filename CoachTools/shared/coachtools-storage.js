@@ -1,19 +1,20 @@
 (function attachCoachToolsData(root) {
   'use strict';
 
-  const VERSION = '2.2.0';
+  const VERSION = '2.3.0';
   const EVENT_NAME = 'coachtools:data-updated';
   const SCOPE_EVENT_NAME = 'coachtools:scope-updated';
   const CHANNEL_NAME = 'coachtools-data-v2';
   const LEGACY_CHANNEL_NAME = 'coachtools-data-v1';
   const SCOPE_KEY = 'coachtools.scope.v1';
+  const CLEAN_SCOPE_KEY = 'coachtools.scope.clean.v1';
   const DATA_META_KEY = 'coachtools.data.meta.v2';
   const LEGACY_DATA_META_KEY = 'coachtools.data.meta.v1';
   const MIGRATION_KEY = 'coachtools.indexeddb.migration.v1';
 
   // CoachTools now extends All-Star's existing import database instead of creating
   // a second large-data database beside it. All-Star uses the first four stores;
-  // the shared API owns the CoachTools data and identity stores added through schema version 6.
+  // the shared API owns the CoachTools data and identity stores added through schema version 7.
   const DB_NAME = 'allStarImportedDataCache.v1';
   const DB_VERSION = 7;
   const DATASET_STORE = 'coachtoolsDatasets';
@@ -93,6 +94,8 @@
     'allStarPdfOptions.v1',
     'allStarRunPresets.v1',
     'allStarCoachToolsSync.v1',
+    'allStarCoachToolsSync.v2',
+    CLEAN_SCOPE_KEY,
     'coachingEmailGeneratorHireDateSettings.v1',
     'coachingEmailGeneratorCoachAliasOverrides',
     'coachingEmailGeneratorReportAudience.v1',
@@ -299,6 +302,7 @@
     };
   }
   function fingerprintValue(data, metadata) {
+    if (metadata && metadata.scopedFingerprint) return String(metadata.scopedFingerprint);
     if (metadata && metadata.fingerprint) return String(metadata.fingerprint);
     let sample = '';
     try {
@@ -334,6 +338,12 @@
       importedAt: record.importedAt || record.updatedAt || '',
       rowCount: Number(record.rowCount) || 0,
       fingerprint: record.fingerprint || '',
+      scopedFingerprint: record.scopedFingerprint || record.fingerprint || '',
+      scopeSnapshot: record.scopeSnapshot ? clone(record.scopeSnapshot) : null,
+      scopeHash: record.scopeHash || '',
+      scopeMode: record.scopeMode || (record.scopeSnapshot && record.scopeSnapshot.mode) || 'legacy-unscoped',
+      scopedRowCount: Number(record.scopedRowCount) || 0,
+      scopeMatchDiagnostics: record.scopeMatchDiagnostics ? clone(record.scopeMatchDiagnostics) : null,
       schemaVersion: Number(record.schemaVersion) || 1,
       classificationMethod: record.classificationMethod || '',
       validationStatus: record.validationStatus || 'ready',
@@ -346,6 +356,7 @@
   }
   function compareCurrent(candidate, current) {
     if (!current) return true;
+    if (candidate.scopeHash && candidate.scopeHash !== current.scopeHash) return true;
     if (candidate.periodKey && candidate.periodKey === current.periodKey) return candidate.importedAt >= current.importedAt;
     if (candidate.periodSort !== current.periodSort) return candidate.periodSort > current.periodSort;
     return candidate.importedAt >= current.importedAt;
@@ -404,30 +415,51 @@
     const sourcePeriod = meta.detectedPeriod || data && data.meta && data.meta.detectedPeriod;
     const detectedPeriod = normalizedPeriod(sourcePeriod, { ...meta, importedAt });
     const fingerprint = fingerprintValue(data, meta);
+    const scopeSnapshot = clone(meta.scopeSnapshot || data && data.meta && data.meta.scopeSnapshot || null);
+    const scopeHash = String(meta.scopeHash || data && data.meta && data.meta.scopeHash || scopeSnapshot && scopeSnapshot.scopeHash || '');
+    const scopeMode = String(meta.scopeMode || data && data.meta && data.meta.scopeMode || scopeSnapshot && scopeSnapshot.mode || 'legacy-unscoped');
+    const scopedRowCount = Number(meta.scopedRowCount != null ? meta.scopedRowCount : data && data.meta && data.meta.scopedRowCount != null ? data.meta.scopedRowCount : meta.rowCount || data && data.meta && data.meta.totalRows) || 0;
+    const scopeMatchDiagnostics = clone(meta.scopeMatchDiagnostics || data && data.meta && data.meta.scopeMatchDiagnostics || null);
+    const scopedFingerprint = String(meta.scopedFingerprint || data && data.meta && data.meta.scopedFingerprint || fingerprint);
     const periodKey = detectedPeriod.periodKey;
     const db = await openDatabase();
     try {
       const readTx = db.transaction([DATASET_STORE, CURRENT_STORE], 'readonly');
       const records = await idbRequest(readTx.objectStore(DATASET_STORE).index('datasetType').getAll(datasetType));
       const current = await idbRequest(readTx.objectStore(CURRENT_STORE).get(datasetType));
-      const duplicate = (records || []).find(record => record.fingerprint === fingerprint);
+      const duplicate = (records || []).find(record => record.fingerprint === fingerprint && record.periodKey === periodKey && String(record.scopeHash || '') === scopeHash);
       if (duplicate) {
+        const pointerCandidate = { ...compactMetadata(duplicate), datasetId: duplicate.id, updatedAt: importedAt };
+        const shouldBecomeCurrent = compareCurrent(pointerCandidate, current);
         const importRecord = {
           id: `import_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
           datasetType,
           datasetId: duplicate.id,
-          action: 'duplicate',
+          action: shouldBecomeCurrent ? 'duplicate-reactivated' : 'duplicate',
           originalFileName: meta.originalFileName || meta.fileName || duplicate.originalFileName || '',
           importedAt,
           fingerprint,
+          scopedFingerprint,
+          scopeSnapshot,
+          scopeHash,
+          scopeMode,
+          scopedRowCount,
+          scopeMatchDiagnostics,
           classificationMethod: meta.classificationMethod || 'filename+headers'
         };
-        const tx = db.transaction(IMPORT_STORE, 'readwrite');
+        const tx = db.transaction([CURRENT_STORE, IMPORT_STORE], 'readwrite');
+        if (shouldBecomeCurrent) tx.objectStore(CURRENT_STORE).put(pointerCandidate);
         tx.objectStore(IMPORT_STORE).put(importRecord);
         await transactionDone(tx);
-        return { status: 'duplicate', dataset: compactMetadata(duplicate), current: compactMetadata(current) };
+        if (shouldBecomeCurrent) {
+          currentPointers.set(datasetType, pointerCandidate);
+          currentData.delete(datasetType);
+          persistMetadataSnapshot();
+          notifyDataUpdated(datasetType, { reason: 'duplicate-reactivated', datasetId: duplicate.id, version: duplicate.version });
+        }
+        return { status: 'duplicate', dataset: compactMetadata(duplicate), current: shouldBecomeCurrent ? compactMetadata(pointerCandidate) : compactMetadata(current) };
       }
-      const samePeriod = (records || []).filter(record => record.periodKey === periodKey && !record.supersededBy).sort((a, b) => String(b.importedAt).localeCompare(String(a.importedAt)))[0];
+      const samePeriod = (records || []).filter(record => record.periodKey === periodKey && String(record.scopeHash || '') === scopeHash && !record.supersededBy).sort((a, b) => String(b.importedAt).localeCompare(String(a.importedAt)))[0];
       const version = (records || []).reduce((max, record) => Math.max(max, Number(record.version) || 0), 0) + 1;
       const id = `${datasetType}:${periodKey}:${fingerprint}:${Date.now().toString(36)}`;
       const storedData = prepareStoredData(data, id, { ...meta, rowCount: meta.rowCount || data && data.meta && data.meta.totalRows });
@@ -444,6 +476,12 @@
         importedAt,
         rowCount: Number(meta.rowCount || data && data.meta && data.meta.totalRows) || 0,
         fingerprint,
+        scopedFingerprint,
+        scopeSnapshot,
+        scopeHash,
+        scopeMode,
+        scopedRowCount,
+        scopeMatchDiagnostics,
         schemaVersion: Math.max(Number(meta.schemaVersion) || 1, storedData.chunked ? 2 : 1),
         classificationMethod: meta.classificationMethod || 'filename+headers',
         validationStatus: meta.validationStatus || 'ready',
@@ -487,9 +525,18 @@
     const importedAt = meta.importedAt || new Date().toISOString();
     const sourcePeriod = meta.detectedPeriod || data && data.meta && data.meta.detectedPeriod;
     const detectedPeriod = normalizedPeriod(sourcePeriod, { ...meta, importedAt });
+    const scopeSnapshot = clone(meta.scopeSnapshot || data && data.meta && data.meta.scopeSnapshot || null);
+    const scopeHash = String(meta.scopeHash || data && data.meta && data.meta.scopeHash || scopeSnapshot && scopeSnapshot.scopeHash || '');
+    const scopeMode = String(meta.scopeMode || data && data.meta && data.meta.scopeMode || scopeSnapshot && scopeSnapshot.mode || 'legacy-unscoped');
+    const scopedRowCount = Number(meta.scopedRowCount != null ? meta.scopedRowCount : data && data.meta && data.meta.scopedRowCount != null ? data.meta.scopedRowCount : meta.rowCount || data && data.meta && data.meta.totalRows) || 0;
     const candidate = {
       datasetType,
       fingerprint: fingerprintValue(data, meta),
+      scopedFingerprint: String(meta.scopedFingerprint || data && data.meta && data.meta.scopedFingerprint || fingerprintValue(data, meta)),
+      scopeSnapshot,
+      scopeHash,
+      scopeMode,
+      scopedRowCount,
       periodKey: detectedPeriod.periodKey,
       periodSort: detectedPeriod.sortKey,
       importedAt
@@ -503,10 +550,17 @@
       const tx = db.transaction([DATASET_STORE, CURRENT_STORE], 'readonly');
       const records = await idbRequest(tx.objectStore(DATASET_STORE).index('datasetType').getAll(datasetType));
       const current = await idbRequest(tx.objectStore(CURRENT_STORE).get(datasetType));
+      if (meta.automaticImport && current && current.scopeHash && scopeHash && current.scopeHash !== scopeHash) {
+        return { status: 'needs-review', reason: 'The automatic update scope does not match the currently active dataset scope.', becomesCurrent: false, candidate, current: compactMetadata(current) };
+      }
+      if (meta.automaticImport && current && String(current.scopeHash || '') === scopeHash && Number(current.scopedRowCount) > 0 && scopedRowCount === 0) {
+        return { status: 'needs-review', reason: `Scoped rows collapsed from ${Number(current.scopedRowCount)} to 0. The existing dataset was retained.`, becomesCurrent: false, candidate, current: compactMetadata(current) };
+      }
       const result = root.CoachToolsSync && root.CoachToolsSync.compareCandidate
         ? root.CoachToolsSync.compareCandidate(candidate, current, records)
         : (!current ? { status: 'new', reason: 'No current dataset exists.', becomesCurrent: true }
-          : records.some(record => record.fingerprint === candidate.fingerprint) ? { status: 'current', reason: 'Identical fingerprint already imported.', becomesCurrent: false }
+          : records.some(record => record.fingerprint === candidate.fingerprint && record.periodKey === candidate.periodKey && String(record.scopeHash || '') === scopeHash) ? { status: 'current', reason: 'Identical scoped fingerprint already imported for this reporting period.', becomesCurrent: false }
+          : scopeHash && scopeHash !== String(current.scopeHash || '') ? { status: 'new', reason: 'This source has not been evaluated for the selected scope.', becomesCurrent: true }
           : candidate.periodKey === current.periodKey ? { status: 'updated', reason: 'The reporting period matches but contents changed.', becomesCurrent: true }
           : candidate.periodSort > current.periodSort ? { status: 'new', reason: 'A newer period was detected.', becomesCurrent: true }
           : candidate.periodSort < current.periodSort ? { status: 'older', reason: 'An older period was detected.', becomesCurrent: false }
@@ -637,7 +691,7 @@
   }
   function getDatasetVersion(type) {
     const pointer = currentPointers.get(canonicalType(type));
-    return pointer ? { datasetId: pointer.datasetId, version: pointer.version, fingerprint: pointer.fingerprint, importedAt: pointer.importedAt } : null;
+    return pointer ? { datasetId: pointer.datasetId, version: pointer.version, fingerprint: pointer.fingerprint, scopedFingerprint: pointer.scopedFingerprint || pointer.fingerprint, scopeHash: pointer.scopeHash || '', scopeMode: pointer.scopeMode || 'legacy-unscoped', scopedRowCount: Number(pointer.scopedRowCount) || 0, importedAt: pointer.importedAt } : null;
   }
   async function removeDataset(type, datasetId) {
     await readyPromise;
@@ -688,7 +742,12 @@
         period: pointer && pointer.detectedPeriod && pointer.detectedPeriod.label || '',
         version: pointer && pointer.version || 0,
         rowCount: pointer && pointer.rowCount || 0,
-        datasetId: pointer && pointer.datasetId || ''
+        datasetId: pointer && pointer.datasetId || '',
+        scopeSnapshot: pointer && pointer.scopeSnapshot ? clone(pointer.scopeSnapshot) : null,
+        scopeHash: pointer && pointer.scopeHash || '',
+        scopeMode: pointer && pointer.scopeMode || 'legacy-unscoped',
+        scopedRowCount: pointer && Number(pointer.scopedRowCount) || 0,
+        scopeMatchDiagnostics: pointer && pointer.scopeMatchDiagnostics ? clone(pointer.scopeMatchDiagnostics) : null
       };
     });
   }
@@ -802,6 +861,36 @@
     for (const channel of channels) try { channel.postMessage({ type: SCOPE_EVENT_NAME, detail: next }); } catch (_) {}
     return next;
   }
+  function getLastCleanScope() { return safeJson(safeGet(CLEAN_SCOPE_KEY), null); }
+  function setLastCleanScope(scope) {
+    const snapshot = scope && typeof scope === 'object' ? clone(scope) : null;
+    if (!snapshot) return null;
+    safeSet(CLEAN_SCOPE_KEY, JSON.stringify(snapshot));
+    return snapshot;
+  }
+  async function resolveUpdateScope(datasetTypes) {
+    await readyPromise;
+    const requested = (Array.isArray(datasetTypes) && datasetTypes.length ? datasetTypes : DATASET_TYPES).map(canonicalType).filter(Boolean);
+    const pointers = requested.map(type => currentPointers.get(type)).filter(Boolean);
+    const unrecoverable = pointers.filter(pointer => pointer.scopeMode && !['all', 'legacy-unscoped'].includes(pointer.scopeMode) && (!pointer.scopeSnapshot || !pointer.scopeHash));
+    if (unrecoverable.length) {
+      return { needsReview: true, scope: null, source: 'active-dataset', reason: 'Update needs review — the current dataset is scoped, but its original scope could not be safely restored.' };
+    }
+    const attached = pointers.filter(pointer => pointer.scopeSnapshot && pointer.scopeHash);
+    const hashes = Array.from(new Set(attached.map(pointer => pointer.scopeHash)));
+    if (hashes.length > 1) {
+      return { needsReview: true, scope: null, source: 'active-dataset', reason: 'Update needs review — active datasets were created from different scopes. Run a Clean Upload to establish one authoritative scope.' };
+    }
+    if (attached.length && hashes.length === 1) return { needsReview: false, scope: clone(attached[0].scopeSnapshot), scopeHash: hashes[0], source: 'active-dataset' };
+    const clean = getLastCleanScope();
+    if (clean && clean.scopeHash) return { needsReview: false, scope: clone(clean), scopeHash: clean.scopeHash, source: 'last-clean-update' };
+    const globalScope = getScope();
+    if (globalScope) return { needsReview: false, scope: clone(globalScope), scopeHash: globalScope.scopeHash || '', source: 'global-scope' };
+    // Legacy installations began with full, unscoped data. Preserve that safe and
+    // documented default only when there is no evidence of a narrower scope.
+    const legacyAll = { mode: 'all', label: 'All people' };
+    return { needsReview: false, scope: legacyAll, scopeHash: '', source: 'legacy-default-all' };
+  }
   async function createBackup(options) {
     const maxBytes = Number(options && options.maxBytes) || 60 * 1024 * 1024;
     const backup = { packageType: 'coachtools-backup', schemaVersion: 3, exportedAt: new Date().toISOString(), datasets: {}, scope: getScope(), preferences: {}, skipped: [], notes: ['IndexedDB is authoritative. Current shared datasets are exported directly without creating localStorage docks; dated history remains in IndexedDB.'] };
@@ -909,24 +998,25 @@
 
   const CoachToolsData = Object.freeze({
     VERSION, DB_NAME, DB_VERSION, DATASET_TYPES, LABELS, EVENT_NAME,
+    storageContract: Object.freeze({ dbName: DB_NAME, dbVersion: DB_VERSION, stores: Object.freeze([...ALLSTAR_STORES, DATASET_STORE, DATASET_CHUNK_STORE, CURRENT_STORE, IMPORT_STORE, PEOPLE_STORE, IDENTITY_REVIEW_STORE]) }),
     storageFormat: Object.freeze({ CHUNK_ROWS, CHUNK_THRESHOLD_BYTES, CHUNK_THRESHOLD_ROWS, splitDataIntoChunks, assembleDataFromChunks }),
     ready: () => readyPromise,
     importDataset: async (type, data, metadata) => { await readyPromise; if (databaseUnavailable) throw new Error('IndexedDB is unavailable.'); const result = await putDataset(type, data, metadata); if (root.CoachToolsIdentity && result.status !== 'duplicate') await root.CoachToolsIdentity.ingestDataset(canonicalType(type), data, { ...(metadata || {}), fingerprint: result.dataset && result.dataset.fingerprint || metadata && metadata.fingerprint || '' }).catch(error => console.warn('[CoachToolsData] Identity learning could not finish.', error)); return result; },
     replaceDataset: async (type, data, metadata) => { await readyPromise; const result = await putDataset(type, data, { ...(metadata || {}), replace: true }); if (root.CoachToolsIdentity) await root.CoachToolsIdentity.ingestDataset(canonicalType(type), data, { ...(metadata || {}), fingerprint: result.dataset && result.dataset.fingerprint || metadata && metadata.fingerprint || '' }).catch(() => {}); return result; },
-    getCurrent, getHistory, getDatasetVersion, getImportHistory, inspectDataset, removeDataset,
+    getCurrent, getHistory, getDatasetVersion, getImportHistory, inspectDataset, removeDataset, resolveUpdateScope,
     getStatus: async () => { await readyPromise; return centralStatus(); },
     getStatusSync: centralStatus,
     mountStatus, subscribe: listener => subscribe(listener), subscribeScope: listener => subscribe(listener, { scope: true }),
     notifyDataUpdated
   });
   const CoachToolsStorage = Object.freeze({
-    VERSION, EVENT_NAME, SCOPE_EVENT_NAME, SCOPE_KEY, DATA_META_KEY, LEGACY_DATA_META_KEY, DOCK_KEYS, LABELS,
+    VERSION, EVENT_NAME, SCOPE_EVENT_NAME, SCOPE_KEY, CLEAN_SCOPE_KEY, DATA_META_KEY, LEGACY_DATA_META_KEY, DOCK_KEYS, LABELS,
     storageAvailable, decodeDockValue, ready: () => readyPromise,
     get, getRaw: source => get(source, { raw: true }), getByCompatibilityKey, listCompatibilityKeys, materializeLegacyCompatibility,
     getRetail: () => get('retail'), getReferral: () => get('referral'), getQA: () => get('qa'), getCoaching: () => get('coaching'), getChecklist: () => get('checklist'),
     has, hasRetail: () => has('retail'), hasReferral: () => has('referral'), hasQA: () => has('qa'), hasCoaching: () => has('coaching'), hasChecklist: () => has('checklist'),
     set, remove, markUpdated, notifyDataUpdated, getDataMetadata, getDatasetStatus, getCentralDatasetStatus: centralStatus,
-    getApproximateStorageSize, getScope, setScope, subscribe: listener => subscribe(listener), subscribeScope: listener => subscribe(listener, { scope: true }), createBackup, restoreBackup
+    getApproximateStorageSize, getScope, setScope, getLastCleanScope, setLastCleanScope, resolveUpdateScope, subscribe: listener => subscribe(listener), subscribeScope: listener => subscribe(listener, { scope: true }), createBackup, restoreBackup
   });
   root.CoachToolsData = CoachToolsData;
   root.CoachToolsStorage = CoachToolsStorage;

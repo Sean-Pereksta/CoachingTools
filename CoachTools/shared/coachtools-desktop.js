@@ -32,7 +32,7 @@
   const RECENT_KEY = 'coachtools.desktop.recent.v1';
   const OPEN_APPS_KEY = 'coachtools.desktop.openApps.v1';
   const STORAGE_SCAN_KEY = 'coachtools.desktop.storageScan.v1';
-  const STORAGE_FILES_KEY = 'coachtools.storage.processed.v1';
+  const STORAGE_FILES_KEY = 'coachtools.storage.processed.v2';
   const MAX_RECENT = 8;
   const APP_LOAD_TIMEOUT_MS = 12000;
   const ICON_PRELOAD_CONCURRENCY = 4;
@@ -494,8 +494,9 @@
       const label = document.createElement('span');
       label.textContent = item.label;
       const meta = document.createElement('small');
+      const itemScope = item.scopeSnapshot ? scopeText(item.scopeSnapshot) : item.scopeMode === 'legacy-unscoped' ? 'Legacy all-data' : '';
       meta.textContent = item.ready
-        ? [item.fileName, item.updatedAt ? formatDate(item.updatedAt) : ''].filter(Boolean).join(' · ') || formatBytes(item.bytes)
+        ? [item.fileName, item.updatedAt ? formatDate(item.updatedAt) : '', itemScope ? `Scope: ${itemScope}` : '', item.scopeSnapshot ? `${Number(item.scopedRowCount || 0).toLocaleString()} scoped rows` : ''].filter(Boolean).join(' · ') || formatBytes(item.bytes)
         : 'No shared dataset loaded';
       copy.append(label, meta);
       const value = document.createElement('strong');
@@ -707,7 +708,7 @@
   }
 
   function renderTaskbar() {
-    const userOpened = Array.from(openWindows.values()).filter(windowState => windowState.userOpened);
+    const userOpened = Array.from(openWindows.values()).filter(windowState => windowState.userOpened && !windowState.closeRequested);
     elements.taskbarOpen.replaceChildren(...userOpened.map(windowState => {
       const button = document.createElement('button');
       button.type = 'button';
@@ -734,7 +735,7 @@
 
   function activateWindow(appId) {
     let windowState = openWindows.get(appId);
-    if (!windowState) return;
+    if (!windowState || windowState.closeRequested) return;
     if (windowState.deferred) {
       windowState = createWindow(windowState.app, { minimized: false });
     }
@@ -742,7 +743,12 @@
     state.activeAppId = appId;
     windowState.minimized = false;
     windowState.lastActivated = Date.now();
-    for (const [id, candidate] of openWindows) if (candidate.pane) candidate.pane.hidden = id !== appId;
+    for (const [id, candidate] of openWindows) {
+      if (candidate.pane) candidate.pane.hidden = id !== appId;
+      if (candidate.app.id === 'allstar' && candidate.iframe && !candidate.closeRequested) {
+        try { candidate.iframe.contentWindow.postMessage({ type: id === appId ? 'coachtools:app-visible' : 'coachtools:app-hidden' }, '*'); } catch (_) {}
+      }
+    }
     elements.desktop.hidden = true;
     elements.workspace.hidden = false;
     elements.workspaceTitle.textContent = windowState.app.name;
@@ -757,7 +763,8 @@
   function openApp(app) {
     if (!app || !app.file) return;
     const existing = openWindows.get(app.id);
-    if (existing) promoteWindowState(existing);
+    if (existing && !existing.closeRequested) promoteWindowState(existing);
+    else if (existing) return;
     else createWindow(app);
     activateWindow(app.id);
   }
@@ -769,6 +776,9 @@
     if (windowState) {
       windowState.minimized = true;
       if (windowState.pane) windowState.pane.hidden = true;
+      if (windowState.app.id === 'allstar' && windowState.iframe && !windowState.closeRequested) {
+        try { windowState.iframe.contentWindow.postMessage({ type: 'coachtools:app-hidden' }, '*'); } catch (_) {}
+      }
     }
     if (wasActive) {
       state.activeAppId = null;
@@ -785,15 +795,14 @@
     minimizeWindow(state.activeAppId);
   }
 
-  function closeWindow(appId) {
-    const id = appId || state.activeAppId;
-    const windowState = id && openWindows.get(id);
-    if (!windowState) return;
-    clearTimeout(windowState.loadTimer);
-    if (!windowState.deferred && !windowState.usefulRenderMeasured && root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end(`First useful app render · ${windowState.app.id}`, { cancelled: true });
-    try { if (windowState.iframe) windowState.iframe.contentWindow.postMessage({ type: 'coachtools:cancel-data-loads' }, '*'); } catch (_) {}
+  const APP_CLOSE_DEADLINE_MS = 800;
+
+  function finalizeWindowClose(id, windowState) {
+    if (!windowState || windowState.closeFinalized) return;
+    windowState.closeFinalized = true;
+    clearTimeout(windowState.closeDeadlineTimer);
     if (windowState.pane) windowState.pane.remove();
-    openWindows.delete(id);
+    if (openWindows.get(id) === windowState) openWindows.delete(id);
     if (state.activeAppId === id) {
       state.activeAppId = null;
       elements.workspace.hidden = true;
@@ -801,6 +810,31 @@
     }
     renderTaskbar();
     persistOpenWindows();
+  }
+
+  function closeWindow(appId) {
+    const id = appId || state.activeAppId;
+    const windowState = id && openWindows.get(id);
+    if (!windowState || windowState.closeRequested) return;
+    clearTimeout(windowState.loadTimer);
+    if (!windowState.deferred && !windowState.usefulRenderMeasured && root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end(`First useful app render · ${windowState.app.id}`, { cancelled: true });
+    if (!windowState.deferred && windowState.app.id === 'allstar' && windowState.iframe) {
+      windowState.closeRequested = true;
+      windowState.closeRequestId = `close-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      if (windowState.pane) windowState.pane.hidden = true;
+      if (state.activeAppId === id) {
+        state.activeAppId = null;
+        elements.workspace.hidden = true;
+        elements.desktop.hidden = false;
+      }
+      renderTaskbar();
+      try { windowState.iframe.contentWindow.postMessage({ type: 'coachtools:prepare-close', requestId: windowState.closeRequestId }, '*'); }
+      catch (_) { finalizeWindowClose(id, windowState); return; }
+      windowState.closeDeadlineTimer = setTimeout(() => finalizeWindowClose(id, windowState), APP_CLOSE_DEADLINE_MS);
+      return;
+    }
+    try { if (windowState.iframe) windowState.iframe.contentWindow.postMessage({ type: 'coachtools:cancel-data-loads' }, '*'); } catch (_) {}
+    finalizeWindowClose(id, windowState);
   }
 
   function popOut(app) {
@@ -1121,27 +1155,34 @@
   }
 
   function processedStorageFiles() {
-    const value = readJson(STORAGE_FILES_KEY, {});
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const value = readJson(STORAGE_FILES_KEY, null);
+    if (value && value.version === 2 && value.records && typeof value.records === 'object') return value;
+    return { version: 2, records: {} };
   }
 
-  function isStorageFileUnchanged(metadata, processed) {
-    const key = storageFileKey(metadata);
-    const previous = key && processed[key];
-    return Boolean(previous && previous.signature === storageFileSignature(metadata));
+  function storageFileRecordKey(metadata, details) {
+    return [details && details.scopeHash || 'legacy-unscoped', details && details.datasetType || 'unknown', storageFileKey(metadata)].join('|');
+  }
+
+  function isStorageFileUnchanged(metadata, processed, scopeHash) {
+    const path = storageFileKey(metadata), signature = storageFileSignature(metadata);
+    return Boolean(path && Object.values(processed && processed.records || {}).some(previous => previous && previous.path === path && previous.scopeHash === scopeHash && previous.fileSignature === signature));
   }
 
   function rememberStorageFile(processed, metadata, details) {
     const key = storageFileKey(metadata);
     if (!key) return;
-    processed[key] = {
+    const recordKey = storageFileRecordKey(metadata, details);
+    processed.records[recordKey] = {
       path: key,
       filename: metadata.filename || '',
       size: Number(metadata.size) || 0,
       modifiedTime: metadata.modifiedTime || '',
-      fingerprint: metadata.fingerprint || '',
-      signature: storageFileSignature(metadata),
+      fileSignature: storageFileSignature(metadata),
       datasetType: details && details.datasetType || '',
+      scopeHash: details && details.scopeHash || '',
+      scopedFingerprint: details && details.scopedFingerprint || '',
+      scopedRowCount: Number(details && details.scopedRowCount) || 0,
       datasetId: details && details.datasetId || '',
       lastCheckedAt: new Date().toISOString()
     };
@@ -1152,10 +1193,6 @@
       type: blob.type || (metadata.extension === '.csv' ? 'text/csv' : 'application/octet-stream'),
       lastModified: Date.parse(metadata.modifiedTime) || Date.now()
     });
-  }
-
-  function hasReusableScope(scope) {
-    return Boolean(scope && (scope.mode === 'all' || Array.isArray(scope.coaches) && scope.coaches.length > 0));
   }
 
   function deliverPendingStageFiles(windowState) {
@@ -1288,9 +1325,23 @@
     }
 
     const allListedFiles = Array.isArray(listing && listing.files) ? listing.files : [];
+    const scopeResolution = root.CoachToolsData && typeof root.CoachToolsData.resolveUpdateScope === 'function'
+      ? await root.CoachToolsData.resolveUpdateScope(datasetTypes)
+      : { needsReview: false, scope: storage && storage.getScope ? storage.getScope() : { mode: 'all', label: 'All people' }, source: 'global-scope' };
+    if (scopeResolution.needsReview) {
+      state.autoScanRunning = false;
+      const summary = scopeResolution.reason || 'Update needs scope review. Existing data was retained.';
+      saveScanRecord({ available: true, fileCount: allListedFiles.length, ambiguous: [summary], loaded: [], summary });
+      finishImportProgress(summary, { warning: true, review: false, count: `${readyBefore} of ${totalSources}` });
+      if (manual) showToast(summary, 7000);
+      return;
+    }
+    const scope = importer.resolveScopeSnapshot ? await importer.resolveScopeSnapshot(scopeResolution.scope || { mode: 'all', label: 'All people' }) : scopeResolution.scope;
+    const scopeHash = scope && scope.scopeHash || 'legacy-unscoped';
+    const scopeName = scopeText(scope);
     const processedFiles = processedStorageFiles();
-    const unchangedFiles = manual ? [] : allListedFiles.filter(metadata => isStorageFileUnchanged(metadata, processedFiles));
-    const listedFiles = manual ? allListedFiles : allListedFiles.filter(metadata => !isStorageFileUnchanged(metadata, processedFiles));
+    const unchangedFiles = manual ? [] : allListedFiles.filter(metadata => isStorageFileUnchanged(metadata, processedFiles, scopeHash));
+    const listedFiles = manual ? allListedFiles : allListedFiles.filter(metadata => !isStorageFileUnchanged(metadata, processedFiles, scopeHash));
     if (!allListedFiles.length) {
       state.autoScanRunning = false;
       saveScanRecord({ available: true, fileCount: 0, ambiguous: [], summary: 'No supported storage files found' });
@@ -1300,7 +1351,7 @@
     }
     if (!listedFiles.length) {
       state.autoScanRunning = false;
-      const summary = `Shared storage unchanged · ${unchangedFiles.length} file${unchangedFiles.length === 1 ? '' : 's'} checked · no spreadsheets downloaded.`;
+      const summary = `Scope preserved: ${scopeName} · ${unchangedFiles.length} file${unchangedFiles.length === 1 ? '' : 's'} checked · no scoped changes found and no spreadsheets downloaded.`;
       saveScanRecord({ available: true, fileCount: allListedFiles.length, unchanged: unchangedFiles.length, ambiguous: [], loaded: [], summary });
       if (manual) showToast(summary);
       return;
@@ -1346,8 +1397,6 @@
     await nextPaint();
 
     const candidatesBySource = new Map();
-    const scope = storage && storage.getScope ? storage.getScope() : null;
-    const reusableScope = hasReusableScope(scope);
     for (let index = 0; index < parsedEntries.length; index += 1) {
       const entry = parsedEntries[index];
       const id = entry.classification.id;
@@ -1357,19 +1406,32 @@
       }
       setImportProgress(48 + ((index + 1) / Math.max(1, parsedEntries.length)) * 23, `Comparing ${importer.SOURCES[id].label}`, entry.metadata.filename, `${index + 1} of ${parsedEntries.length}`);
       await nextPaint();
-      const dataset = importer.prepareDataset(entry.parsed, id, { scope: reusableScope ? scope : null });
+      const prepared = importer.prepareScopedDataset(entry.parsed, id, scope, { detectedPeriod: entry.classification.detectedPeriod });
+      if (!prepared.valid) {
+        ambiguous.push(`${entry.metadata.filename} (${prepared.reason})`);
+        scanResults.push({ id, fileName: entry.metadata.filename, status: 'needs-review', reason: prepared.reason, period: entry.classification.detectedPeriod && entry.classification.detectedPeriod.periodKey || '', scopeHash, diagnostics: prepared.diagnostics });
+        continue;
+      }
+      const dataset = prepared.dataset;
       const inspection = await root.CoachToolsData.inspectDataset(id, dataset, {
         originalFileName: entry.metadata.filename,
         fileSize: entry.metadata.size,
         fileModifiedDate: entry.metadata.modifiedTime,
-        detectedPeriod: entry.classification.detectedPeriod
+        detectedPeriod: entry.classification.detectedPeriod,
+        automaticImport: true,
+        scopeSnapshot: prepared.scopeSnapshot,
+        scopeHash: prepared.scopeHash,
+        scopeMode: prepared.scopeSnapshot.mode,
+        scopedRowCount: prepared.matchedRows,
+        scopeMatchDiagnostics: prepared.diagnostics,
+        scopedFingerprint: prepared.scopedFingerprint
       });
-      const inspected = { id, ...entry, dataset, inspection };
+      const inspected = { id, ...entry, dataset, prepared, inspection };
       if (!candidatesBySource.has(id)) candidatesBySource.set(id, []);
       candidatesBySource.get(id).push(inspected);
-      scanResults.push({ id, fileName: entry.metadata.filename, status: inspection.status, reason: inspection.reason, period: inspection.candidate && inspection.candidate.periodKey || '' });
+      scanResults.push({ id, fileName: entry.metadata.filename, status: inspection.status, reason: inspection.reason, period: inspection.candidate && inspection.candidate.periodKey || '', scopeHash, scopedRowCount: prepared.matchedRows, outOfScopeRows: prepared.diagnostics && prepared.diagnostics.outOfScopeRows || 0 });
       if (!['new', 'updated', 'needs-review'].includes(inspection.status)) {
-        rememberStorageFile(processedFiles, entry.metadata, { datasetType: id, datasetId: inspection.current && inspection.current.datasetId || '' });
+        rememberStorageFile(processedFiles, entry.metadata, { datasetType: id, scopeHash, scopedFingerprint: prepared.scopedFingerprint, scopedRowCount: prepared.matchedRows, datasetId: inspection.current && inspection.current.datasetId || '' });
       }
     }
 
@@ -1390,7 +1452,7 @@
       state.pendingStageFiles = parsedEntries.filter(entry => ambiguous.some(label => label.startsWith(entry.metadata.filename))).map(entry => entry.file);
       state.pendingStageSent = false;
       setProgressStep('Saving shared data', ambiguous.length ? 'warning' : 'success');
-      const summary = ambiguous.length ? `Shared data is unchanged · ${ambiguous.length} file${ambiguous.length === 1 ? '' : 's'} need review.` : 'Shared data is current · no new or updated files were imported.';
+      const summary = ambiguous.length ? `Scope preserved: ${scopeName} · shared data is unchanged · ${ambiguous.length} file${ambiguous.length === 1 ? '' : 's'} need review.` : `Scope preserved: ${scopeName} · shared data is current · no scoped changes were imported.`;
       writeJson(STORAGE_FILES_KEY, processedFiles);
       saveScanRecord({ available: true, fileCount: allListedFiles.length, unchanged: unchangedFiles.length, ambiguous, skipped, results: scanResults, loaded: [], summary });
       finishImportProgress(summary, { warning: Boolean(ambiguous.length), review: state.pendingStageFiles.length > 0, count: `${readyBefore} of ${totalSources}` });
@@ -1416,10 +1478,16 @@
           detectedPeriod: entry.classification.detectedPeriod,
           classificationMethod: entry.classification.classificationMethod || entry.classification.reason,
           automaticImport: true,
-          scopeLabel: reusableScope && scope && scope.label || 'All people'
+          scopeLabel: scopeName,
+          scopeSnapshot: entry.prepared.scopeSnapshot,
+          scopeHash: entry.prepared.scopeHash,
+          scopeMode: entry.prepared.scopeSnapshot.mode,
+          scopedRowCount: entry.prepared.matchedRows,
+          scopeMatchDiagnostics: entry.prepared.diagnostics,
+          scopedFingerprint: entry.prepared.scopedFingerprint
         });
         written.push({ id: entry.id, fileName: entry.metadata.filename, status: entry.inspection.status, datasetId: result.dataset && result.dataset.id || '' });
-        rememberStorageFile(processedFiles, entry.metadata, { datasetType: entry.id, datasetId: result.dataset && (result.dataset.datasetId || result.dataset.id) || '' });
+        rememberStorageFile(processedFiles, entry.metadata, { datasetType: entry.id, scopeHash, scopedFingerprint: entry.prepared.scopedFingerprint, scopedRowCount: entry.prepared.matchedRows, datasetId: result.dataset && (result.dataset.datasetId || result.dataset.id) || '' });
       } catch (error) {
         writeErrors.push(`${entry.metadata.filename}: ${error && error.message || error}`);
       }
@@ -1433,7 +1501,10 @@
     const missingLabels = after.filter(item => !item.ready).map(item => item.label);
     const newCount = written.filter(entry => entry.status === 'new').length, updatedCount = written.filter(entry => entry.status === 'updated').length;
     const actions = [newCount ? `${newCount} new` : '', updatedCount ? `${updatedCount} updated` : ''].filter(Boolean).join(' · ');
-    const summary = `${readyCount} of ${totalSources} data sources ready${actions ? ` · ${actions} imported` : ''}${missingLabels.length ? ` · ${missingLabels.join(', ')} require manual selection` : ''}${writeErrors.length ? ` · ${writeErrors.length} save error${writeErrors.length === 1 ? '' : 's'}` : ''}.`;
+    const scopedUnchanged = scanResults.filter(entry => ['current', 'duplicate', 'older'].includes(entry.status)).length + unchangedFiles.length;
+    const ignoredRows = selected.reduce((sum, entry) => sum + Number(entry.prepared && entry.prepared.diagnostics && entry.prepared.diagnostics.outOfScopeRows || 0), 0);
+    const qaMatches = selected.filter(entry => entry.id === 'qa').reduce((sum, entry) => sum + Number(entry.prepared && entry.prepared.matchedRows || 0), 0);
+    const summary = `Scope preserved: ${scopeName} · ${readyCount} of ${totalSources} data sources ready${actions ? ` · ${actions} imported` : ''}${scopedUnchanged ? ` · ${scopedUnchanged} source${scopedUnchanged === 1 ? '' : 's'} unchanged for this scope` : ''}${qaMatches ? ` · QA ${qaMatches.toLocaleString()} Team matches` : ''}${ignoredRows ? ` · ${ignoredRows.toLocaleString()} out-of-scope rows ignored` : ''}${missingLabels.length ? ` · ${missingLabels.join(', ')} require manual selection` : ''}${writeErrors.length ? ` · ${writeErrors.length} save error${writeErrors.length === 1 ? '' : 's'}` : ''}.`;
     state.pendingStageFiles = parsedEntries.filter(entry => ambiguous.some(label => label.startsWith(entry.metadata.filename)) || writeErrors.some(label => label.startsWith(entry.metadata.filename))).map(entry => entry.file);
     state.pendingStageSent = false;
     writeJson(STORAGE_FILES_KEY, processedFiles);
@@ -1551,6 +1622,9 @@
         windowState.unavailable.hidden = true;
         settleWindowLoad(windowState, true);
         deliverPendingStageFiles(windowState);
+      }
+      if (type === 'coachtools:close-ready' && windowState && windowState.closeRequested && event.data.requestId === windowState.closeRequestId) {
+        finalizeWindowClose(windowState.app.id, windowState);
       }
       if (type === 'coachtools:show-desktop' && windowState) minimizeWindow(windowState.app.id);
       if (type === 'coachtools:pop-out' && windowState) popOut(windowState.app);

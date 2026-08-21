@@ -82,8 +82,6 @@ window.COACHTOOLS_MANIFEST = {
       "data": [
         "weeklyRetail",
         "weeklyReferral",
-        "monthlyRetail",
-        "monthlyReferral",
         "qa",
         "documentedCoaching",
         "checklist"

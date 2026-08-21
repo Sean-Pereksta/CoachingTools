@@ -2509,7 +2509,7 @@ function selectiveResearchInvalidation(dep={}){
   if(dep.full) return clearResearchComputedCaches(reason);
   if(dep.researchDefinitions && !dep.source && !dep.metrics && !dep.models && !dep.aliases && !dep.teams && !dep.mappings){
     console.info('[All Star Perf] research definition changed; keyed results retained',{reason});
-    updateResearchCacheBadge(); return;
+    if(!dep.silent) updateResearchCacheBadge(); return;
   }
   state.researchResultCache=new Map();
   if(dep.source || dep.aliases || dep.teams || dep.mappings || dep.models) state.researchFilterResultCache=new Map();
@@ -2517,7 +2517,7 @@ function selectiveResearchInvalidation(dep={}){
   if(dep.aliases || dep.teams || dep.mappings || dep.source){ state.researchDuplicateRepCache=new Map(); state.researchCohortCache=new Map(); }
   if(dep.source || dep.metrics || dep.aliases || dep.teams || dep.mappings) state.percentBuilderCache=new Map();
   console.info('[All Star Perf] selective invalidation',{reason,dep,versions:state.versions});
-  updateResearchCacheBadge();
+  if(!dep.silent) updateResearchCacheBadge();
 }
 function clearResearchComputedCaches(reason='cache cleared'){
   if(state.researchWarmToken) state.researchWarmToken.cancelled=true;

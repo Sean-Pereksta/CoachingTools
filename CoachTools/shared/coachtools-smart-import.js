@@ -1,13 +1,14 @@
 (function attachCoachToolsSmartImport(root) {
   'use strict';
 
-  const FILTERABLE_SOURCES = Object.freeze(['documentedCoaching', 'checklist', 'weeklyRetail', 'weeklyReferral']);
+  const FILTERABLE_SOURCES = Object.freeze(['documentedCoaching', 'checklist', 'weeklyRetail', 'weeklyReferral', 'qa']);
   const ORG_KEY = 'allStarOrgBuilder.v1';
   const SOURCE_SHORT_LABELS = Object.freeze({
     documentedCoaching: 'Documented Coaching',
     checklist: 'Checklist',
     weeklyRetail: 'Retail Weekly',
-    weeklyReferral: 'Referral Weekly'
+    weeklyReferral: 'Referral Weekly',
+    qa: 'QA'
   });
 
   const state = {
@@ -51,11 +52,6 @@
   }
   function canonicalKey(value) { return canonicalTokens(value).join(' '); }
   function lastName(value) { const parts = canonicalTokens(value); return parts.length ? parts[parts.length - 1] : ''; }
-  function clone(value) {
-    if (value == null) return value;
-    try { if (typeof structuredClone === 'function') return structuredClone(value); } catch (_) {}
-    return JSON.parse(JSON.stringify(value));
-  }
   function nextPaint() { return new Promise(resolve => root.requestAnimationFrame(() => resolve())); }
   function yieldMainThread() {
     return new Promise(resolve => {
@@ -275,7 +271,7 @@
       <div class="smart-import-heading">
         <div>
           <strong>Choose what to pull in</strong>
-          <span>Filter Retail Weekly, Referral Weekly, Documented Coaching, and Checklist by coach. Other uploaded datasets still import normally.</span>
+          <span>Filter Retail Weekly, Referral Weekly, QA, Documented Coaching, and Checklist through one shared coach scope.</span>
         </div>
         <button id="smartImportAll" class="command-button" type="button">Upload All Data</button>
       </div>
@@ -474,75 +470,31 @@
     return new Promise(resolve => { state.resolver = resolve; });
   }
 
-  function prepareDataset(entry, choice) {
+  async function scopeForChoice(choice) {
     const importer = root.CoachToolsImport;
-    const type = entry.classification.id;
-    const filterThisSource = choice.mode === 'filtered' && FILTERABLE_SOURCES.includes(type);
-    const selectedValues = filterThisSource ? (choice.selections[type] || []) : [];
-    let dataset = filterThisSource || type === 'documentedCoaching' ? clone(entry.parsed) : {
-      ...entry.parsed,
-      meta: { ...(entry.parsed.meta || {}) }
-    };
-    if (type === 'documentedCoaching') importer.convertCoachingDateHeader(dataset);
-
-    let matchedRows = 0;
-    let totalRows = 0;
-    if (filterThisSource) {
-      const selectedNames = new Set(selectedValues.map(normalize).filter(Boolean));
-      let filterHeaderFound = false;
-      for (const sheetName of dataset.workbook.sheets || []) {
-        const sheet = dataset.workbook.data[sheetName];
-        const aoa = sheet && sheet.aoa;
-        if (!Array.isArray(aoa)) continue;
-        const header = importer.findHeader(aoa, importer.SOURCES[type].header);
-        if (!header) {
-          totalRows += aoa.length;
-          continue;
-        }
-        filterHeaderFound = true;
-        const headerRows = aoa.slice(0, header.headerRow + 1);
-        const selectedRows = aoa.slice(header.headerRow + 1).filter(row => {
-          const match = Array.isArray(row) && selectedNames.has(normalize(row[header.colIndex]));
-          if (match) matchedRows += 1;
-          return match;
-        });
-        sheet.aoa = headerRows.concat(selectedRows);
-        totalRows += sheet.aoa.length;
-      }
-      if (!filterHeaderFound) throw new Error(`${SOURCE_SHORT_LABELS[type] || type} could not be filtered because ${importer.SOURCES[type].header} was not found.`);
-    } else {
-      for (const sheetName of dataset.workbook && dataset.workbook.sheets || []) {
-        const aoa = dataset.workbook.data[sheetName] && dataset.workbook.data[sheetName].aoa;
-        if (Array.isArray(aoa)) totalRows += aoa.length;
-      }
+    if (choice.mode === 'all') return importer.resolveScopeSnapshot ? importer.resolveScopeSnapshot({ mode: 'all', label: 'All people' }) : { mode: 'all', label: 'All people' };
+    if (choice.mode === 'current') {
+      const current = root.CoachToolsStorage && root.CoachToolsStorage.getScope ? root.CoachToolsStorage.getScope() : null;
+      return importer.resolveScopeSnapshot ? importer.resolveScopeSnapshot(current || { mode: 'all', label: 'All people' }) : current || { mode: 'all', label: 'All people' };
     }
-
-    dataset.meta = {
-      ...(dataset.meta || {}),
-      source: type,
-      sourceLabel: importer.SOURCES[type].label,
-      detectedPeriod: entry.classification.detectedPeriod || importer.detectPeriod(entry.file && entry.file.name || dataset.meta && dataset.meta.fileName, type),
-      totalRows,
-      automaticImport: true,
-      automaticImportScope: filterThisSource ? selectedValues.map(normalize).filter(Boolean) : [],
-      automaticImportMatchedRows: matchedRows,
-      smartImportFiltered: filterThisSource,
-      smartImportSelectedValues: filterThisSource ? selectedValues.slice() : []
-    };
-    return dataset;
+    const selectedValues = Array.from(new Set(Object.values(choice.selections || {}).flat().map(display).filter(Boolean)));
+    let scope = importer.resolveScopeSnapshot
+      ? await importer.resolveScopeSnapshot({ mode: 'team', label: 'Selected coaches', coaches: selectedValues })
+      : { mode: 'team', label: 'Selected coaches', coaches: selectedValues };
+    if (scope && scope.coachPersonIds && scope.coachPersonIds.length === 1) {
+      scope = importer.resolveScopeSnapshot
+        ? await importer.resolveScopeSnapshot({ mode: 'coach', personId: scope.coachPersonIds[0], label: scope.coaches[0] || 'Selected coach', coaches: scope.coaches })
+        : scope;
+    } else if (scope) {
+      scope.label = scope.coaches && scope.coaches.length ? `${scope.coaches.length} selected coaches` : 'Selected coaches';
+    }
+    return scope;
   }
 
-  async function savePreparedEntry(entry, dataset) {
-    const type = entry.classification.id;
-    return root.CoachToolsData.importDataset(type, dataset, {
-      originalFileName: entry.file && entry.file.name || dataset.meta && dataset.meta.fileName || '',
-      fileSize: entry.file && entry.file.size || dataset.meta && dataset.meta.fileSize || 0,
-      fileModifiedDate: entry.file && entry.file.lastModified ? new Date(entry.file.lastModified).toISOString() : dataset.meta && dataset.meta.fileModifiedDate || '',
-      rowCount: dataset.meta && dataset.meta.totalRows || 0,
-      detectedPeriod: entry.classification.detectedPeriod,
-      classificationMethod: entry.classification.classificationMethod || entry.classification.reason || 'filename+headers',
-      validationStatus: entry.classification.validation && entry.classification.validation.valid === false ? 'needs-review' : 'ready'
-    });
+  async function savePreparedEntry(entry, scope) {
+    const importer = root.CoachToolsImport;
+    if (!importer || typeof importer.saveRecognizedEntry !== 'function') throw new Error('The shared CoachTools importer is unavailable.');
+    return importer.saveRecognizedEntry(entry, { scope });
   }
 
   async function openReviewInDataManager() {
@@ -593,20 +545,27 @@
       });
 
       setStep('Reading selected files', analysis.errors.length ? 'warning' : 'success');
+      if (analysis.updateScopeNeedsReview) throw new Error(analysis.updateScopeReason || 'Update needs scope review. Existing data was retained.');
       setStep('Finding coach / team values', 'active');
-      state.aliasGroups = await buildAliasGroups();
-      state.options = await collectOptions(analysis.recognized);
-      state.optionById = new Map(state.options.map(option => [option.id, option]));
+      if (!analysis.updateMode) {
+        state.aliasGroups = await buildAliasGroups();
+        state.options = await collectOptions(analysis.recognized);
+        state.optionById = new Map(state.options.map(option => [option.id, option]));
+      }
       setStep('Finding coach / team values', 'success');
 
-      let choice = { mode: 'all' };
-      if (state.options.length) choice = await chooseImportScope();
+      let choice = { mode: 'current' };
+      if (!analysis.updateMode && state.options.length) choice = await chooseImportScope();
       if (choice.mode === 'cancel') {
+        if (root.CoachToolsCleanUploadBaseline && typeof root.CoachToolsCleanUploadBaseline.cancelPending === 'function') root.CoachToolsCleanUploadBaseline.cancelPending();
         finishProgress('Import cancelled. No uploaded files were changed.', { warning: false, review: false, count: 'Cancelled' });
         return;
       }
+      const scope = analysis.updateMode
+        ? (importer.resolveScopeSnapshot ? await importer.resolveScopeSnapshot(analysis.authoritativeUpdateScope) : analysis.authoritativeUpdateScope)
+        : await scopeForChoice(choice);
 
-      setStep(choice.mode === 'filtered' ? 'Filtering selected coaches' : 'Keeping all uploaded rows', 'success');
+      setStep(scope && scope.mode !== 'all' ? `Filtering ${scope.label || 'selected scope'}` : 'Keeping all uploaded rows', 'success');
       setStep('Saving to IndexedDB', 'active');
       const imported = [];
       const errors = analysis.errors.map(item => `${item.file && item.file.name || 'File'}: ${item.error && item.error.message || item.error}`);
@@ -627,10 +586,8 @@
         await nextPaint();
         await yieldMainThread();
         try {
-          const dataset = prepareDataset(entry, choice);
-          await nextPaint();
-          const result = await savePreparedEntry(entry, dataset);
-          imported.push({ id: type, fileName: entry.file.name, status: result.status, filtered: Boolean(dataset.meta && dataset.meta.smartImportFiltered), matchedRows: Number(dataset.meta && dataset.meta.automaticImportMatchedRows) || 0 });
+          const result = await savePreparedEntry(entry, scope);
+          imported.push({ id: type, fileName: entry.file.name, status: result.status, filtered: scope && scope.mode !== 'all', matchedRows: Number(result && result.dataset && result.dataset.scopedRowCount) || 0 });
         } catch (error) {
           errors.push(`${entry.file.name}: ${error && error.message || error}`);
         }
@@ -653,7 +610,7 @@
         `${ready} of ${total} data sources ready`,
         saved ? `${saved} file${saved === 1 ? '' : 's'} saved` : '',
         duplicates ? `${duplicates} duplicate${duplicates === 1 ? '' : 's'} already stored` : '',
-        choice.mode === 'filtered' ? `${filteredRows.toLocaleString()} matching filtered rows pulled in` : 'all uploaded rows kept',
+        scope && scope.mode !== 'all' ? `${filteredRows.toLocaleString()} matching scoped rows pulled in` : 'all uploaded rows kept',
         analysis.needsReview.length ? `${analysis.needsReview.length} need manual placement` : '',
         errors.length ? `${errors.length} could not be saved` : ''
       ].filter(Boolean);
@@ -663,6 +620,7 @@
         count: `${ready} of ${total}`
       });
     } catch (error) {
+      if (root.CoachToolsCleanUploadBaseline && typeof root.CoachToolsCleanUploadBaseline.cancelPending === 'function') root.CoachToolsCleanUploadBaseline.cancelPending();
       setStep('Saving to IndexedDB', 'warning');
       finishProgress(`Import failed: ${error && error.message || error}`, { warning: true, review: false, count: 'Stopped' });
     } finally {
