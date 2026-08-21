@@ -231,7 +231,7 @@ const storageScript = exists('shared/coachtools-storage.js') ? fs.readFileSync(p
 for (const key of ['myone2.dock.retail', 'myone2.dock.referral', 'myone2.dock.qa', 'myone2.dock.coaching', 'myone2.dock.checklist']) {
   if (!storageScript.includes(key)) fail(`Shared storage helper is missing compatibility key ${key}`);
 }
-for (const marker of ['CoachToolsData', 'getCurrent', 'getHistory', 'getDatasetVersion', 'getImportHistory', 'inspectDataset', 'subscribeScope', 'coachtoolsDatasets', 'coachtoolsDatasetChunks', 'coachtoolsCurrent', 'coachtoolsImports', 'coachtoolsPeople', "DB_VERSION = 7", 'materializeDatasetRecord']) {
+for (const marker of ['CoachToolsData', 'getCurrent', 'streamRows', 'getHistory', 'getDatasetVersion', 'getImportHistory', 'inspectDataset', 'subscribeScope', 'coachtoolsDatasets', 'coachtoolsDatasetChunks', 'coachtoolsCurrent', 'coachtoolsImports', 'coachtoolsPeople', "DB_VERSION = 8", 'datasetTypePeriodSortImportedAt']) {
   if (!storageScript.includes(marker)) fail(`Shared IndexedDB data API is missing ${marker}`);
 }
 if (!/function getDatasetStatus\(\)[\s\S]*?centralStatus\(\)\.map/.test(storageScript)) fail('Desktop readiness must report every central IndexedDB dataset.');

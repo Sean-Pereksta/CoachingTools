@@ -22,7 +22,8 @@
     aliasGroups: new Map(),
     resolver: null,
     reviewFiles: [],
-    search: ''
+    search: '',
+    selectorTimingActive: false
   };
 
   function $(id) { return root.document.getElementById(id); }
@@ -163,12 +164,37 @@
   }
 
   async function collectOptions(recognized) {
+    const diagnostics = root.CoachToolsDiagnostics;
+    if (diagnostics) diagnostics.start('Coach discovery', { files: recognized.length });
     const importer = root.CoachToolsImport;
     const records = [];
     const seen = new Set();
     for (const entry of recognized) {
       const source = entry.classification && entry.classification.id;
       if (!FILTERABLE_SOURCES.includes(source)) continue;
+      const discovered = entry.discovery && Array.isArray(entry.discovery.ownershipValues) ? entry.discovery.ownershipValues : null;
+      if (discovered) {
+        for (const item of discovered) {
+          const value = display(item && item.value), key = normalize(value);
+          if (!value || !key) continue;
+          const uniqueKey = `${source}::${key}`;
+          if (seen.has(uniqueKey)) continue;
+          seen.add(uniqueKey);
+          records.push({
+            id: uniqueKey,
+            source,
+            sourceLabel: SOURCE_SHORT_LABELS[source] || importer.SOURCES[source].label || source,
+            value,
+            normalized: key,
+            canonical: canonicalKey(value),
+            last: lastName(value),
+            tokenCount: canonicalTokens(value).length,
+            fileName: entry.file && entry.file.name || '',
+            sheetName: item.sheetName || ''
+          });
+        }
+        continue;
+      }
       const headerName = importer.SOURCES[source].header;
       for (const sheetName of entry.parsed && entry.parsed.workbook && entry.parsed.workbook.sheets || []) {
         const aoa = entry.parsed.workbook.data[sheetName] && entry.parsed.workbook.data[sheetName].aoa || [];
@@ -200,7 +226,9 @@
         }
       }
     }
-    return records.sort((a, b) => a.sourceLabel.localeCompare(b.sourceLabel) || a.value.localeCompare(b.value));
+    const result = records.sort((a, b) => a.sourceLabel.localeCompare(b.sourceLabel) || a.value.localeCompare(b.value));
+    if (diagnostics) diagnostics.end('Coach discovery', { coaches: result.length });
+    return result;
   }
 
   function fullNameCountByLast() {
@@ -448,6 +476,12 @@
     setProgress(58, 'Choose coaches or upload everything', '', `${state.options.length} unique values`, 'The uploaded files are recognized. Choose specific coaches / an All-Star org, or use Upload All Data to keep every row.');
     renderOrgs();
     renderOptionLists();
+    const diagnostics = root.CoachToolsDiagnostics;
+    if (diagnostics && state.selectorTimingActive) {
+      diagnostics.end('Scope selector ready', { options: state.options.length });
+      diagnostics.end('FILE SELECTION → COACH SELECTOR INTERACTIVE', { options: state.options.length });
+      state.selectorTimingActive = false;
+    }
   }
 
   function hideChooser() {
@@ -528,6 +562,13 @@
     state.autoSelected.clear();
     state.blockedAuto.clear();
     state.search = '';
+    const diagnostics = root.CoachToolsDiagnostics;
+    if (diagnostics) {
+      diagnostics.start('Scope selector ready', { files: selectedFiles.length });
+      diagnostics.start('FILE SELECTION → COACH SELECTOR INTERACTIVE', { files: selectedFiles.length });
+      state.selectorTimingActive = true;
+    }
+    let selectedScopeTiming = false;
     beginProgress(selectedFiles.length);
 
     try {
@@ -535,9 +576,11 @@
         onProgress(progress) {
           const fraction = progress.total ? progress.current / progress.total : 0;
           const completed = Number(progress.fileIndex) + fraction;
+          const discovered = progress.phase === 'classified' && progress.datasetType;
+          const discoveredLabel = discovered && importer.SOURCES[progress.datasetType] && importer.SOURCES[progress.datasetType].label;
           setProgress(
             4 + (completed / Math.max(1, selectedFiles.length)) * 46,
-            'Reading selected files',
+            discoveredLabel ? `Discovered ${discoveredLabel}` : 'Reading selected files',
             `${progress.fileName || ''}${progress.sheetName ? ` · ${progress.sheetName}` : ''}`,
             `${Math.min(selectedFiles.length, Number(progress.fileIndex) + 1)} of ${selectedFiles.length}`
           );
@@ -548,14 +591,24 @@
       if (analysis.updateScopeNeedsReview) throw new Error(analysis.updateScopeReason || 'Update needs scope review. Existing data was retained.');
       setStep('Finding coach / team values', 'active');
       if (!analysis.updateMode) {
-        state.aliasGroups = await buildAliasGroups();
         state.options = await collectOptions(analysis.recognized);
         state.optionById = new Map(state.options.map(option => [option.id, option]));
       }
       setStep('Finding coach / team values', 'success');
 
-      let choice = { mode: 'current' };
-      if (!analysis.updateMode && state.options.length) choice = await chooseImportScope();
+      let choice = { mode: analysis.updateMode ? 'current' : 'all' };
+      if (!analysis.updateMode) {
+        const choicePromise = chooseImportScope();
+        buildAliasGroups().then(groups => {
+          state.aliasGroups = groups;
+          if (state.resolver) { renderChooserSelection(); renderOptionLists(); }
+        }).catch(() => {});
+        choice = await choicePromise;
+      } else if (diagnostics) {
+        diagnostics.end('Scope selector ready', { skipped: true, updateMode: Boolean(analysis.updateMode) });
+        diagnostics.end('FILE SELECTION → COACH SELECTOR INTERACTIVE', { skipped: true, updateMode: Boolean(analysis.updateMode) });
+        state.selectorTimingActive = false;
+      }
       if (choice.mode === 'cancel') {
         if (root.CoachToolsCleanUploadBaseline && typeof root.CoachToolsCleanUploadBaseline.cancelPending === 'function') root.CoachToolsCleanUploadBaseline.cancelPending();
         finishProgress('Import cancelled. No uploaded files were changed.', { warning: false, review: false, count: 'Cancelled' });
@@ -564,6 +617,7 @@
       const scope = analysis.updateMode
         ? (importer.resolveScopeSnapshot ? await importer.resolveScopeSnapshot(analysis.authoritativeUpdateScope) : analysis.authoritativeUpdateScope)
         : await scopeForChoice(choice);
+      if (diagnostics) { diagnostics.start('Selected scope → data ready', { mode: scope && scope.mode || 'all' }); selectedScopeTiming = true; }
 
       setStep(scope && scope.mode !== 'all' ? `Filtering ${scope.label || 'selected scope'}` : 'Keeping all uploaded rows', 'success');
       setStep('Saving to IndexedDB', 'active');
@@ -579,7 +633,7 @@
         setProgress(
           62 + (index / Math.max(1, entries.length)) * 34,
           `Saving ${sourceLabel}`,
-          `${entry.file.name}${rows ? ` · ${rows.toLocaleString()} rows · indexing people after save` : ''}`,
+          `${entry.file.name}${rows ? ` · ${rows.toLocaleString()} rows · identity enrichment continues after save` : ''}`,
           `${index + 1} of ${entries.length}`,
           'Large datasets are processed largest-first. CoachTools yields between files so the progress display can keep repainting.'
         );
@@ -619,10 +673,17 @@
         review: analysis.needsReview.length > 0,
         count: `${ready} of ${total}`
       });
+      if (diagnostics && selectedScopeTiming) { diagnostics.end('Selected scope → data ready', { imported: imported.length, errors: errors.length }); selectedScopeTiming = false; }
     } catch (error) {
+      if (diagnostics && state.selectorTimingActive) {
+        diagnostics.end('Scope selector ready', { error: String(error && error.message || error) });
+        diagnostics.end('FILE SELECTION → COACH SELECTOR INTERACTIVE', { error: String(error && error.message || error) });
+        state.selectorTimingActive = false;
+      }
       if (root.CoachToolsCleanUploadBaseline && typeof root.CoachToolsCleanUploadBaseline.cancelPending === 'function') root.CoachToolsCleanUploadBaseline.cancelPending();
       setStep('Saving to IndexedDB', 'warning');
       finishProgress(`Import failed: ${error && error.message || error}`, { warning: true, review: false, count: 'Stopped' });
+      if (diagnostics && selectedScopeTiming) { diagnostics.end('Selected scope → data ready', { error: String(error && error.message || error) }); selectedScopeTiming = false; }
     } finally {
       state.busy = false;
       const input = $('quickDataInput');

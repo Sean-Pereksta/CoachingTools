@@ -134,14 +134,15 @@ function clickAction(action) {
   await assert.rejects(() => context.CoachToolsImport.saveRecognizedEntry(reviewAnalysis.recognized[0], { scope: { mode: 'all' } }), /Scoped identity is unavailable/);
 
   needsScopeReview = false;
+  const cleanFile = { name: 'QA clean.xlsx', size: 13, lastModified: 4, aoa: [['Team'], ['Coach A']], classification: qaClassification };
   const cleanEntry = {
-    file: { name: 'QA clean.xlsx', size: 13, lastModified: 4 },
+    file: cleanFile,
     parsed: { meta: { fileName: 'QA clean.xlsx', totalRows: 2 }, workbook: { sheets: ['Data'], data: { Data: { aoa: [['Team'], ['Coach A']] } } } },
     classification: qaClassification
   };
   originalAnalysis = { recognized: [cleanEntry], needsReview: [], errors: [] };
   clickAction('clean-upload-data');
-  const cleanAnalysis = await context.CoachToolsImport.analyzeFiles([cleanEntry.file]);
+  const cleanAnalysis = await context.CoachToolsImport.analyzeFiles([cleanFile]);
   assert.strictEqual(storageValues.has('coachtools.desktop.cleanUploadBaseline.v1'), false, 'Clean scope must not become authoritative before every recognized source saves.');
   await context.CoachToolsImport.saveRecognizedEntry(cleanAnalysis.recognized[0], { scope: { ...authoritativeScope } });
   const baseline = JSON.parse(storageValues.get('coachtools.desktop.cleanUploadBaseline.v1'));

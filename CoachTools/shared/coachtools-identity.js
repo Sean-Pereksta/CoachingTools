@@ -1,9 +1,9 @@
 (function attachCoachToolsIdentity(root) {
   'use strict';
 
-  const VERSION = '1.0.1';
+  const VERSION = '1.1.0';
   const DB_NAME = 'allStarImportedDataCache.v1';
-  const DB_VERSION = 7;
+  const DB_VERSION = 8;
   const DATASET_CHUNK_STORE = 'coachtoolsDatasetChunks';
   const PEOPLE_STORE = 'coachtoolsPeople';
   const REVIEW_STORE = 'coachtoolsIdentityReviews';
@@ -12,6 +12,20 @@
   const IMPORT_META_KEY = 'coachtools.identity.ingested.v1';
   const memoryPeople = new Map();
   const memoryReviews = new Map();
+  const peopleByNormalizedName = new Map();
+  const peopleByAlias = new Map();
+  const coachesByDepartment = new Map();
+  const coachesByTeam = new Map();
+  const repsByCoach = new Map();
+  const peopleByTeam = new Map();
+  let identityVersion = 0;
+  let memoryHydrated = false;
+  let memoryHydrationPromise = null;
+  let sortedPeopleCache = [];
+  let sortedPeopleDirty = true;
+  const ingestionQueue = [];
+  const queuedIngestionKeys = new Set();
+  let ingestionRunning = false;
   let databaseUnavailable = !('indexedDB' in root);
   let channel = null;
   try { if ('BroadcastChannel' in root) channel = new BroadcastChannel('coachtools-identity-v1'); } catch (_) {}
@@ -75,6 +89,21 @@
   function nowIso() { return new Date().toISOString(); }
   function idbRequest(request) { return new Promise((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error || new Error('Identity database request failed.')); }); }
   function transactionDone(tx) { return new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error || new Error('Identity database transaction failed.')); tx.onabort = () => reject(tx.error || new Error('Identity database transaction aborted.')); }); }
+  function ensureIndex(store, name, keyPath, options) {
+    if (!store.indexNames.contains(name)) store.createIndex(name, keyPath, options || { unique: false });
+  }
+  function migratePeopleIndexFields(store) {
+    const request = store.openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const person = cursor.value || {};
+      const aliasKeys = Array.from(new Set((person.aliases || []).map(normalizeName).filter(Boolean)));
+      const currentTeam = person.currentTeam || person.team || '';
+      if (JSON.stringify(person.aliasKeys || []) !== JSON.stringify(aliasKeys) || person.currentTeam !== currentTeam) cursor.update({ ...person, aliasKeys, currentTeam });
+      cursor.continue();
+    };
+  }
 
   function openDatabase() {
     if (databaseUnavailable) return Promise.resolve(null);
@@ -82,14 +111,22 @@
       const request = root.indexedDB.open(DB_NAME, DB_VERSION);
       request.onupgradeneeded = () => {
         const db = request.result;
+        const upgradeTx = request.transaction;
         for (const name of ['meta', 'sourceData', 'books', 'misc']) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath: 'id' });
-        if (!db.objectStoreNames.contains('coachtoolsDatasets')) {
-          const store = db.createObjectStore('coachtoolsDatasets', { keyPath: 'id' });
-          store.createIndex('datasetType', 'datasetType', { unique: false });
-          store.createIndex('periodKey', ['datasetType', 'periodKey'], { unique: false });
-          store.createIndex('fingerprint', ['datasetType', 'fingerprint'], { unique: false });
-        }
-        // Identity and storage share one database. Mirror the v7 chunk store here
+        const datasetStore = db.objectStoreNames.contains('coachtoolsDatasets')
+          ? upgradeTx.objectStore('coachtoolsDatasets')
+          : db.createObjectStore('coachtoolsDatasets', { keyPath: 'id' });
+        ensureIndex(datasetStore, 'datasetType', 'datasetType', { unique: false });
+        ensureIndex(datasetStore, 'periodKey', ['datasetType', 'periodKey'], { unique: false });
+        ensureIndex(datasetStore, 'fingerprint', ['datasetType', 'fingerprint'], { unique: false });
+        ensureIndex(datasetStore, 'datasetTypePeriodSort', ['datasetType', 'periodSort'], { unique: false });
+        ensureIndex(datasetStore, 'datasetTypePeriodSortImportedAt', ['datasetType', 'periodSort', 'importedAt'], { unique: false });
+        ensureIndex(datasetStore, 'datasetTypeImportedAt', ['datasetType', 'importedAt'], { unique: false });
+        ensureIndex(datasetStore, 'datasetTypeVersion', ['datasetType', 'version'], { unique: true });
+        ensureIndex(datasetStore, 'datasetScopePeriod', ['datasetType', 'scopeHash', 'periodKey'], { unique: false });
+        ensureIndex(datasetStore, 'datasetScopePeriodImportedAt', ['datasetType', 'scopeHash', 'periodKey', 'importedAt'], { unique: false });
+        ensureIndex(datasetStore, 'datasetScopePeriodFingerprint', ['datasetType', 'scopeHash', 'periodKey', 'fingerprint'], { unique: false });
+        // Identity and storage share one database. Mirror the v8 chunk store here
         // so whichever shared module opens the database first creates the same schema.
         if (!db.objectStoreNames.contains(DATASET_CHUNK_STORE)) {
           const store = db.createObjectStore(DATASET_CHUNK_STORE, { keyPath: 'id' });
@@ -97,18 +134,25 @@
           store.createIndex('datasetOrder', ['datasetId', 'index'], { unique: true });
         }
         if (!db.objectStoreNames.contains('coachtoolsCurrent')) db.createObjectStore('coachtoolsCurrent', { keyPath: 'datasetType' });
-        if (!db.objectStoreNames.contains('coachtoolsImports')) {
-          const store = db.createObjectStore('coachtoolsImports', { keyPath: 'id' });
-          store.createIndex('datasetType', 'datasetType', { unique: false });
-          store.createIndex('importedAt', 'importedAt', { unique: false });
-        }
-        if (!db.objectStoreNames.contains(PEOPLE_STORE)) {
-          const store = db.createObjectStore(PEOPLE_STORE, { keyPath: 'personId' });
-          store.createIndex('normalizedName', 'normalizedName', { unique: false });
-          store.createIndex('role', 'role', { unique: false });
-          store.createIndex('department', 'department', { unique: false });
-          store.createIndex('currentCoachId', 'currentCoachId', { unique: false });
-        }
+        const importStore = db.objectStoreNames.contains('coachtoolsImports')
+          ? upgradeTx.objectStore('coachtoolsImports')
+          : db.createObjectStore('coachtoolsImports', { keyPath: 'id' });
+        ensureIndex(importStore, 'datasetType', 'datasetType', { unique: false });
+        ensureIndex(importStore, 'importedAt', 'importedAt', { unique: false });
+        ensureIndex(importStore, 'datasetTypeImportedAt', ['datasetType', 'importedAt'], { unique: false });
+        const peopleStore = db.objectStoreNames.contains(PEOPLE_STORE)
+          ? upgradeTx.objectStore(PEOPLE_STORE)
+          : db.createObjectStore(PEOPLE_STORE, { keyPath: 'personId' });
+        ensureIndex(peopleStore, 'normalizedName', 'normalizedName', { unique: false });
+        ensureIndex(peopleStore, 'aliasKeys', 'aliasKeys', { unique: false, multiEntry: true });
+        ensureIndex(peopleStore, 'role', 'role', { unique: false });
+        ensureIndex(peopleStore, 'department', 'department', { unique: false });
+        ensureIndex(peopleStore, 'currentTeam', 'currentTeam', { unique: false });
+        ensureIndex(peopleStore, 'currentCoachId', 'currentCoachId', { unique: false });
+        ensureIndex(peopleStore, 'coordinator', 'coordinator', { unique: false });
+        ensureIndex(peopleStore, 'roleDepartment', ['role', 'department'], { unique: false });
+        ensureIndex(peopleStore, 'roleTeam', ['role', 'currentTeam'], { unique: false });
+        migratePeopleIndexFields(peopleStore);
         if (!db.objectStoreNames.contains(REVIEW_STORE)) {
           const store = db.createObjectStore(REVIEW_STORE, { keyPath: 'id' });
           store.createIndex('status', 'status', { unique: false });
@@ -122,6 +166,7 @@
   }
 
   async function allFromStore(storeName) {
+    if (storeName === PEOPLE_STORE && memoryHydrated) return clone(Array.from(memoryPeople.values()));
     if (databaseUnavailable) return clone(Array.from((storeName === PEOPLE_STORE ? memoryPeople : memoryReviews).values()));
     const db = await openDatabase();
     try { return await idbRequest(db.transaction(storeName, 'readonly').objectStore(storeName).getAll()); }
@@ -129,6 +174,7 @@
   }
 
   async function getFromStore(storeName, id) {
+    if (storeName === PEOPLE_STORE && memoryHydrated) return clone(memoryPeople.get(id) || null);
     if (databaseUnavailable) return clone((storeName === PEOPLE_STORE ? memoryPeople : memoryReviews).get(id) || null);
     const db = await openDatabase();
     try { return await idbRequest(db.transaction(storeName, 'readonly').objectStore(storeName).get(id)); }
@@ -136,17 +182,29 @@
   }
 
   async function putInStore(storeName, value) {
-    if (databaseUnavailable) { (storeName === PEOPLE_STORE ? memoryPeople : memoryReviews).set(value.personId || value.id, clone(value)); return value; }
+    const stored = clone(value);
+    if (databaseUnavailable) {
+      if (storeName === PEOPLE_STORE) { indexPerson(stored); memoryHydrated = true; identityVersion += 1; }
+      else memoryReviews.set(stored.id, stored);
+      return value;
+    }
     const db = await openDatabase();
-    try { const tx = db.transaction(storeName, 'readwrite'); tx.objectStore(storeName).put(clone(value)); await transactionDone(tx); return value; }
+    try { const tx = db.transaction(storeName, 'readwrite'); tx.objectStore(storeName).put(stored); await transactionDone(tx); }
     finally { db.close(); }
+    if (storeName === PEOPLE_STORE) { indexPerson(stored); identityVersion += 1; }
+    return value;
   }
 
   async function putMany(storeName, values) {
     if (!values.length) return;
     if (databaseUnavailable) {
-      const target = storeName === PEOPLE_STORE ? memoryPeople : memoryReviews;
-      for (const value of values) target.set(value.personId || value.id, clone(value));
+      if (storeName === PEOPLE_STORE) {
+        for (const value of values) indexPerson(value);
+        memoryHydrated = true;
+        identityVersion += 1;
+      } else {
+        for (const value of values) memoryReviews.set(value.id, clone(value));
+      }
       return;
     }
     const db = await openDatabase();
@@ -155,17 +213,26 @@
       for (const value of values) store.put(clone(value));
       await transactionDone(tx);
     } finally { db.close(); }
+    if (storeName === PEOPLE_STORE) {
+      for (const value of values) indexPerson(value);
+      identityVersion += 1;
+    }
   }
 
   async function deleteFromStore(storeName, id) {
-    if (databaseUnavailable) { (storeName === PEOPLE_STORE ? memoryPeople : memoryReviews).delete(id); return; }
+    if (databaseUnavailable) {
+      if (storeName === PEOPLE_STORE) { removePersonFromIndexes(memoryPeople.get(id)); memoryPeople.delete(id); sortedPeopleDirty = true; identityVersion += 1; }
+      else memoryReviews.delete(id);
+      return;
+    }
     const db = await openDatabase();
     try { const tx = db.transaction(storeName, 'readwrite'); tx.objectStore(storeName).delete(id); await transactionDone(tx); }
     finally { db.close(); }
+    if (storeName === PEOPLE_STORE) { removePersonFromIndexes(memoryPeople.get(id)); memoryPeople.delete(id); sortedPeopleDirty = true; identityVersion += 1; }
   }
 
   function emit(detail) {
-    const payload = { updatedAt: nowIso(), ...(detail || {}) };
+    const payload = { updatedAt: nowIso(), identityVersion, ...(detail || {}) };
     try { root.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: payload })); } catch (_) {}
     try { if (root.parent && root.parent !== root) root.parent.postMessage({ type: EVENT_NAME, detail: payload }, '*'); } catch (_) {}
     try { if (channel) channel.postMessage({ type: EVENT_NAME, detail: payload }); } catch (_) {}
@@ -207,12 +274,14 @@
 
   function sanitizePerson(person) {
     const normalizedName = normalizeName(person.normalizedName || person.displayName);
+    const aliases = unique(person.aliases || []);
     return {
       personId: person.personId || personIdFor(normalizedName),
       displayName: displayName(person.displayName || normalizedName),
       normalizedName,
       role: normalizedRole(person.role),
-      aliases: unique(person.aliases || []),
+      aliases,
+      aliasKeys: Array.from(new Set(aliases.map(normalizeName).filter(Boolean))),
       department: cleanDisplay(person.department),
       team: cleanDisplay(person.team || person.currentTeam),
       currentTeam: cleanDisplay(person.currentTeam || person.team),
@@ -226,46 +295,134 @@
     };
   }
 
-  async function getAllPeople() { return (await allFromStore(PEOPLE_STORE)).map(sanitizePerson).sort((a, b) => a.displayName.localeCompare(b.displayName)); }
-  async function getPerson(personId) { const person = await getFromStore(PEOPLE_STORE, personId); return person ? sanitizePerson(person) : null; }
-
-  function localResolver(people) {
-    const exact = new Map();
-    for (const person of people) {
-      for (const key of [person.normalizedName, ...(person.aliases || []).map(normalizeName)]) {
-        if (!key) continue;
-        if (!exact.has(key)) exact.set(key, []);
-        if (!exact.get(key).some(candidate => candidate.personId === person.personId)) exact.get(key).push(person);
-      }
-    }
-    return exact;
+  function addIndexValue(index, key, personId) {
+    const normalized = cleanDisplay(key);
+    if (!normalized) return;
+    if (!index.has(normalized)) index.set(normalized, new Set());
+    index.get(normalized).add(personId);
   }
 
+  function removeIndexValue(index, key, personId) {
+    const normalized = cleanDisplay(key);
+    if (!normalized || !index.has(normalized)) return;
+    const ids = index.get(normalized);
+    ids.delete(personId);
+    if (!ids.size) index.delete(normalized);
+  }
+
+  function removePersonFromIndexes(person) {
+    if (!person) return;
+    removeIndexValue(peopleByNormalizedName, person.normalizedName, person.personId);
+    for (const key of person.aliasKeys || (person.aliases || []).map(normalizeName)) removeIndexValue(peopleByAlias, key, person.personId);
+    removeIndexValue(coachesByDepartment, person.role === 'coach' ? normalizeName(person.department) : '', person.personId);
+    removeIndexValue(coachesByTeam, person.role === 'coach' ? normalizeName(person.currentTeam || person.team) : '', person.personId);
+    removeIndexValue(repsByCoach, person.role === 'representative' ? person.currentCoachId : '', person.personId);
+    removeIndexValue(peopleByTeam, normalizeName(person.currentTeam || person.team), person.personId);
+  }
+
+  function indexPerson(person) {
+    const canonical = sanitizePerson(person);
+    removePersonFromIndexes(memoryPeople.get(canonical.personId));
+    memoryPeople.set(canonical.personId, canonical);
+    addIndexValue(peopleByNormalizedName, canonical.normalizedName, canonical.personId);
+    for (const key of canonical.aliasKeys) addIndexValue(peopleByAlias, key, canonical.personId);
+    if (canonical.role === 'coach') {
+      addIndexValue(coachesByDepartment, normalizeName(canonical.department), canonical.personId);
+      addIndexValue(coachesByTeam, normalizeName(canonical.currentTeam || canonical.team), canonical.personId);
+    }
+    if (canonical.role === 'representative') addIndexValue(repsByCoach, canonical.currentCoachId, canonical.personId);
+    addIndexValue(peopleByTeam, normalizeName(canonical.currentTeam || canonical.team), canonical.personId);
+    sortedPeopleDirty = true;
+    return canonical;
+  }
+
+  function clearPeopleIndexes() {
+    memoryPeople.clear();
+    peopleByNormalizedName.clear();
+    peopleByAlias.clear();
+    coachesByDepartment.clear();
+    coachesByTeam.clear();
+    repsByCoach.clear();
+    peopleByTeam.clear();
+    sortedPeopleCache = [];
+    sortedPeopleDirty = true;
+  }
+
+  function rebuildPeopleIndexes(people) {
+    clearPeopleIndexes();
+    for (const person of people || []) indexPerson(person);
+    memoryHydrated = true;
+    identityVersion += 1;
+    return memoryPeople.size;
+  }
+
+  function invalidatePeopleIndexes() {
+    clearPeopleIndexes();
+    memoryHydrated = false;
+    memoryHydrationPromise = null;
+    identityVersion += 1;
+  }
+
+  async function ensurePeopleMemory() {
+    if (memoryHydrated) return memoryPeople;
+    if (memoryHydrationPromise) return memoryHydrationPromise;
+    const diagnostics = root.CoachToolsDiagnostics;
+    if (diagnostics) diagnostics.start('Identity registry read');
+    memoryHydrationPromise = (async () => {
+      const stored = await allFromStore(PEOPLE_STORE);
+      rebuildPeopleIndexes(stored);
+      return memoryPeople;
+    })().finally(() => {
+      memoryHydrationPromise = null;
+      if (diagnostics) diagnostics.end('Identity registry read', { people: memoryPeople.size, identityVersion });
+    });
+    return memoryHydrationPromise;
+  }
+
+  function sortedPeople() {
+    if (sortedPeopleDirty) {
+      sortedPeopleCache = Array.from(memoryPeople.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
+      sortedPeopleDirty = false;
+    }
+    return sortedPeopleCache;
+  }
+
+  function peopleForIds(ids) {
+    return Array.from(ids || []).map(id => memoryPeople.get(id)).filter(Boolean);
+  }
+
+  async function getAllPeople() { await ensurePeopleMemory(); return sortedPeople().map(clone); }
+  async function getPerson(personId) { await ensurePeopleMemory(); const person = memoryPeople.get(personId); return person ? clone(person) : null; }
+  async function getPeopleByIds(personIds) { await ensurePeopleMemory(); return peopleForIds(new Set(personIds || [])).map(clone); }
+
   async function resolve(value, options) {
-    const people = await getAllPeople();
-    const direct = people.find(person => person.personId === value);
-    if (direct) return { person: direct, confidence: 'id', candidates: [direct] };
-    const query = normalizeName(value), matches = localResolver(people).get(query) || [];
-    if (matches.length === 1) return { person: matches[0], confidence: 'exact', candidates: matches };
-    if (matches.length > 1) return { person: null, confidence: 'uncertain', candidates: matches };
+    await ensurePeopleMemory();
+    const people = sortedPeople();
+    const direct = memoryPeople.get(value);
+    if (direct) { const safe = clone(direct); return { person: safe, confidence: 'id', candidates: [safe] }; }
+    const query = normalizeName(value);
+    const exactIds = new Set([...(peopleByNormalizedName.get(query) || []), ...(peopleByAlias.get(query) || [])]);
+    const matches = peopleForIds(exactIds);
+    if (matches.length === 1) { const safe = clone(matches[0]); return { person: safe, confidence: 'exact', candidates: [safe] }; }
+    if (matches.length > 1) return { person: null, confidence: 'uncertain', candidates: matches.map(clone) };
     const tokens = query.split(' ').filter(Boolean);
     const candidates = people.filter(person => {
       const haystack = [person.normalizedName, ...(person.aliases || []).map(normalizeName)].join(' ');
       return query && (haystack.includes(query) || tokens.length === 1 && haystack.split(' ').includes(tokens[0]));
-    }).slice(0, 12);
+    }).slice(0, 12).map(clone);
     return { person: null, confidence: candidates.length ? 'uncertain' : 'none', candidates };
   }
 
   async function find(query, filters) {
-    const term = normalizeName(query), all = await getAllPeople();
-    const byId = new Map(all.map(person => [person.personId, person]));
+    await ensurePeopleMemory();
+    const term = normalizeName(query), all = sortedPeople(), byId = memoryPeople;
     return all.filter(person => {
       if (filters && filters.role && person.role !== filters.role) return false;
       if (filters && filters.department && person.department !== filters.department) return false;
       const coach = person.currentCoachId && byId.get(person.currentCoachId);
       const haystack = [person.displayName, ...(person.aliases || []), person.team, person.currentTeam, person.department, person.coordinator, coach && coach.displayName].filter(Boolean).map(normalizeName).join(' ');
       return !term || haystack.includes(term);
-    });
+    }).map(clone);
   }
 
   async function addReview(review) {
@@ -277,7 +434,10 @@
     const original = cleanDisplay(rawName), normalized = normalizeName(original);
     if (!normalized) return null;
     const words = normalized.split(' ').filter(Boolean);
-    const all = await getAllPeople(), matches = localResolver(all).get(normalized) || [];
+    await ensurePeopleMemory();
+    const all = sortedPeople();
+    const matchIds = new Set([...(peopleByNormalizedName.get(normalized) || []), ...(peopleByAlias.get(normalized) || [])]);
+    const matches = peopleForIds(matchIds);
     const observedRole = normalizedRole(options && options.role);
     if (matches.length === 1 && observedRole !== 'unknown' && matches[0].role !== 'unknown' && matches[0].role !== observedRole) {
       await addReview({ type: 'role-conflict', rawName: original, normalizedName: normalized, source: options && options.source || '', observedRole, candidates: [matches[0].personId] });
@@ -363,28 +523,29 @@
     return '';
   }
 
-  async function ingestDataset(datasetType, dataset, metadata) {
-    const rows = extractRows(dataset), source = String(datasetType || 'unknown'), department = departmentFor(source);
+  async function ingestRows(datasetType, rows, metadata) {
+    const source = String(datasetType || 'unknown'), department = departmentFor(source);
     const coachFields = ['Job Coach', 'Coach Assigned', 'Coach', 'Supervisor', 'Manager'];
     const repFields = ['Associate Name', 'Representative', 'Agent Name', 'AgentName', 'CSR/SSR Name', 'Employee'];
-    const people = await getAllPeople(), changed = new Map(), reviews = [];
-    const exact = localResolver(people);
+    await ensurePeopleMemory();
+    const people = Array.from(memoryPeople.values()), changed = new Map(), stagedIdsByKey = new Map(), reviews = [];
+    const matchesFor = key => {
+      const ids = new Set([...(peopleByNormalizedName.get(key) || []), ...(peopleByAlias.get(key) || []), ...(stagedIdsByKey.get(key) || [])]);
+      return peopleForIds(ids).map(person => changed.get(person.personId) || person).concat(Array.from(ids).filter(id => !memoryPeople.has(id)).map(id => changed.get(id)).filter(Boolean));
+    };
     const remember = person => {
       changed.set(person.personId, person);
       for (const key of [person.normalizedName, ...(person.aliases || []).map(normalizeName)]) {
         if (!key) continue;
-        const existing = exact.get(key) || [];
-        const index = existing.findIndex(candidate => candidate.personId === person.personId);
-        if (index >= 0) existing[index] = person;
-        else existing.push(person);
-        exact.set(key, existing);
+        if (!stagedIdsByKey.has(key)) stagedIdsByKey.set(key, new Set());
+        stagedIdsByKey.get(key).add(person.personId);
       }
       return person;
     };
     const observe = (rawName, options) => {
       const original = cleanDisplay(rawName), normalized = normalizeName(original);
       if (!normalized) return null;
-      const matches = exact.get(normalized) || [], words = normalized.split(' ').filter(Boolean);
+      const matches = matchesFor(normalized), words = normalized.split(' ').filter(Boolean);
       const role = normalizedRole(options.role);
       if (matches.length === 1 && role !== 'unknown' && matches[0].role !== 'unknown' && matches[0].role !== role) {
         reviews.push({ id: `review_${stableHash(`${source}|${normalized}|${role}|role`)}`, type: 'role-conflict', status: 'open', createdAt: nowIso(), rawName: original, normalizedName: normalized, source, observedRole: role, candidates: [matches[0].personId] });
@@ -433,13 +594,98 @@
     }
     await putMany(PEOPLE_STORE, Array.from(changed.values()));
     await putMany(REVIEW_STORE, reviews);
+    if (!(metadata && metadata.deferCompletion)) {
+      try {
+        const ingested = JSON.parse(root.localStorage.getItem(IMPORT_META_KEY) || '{}') || {};
+        ingested[source] = { fingerprint: metadata && metadata.fingerprint || '', ingestedAt: nowIso(), rows: rows.length };
+        root.localStorage.setItem(IMPORT_META_KEY, JSON.stringify(ingested));
+      } catch (_) {}
+      emit({ reason: 'dataset-ingested', datasetType: source, observed, rows: rows.length });
+    }
+    return { datasetType: source, observed, rows: rows.length };
+  }
+
+  async function ingestDataset(datasetType, dataset, metadata) {
+    return ingestRows(datasetType, extractRows(dataset), metadata);
+  }
+
+  function objectsFromStreamChunk(chunk) {
+    const header = Array.isArray(chunk && chunk.header) ? chunk.header.map(cleanDisplay) : [];
+    if (!header.some(Boolean)) return [];
+    const rows = [];
+    for (let offset = 0; offset < (chunk.rows || []).length; offset += 1) {
+      const absoluteRow = Number(chunk.rowStart || 0) + offset;
+      if (absoluteRow <= Number(chunk.headerRow)) continue;
+      const values = Array.isArray(chunk.rows[offset]) ? chunk.rows[offset] : [];
+      if (!values.some(value => cleanDisplay(value))) continue;
+      rows.push({ ...Object.fromEntries(header.map((name, index) => [name, values[index]]).filter(([name]) => name)), __sheet: chunk.sheetName || '' });
+    }
+    return rows;
+  }
+
+  async function ingestStoredDataset(datasetType, descriptor) {
+    const data = root.CoachToolsData;
+    if (!data || typeof data.streamRows !== 'function') {
+      const record = data && await data.getCurrent(datasetType, { includeRecord: true });
+      return record ? ingestDataset(datasetType, record.data, descriptor) : { datasetType, observed: 0, rows: 0 };
+    }
+    let observed = 0, rows = 0;
+    for await (const chunk of data.streamRows(datasetType, { datasetId: descriptor && descriptor.datasetId })) {
+      const objects = objectsFromStreamChunk(chunk);
+      if (!objects.length) continue;
+      const result = await ingestRows(datasetType, objects, { ...(descriptor || {}), deferCompletion: true });
+      observed += Number(result.observed) || 0;
+      rows += Number(result.rows) || 0;
+      await new Promise(resolve => root.setTimeout(resolve, 0));
+    }
     try {
       const ingested = JSON.parse(root.localStorage.getItem(IMPORT_META_KEY) || '{}') || {};
-      ingested[source] = { fingerprint: metadata && metadata.fingerprint || '', ingestedAt: nowIso(), rows: rows.length };
+      ingested[datasetType] = { fingerprint: descriptor && descriptor.fingerprint || '', ingestedAt: nowIso(), rows };
       root.localStorage.setItem(IMPORT_META_KEY, JSON.stringify(ingested));
     } catch (_) {}
-    emit({ reason: 'dataset-ingested', datasetType: source, observed, rows: rows.length });
-    return { datasetType: source, observed, rows: rows.length };
+    if (!(descriptor && descriptor.deferEvent)) emit({ reason: 'dataset-ingested', datasetType, observed, rows });
+    return { datasetType, observed, rows };
+  }
+
+  function runIngestionQueue() {
+    if (ingestionRunning || !ingestionQueue.length) return;
+    const schedule = callback => {
+      if (typeof root.requestIdleCallback === 'function') root.requestIdleCallback(callback, { timeout: 1500 });
+      else root.setTimeout(callback, 250);
+    };
+    ingestionRunning = true;
+    schedule(async () => {
+      const completedTypes = new Set();
+      let observed = 0, rows = 0, failed = 0;
+      while (ingestionQueue.length) {
+        const task = ingestionQueue.shift();
+        const diagnostics = root.CoachToolsDiagnostics;
+        if (diagnostics) diagnostics.start('Identity ingestion', { datasetType: task.datasetType });
+        try {
+          const result = await ingestStoredDataset(task.datasetType, { ...(task.descriptor || {}), deferEvent: true });
+          completedTypes.add(task.datasetType);
+          observed += Number(result && result.observed) || 0;
+          rows += Number(result && result.rows) || 0;
+        }
+        catch (error) { failed += 1; console.warn('[CoachToolsIdentity] Background identity ingestion failed.', error); }
+        finally {
+          queuedIngestionKeys.delete(task.key);
+          if (diagnostics) diagnostics.end('Identity ingestion', { datasetType: task.datasetType });
+        }
+      }
+      ingestionRunning = false;
+      emit({ reason: 'ingestion-batch-complete', datasetTypes: Array.from(completedTypes), observed, rows, failed });
+    });
+  }
+
+  function queueDatasetIngestion(datasetType, descriptor) {
+    const source = String(datasetType || 'unknown');
+    const key = `${source}:${descriptor && (descriptor.datasetId || descriptor.fingerprint) || 'current'}`;
+    if (queuedIngestionKeys.has(key)) return key;
+    queuedIngestionKeys.add(key);
+    ingestionQueue.push({ key, datasetType: source, descriptor: clone(descriptor || {}) });
+    runIngestionQueue();
+    return key;
   }
 
   async function updatePerson(personId, changes) {
@@ -546,10 +792,17 @@
   }
 
   async function getRelationships(personId) {
-    const [person, all] = await Promise.all([getPerson(personId), getAllPeople()]);
+    await ensurePeopleMemory();
+    const person = memoryPeople.get(personId);
     if (!person) return null;
-    const byId = new Map(all.map(value => [value.personId, value]));
-    return { person, coach: person.currentCoachId ? byId.get(person.currentCoachId) || null : null, representatives: all.filter(value => value.currentCoachId === personId), team: person.currentTeam || person.team || '', department: person.department || '', coordinator: person.coordinator || '' };
+    return {
+      person: clone(person),
+      coach: person.currentCoachId && memoryPeople.has(person.currentCoachId) ? clone(memoryPeople.get(person.currentCoachId)) : null,
+      representatives: peopleForIds(repsByCoach.get(personId) || []).map(clone),
+      team: person.currentTeam || person.team || '',
+      department: person.department || '',
+      coordinator: person.coordinator || ''
+    };
   }
 
   async function getReviews(options) {
@@ -565,35 +818,73 @@
   }
 
   async function initialize() {
-    try { const db = await openDatabase(); if (db) db.close(); }
-    catch (error) { databaseUnavailable = true; console.warn('[CoachToolsIdentity] IndexedDB unavailable; this tab is using a temporary registry.', error); }
-    try { await syncTeamSetup(); } catch (_) {}
     try {
-      if (root.CoachToolsData) {
-        await root.CoachToolsData.ready();
-        let ingested = {};
-        try { ingested = JSON.parse(root.localStorage.getItem(IMPORT_META_KEY) || '{}') || {}; } catch (_) {}
-        for (const type of root.CoachToolsData.DATASET_TYPES || []) {
-          const record = await root.CoachToolsData.getCurrent(type, { includeRecord: true });
-          if (!record || ingested[type] && ingested[type].fingerprint && ingested[type].fingerprint === record.fingerprint) continue;
-          await ingestDataset(type, record.data, { fingerprint: record.fingerprint, source: 'identity-startup-sync' });
-        }
-      }
-    } catch (error) { console.warn('[CoachToolsIdentity] Existing dataset learning could not finish.', error); }
+      const db = await openDatabase();
+      if (db) db.close();
+      await ensurePeopleMemory();
+    }
+    catch (error) { databaseUnavailable = true; console.warn('[CoachToolsIdentity] IndexedDB unavailable; this tab is using a temporary registry.', error); }
     return true;
   }
   const readyPromise = initialize();
 
-  if (channel) channel.onmessage = event => { if (event.data && event.data.type === EVENT_NAME) { try { root.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { ...(event.data.detail || {}), relayed: true } })); } catch (_) {} } };
+  function scheduleBackgroundEnrichment() {
+    const run = async () => {
+      try { await readyPromise; await syncTeamSetup(); } catch (_) {}
+      try {
+        const data = root.CoachToolsData;
+        if (!data) return;
+        await data.ready();
+        let ingested = {};
+        try { ingested = JSON.parse(root.localStorage.getItem(IMPORT_META_KEY) || '{}') || {}; } catch (_) {}
+        for (const type of data.DATASET_TYPES || []) {
+          const version = data.getDatasetVersion(type);
+          if (!version || ingested[type] && ingested[type].fingerprint && ingested[type].fingerprint === version.fingerprint) continue;
+          queueDatasetIngestion(type, { datasetId: version.datasetId, fingerprint: version.fingerprint, source: 'identity-startup-sync' });
+        }
+      } catch (error) { console.warn('[CoachToolsIdentity] Existing dataset learning could not be queued.', error); }
+    };
+    if (typeof root.requestIdleCallback === 'function') root.requestIdleCallback(run, { timeout: 1800 });
+    else root.setTimeout(run, 1800);
+  }
+  scheduleBackgroundEnrichment();
+
+  if (channel) channel.onmessage = event => {
+    if (event.data && event.data.type === EVENT_NAME) {
+      invalidatePeopleIndexes();
+      try { root.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { ...(event.data.detail || {}), relayed: true, identityVersion } })); } catch (_) {}
+    }
+  };
+
+  async function getIndexedPeople(index, key) {
+    await ensurePeopleMemory();
+    return peopleForIds(index.get(cleanDisplay(key)) || []).map(clone).sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }
+
+  async function getCoaches() {
+    await ensurePeopleMemory();
+    return sortedPeople().filter(person => person.role === 'coach').map(clone);
+  }
+
+  async function getRepresentatives() {
+    await ensurePeopleMemory();
+    return sortedPeople().filter(person => person.role === 'representative').map(clone);
+  }
 
   root.CoachToolsIdentity = Object.freeze({
     VERSION, DB_NAME, DB_VERSION, PEOPLE_STORE, REVIEW_STORE, EVENT_NAME,
     normalizeName, displayName, ready: () => readyPromise,
-    find, resolve, getPerson, getAllPeople,
-    getCoaches: async () => (await getAllPeople()).filter(person => person.role === 'coach'),
-    getRepresentatives: async () => (await getAllPeople()).filter(person => person.role === 'representative'),
+    find, resolve, resolveName: resolve, getPerson, getPeopleByIds, getAllPeople,
+    getCoach: async personId => { const person = await getPerson(personId); return person && person.role === 'coach' ? person : null; },
+    getCoaches,
+    getRepresentatives,
+    getCoachesByDepartment: department => getIndexedPeople(coachesByDepartment, normalizeName(department)),
+    getCoachesByTeam: team => getIndexedPeople(coachesByTeam, normalizeName(team)),
+    getRepsForCoach: coachPersonId => getIndexedPeople(repsByCoach, cleanDisplay(coachPersonId)),
+    getPeopleForTeam: team => getIndexedPeople(peopleByTeam, normalizeName(team)),
+    getIdentityVersion: () => identityVersion,
     addAlias, removeAlias, mergePeople, undoMerge, updatePerson, getRelationships, getReviews,
-    learn: upsertObserved, ingestDataset, syncTeamSetup, subscribe,
-    _test: Object.freeze({ extractRows, pick, sanitizePerson, upsertObserved })
+    learn: upsertObserved, ingestDataset, ingestStoredDataset, queueDatasetIngestion, syncTeamSetup, subscribe,
+    _test: Object.freeze({ extractRows, pick, sanitizePerson, upsertObserved, objectsFromStreamChunk })
   });
 })(typeof window !== 'undefined' ? window : globalThis);

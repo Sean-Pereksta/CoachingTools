@@ -38,7 +38,7 @@ Manual and automatic imports use `shared/coachtools-import.js` for workbook read
 
 A successful **Clean Upload** records the authoritative normalized scope only after every recognized source is saved. Later automatic updates restore that scope, filter before fingerprint comparison, and retain the existing data when ownership columns are missing or a scoped source unexpectedly falls to zero rows. QA follows the same rule through its `Team` column and canonical coach aliases; only **All people** keeps the full QA population.
 
-Large shared data and canonical people are authoritative in `allStarImportedDataCache.v1`, schema version 7. The central API stores dated, scope-aware history once and keeps a pointer to the newest current record for each of these logical datasets:
+Large shared data and canonical people are authoritative in `allStarImportedDataCache.v1`, schema version 8. The central API stores dated, scope-aware history once, exposes scope-aware chunk streaming, and keeps a pointer to the newest current record for each of these logical datasets:
 
 ```text
 weeklyRetail, weeklyReferral

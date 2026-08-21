@@ -5,7 +5,7 @@ This document defines storage names that must remain backward compatible. Filena
 ## 1. Central CoachTools data
 
 The authoritative home for large shared datasets is IndexedDB database
-`allStarImportedDataCache.v1`, schema version 7. `window.CoachToolsData` is the
+`allStarImportedDataCache.v1`, schema version 8. `window.CoachToolsData` is the
 only supported abstraction for new application code.
 
 Recognized dataset types are:
@@ -19,15 +19,25 @@ Recognized dataset types are:
 - `checklist`
 - `compCoaching`
 
-Use `CoachToolsAppData.get(type)`, `getMany(types)`, `getVersion(type)`, and
-`subscribe(types, listener)` in applications. The adapter delegates to
-`CoachToolsData.getCurrent(type)`, `getHistory(type)`,
+Use `CoachToolsAppData.get(type)`, `getMany(types)`, `streamRows(type, options)`,
+`getVersion(type)`, and `subscribe(types, listener)` in applications. The adapter delegates to
+`CoachToolsData.getCurrent(type)`, `streamRows(type, options)`, `getHistory(type)`,
 `getDatasetVersion(type)`, `getImportHistory()`, and `inspectDataset()` instead of reading the
 database stores directly. Current pointers never duplicate the source data;
 they reference one canonical record in `coachtoolsDatasets`.
 
 `CoachToolsData.ready()` initializes current pointers and metadata only. Full
 dataset records are read on demand and cached in memory by dataset ID/version.
+Large consumers should prefer `streamRows()`; it reads one stored chunk at a
+time and can filter by `scope`, `coachIds`, `personIds`, coach/person names, or a
+row predicate before yielding. History and import-history limits are applied by
+IndexedDB cursors rather than by materializing and slicing the full stores.
+
+Clean Upload uses `CoachToolsImport.discoverFile()` for a bounded header preview
+and a unique-value scan of the ownership column. The raw workbook is not expanded
+into full row arrays until scope selection; `materializeDiscoveredEntry()` then
+constructs only header and matching rows (or all rows for an explicit All-people
+selection).
 
 ## 2. Temporary legacy compatibility
 
@@ -131,7 +141,7 @@ The general CoachTools backup includes definitions and lightweight options where
 
 ## 5. All-Star / CoachTools IndexedDB
 
-### `allStarImportedDataCache.v1`, schema version 7
+### `allStarImportedDataCache.v1`, schema version 8
 
 - `meta`, key path `id`
 - `sourceData`, key path `id`
@@ -143,6 +153,10 @@ The general CoachTools backup includes definitions and lightweight options where
 - `coachtoolsImports`, key path `id`; import, duplicate, replacement, and removal audit history
 - `coachtoolsPeople`, key path `personId`; canonical people, aliases, source spellings, roles, teams, departments, and relationships
 - `coachtoolsIdentityReviews`, key path `id`; uncertain-match reviews and reversible merge snapshots
+
+Schema 8 adds compound dataset indexes for type/period/import time and
+type/scope/period/fingerprint lookups, plus persistent role, team, department,
+coach-relationship, normalized-name, and alias indexes for `coachtoolsPeople`.
 
 Canonical dataset records and current pointers retain `scopeSnapshot`, `scopeHash`,
 `scopeMode`, `scopedRowCount`, `scopeMatchDiagnostics`, and `scopedFingerprint`.
