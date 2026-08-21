@@ -155,11 +155,23 @@
       if (index > 0) await yieldMainThread();
       const file = list[index];
       try {
-        const parsed = await parseFileResponsive(file, options && options.onProgress ? {
-          onProgress: progress => options.onProgress({ ...progress, fileIndex: index, fileCount: list.length })
-        } : null);
-        const classification = importer.classifyFile(file, parsed);
-        const entry = { file, parsed, classification };
+        let entry;
+        if (typeof importer.discoverFile === 'function') {
+          entry = await importer.discoverFile(file, options && options.onProgress ? {
+            onProgress: progress => options.onProgress({ ...progress, fileIndex: index, fileCount: list.length })
+          } : null);
+        } else {
+          const parsed = await parseFileResponsive(file, options && options.onProgress ? {
+            onProgress: progress => options.onProgress({ ...progress, fileIndex: index, fileCount: list.length })
+          } : null);
+          const diagnostics = root.CoachToolsDiagnostics;
+          if (diagnostics) diagnostics.start('File classification', { fileName: file.name });
+          const classification = importer.classifyFile(file, parsed);
+          if (diagnostics) diagnostics.end('File classification', { fileName: file.name, datasetType: classification.id || classification.predictedId || '' });
+          entry = { file, parsed, classification };
+          if (options && typeof options.onProgress === 'function') options.onProgress({ phase: 'classified', fileName: file.name, datasetType: classification.id || '', fileIndex: index, fileCount: list.length, current: 1, total: 1 });
+        }
+        const classification = entry.classification;
         if (classification.id) recognized.push(entry);
         else needsReview.push(entry);
       } catch (error) {
@@ -181,12 +193,11 @@
       pendingScope = null;
       return null;
     }
-    const scope = typeof importer.resolveScopeSnapshot === 'function'
-      ? await importer.resolveScopeSnapshot(pendingScope || currentScope() || { mode: 'all', label: 'All people' })
-      : clone(pendingScope || currentScope());
     cleanSession = {
       version: 3,
-      scope,
+      // Clean Upload does not inherit the prior authoritative scope. The new
+      // selector supplies the only scope used by this session.
+      scope: null,
       remaining: recognized.length,
       successfulTypes: new Set(),
       failed: needsReview.length > 0 || errors.length > 0,
@@ -266,7 +277,10 @@
       const type = entry && entry.classification && entry.classification.id;
       entry._coachtoolsBaselineSkip = Boolean(selected && !selected.has(type));
       entry._coachtoolsUpdatePlan = null;
-      if (entry._coachtoolsBaselineSkip) entry.parsed = null;
+      if (entry._coachtoolsBaselineSkip) {
+        entry.parsed = null;
+        entry.rawWorkbook = null;
+      }
     }
     if (resolution.needsReview) return;
 
@@ -317,7 +331,12 @@
       ? await importer.resolveScopeSnapshot(options && options.scope || { mode: 'all', label: 'All people' })
       : options && options.scope;
     await yieldMainThread();
-    const result = importer.prepareScopedDataset(entry.parsed, type, scopeSnapshot, { ...(options || {}), clone: false, detectedPeriod: entry.classification.detectedPeriod });
+    const parsed = entry.rawWorkbook && typeof importer.materializeDiscoveredEntry === 'function'
+      ? await importer.materializeDiscoveredEntry(entry, scopeSnapshot, options)
+      : entry.parsed;
+    entry.parsed = parsed;
+    entry.rawWorkbook = null;
+    const result = importer.prepareScopedDataset(parsed, type, scopeSnapshot, { ...(options || {}), clone: false, detectedPeriod: entry.classification.detectedPeriod });
     if (!result.valid) {
       const error = new Error(result.reason);
       error.name = 'CoachToolsScopeValidationError';
@@ -376,20 +395,18 @@
     return { ...result, comparisonStatus: plan && plan.inspection && plan.inspection.status || result.status };
   }
 
-  const originalAnalyzeFiles = importer.analyzeFiles.bind(importer);
   const originalSaveRecognizedEntry = importer.saveRecognizedEntry.bind(importer);
 
   const enhancedImporter = {
     ...importer,
     async analyzeFiles(files, options) {
-      const updateMode = mode === 'update';
-      const result = updateMode
-        ? await analyzeFilesResponsive(files, options)
-        : await originalAnalyzeFiles(files, options);
-      if (mode === 'clean') {
+      const requestedMode = mode;
+      const result = await analyzeFilesResponsive(files, options);
+      if (requestedMode === 'clean') {
         await beginCleanSession(result);
+        result.cleanMode = true;
         mode = '';
-      } else if (mode === 'update') {
+      } else if (requestedMode === 'update') {
         await prepareUpdateSession(result);
         result.updateMode = true;
         result.authoritativeUpdateScope = updateSession && updateSession.resolution && clone(updateSession.resolution.scope);
@@ -407,13 +424,16 @@
       const cleanScope = reusableScope(savedBaseline && savedBaseline.scope);
       if (session && baselineScope) {
         nextOptions.scope = baselineScope;
-      } else if (Object.prototype.hasOwnProperty.call(nextOptions, 'scope') && nextOptions.scope === null) {
-        nextOptions.scope = cleanSession && cleanSession.scope || baselineScope || cleanScope || reusableScope(currentScope());
+      } else if (!cleanSession && Object.prototype.hasOwnProperty.call(nextOptions, 'scope') && nextOptions.scope === null) {
+        nextOptions.scope = baselineScope || cleanScope || reusableScope(currentScope());
       }
 
       let result = null;
       try {
-        if (cleanSession && nextOptions.scope) nextOptions.scope = await adoptCleanScope(nextOptions.scope);
+        if (cleanSession) {
+          if (!nextOptions.scope) throw new Error('Clean Upload is waiting for a new coach or All people selection. The previous scope was not applied.');
+          nextOptions.scope = await adoptCleanScope(nextOptions.scope);
+        }
         if (session && session.resolution && session.resolution.needsReview) throw new Error(session.resolution.reason || 'Update needs scope review.');
         if (entry && entry._coachtoolsBaselineSkip) {
           result = { status: 'duplicate', comparisonStatus: 'skipped', skippedByCleanUploadBaseline: true };
@@ -481,7 +501,7 @@
       if (action === 'clean-upload-data') {
         event.preventDefault();
         mode = 'clean';
-        pendingScope = currentScope();
+        pendingScope = null;
         pendingFiles = [];
         const input = $('quickDataInput');
         if (input) input.click();

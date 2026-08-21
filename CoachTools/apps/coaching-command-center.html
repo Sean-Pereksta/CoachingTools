@@ -605,8 +605,8 @@
     for (const type of ['weeklyRetail', 'weeklyReferral']) {
       try {
         histories[type] = (window.CoachToolsData && typeof window.CoachToolsData.getHistory === 'function'
-          ? await window.CoachToolsData.getHistory(type, { activeOnly: true })
-          : []).slice(0, 12);
+          ? await window.CoachToolsData.getHistory(type, { activeOnly: true, limit: 12 })
+          : []);
       } catch (_) {
         histories[type] = [];
       }

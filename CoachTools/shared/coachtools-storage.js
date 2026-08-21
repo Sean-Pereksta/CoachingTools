@@ -1,7 +1,7 @@
 (function attachCoachToolsData(root) {
   'use strict';
 
-  const VERSION = '2.3.0';
+  const VERSION = '2.4.0';
   const EVENT_NAME = 'coachtools:data-updated';
   const SCOPE_EVENT_NAME = 'coachtools:scope-updated';
   const CHANNEL_NAME = 'coachtools-data-v2';
@@ -14,9 +14,9 @@
 
   // CoachTools now extends All-Star's existing import database instead of creating
   // a second large-data database beside it. All-Star uses the first four stores;
-  // the shared API owns the CoachTools data and identity stores added through schema version 7.
+  // the shared API owns the CoachTools data and identity stores added through schema version 8.
   const DB_NAME = 'allStarImportedDataCache.v1';
-  const DB_VERSION = 7;
+  const DB_VERSION = 8;
   const DATASET_STORE = 'coachtoolsDatasets';
   const DATASET_CHUNK_STORE = 'coachtoolsDatasetChunks';
   const CURRENT_STORE = 'coachtoolsCurrent';
@@ -135,15 +135,51 @@
     try { if (typeof structuredClone === 'function') return structuredClone(value); } catch (_) {}
     return value == null ? value : JSON.parse(JSON.stringify(value));
   }
+  function workbookRowCount(data) {
+    const sheets = data && data.workbook && data.workbook.data;
+    if (!sheets) return 0;
+    return Object.values(sheets).reduce((sum, sheet) => sum + (Array.isArray(sheet && sheet.aoa) ? sheet.aoa.length : 0), 0);
+  }
+  function estimatedWorkbookBytes(data, stopAt) {
+    const sheets = data && data.workbook && data.workbook.data;
+    if (!sheets) return 0;
+    const ceiling = Math.max(1, Number(stopAt) || CHUNK_THRESHOLD_BYTES);
+    let bytes = 0;
+    for (const sheet of Object.values(sheets)) {
+      for (const row of Array.isArray(sheet && sheet.aoa) ? sheet.aoa : []) {
+        bytes += 16 + (Array.isArray(row) ? row.length * 8 : 0);
+        for (const cell of Array.isArray(row) ? row : []) {
+          if (typeof cell === 'string') bytes += cell.length * 2;
+          else if (cell != null) bytes += 16;
+        }
+        if (bytes >= ceiling) return bytes;
+      }
+    }
+    return bytes;
+  }
   function shouldChunkDataset(data, metadata) {
     const fileSize = Number(metadata && metadata.fileSize || data && data.meta && data.meta.fileSize) || 0;
-    const rowCount = Number(metadata && metadata.rowCount || data && data.meta && data.meta.totalRows) || 0;
+    const rowCount = Number(metadata && metadata.rowCount || data && data.meta && data.meta.totalRows) || workbookRowCount(data);
     if (fileSize >= CHUNK_THRESHOLD_BYTES || rowCount >= CHUNK_THRESHOLD_ROWS) return true;
-    try { return JSON.stringify(data).length * 2 >= CHUNK_THRESHOLD_BYTES; }
-    catch (_) { return false; }
+    return estimatedWorkbookBytes(data, CHUNK_THRESHOLD_BYTES) >= CHUNK_THRESHOLD_BYTES;
+  }
+  function createDataSkeleton(data) {
+    if (!data || typeof data !== 'object') return clone(data);
+    const workbook = data.workbook && typeof data.workbook === 'object' ? data.workbook : null;
+    if (!workbook || !workbook.data) return clone(data);
+    const skeleton = { ...data, meta: clone(data.meta || {}), workbook: { ...workbook, sheets: Array.isArray(workbook.sheets) ? workbook.sheets.slice() : [], data: {} } };
+    for (const [sheetName, sourceSheet] of Object.entries(workbook.data)) {
+      if (!sourceSheet || typeof sourceSheet !== 'object') {
+        skeleton.workbook.data[sheetName] = sourceSheet;
+        continue;
+      }
+      const { aoa, ...sheetMetadata } = sourceSheet;
+      skeleton.workbook.data[sheetName] = { ...clone(sheetMetadata), aoa: [] };
+    }
+    return skeleton;
   }
   function splitDataIntoChunks(data, datasetId) {
-    const skeleton = clone(data);
+    const skeleton = createDataSkeleton(data);
     const sourceSheets = data && data.workbook && data.workbook.data;
     const targetSheets = skeleton && skeleton.workbook && skeleton.workbook.data;
     const chunks = [];
@@ -159,7 +195,9 @@
           index,
           sheetName,
           rowStart,
-          rows: clone(sourceSheet.aoa.slice(rowStart, rowStart + CHUNK_ROWS))
+          // Keep row objects shared until IndexedDB performs its structured clone.
+          // Deep-copying every chunk here temporarily doubled large workbooks.
+          rows: sourceSheet.aoa.slice(rowStart, rowStart + CHUNK_ROWS)
         });
         index += 1;
       }
@@ -233,6 +271,29 @@
       transaction.onabort = () => reject(transaction.error || new Error('IndexedDB transaction was aborted.'));
     });
   }
+  function ensureIndex(store, name, keyPath, options) {
+    if (!store.indexNames.contains(name)) store.createIndex(name, keyPath, options || { unique: false });
+  }
+  function identityIndexKey(value) {
+    let text = String(value == null ? '' : value).trim().replace(/\s+/g, ' ');
+    if (text.includes(',')) {
+      const parts = text.split(','), last = parts.shift().trim(), given = parts.join(' ').trim();
+      if (last && given) text = `${given} ${last}`;
+    }
+    return text.normalize ? text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[.’'`]/g, '').replace(/[^a-zA-Z0-9]+/g, ' ').trim().replace(/\s+/g, ' ').toLowerCase() : text.toLowerCase();
+  }
+  function migratePeopleIndexFields(store) {
+    const request = store.openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const person = cursor.value || {};
+      const aliasKeys = Array.from(new Set((person.aliases || []).map(identityIndexKey).filter(Boolean)));
+      const currentTeam = person.currentTeam || person.team || '';
+      if (JSON.stringify(person.aliasKeys || []) !== JSON.stringify(aliasKeys) || person.currentTeam !== currentTeam) cursor.update({ ...person, aliasKeys, currentTeam });
+      cursor.continue();
+    };
+  }
   function openDatabase() {
     if (!('indexedDB' in root)) return Promise.reject(new Error('IndexedDB is unavailable.'));
     return new Promise((resolve, reject) => {
@@ -242,30 +303,45 @@
         for (const name of ALLSTAR_STORES) {
           if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath: 'id' });
         }
-        if (!db.objectStoreNames.contains(DATASET_STORE)) {
-          const store = db.createObjectStore(DATASET_STORE, { keyPath: 'id' });
-          store.createIndex('datasetType', 'datasetType', { unique: false });
-          store.createIndex('periodKey', ['datasetType', 'periodKey'], { unique: false });
-          store.createIndex('fingerprint', ['datasetType', 'fingerprint'], { unique: false });
-        }
+        const upgradeTx = request.transaction;
+        const datasetStore = db.objectStoreNames.contains(DATASET_STORE)
+          ? upgradeTx.objectStore(DATASET_STORE)
+          : db.createObjectStore(DATASET_STORE, { keyPath: 'id' });
+        ensureIndex(datasetStore, 'datasetType', 'datasetType', { unique: false });
+        ensureIndex(datasetStore, 'periodKey', ['datasetType', 'periodKey'], { unique: false });
+        ensureIndex(datasetStore, 'fingerprint', ['datasetType', 'fingerprint'], { unique: false });
+        ensureIndex(datasetStore, 'datasetTypePeriodSort', ['datasetType', 'periodSort'], { unique: false });
+        ensureIndex(datasetStore, 'datasetTypePeriodSortImportedAt', ['datasetType', 'periodSort', 'importedAt'], { unique: false });
+        ensureIndex(datasetStore, 'datasetTypeImportedAt', ['datasetType', 'importedAt'], { unique: false });
+        ensureIndex(datasetStore, 'datasetTypeVersion', ['datasetType', 'version'], { unique: true });
+        ensureIndex(datasetStore, 'datasetScopePeriod', ['datasetType', 'scopeHash', 'periodKey'], { unique: false });
+        ensureIndex(datasetStore, 'datasetScopePeriodImportedAt', ['datasetType', 'scopeHash', 'periodKey', 'importedAt'], { unique: false });
+        ensureIndex(datasetStore, 'datasetScopePeriodFingerprint', ['datasetType', 'scopeHash', 'periodKey', 'fingerprint'], { unique: false });
         if (!db.objectStoreNames.contains(DATASET_CHUNK_STORE)) {
           const store = db.createObjectStore(DATASET_CHUNK_STORE, { keyPath: 'id' });
           store.createIndex('datasetId', 'datasetId', { unique: false });
           store.createIndex('datasetOrder', ['datasetId', 'index'], { unique: true });
         }
         if (!db.objectStoreNames.contains(CURRENT_STORE)) db.createObjectStore(CURRENT_STORE, { keyPath: 'datasetType' });
-        if (!db.objectStoreNames.contains(IMPORT_STORE)) {
-          const store = db.createObjectStore(IMPORT_STORE, { keyPath: 'id' });
-          store.createIndex('datasetType', 'datasetType', { unique: false });
-          store.createIndex('importedAt', 'importedAt', { unique: false });
-        }
-        if (!db.objectStoreNames.contains(PEOPLE_STORE)) {
-          const store = db.createObjectStore(PEOPLE_STORE, { keyPath: 'personId' });
-          store.createIndex('normalizedName', 'normalizedName', { unique: false });
-          store.createIndex('role', 'role', { unique: false });
-          store.createIndex('department', 'department', { unique: false });
-          store.createIndex('currentCoachId', 'currentCoachId', { unique: false });
-        }
+        const importStore = db.objectStoreNames.contains(IMPORT_STORE)
+          ? upgradeTx.objectStore(IMPORT_STORE)
+          : db.createObjectStore(IMPORT_STORE, { keyPath: 'id' });
+        ensureIndex(importStore, 'datasetType', 'datasetType', { unique: false });
+        ensureIndex(importStore, 'importedAt', 'importedAt', { unique: false });
+        ensureIndex(importStore, 'datasetTypeImportedAt', ['datasetType', 'importedAt'], { unique: false });
+        const peopleStore = db.objectStoreNames.contains(PEOPLE_STORE)
+          ? upgradeTx.objectStore(PEOPLE_STORE)
+          : db.createObjectStore(PEOPLE_STORE, { keyPath: 'personId' });
+        ensureIndex(peopleStore, 'normalizedName', 'normalizedName', { unique: false });
+        ensureIndex(peopleStore, 'aliasKeys', 'aliasKeys', { unique: false, multiEntry: true });
+        ensureIndex(peopleStore, 'role', 'role', { unique: false });
+        ensureIndex(peopleStore, 'department', 'department', { unique: false });
+        ensureIndex(peopleStore, 'currentTeam', 'currentTeam', { unique: false });
+        ensureIndex(peopleStore, 'currentCoachId', 'currentCoachId', { unique: false });
+        ensureIndex(peopleStore, 'coordinator', 'coordinator', { unique: false });
+        ensureIndex(peopleStore, 'roleDepartment', ['role', 'department'], { unique: false });
+        ensureIndex(peopleStore, 'roleTeam', ['role', 'currentTeam'], { unique: false });
+        migratePeopleIndexFields(peopleStore);
         if (!db.objectStoreNames.contains(IDENTITY_REVIEW_STORE)) {
           const store = db.createObjectStore(IDENTITY_REVIEW_STORE, { keyPath: 'id' });
           store.createIndex('status', 'status', { unique: false });
@@ -400,6 +476,37 @@
       transaction.onabort = () => reject(transaction.error || new Error(`Chunk transaction was interrupted for ${datasetId}.`));
     });
   }
+  function idbKeyRange() {
+    return root.IDBKeyRange || (typeof IDBKeyRange !== 'undefined' ? IDBKeyRange : null);
+  }
+  function prefixRange(prefix, trailingParts) {
+    const ranges = idbKeyRange();
+    if (!ranges) return null;
+    const count = Math.max(1, Number(trailingParts) || 1);
+    return ranges.bound([...prefix, ...Array(count).fill('')], [...prefix, ...Array(count).fill('\uffff')]);
+  }
+  function readCursor(transaction, source, options) {
+    const values = [];
+    const limit = Number.isFinite(Number(options && options.limit)) ? Math.max(0, Number(options.limit)) : Infinity;
+    const predicate = options && typeof options.predicate === 'function' ? options.predicate : null;
+    return new Promise((resolve, reject) => {
+      let stopped = limit === 0;
+      const request = stopped ? null : source.openCursor(options && options.range || null, options && options.direction || 'next');
+      if (request) {
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (!cursor || stopped) return;
+          if (!predicate || predicate(cursor.value)) values.push(cursor.value);
+          if (values.length >= limit) { stopped = true; return; }
+          cursor.continue();
+        };
+        request.onerror = () => reject(request.error || new Error('IndexedDB cursor read failed.'));
+      }
+      transaction.oncomplete = () => resolve(values);
+      transaction.onerror = () => reject(transaction.error || new Error('IndexedDB cursor transaction failed.'));
+      transaction.onabort = () => reject(transaction.error || new Error('IndexedDB cursor transaction was interrupted.'));
+    });
+  }
   async function materializeDatasetRecord(db, record) {
     if (!record || !record.chunked) return record;
     if (!record.dataShape || Number(record.chunkCount) < 1) throw new Error(`Dataset ${record.datasetType || record.id} has invalid chunk metadata.`);
@@ -422,12 +529,24 @@
     const scopeMatchDiagnostics = clone(meta.scopeMatchDiagnostics || data && data.meta && data.meta.scopeMatchDiagnostics || null);
     const scopedFingerprint = String(meta.scopedFingerprint || data && data.meta && data.meta.scopedFingerprint || fingerprint);
     const periodKey = detectedPeriod.periodKey;
+    const diagnostics = root.CoachToolsDiagnostics;
+    if (diagnostics) diagnostics.start('IndexedDB write', { datasetType, periodKey });
     const db = await openDatabase();
     try {
       const readTx = db.transaction([DATASET_STORE, CURRENT_STORE], 'readonly');
-      const records = await idbRequest(readTx.objectStore(DATASET_STORE).index('datasetType').getAll(datasetType));
-      const current = await idbRequest(readTx.objectStore(CURRENT_STORE).get(datasetType));
-      const duplicate = (records || []).find(record => record.fingerprint === fingerprint && record.periodKey === periodKey && String(record.scopeHash || '') === scopeHash);
+      const datasetStore = readTx.objectStore(DATASET_STORE);
+      const duplicateRequest = datasetStore.index('datasetScopePeriodFingerprint').get([datasetType, scopeHash, periodKey, fingerprint]);
+      const samePeriodRequest = datasetStore.index('datasetScopePeriod').getAll([datasetType, scopeHash, periodKey]);
+      const currentRequest = readTx.objectStore(CURRENT_STORE).get(datasetType);
+      const latestVersionTx = db.transaction(DATASET_STORE, 'readonly');
+      const latestVersionPromise = readCursor(latestVersionTx, latestVersionTx.objectStore(DATASET_STORE).index('datasetTypeVersion'), {
+        range: idbKeyRange() ? idbKeyRange().bound([datasetType, 0], [datasetType, Number.MAX_SAFE_INTEGER]) : null,
+        direction: 'prev', limit: 1,
+        predicate: record => record.datasetType === datasetType
+      });
+      const [duplicate, samePeriodRecords, current, latestVersions] = await Promise.all([
+        idbRequest(duplicateRequest), idbRequest(samePeriodRequest), idbRequest(currentRequest), latestVersionPromise
+      ]);
       if (duplicate) {
         const pointerCandidate = { ...compactMetadata(duplicate), datasetId: duplicate.id, updatedAt: importedAt };
         const shouldBecomeCurrent = compareCurrent(pointerCandidate, current);
@@ -459,8 +578,8 @@
         }
         return { status: 'duplicate', dataset: compactMetadata(duplicate), current: shouldBecomeCurrent ? compactMetadata(pointerCandidate) : compactMetadata(current) };
       }
-      const samePeriod = (records || []).filter(record => record.periodKey === periodKey && String(record.scopeHash || '') === scopeHash && !record.supersededBy).sort((a, b) => String(b.importedAt).localeCompare(String(a.importedAt)))[0];
-      const version = (records || []).reduce((max, record) => Math.max(max, Number(record.version) || 0), 0) + 1;
+      const samePeriod = (samePeriodRecords || []).filter(record => !record.supersededBy).sort((a, b) => String(b.importedAt).localeCompare(String(a.importedAt)))[0];
+      const version = (Number(latestVersions && latestVersions[0] && latestVersions[0].version) || 0) + 1;
       const id = `${datasetType}:${periodKey}:${fingerprint}:${Date.now().toString(36)}`;
       const storedData = prepareStoredData(data, id, { ...meta, rowCount: meta.rowCount || data && data.meta && data.meta.totalRows });
       const record = {
@@ -496,9 +615,9 @@
       const pointerCandidate = { ...compactMetadata(record), datasetId: id, updatedAt: importedAt };
       const shouldBecomeCurrent = compareCurrent(pointerCandidate, current);
       const tx = db.transaction([DATASET_STORE, DATASET_CHUNK_STORE, CURRENT_STORE, IMPORT_STORE], 'readwrite');
-      const datasetStore = tx.objectStore(DATASET_STORE);
-      if (samePeriod) datasetStore.put({ ...samePeriod, supersededBy: id });
-      datasetStore.put(record);
+      const writeDatasetStore = tx.objectStore(DATASET_STORE);
+      if (samePeriod) writeDatasetStore.put({ ...samePeriod, supersededBy: id });
+      writeDatasetStore.put(record);
       for (const chunk of storedData.chunks) tx.objectStore(DATASET_CHUNK_STORE).put(chunk);
       if (shouldBecomeCurrent) tx.objectStore(CURRENT_STORE).put(pointerCandidate);
       tx.objectStore(IMPORT_STORE).put({
@@ -510,12 +629,18 @@
       await transactionDone(tx);
       if (shouldBecomeCurrent) {
         currentPointers.set(datasetType, pointerCandidate);
-        cacheCurrentRecord(datasetType, { ...record, data: clone(data) });
+        // IndexedDB already performs the durable structured clone. Retain the
+        // caller-owned object for chunked workbooks instead of doubling a large
+        // in-memory tree on the save path.
+        cacheCurrentRecord(datasetType, { ...record, data: storedData.chunked ? data : clone(data) });
       }
       persistMetadataSnapshot();
       notifyDataUpdated(datasetType, { reason: samePeriod ? 'replacement' : 'imported', datasetId: id, version });
       return { status: samePeriod ? 'replacement' : 'imported', dataset: compactMetadata(record), current: shouldBecomeCurrent ? compactMetadata(pointerCandidate) : compactMetadata(current) };
-    } finally { db.close(); }
+    } finally {
+      db.close();
+      if (diagnostics) diagnostics.end('IndexedDB write', { datasetType, periodKey });
+    }
   }
   async function inspectDataset(type, data, metadata) {
     await readyPromise;
@@ -548,8 +673,10 @@
     const db = await openDatabase();
     try {
       const tx = db.transaction([DATASET_STORE, CURRENT_STORE], 'readonly');
-      const records = await idbRequest(tx.objectStore(DATASET_STORE).index('datasetType').getAll(datasetType));
-      const current = await idbRequest(tx.objectStore(CURRENT_STORE).get(datasetType));
+      const datasetStore = tx.objectStore(DATASET_STORE);
+      const duplicateRequest = datasetStore.index('datasetScopePeriodFingerprint').get([datasetType, scopeHash, candidate.periodKey, candidate.fingerprint]);
+      const currentRequest = tx.objectStore(CURRENT_STORE).get(datasetType);
+      const [duplicate, current] = await Promise.all([idbRequest(duplicateRequest), idbRequest(currentRequest)]);
       if (meta.automaticImport && current && current.scopeHash && scopeHash && current.scopeHash !== scopeHash) {
         return { status: 'needs-review', reason: 'The automatic update scope does not match the currently active dataset scope.', becomesCurrent: false, candidate, current: compactMetadata(current) };
       }
@@ -557,9 +684,9 @@
         return { status: 'needs-review', reason: `Scoped rows collapsed from ${Number(current.scopedRowCount)} to 0. The existing dataset was retained.`, becomesCurrent: false, candidate, current: compactMetadata(current) };
       }
       const result = root.CoachToolsSync && root.CoachToolsSync.compareCandidate
-        ? root.CoachToolsSync.compareCandidate(candidate, current, records)
+        ? root.CoachToolsSync.compareCandidate(candidate, current, duplicate ? [duplicate] : [])
         : (!current ? { status: 'new', reason: 'No current dataset exists.', becomesCurrent: true }
-          : records.some(record => record.fingerprint === candidate.fingerprint && record.periodKey === candidate.periodKey && String(record.scopeHash || '') === scopeHash) ? { status: 'current', reason: 'Identical scoped fingerprint already imported for this reporting period.', becomesCurrent: false }
+          : duplicate ? { status: 'current', reason: 'Identical scoped fingerprint already imported for this reporting period.', becomesCurrent: false }
           : scopeHash && scopeHash !== String(current.scopeHash || '') ? { status: 'new', reason: 'This source has not been evaluated for the selected scope.', becomesCurrent: true }
           : candidate.periodKey === current.periodKey ? { status: 'updated', reason: 'The reporting period matches but contents changed.', becomesCurrent: true }
           : candidate.periodSort > current.periodSort ? { status: 'new', reason: 'A newer period was detected.', becomesCurrent: true }
@@ -658,15 +785,196 @@
       if (diagnostics) diagnostics.end(`${datasetType} IndexedDB read`);
     }
   }
+  const STREAM_PERSON_HEADERS = Object.freeze([
+    'Representative', 'Representative Name', 'Associate Name', 'Agent Name', 'AgentName',
+    'CSR/SSR Name', 'Employee', 'Name'
+  ]);
+  const STREAM_OWNERSHIP_HEADERS = Object.freeze({
+    documentedCoaching: ['Job Coach', 'Coach Assigned', 'Coach', 'Team'],
+    weeklyRetail: ['Sheet', 'Team', 'Coach', 'Job Coach'],
+    weeklyReferral: ['Sheet', 'Team', 'Coach', 'Job Coach'],
+    qa: ['Team'],
+    checklist: ['Coach Assigned', 'Coach', 'Job Coach', 'Team'],
+    monthlyRetail: ['Sheet', 'Team', 'Coach', 'Job Coach'],
+    monthlyReferral: ['Sheet', 'Team', 'Coach', 'Job Coach'],
+    compCoaching: ['CSR Team/Coach', 'Coach Assigned', 'Coach', 'Team']
+  });
+  function streamNormalize(value) {
+    if (root.CoachToolsIdentity && typeof root.CoachToolsIdentity.normalizeName === 'function') return root.CoachToolsIdentity.normalizeName(value);
+    return String(value == null ? '' : value).trim().replace(/,/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+  }
+  function personLookupNames(person) {
+    if (!person) return [];
+    const sourceNames = person.sourceNames && typeof person.sourceNames === 'object'
+      ? Object.values(person.sourceNames).flatMap(names => Array.isArray(names) ? names : names ? [names] : [])
+      : [];
+    return [person.displayName, person.normalizedName, ...(person.aliases || []), ...sourceNames].map(streamNormalize).filter(Boolean);
+  }
+  async function streamFilterContext(datasetType, options) {
+    const scope = options && options.scope && typeof options.scope === 'object' ? options.scope : null;
+    const coachIds = Array.from(new Set([...(options && options.coachIds || []), ...(scope && scope.coachPersonIds || []), ...(scope && scope.mode === 'coach' && scope.personId ? [scope.personId] : [])].filter(Boolean)));
+    const personIds = Array.from(new Set([...(options && options.personIds || []), ...(scope && scope.mode === 'representative' && scope.personId ? [scope.personId] : [])].filter(Boolean)));
+    const coachKeys = new Set([...(options && options.coachNames || []), ...(scope && scope.coachKeys || []), ...(scope && scope.coaches || [])].map(streamNormalize).filter(Boolean));
+    const personKeys = new Set([...(options && options.personNames || []), ...(scope && scope.representatives || [])].map(streamNormalize).filter(Boolean));
+    if (scope && scope.mode === 'team') coachKeys.add(streamNormalize(scope.team || scope.label));
+    if (scope && scope.mode === 'department') coachKeys.add(streamNormalize(scope.department || scope.label));
+    if (scope && scope.mode === 'coordinator') coachKeys.add(streamNormalize(scope.coordinator || scope.label));
+    const identity = root.CoachToolsIdentity;
+    if (scope && identity) {
+      try {
+        let scopedCoaches = [];
+        if (scope.mode === 'team' && scope.team && typeof identity.getCoachesByTeam === 'function') scopedCoaches = await identity.getCoachesByTeam(scope.team);
+        else if (scope.mode === 'department' && scope.department && typeof identity.getCoachesByDepartment === 'function') scopedCoaches = await identity.getCoachesByDepartment(scope.department);
+        else if (scope.mode === 'coordinator' && scope.coordinator && typeof identity.getCoaches === 'function') scopedCoaches = (await identity.getCoaches()).filter(person => streamNormalize(person.coordinator) === streamNormalize(scope.coordinator));
+        for (const person of scopedCoaches) {
+          if (!coachIds.includes(person.personId)) coachIds.push(person.personId);
+          for (const key of personLookupNames(person)) coachKeys.add(key);
+        }
+      } catch (_) {}
+    }
+    const ids = Array.from(new Set([...coachIds, ...personIds]));
+    let people = [];
+    if (ids.length && identity) {
+      try {
+        people = typeof identity.getPeopleByIds === 'function'
+          ? await identity.getPeopleByIds(ids)
+          : (await Promise.all(ids.map(id => identity.getPerson && identity.getPerson(id)))).filter(Boolean);
+      } catch (_) { people = []; }
+    }
+    const coachIdSet = new Set(coachIds);
+    const personIdSet = new Set(personIds);
+    for (const person of people) {
+      const target = coachIdSet.has(person.personId) ? coachKeys : personIdSet.has(person.personId) ? personKeys : null;
+      if (target) for (const key of personLookupNames(person)) target.add(key);
+    }
+    const narrowScope = Boolean(scope && scope.mode && scope.mode !== 'all');
+    return {
+      datasetType,
+      coachKeys,
+      personKeys,
+      active: narrowScope || coachIds.length > 0 || personIds.length > 0 || coachKeys.size > 0 || personKeys.size > 0 || typeof (options && options.rowFilter) === 'function',
+      requireCoach: coachIds.length > 0 || coachKeys.size > 0 || Boolean(narrowScope && scope.mode !== 'representative'),
+      requirePerson: personIds.length > 0 || personKeys.size > 0 || Boolean(narrowScope && scope.mode === 'representative'),
+      rowFilter: options && typeof options.rowFilter === 'function' ? options.rowFilter : null
+    };
+  }
+  function streamHeaderContext(rows, rowStart, datasetType) {
+    const ownership = new Set((STREAM_OWNERSHIP_HEADERS[datasetType] || []).map(streamNormalize));
+    const people = new Set(STREAM_PERSON_HEADERS.map(streamNormalize));
+    let best = null;
+    for (let offset = 0; offset < Math.min(60, rows.length); offset += 1) {
+      const row = Array.isArray(rows[offset]) ? rows[offset] : [];
+      const normalized = row.map(streamNormalize);
+      const coachColumns = [], personColumns = [];
+      normalized.forEach((header, index) => {
+        if (ownership.has(header)) coachColumns.push(index);
+        if (people.has(header)) personColumns.push(index);
+      });
+      const score = coachColumns.length * 2 + personColumns.length;
+      if (!best || score > best.score) best = { score, headerRow: rowStart + offset, header: row, coachColumns, personColumns };
+    }
+    return best && best.score ? best : { score: 0, headerRow: rowStart - 1, header: [], coachColumns: [], personColumns: [] };
+  }
+  function filterStreamChunk(chunk, context, sheetContexts, options) {
+    const rows = Array.isArray(chunk && chunk.rows) ? chunk.rows : [];
+    let header = sheetContexts.get(chunk.sheetName);
+    if (!header || Number(chunk.rowStart) === 0) {
+      header = streamHeaderContext(rows, Number(chunk.rowStart) || 0, context.datasetType);
+      sheetContexts.set(chunk.sheetName, header);
+    }
+    if (!context.active) return { ...chunk, rows, header: header.header, headerRow: header.headerRow, sourceRowCount: rows.length, matchedRowCount: rows.length };
+    const selected = [];
+    let sourceRowCount = 0, matchedRowCount = 0;
+    const sheetMatchesCoach = context.coachKeys.has(streamNormalize(chunk.sheetName));
+    for (let offset = 0; offset < rows.length; offset += 1) {
+      const row = rows[offset];
+      const absoluteRow = (Number(chunk.rowStart) || 0) + offset;
+      if (absoluteRow <= header.headerRow) {
+        if (!options || options.includeHeaders !== false) selected.push(row);
+        continue;
+      }
+      if (!Array.isArray(row) || !row.some(value => String(value == null ? '' : value).trim())) continue;
+      sourceRowCount += 1;
+      const coachMatch = !context.requireCoach || sheetMatchesCoach || header.coachColumns.some(index => context.coachKeys.has(streamNormalize(row[index])));
+      const personMatch = !context.requirePerson || header.personColumns.some(index => context.personKeys.has(streamNormalize(row[index])));
+      const customMatch = !context.rowFilter || context.rowFilter(row, { datasetType: context.datasetType, sheetName: chunk.sheetName, header: header.header, headerRow: header.headerRow, absoluteRow });
+      if (coachMatch && personMatch && customMatch) { selected.push(row); matchedRowCount += 1; }
+    }
+    return { ...chunk, rows: selected, header: header.header, headerRow: header.headerRow, sourceRowCount, matchedRowCount };
+  }
+  async function* streamRows(type, options) {
+    await readyPromise;
+    const datasetType = canonicalType(type);
+    if (!datasetType) throw new Error('Unknown CoachTools dataset: ' + type);
+    const signal = options && options.signal;
+    const throwIfAborted = () => {
+      if (!signal || !signal.aborted) return;
+      const error = signal.reason instanceof Error ? signal.reason : new Error('Dataset streaming was cancelled.');
+      error.name = error.name || 'AbortError';
+      throw error;
+    };
+    const diagnostics = root.CoachToolsDiagnostics;
+    if (diagnostics) diagnostics.start(`${datasetType} IndexedDB stream`);
+    let db = null;
+    try {
+      throwIfAborted();
+      let record = null;
+      if (databaseUnavailable) {
+        record = await getCurrent(datasetType, { includeRecord: true });
+      } else {
+        const pointer = options && options.datasetId
+          ? { datasetId: options.datasetId }
+          : currentPointers.get(datasetType);
+        if (!pointer || !pointer.datasetId) return;
+        db = await openDatabase();
+        record = await idbRequest(db.transaction(DATASET_STORE, 'readonly').objectStore(DATASET_STORE).get(pointer.datasetId));
+      }
+      if (!record) return;
+      const context = await streamFilterContext(datasetType, options || {});
+      const sheetContexts = new Map();
+      const metadata = compactMetadata(record);
+      const emitChunk = chunk => filterStreamChunk({ ...chunk, datasetType, datasetId: record.id, metadata }, context, sheetContexts, options);
+      if (record.chunked) {
+        for (let index = 0; index < Number(record.chunkCount || 0); index += 1) {
+          throwIfAborted();
+          const chunkId = `${record.id}:${String(index).padStart(6, '0')}`;
+          const chunk = await idbRequest(db.transaction(DATASET_CHUNK_STORE, 'readonly').objectStore(DATASET_CHUNK_STORE).get(chunkId));
+          if (!chunk) throw new Error(`Dataset ${datasetType} is incomplete (missing chunk ${index + 1} of ${record.chunkCount}).`);
+          const filtered = emitChunk(chunk);
+          if (filtered.rows.length || options && options.includeEmpty) yield filtered;
+        }
+      } else {
+        const sheets = record.data && record.data.workbook && record.data.workbook.data || {};
+        const order = record.data && record.data.workbook && record.data.workbook.sheets || Object.keys(sheets);
+        let index = 0;
+        for (const sheetName of order) {
+          const rows = Array.isArray(sheets[sheetName] && sheets[sheetName].aoa) ? sheets[sheetName].aoa : [];
+          for (let rowStart = 0; rowStart < rows.length; rowStart += CHUNK_ROWS) {
+            throwIfAborted();
+            const filtered = emitChunk({ id: `${record.id}:memory:${index++}`, index: index - 1, sheetName, rowStart, rows: rows.slice(rowStart, rowStart + CHUNK_ROWS) });
+            if (filtered.rows.length || options && options.includeEmpty) yield filtered;
+          }
+        }
+      }
+    } finally {
+      if (db) db.close();
+      if (diagnostics) diagnostics.end(`${datasetType} IndexedDB stream`);
+    }
+  }
   async function getHistory(type, options) {
     await readyPromise;
     const datasetType = canonicalType(type);
     if (!datasetType || databaseUnavailable) return [];
+    const limit = options && options.limit != null ? Math.max(0, Number(options.limit) || 0) : Infinity;
     const db = await openDatabase();
     try {
-      let records = await idbRequest(db.transaction(DATASET_STORE, 'readonly').objectStore(DATASET_STORE).index('datasetType').getAll(datasetType));
-      records = (records || []).sort((a, b) => String(b.periodSort || b.importedAt).localeCompare(String(a.periodSort || a.importedAt)) || String(b.importedAt).localeCompare(String(a.importedAt)));
-      if (options && options.activeOnly) records = records.filter(record => !record.supersededBy);
+      const tx = db.transaction(DATASET_STORE, 'readonly');
+      const records = await readCursor(tx, tx.objectStore(DATASET_STORE).index('datasetTypePeriodSortImportedAt'), {
+        range: prefixRange([datasetType], 2),
+        direction: 'prev',
+        limit,
+        predicate: record => record.datasetType === datasetType && (!(options && options.activeOnly) || !record.supersededBy)
+      });
       if (options && options.storageRecords) return records;
       if (options && options.metadataOnly) return records.map(compactMetadata);
       const materialized = [];
@@ -684,9 +992,14 @@
     const limit = Math.max(1, Number(options && options.limit) || 100);
     const db = await openDatabase();
     try {
-      let records = await idbRequest(db.transaction(IMPORT_STORE, 'readonly').objectStore(IMPORT_STORE).getAll());
-      if (type) records = (records || []).filter(record => record.datasetType === type);
-      return (records || []).sort((a, b) => String(b.importedAt).localeCompare(String(a.importedAt))).slice(0, limit);
+      const tx = db.transaction(IMPORT_STORE, 'readonly');
+      const store = tx.objectStore(IMPORT_STORE);
+      return readCursor(tx, type ? store.index('datasetTypeImportedAt') : store.index('importedAt'), {
+        range: type ? prefixRange([type], 1) : null,
+        direction: 'prev',
+        limit,
+        predicate: record => !type || record.datasetType === type
+      });
     } finally { db.close(); }
   }
   function getDatasetVersion(type) {
@@ -996,14 +1309,35 @@
     else autoMountStatus();
   }
 
+  function queueIdentityIngestion(datasetType, result, data, metadata) {
+    if (!result || result.status === 'duplicate') return;
+    const run = () => {
+      const identity = root.CoachToolsIdentity;
+      if (!identity) return;
+      const descriptor = {
+        datasetId: result.dataset && (result.dataset.datasetId || result.dataset.id) || '',
+        fingerprint: result.dataset && result.dataset.fingerprint || metadata && metadata.fingerprint || ''
+      };
+      if (typeof identity.queueDatasetIngestion === 'function') {
+        identity.queueDatasetIngestion(datasetType, descriptor);
+        return;
+      }
+      if (typeof identity.ingestDataset === 'function') {
+        identity.ingestDataset(datasetType, data, { ...(metadata || {}), ...descriptor }).catch(error => console.warn('[CoachToolsData] Background identity learning could not finish.', error));
+      }
+    };
+    if (typeof root.requestIdleCallback === 'function') root.requestIdleCallback(run, { timeout: 1200 });
+    else root.setTimeout(run, 0);
+  }
+
   const CoachToolsData = Object.freeze({
     VERSION, DB_NAME, DB_VERSION, DATASET_TYPES, LABELS, EVENT_NAME,
     storageContract: Object.freeze({ dbName: DB_NAME, dbVersion: DB_VERSION, stores: Object.freeze([...ALLSTAR_STORES, DATASET_STORE, DATASET_CHUNK_STORE, CURRENT_STORE, IMPORT_STORE, PEOPLE_STORE, IDENTITY_REVIEW_STORE]) }),
-    storageFormat: Object.freeze({ CHUNK_ROWS, CHUNK_THRESHOLD_BYTES, CHUNK_THRESHOLD_ROWS, splitDataIntoChunks, assembleDataFromChunks }),
+    storageFormat: Object.freeze({ CHUNK_ROWS, CHUNK_THRESHOLD_BYTES, CHUNK_THRESHOLD_ROWS, createDataSkeleton, splitDataIntoChunks, assembleDataFromChunks }),
     ready: () => readyPromise,
-    importDataset: async (type, data, metadata) => { await readyPromise; if (databaseUnavailable) throw new Error('IndexedDB is unavailable.'); const result = await putDataset(type, data, metadata); if (root.CoachToolsIdentity && result.status !== 'duplicate') await root.CoachToolsIdentity.ingestDataset(canonicalType(type), data, { ...(metadata || {}), fingerprint: result.dataset && result.dataset.fingerprint || metadata && metadata.fingerprint || '' }).catch(error => console.warn('[CoachToolsData] Identity learning could not finish.', error)); return result; },
-    replaceDataset: async (type, data, metadata) => { await readyPromise; const result = await putDataset(type, data, { ...(metadata || {}), replace: true }); if (root.CoachToolsIdentity) await root.CoachToolsIdentity.ingestDataset(canonicalType(type), data, { ...(metadata || {}), fingerprint: result.dataset && result.dataset.fingerprint || metadata && metadata.fingerprint || '' }).catch(() => {}); return result; },
-    getCurrent, getHistory, getDatasetVersion, getImportHistory, inspectDataset, removeDataset, resolveUpdateScope,
+    importDataset: async (type, data, metadata) => { await readyPromise; if (databaseUnavailable) throw new Error('IndexedDB is unavailable.'); const datasetType = canonicalType(type); const result = await putDataset(datasetType, data, metadata); queueIdentityIngestion(datasetType, result, data, metadata); return result; },
+    replaceDataset: async (type, data, metadata) => { await readyPromise; const datasetType = canonicalType(type); const result = await putDataset(datasetType, data, { ...(metadata || {}), replace: true }); queueIdentityIngestion(datasetType, result, data, metadata); return result; },
+    getCurrent, streamRows, getHistory, getDatasetVersion, getImportHistory, inspectDataset, removeDataset, resolveUpdateScope,
     getStatus: async () => { await readyPromise; return centralStatus(); },
     getStatusSync: centralStatus,
     mountStatus, subscribe: listener => subscribe(listener), subscribeScope: listener => subscribe(listener, { scope: true }),

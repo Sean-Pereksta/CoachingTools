@@ -208,7 +208,7 @@
 
   async function loadHistory(type,limit){
     if(!root.CoachToolsData || typeof root.CoachToolsData.getHistory!=='function') return [];
-    try{return (await root.CoachToolsData.getHistory(type,{activeOnly:true})).slice(0,limit||13);}catch(_){return [];}
+    try{return await root.CoachToolsData.getHistory(type,{activeOnly:true,limit:limit||13});}catch(_){return [];}
   }
 
   async function loadContext(options){

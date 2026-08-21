@@ -546,7 +546,7 @@
     await Promise.all([root.CoachToolsAppData.ready(), root.CoachToolsIdentity.ready()]);
     const people = await root.CoachToolsIdentity.getAllPeople(), historyRecords = {};
     const records = await root.CoachToolsAppData.getMany(['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'qa', 'documentedCoaching', 'checklist'], { includeRecord: true });
-    for (const type of ['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'qa']) historyRecords[type] = (await root.CoachToolsData.getHistory(type, { activeOnly: true })).slice(0, 13);
+    for (const type of ['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'qa']) historyRecords[type] = await root.CoachToolsData.getHistory(type, { activeOnly: true, limit: 13 });
     const prepared = prepareCurrent(people, records), historyIndex = createHistoryIndex(people);
     for (const [type, rows] of Object.entries(historyRecords)) for (const record of rows || []) addHistoryRecord(historyIndex, type, record);
     return buildProfile(personId, people, records, historyRecords, prepared, historyIndex);

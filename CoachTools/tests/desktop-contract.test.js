@@ -110,7 +110,7 @@ assert(imports.readWorkbook || fs.readFileSync(path.join(root, 'shared', 'coacht
 assert(desktopScript.includes("type: 'coachtools:scope-updated'"), 'The desktop should relay scope changes to open applications.');
 assert(desktopScript.includes("type: 'coachtools:prepare-close'") && desktopScript.includes('APP_CLOSE_DEADLINE_MS'), 'Allstar close should use a bounded prepare/ready handshake.');
 assert(storageScript.includes('scopeSnapshot') && storageScript.includes('scopedRowCount') && storageScript.includes('scopeMatchDiagnostics'), 'Current dataset metadata should retain the scope that created it.');
-assert(storageScript.includes('storageContract: Object.freeze'), 'The shared data API should expose its schema-7 storage contract.');
+assert(storageScript.includes('storageContract: Object.freeze'), 'The shared data API should expose its versioned storage contract.');
 assert(desktopScript.includes("coachtools.storage.processed.v2"), 'Processed storage files should be keyed by the scope-aware v2 contract.');
 assert(smartImportScript.includes("'weeklyReferral', 'qa'") && smartImportScript.includes('importer.saveRecognizedEntry(entry, { scope })'), 'The smart chooser should route QA and every save through the shared scoped importer.');
 assert(!smartImportScript.includes('sheet.aoa = headerRows.concat(selectedRows)'), 'The smart chooser must not retain a second legacy scope-filter implementation.');

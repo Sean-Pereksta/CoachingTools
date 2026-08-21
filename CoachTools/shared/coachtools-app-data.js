@@ -342,6 +342,7 @@
         getMany: (types, options) => progressive('getMany', types, options),
         getManyProgressive: (types, options) => progressive('getManyProgressive', types, options),
         loadForApp: (app, options) => progressive('loadForApp', app, options),
+        streamRows: (...args) => owner.streamRows(...args),
         peek: (...args) => owner.peek(...args),
         getVersion: (...args) => owner.getVersion(...args),
         subscribe: (...args) => track(owner.subscribe(...args)),
@@ -533,6 +534,11 @@
     return getManyProgressive(types, { ...(options || {}), continueOnError: false });
   }
 
+  function streamRows(type, options) {
+    if (!data || typeof data.streamRows !== 'function') throw new Error('CoachTools row streaming is unavailable.');
+    return data.streamRows(canonical(type), options || {});
+  }
+
   async function loadForApp(app, options) {
     const requested = Array.isArray(app) ? app : app && Array.isArray(app.data) ? app.data : [];
     return getManyProgressive(requested, {
@@ -572,7 +578,7 @@
   }
 
   root.CoachToolsAppData = Object.freeze({
-    VERSION, ready, get, getMany, getManyProgressive, loadForApp, peek, getVersion, subscribe,
+    VERSION, ready, get, getMany, getManyProgressive, loadForApp, streamRows, peek, getVersion, subscribe,
     getScope: () => storage && storage.getScope ? storage.getScope() : null,
     subscribeScope: callback => data && data.subscribeScope ? data.subscribeScope(callback) : () => {},
     invalidate(type) { if (type) cache.delete(canonical(type)); else cache.clear(); }

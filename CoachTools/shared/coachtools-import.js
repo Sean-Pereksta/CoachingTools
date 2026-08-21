@@ -152,6 +152,8 @@
   }
 
   async function resolveScopeSnapshot(scope) {
+    const diagnostics = root.CoachToolsDiagnostics;
+    if (diagnostics) diagnostics.start('Scope resolution');
     let identityPeople = [];
     const identity = root.CoachToolsIdentity;
     if (identity && typeof identity.getAllPeople === 'function') {
@@ -160,7 +162,9 @@
         identityPeople = await identity.getAllPeople();
       } catch (_) { identityPeople = []; }
     }
-    return normalizeScopeSnapshot(scope, { identityPeople });
+    const resolved = normalizeScopeSnapshot(scope, { identityPeople });
+    if (diagnostics) diagnostics.end('Scope resolution', { mode: resolved.mode, coaches: resolved.coachPersonIds.length || resolved.coaches.length });
+    return resolved;
   }
 
   function isNarrowScope(scope) {
@@ -210,15 +214,42 @@
     return lastColumn < 0 ? [] : rows.map(row => Array.isArray(row) ? row.slice(0, lastColumn + 1) : []);
   }
 
+  function trimAOAInPlace(aoa) {
+    if (!Array.isArray(aoa) || !aoa.length) return Array.isArray(aoa) ? aoa : [];
+    let lastRow = aoa.length - 1, lastColumn = -1;
+    while (lastRow >= 0 && !(aoa[lastRow] || []).some(cell => !isBlank(cell))) lastRow -= 1;
+    if (lastRow < 0) { aoa.length = 0; return aoa; }
+    aoa.length = lastRow + 1;
+    for (const row of aoa) {
+      for (let column = (row || []).length - 1; column >= 0; column -= 1) {
+        if (!isBlank(row[column])) { lastColumn = Math.max(lastColumn, column); break; }
+      }
+    }
+    if (lastColumn < 0) { aoa.length = 0; return aoa; }
+    for (const row of aoa) if (Array.isArray(row) && row.length > lastColumn + 1) row.length = lastColumn + 1;
+    return aoa;
+  }
+
   async function readWorkbook(file) {
     if (!root.XLSX && root.CoachToolsDependencies) await root.CoachToolsDependencies.ensureXlsx();
     if (!root.XLSX) throw new Error('SheetJS could not load.');
     if (!file || !isSupportedFile(file)) throw new Error('Choose an XLSX, XLS, or CSV file.');
     const extension = extensionOf(file);
+    const diagnostics = root.CoachToolsDiagnostics;
+    if (diagnostics) diagnostics.start('File read', { fileName: file.name, fileSize: Number(file.size) || 0 });
+    let payload;
     if (extension === '.csv' || file.type === 'text/csv') {
-      return root.XLSX.read(await file.text(), { type: 'string' });
+      try { payload = await file.text(); }
+      finally { if (diagnostics) diagnostics.end('File read', { fileName: file.name }); }
+      if (diagnostics) diagnostics.start('XLSX parse', { fileName: file.name, format: 'csv' });
+      try { return root.XLSX.read(payload, { type: 'string' }); }
+      finally { if (diagnostics) diagnostics.end('XLSX parse', { fileName: file.name }); }
     }
-    return root.XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    try { payload = await file.arrayBuffer(); }
+    finally { if (diagnostics) diagnostics.end('File read', { fileName: file.name }); }
+    if (diagnostics) diagnostics.start('XLSX parse', { fileName: file.name, format: extension.slice(1) });
+    try { return root.XLSX.read(payload, { type: 'array' }); }
+    finally { if (diagnostics) diagnostics.end('XLSX parse', { fileName: file.name }); }
   }
 
   async function parseFile(file, options) {
@@ -229,7 +260,7 @@
     const onProgress = options && typeof options.onProgress === 'function' ? options.onProgress : null;
     for (let index = 0; index < sheets.length; index += 1) {
       const name = sheets[index];
-      const aoa = trimAOA(root.XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '' }));
+      const aoa = trimAOAInPlace(root.XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '' }));
       data[name] = { aoa };
       totalRows += aoa.length;
       if (onProgress) onProgress({ phase: 'reading-sheet', fileName: file.name, sheetName: name, current: index + 1, total: sheets.length });
@@ -245,6 +276,153 @@
         totalRows
       },
       workbook: { sheets, data }
+    };
+  }
+
+  function decodedSheetRange(sheet) {
+    try {
+      if (!sheet || !sheet['!ref'] || !root.XLSX || !root.XLSX.utils || typeof root.XLSX.utils.decode_range !== 'function') return null;
+      return root.XLSX.utils.decode_range(sheet['!ref']);
+    } catch (_) { return null; }
+  }
+
+  function cellValue(sheet, rowIndex, columnIndex) {
+    try {
+      const address = root.XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
+      const cell = sheet && sheet[address];
+      return cell && Object.prototype.hasOwnProperty.call(cell, 'v') ? cell.v : '';
+    } catch (_) { return ''; }
+  }
+
+  function rowFromSheet(sheet, rowIndex, lastColumn) {
+    const row = new Array(Math.max(0, lastColumn) + 1);
+    for (let column = 0; column <= lastColumn; column += 1) row[column] = cellValue(sheet, rowIndex, column);
+    return row;
+  }
+
+  async function discoverFile(file, options) {
+    const workbook = await readWorkbook(file);
+    const sheets = workbook.SheetNames || [];
+    const data = {};
+    const ranges = {};
+    let totalRows = 0;
+    const onProgress = options && typeof options.onProgress === 'function' ? options.onProgress : null;
+    for (let index = 0; index < sheets.length; index += 1) {
+      const name = sheets[index], sheet = workbook.Sheets[name], range = decodedSheetRange(sheet);
+      ranges[name] = range;
+      let preview;
+      if (range) {
+        const previewRange = { s: { r: 0, c: 0 }, e: { r: Math.min(range.e.r, 59), c: Math.min(range.e.c, 1023) } };
+        preview = root.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', range: previewRange });
+        totalRows += Math.max(0, range.e.r - range.s.r + 1);
+      } else {
+        // Older SheetJS-compatible test doubles cannot address ranges. Preserve
+        // functional behavior there; current browsers use the lightweight path.
+        preview = root.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        totalRows += preview.length;
+      }
+      data[name] = { aoa: trimAOAInPlace(preview) };
+      if (onProgress) onProgress({ phase: 'reading-sheet', fileName: file.name, sheetName: name, current: index + 1, total: sheets.length });
+      await new Promise(resolve => root.setTimeout(resolve, 0));
+    }
+    const parsed = {
+      meta: {
+        fileName: file.name,
+        fileSize: Number(file.size) || 0,
+        fileModifiedDate: file.lastModified ? new Date(file.lastModified).toISOString() : '',
+        fileType: file.type || '',
+        loadedAt: new Date().toISOString(),
+        sheetsCount: sheets.length,
+        totalRows,
+        discoveryOnly: true
+      },
+      workbook: { sheets, data }
+    };
+    const diagnostics = root.CoachToolsDiagnostics;
+    if (diagnostics) diagnostics.start('File classification', { fileName: file.name });
+    let classification;
+    const requestedType = options && options.datasetType;
+    if (requestedType && SOURCES[requestedType]) {
+      const validation = validateClassification(requestedType, parsed);
+      classification = validation.valid
+        ? { id: requestedType, confidence: 'high', reason: 'manual+headers', classificationMethod: 'manual+headers', candidates: [requestedType], validation, detectedPeriod: detectPeriod(file, requestedType) }
+        : { id: null, predictedId: requestedType, confidence: 'needs-review', reason: 'header-validation-failed', classificationMethod: 'manual', candidates: [requestedType], validation, needsReview: true, detectedPeriod: detectPeriod(file, requestedType) };
+    } else classification = classifyFile(file, parsed);
+    if (diagnostics) diagnostics.end('File classification', { fileName: file.name, datasetType: classification.id || classification.predictedId || '' });
+    const ownershipByKey = new Map();
+    const source = classification.id;
+    if (source) {
+      for (const sheetName of sheets) {
+        const preview = data[sheetName] && data[sheetName].aoa || [];
+        const header = findHeader(preview, SOURCES[source].header) || findOwnershipHeader(preview, source);
+        if (!header) continue;
+        const sheet = workbook.Sheets[sheetName], range = ranges[sheetName];
+        const lastRow = range ? range.e.r : preview.length - 1;
+        for (let rowIndex = header.headerRow + 1; rowIndex <= lastRow; rowIndex += 1) {
+          const value = range ? cellValue(sheet, rowIndex, header.colIndex) : preview[rowIndex] && preview[rowIndex][header.colIndex];
+          if (!isBlank(value)) {
+            const shown = display(value), key = normalizeName(shown);
+            if (key) {
+              const existing = ownershipByKey.get(key);
+              if (existing) existing.count += 1;
+              else ownershipByKey.set(key, { value: shown, sheetName, rowIndex, count: 1 });
+            }
+          }
+          if (rowIndex > header.headerRow && rowIndex % 4000 === 0) await new Promise(resolve => root.setTimeout(resolve, 0));
+        }
+      }
+    }
+    if (onProgress) onProgress({ phase: 'classified', fileName: file.name, datasetType: source || '', current: 1, total: 1 });
+    return { file, parsed, classification, discovery: { ownershipValues: Array.from(ownershipByKey.values()), ranges }, rawWorkbook: workbook };
+  }
+
+  async function materializeDiscoveredEntry(entry, scope, options) {
+    if (!entry || !entry.rawWorkbook) return entry && entry.parsed;
+    const source = entry.classification && entry.classification.id;
+    if (!source) throw new Error('The file has not been safely classified.');
+    const snapshot = normalizeScopeSnapshot(scope || { mode: 'all', label: 'All people' }, options);
+    const narrow = isNarrowScope(snapshot), selectedNames = new Set(scopeNames(snapshot));
+    const corrections = new Map((options && options.nameCorrections || []).map(item => [normalizeName(item && item.from), display(item && item.to)]).filter(item => item[0] && item[1]));
+    const corrected = value => corrections.get(normalizeName(value)) || value;
+    const workbook = entry.rawWorkbook, sheets = workbook.SheetNames || [];
+    const data = {};
+    let totalRows = 0;
+    const onProgress = options && typeof options.onProgress === 'function' ? options.onProgress : null;
+    for (let index = 0; index < sheets.length; index += 1) {
+      const sheetName = sheets[index], sheet = workbook.Sheets[sheetName], range = decodedSheetRange(sheet);
+      let aoa = [];
+      const preview = entry.parsed && entry.parsed.workbook && entry.parsed.workbook.data[sheetName] && entry.parsed.workbook.data[sheetName].aoa || [];
+      // Preserve the worksheet's used width after selection. The bounded
+      // discovery preview may not contain values from a later metric column.
+      const lastColumn = range ? Math.min(range.e.c, 1023) : 0;
+      if (!range) {
+        aoa = trimAOAInPlace(root.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }));
+      } else if (!narrow || selectedNames.has(normalizeName(corrected(sheetName)))) {
+        aoa = trimAOAInPlace(root.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', range: { s: { r: 0, c: 0 }, e: { r: range.e.r, c: lastColumn } } }));
+      } else {
+        const header = findOwnershipHeader(preview, source);
+        if (header) {
+          for (let rowIndex = 0; rowIndex <= header.headerRow; rowIndex += 1) aoa.push(rowFromSheet(sheet, rowIndex, lastColumn));
+          for (let rowIndex = header.headerRow + 1; rowIndex <= range.e.r; rowIndex += 1) {
+            const owner = cellValue(sheet, rowIndex, header.colIndex);
+            if (selectedNames.has(normalizeName(corrected(owner)))) aoa.push(rowFromSheet(sheet, rowIndex, lastColumn));
+            if (rowIndex > header.headerRow && rowIndex % 2000 === 0) await new Promise(resolve => root.setTimeout(resolve, 0));
+          }
+          trimAOAInPlace(aoa);
+        } else {
+          // Retain only the tiny preview so scoped validation can explain the
+          // missing ownership column without materializing the worksheet.
+          aoa = preview.map(row => Array.isArray(row) ? row.slice() : []);
+        }
+      }
+      data[sheetName] = { aoa };
+      totalRows += aoa.length;
+      if (onProgress) onProgress({ phase: 'materializing-scope', fileName: entry.file && entry.file.name || '', sheetName, current: index + 1, total: sheets.length });
+      await new Promise(resolve => root.setTimeout(resolve, 0));
+    }
+    return {
+      meta: { ...(entry.parsed && entry.parsed.meta || {}), discoveryOnly: false, sourceTotalRows: entry.parsed && entry.parsed.meta && entry.parsed.meta.totalRows || 0, totalRows },
+      workbook: { sheets: sheets.slice(), data }
     };
   }
 
@@ -432,18 +610,30 @@
     return null;
   }
 
-  function fingerprintRows(parts) {
+  function createDatasetHash(prefix) {
     let hash = 2166136261;
-    for (const part of parts || []) {
-      const text = typeof part === 'string' ? part : JSON.stringify(part);
-      for (let index = 0; index < text.length; index += 1) {
-        hash ^= text.charCodeAt(index);
+    let parts = 0;
+    return Object.freeze({
+      update(part) {
+        const text = typeof part === 'string' ? part : JSON.stringify(part);
+        for (let index = 0; index < text.length; index += 1) {
+          hash ^= text.charCodeAt(index);
+          hash = Math.imul(hash, 16777619);
+        }
+        hash ^= 31;
         hash = Math.imul(hash, 16777619);
-      }
-      hash ^= 31;
-      hash = Math.imul(hash, 16777619);
-    }
-    return `scoped-fnv1a-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+        parts += 1;
+        return this;
+      },
+      finish() { return `${prefix || 'scoped-fnv1a'}-${(hash >>> 0).toString(16).padStart(8, '0')}`; },
+      get parts() { return parts; }
+    });
+  }
+
+  function fingerprintRows(parts) {
+    const hash = createDatasetHash('scoped-fnv1a');
+    for (const part of parts || []) hash.update(part);
+    return hash.finish();
   }
 
   function scopeValidationError(message, diagnostics) {
@@ -458,11 +648,38 @@
     const aliases = { retail: 'weeklyRetail', referral: 'weeklyReferral', coaching: 'documentedCoaching' };
     source = aliases[source] || source;
     if (!SOURCES[source]) throw new Error('Unknown CoachTools source: ' + source);
+    const diagnosticsApi = root.CoachToolsDiagnostics;
+    if (diagnosticsApi) {
+      diagnosticsApi.start('Scope filtering', { datasetType: source });
+      diagnosticsApi.start('Fingerprint generation', { datasetType: source, strategy: 'incremental' });
+    }
+    const finish = result => {
+      if (diagnosticsApi) {
+        diagnosticsApi.end('Fingerprint generation', { datasetType: source, fingerprint: result && result.scopedFingerprint || '' });
+        diagnosticsApi.end('Scope filtering', { datasetType: source, matchedRows: result && result.matchedRows || 0 });
+      }
+      return result;
+    };
     const scopeSnapshot = normalizeScopeSnapshot(scope || { mode: 'all', label: 'All people' }, options);
     const narrow = isNarrowScope(scopeSnapshot);
     const selectedNames = new Set(scopeNames(scopeSnapshot));
-    const prepared = options && options.clone === false ? parsed : clone(parsed);
-    if (source === 'documentedCoaching') convertCoachingDateHeader(prepared);
+    const corrections = new Map((options && options.nameCorrections || []).map(item => [normalizeName(item && item.from), display(item && item.to)]).filter(item => item[0] && item[1]));
+    const correctedOwnership = value => corrections.get(normalizeName(value)) || value;
+    const copyWithCorrection = (row, columnIndex) => {
+      if (!Array.isArray(row) || columnIndex == null || columnIndex < 0) return row;
+      const corrected = correctedOwnership(row[columnIndex]);
+      if (corrected === row[columnIndex]) return row;
+      const copy = row.slice();
+      copy[columnIndex] = corrected;
+      return copy;
+    };
+    if (source === 'documentedCoaching') convertCoachingDateHeader(parsed);
+    const sourceWorkbook = parsed && parsed.workbook || { sheets: [], data: {} };
+    const prepared = {
+      ...(parsed || {}),
+      meta: { ...(parsed && parsed.meta || {}) },
+      workbook: { ...sourceWorkbook, sheets: Array.from(sourceWorkbook.sheets || []), data: {} }
+    };
     let matchedRows = 0;
     let sourceRows = 0;
     let totalRows = 0;
@@ -470,30 +687,36 @@
     let ownershipColumn = '';
     const sheetsChecked = [];
     const warnings = [];
-    const fingerprintParts = [`source:${source}`, `scope:${scopeSnapshot.scopeHash}`];
+    const fingerprint = createDatasetHash('scoped-fnv1a');
+    fingerprint.update(`source:${source}`).update(`scope:${scopeSnapshot.scopeHash}`);
 
     if (narrow && !selectedNames.size) {
       const diagnostics = { headerFound: false, ownershipColumn: '', matchedCoachKeys: [], unmatchedCoachKeys: [], sheetsChecked: [], warnings: ['The selected scope did not resolve to a canonical coach identity.'] };
-      return { valid: false, needsReview: true, reason: 'Update needs review — the selected scope could not be safely restored.', dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows: 0, sourceRows: 0, scopedFingerprint: '', diagnostics };
+      return finish({ valid: false, needsReview: true, reason: 'Update needs review — the selected scope could not be safely restored.', dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows: 0, sourceRows: 0, scopedFingerprint: '', diagnostics });
     }
 
-    for (const sheetName of prepared.workbook.sheets) {
-      const sheet = prepared.workbook.data[sheetName];
-      const aoa = sheet && sheet.aoa;
+    for (const sheetName of sourceWorkbook.sheets || []) {
+      const sourceSheet = sourceWorkbook.data && sourceWorkbook.data[sheetName];
+      const aoa = sourceSheet && sourceSheet.aoa;
+      prepared.workbook.data[sheetName] = { ...(sourceSheet || {}), aoa: [] };
       if (!Array.isArray(aoa)) continue;
       if (!narrow) {
+        const ownership = corrections.size ? findOwnershipHeader(aoa, source) : null;
+        prepared.workbook.data[sheetName].aoa = ownership
+          ? aoa.map((row, index) => index > ownership.headerRow ? copyWithCorrection(row, ownership.colIndex) : row)
+          : aoa;
         totalRows += aoa.length;
         const dataHeader = findHeader(aoa, SOURCES[source] && SOURCES[source].header);
         sourceRows += dataHeader
           ? aoa.slice(dataHeader.headerRow + 1).filter(row => Array.isArray(row) && row.some(cell => !isBlank(cell))).length
           : aoa.filter(row => Array.isArray(row) && row.some(cell => !isBlank(cell))).length;
-        fingerprintParts.push(`sheet:${sheetName}`);
-        for (const row of aoa) fingerprintParts.push(row);
+        fingerprint.update(`sheet:${sheetName}`);
+        for (const row of aoa) fingerprint.update(row);
         sheetsChecked.push({ sheetName, headerFound: Boolean(findOwnershipHeader(aoa, source)), rows: aoa.length, passthrough: true });
         continue;
       }
       const nonEmptySheetRows = aoa.filter(row => Array.isArray(row) && row.some(cell => !isBlank(cell)));
-      if (selectedNames.has(normalizeName(sheetName))) {
+      if (selectedNames.has(normalizeName(correctedOwnership(sheetName)))) {
         const dataHeader = findHeader(aoa, SOURCES[source] && SOURCES[source].header);
         const ownedRows = dataHeader
           ? aoa.slice(dataHeader.headerRow + 1).filter(row => Array.isArray(row) && row.some(cell => !isBlank(cell))).length
@@ -503,15 +726,15 @@
         sourceRows += ownedRows;
         matchedRows += ownedRows;
         totalRows += aoa.length;
-        fingerprintParts.push(`sheet:${sheetName}`);
-        for (const row of aoa) fingerprintParts.push(row);
+        prepared.workbook.data[sheetName].aoa = aoa;
+        fingerprint.update(`sheet:${sheetName}`);
+        for (const row of aoa) fingerprint.update(row);
         sheetsChecked.push({ sheetName, headerFound: true, ownershipColumn: 'Worksheet name', sourceRows: ownedRows, matchedRows: ownedRows, passthrough: false });
         continue;
       }
       const header = findOwnershipHeader(aoa, source);
       if (!header) {
         sourceRows += nonEmptySheetRows.length;
-        sheet.aoa = [];
         sheetsChecked.push({ sheetName, headerFound: false, rows: aoa.length, sourceRows: nonEmptySheetRows.length, matchedRows: 0, dropped: true, passthrough: false });
         continue;
       }
@@ -520,17 +743,18 @@
       const headerRows = aoa.slice(0, header.headerRow + 1);
       const candidateRows = aoa.slice(header.headerRow + 1).filter(row => Array.isArray(row) && row.some(cell => !isBlank(cell)));
       sourceRows += candidateRows.length;
-      const selectedRows = candidateRows.filter(row => {
-        const matches = selectedNames.has(normalizeName(row[header.colIndex]));
-        if (matches) matchedRows += 1;
-        return matches;
-      });
-      sheet.aoa = selectedRows.length ? headerRows.concat(selectedRows) : [];
-      totalRows += sheet.aoa.length;
+      const selectedRows = [];
+      for (const row of candidateRows) {
+        if (!selectedNames.has(normalizeName(correctedOwnership(row[header.colIndex])))) continue;
+        matchedRows += 1;
+        selectedRows.push(copyWithCorrection(row, header.colIndex));
+      }
+      prepared.workbook.data[sheetName].aoa = selectedRows.length ? headerRows.concat(selectedRows) : [];
+      totalRows += prepared.workbook.data[sheetName].aoa.length;
       if (selectedRows.length) {
-        fingerprintParts.push(`sheet:${sheetName}`);
-        for (const row of headerRows) fingerprintParts.push(row);
-        for (const row of selectedRows) fingerprintParts.push(row);
+        fingerprint.update(`sheet:${sheetName}`);
+        for (const row of headerRows) fingerprint.update(row);
+        for (const row of selectedRows) fingerprint.update(row);
       }
       sheetsChecked.push({ sheetName, headerFound: true, ownershipColumn: header.headerName, sourceRows: candidateRows.length, matchedRows: selectedRows.length, passthrough: false });
     }
@@ -548,14 +772,14 @@
     };
     if (narrow && !headerFound) {
       diagnostics.warnings.push(`Required scope column not found. Expected ${source === 'qa' ? 'Team' : (OWNERSHIP_HEADERS[source] || []).join(', ')}.`);
-      return { valid: false, needsReview: true, reason: `Scoped import failed validation: required ${source === 'qa' ? 'Team' : 'ownership'} column not found. No replacement was performed.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics };
+      return finish({ valid: false, needsReview: true, reason: `Scoped import failed validation: required ${source === 'qa' ? 'Team' : 'ownership'} column not found. No replacement was performed.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics });
     }
     if (narrow && matchedRows === 0 && !(options && options.allowZeroRows)) {
       diagnostics.warnings.push('The scoped source contained zero matching rows. The existing dataset must be retained until the scope is reviewed.');
-      return { valid: false, needsReview: true, reason: `Update needs review — no rows matched ${scopeSnapshot.label || 'the selected scope'}.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics };
+      return finish({ valid: false, needsReview: true, reason: `Update needs review — no rows matched ${scopeSnapshot.label || 'the selected scope'}.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics });
     }
 
-    const scopedFingerprint = fingerprintRows(fingerprintParts);
+    const scopedFingerprint = fingerprint.finish();
 
     prepared.meta = {
       ...(prepared.meta || {}),
@@ -573,7 +797,7 @@
       scopeMatchDiagnostics: diagnostics,
       scopedFingerprint
     };
-    return { valid: true, needsReview: false, reason: '', dataset: prepared, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows: narrow ? matchedRows : sourceRows, sourceRows, scopedFingerprint, diagnostics };
+    return finish({ valid: true, needsReview: false, reason: '', dataset: prepared, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows: narrow ? matchedRows : sourceRows, sourceRows, scopedFingerprint, diagnostics });
   }
 
   function prepareDataset(parsed, source, options) {
@@ -595,10 +819,8 @@
     for (let index = 0; index < list.length; index += 1) {
       const file = list[index];
       try {
-        const parsed = await parseFile(file, options && options.onProgress ? { onProgress: progress => options.onProgress({ ...progress, fileIndex: index, fileCount: list.length }) } : null);
-        const classification = classifyFile(file, parsed);
-        const entry = { file, parsed, classification };
-        if (classification.id) recognized.push(entry);
+        const entry = await discoverFile(file, options && options.onProgress ? { onProgress: progress => options.onProgress({ ...progress, fileIndex: index, fileCount: list.length }) } : null);
+        if (entry.classification.id) recognized.push(entry);
         else needsReview.push(entry);
       } catch (error) { errors.push({ file, error }); }
     }
@@ -613,7 +835,10 @@
       ? options.scope
       : root.CoachToolsStorage && typeof root.CoachToolsStorage.getScope === 'function' ? root.CoachToolsStorage.getScope() : { mode: 'all', label: 'All people' };
     const scopeSnapshot = await resolveScopeSnapshot(requestedScope || { mode: 'all', label: 'All people' });
-    const prepared = prepareScopedDataset(entry.parsed, type, scopeSnapshot, { ...(options || {}), detectedPeriod: entry.classification.detectedPeriod });
+    const parsed = entry.rawWorkbook ? await materializeDiscoveredEntry(entry, scopeSnapshot, options) : entry.parsed;
+    entry.parsed = parsed;
+    entry.rawWorkbook = null;
+    const prepared = prepareScopedDataset(parsed, type, scopeSnapshot, { ...(options || {}), detectedPeriod: entry.classification.detectedPeriod });
     if (!prepared.valid) throw scopeValidationError(prepared.reason, prepared.diagnostics);
     const dataset = prepared.dataset;
     return root.CoachToolsData.importDataset(type, dataset, {
@@ -661,6 +886,8 @@
     trimAOA,
     readWorkbook,
     parseFile,
+    discoverFile,
+    materializeDiscoveredEntry,
     findHeader,
     inspectSourceHeaders,
     workbookHeaderSet,
@@ -671,6 +898,7 @@
     OWNERSHIP_HEADERS,
     scopeNames,
     findOwnershipHeader,
+    createDatasetHash,
     fingerprintRows,
     prepareScopedDataset,
     prepareDataset,
