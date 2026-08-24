@@ -16,7 +16,11 @@ document.write('<script src="js/organizations-core.js"><\/script>');
   const nativeRenderCategorizedSummary=typeof renderCategorizedSummary==='function'?renderCategorizedSummary:null;
   const nativePackageImportedData=typeof packageImportedData==='function'?packageImportedData:null;
   const nativeImportCoachToolsBatch=typeof importCoachToolsBatch==='function'?importCoachToolsBatch:null;
+  const nativeFinishSingleSourceIntake=typeof finishSingleSourceIntake==='function'?finishSingleSourceIntake:null;
+  const nativeSetAllStarStartupPhase=typeof setAllStarStartupPhase==='function'?setAllStarStartupPhase:null;
   let manualCategorizationPromise=null;
+
+  state.categorizationManualOnly=true;
 
   function categorizeButton(){ return typeof els!=='undefined'?els.categorizeDataBtn:null; }
   function isDirectCategorizeClick(request){
@@ -43,6 +47,14 @@ document.write('<script src="js/organizations-core.js"><\/script>');
     state.categorized.nondated=snapshot.nondated;
     state.categorized.dated=snapshot.dated;
     state.categorized.warnings=snapshot.warnings;
+  }
+  function sourceAffectsCategorization(source){
+    if(!source) return false;
+    if(typeof QA_DIRECT_SOURCE!=='undefined' && source===QA_DIRECT_SOURCE) return false;
+    if(typeof NONDATED_SOURCE!=='undefined' && source===NONDATED_SOURCE) return false;
+    if(typeof DATED_SOURCE!=='undefined' && source===DATED_SOURCE) return false;
+    if(typeof TEAM_TOTAL_SOURCE_KEYS!=='undefined' && TEAM_TOTAL_SOURCE_KEYS.includes(source)) return false;
+    return true;
   }
 
   if(nativeRenderCategorizedSummary){
@@ -125,6 +137,14 @@ document.write('<script src="js/organizations-core.js"><\/script>');
     return manualCategorizationPromise;
   };
 
+  if(nativeFinishSingleSourceIntake){
+    finishSingleSourceIntake=async function(source,...args){
+      const result=await nativeFinishSingleSourceIntake(source,...args);
+      if(sourceAffectsCategorization(source)) markCategorizationPending(`${typeof labelSource==='function'?labelSource(source):source} source data updated`);
+      return result;
+    };
+  }
+
   if(nativePackageImportedData){
     packageImportedData=async function(...args){
       const counts=categorizedCounts();
@@ -149,6 +169,19 @@ document.write('<script src="js/organizations-core.js"><\/script>');
     };
   }
 
+  if(nativeSetAllStarStartupPhase){
+    setAllStarStartupPhase=function(job,start,end,message,...args){
+      const next=/categorized data/i.test(String(message||''))
+        ? 'Source data refreshed — categorization left unchanged until you press Categorize Data.'
+        : message;
+      return nativeSetAllStarStartupPhase(job,start,end,next,...args);
+    };
+  }
+
   const button=categorizeButton();
-  if(button) button.title='Categorization only runs when you explicitly press this button.';
+  if(button){
+    button.title='Categorization only runs when you explicitly press this button.';
+    const help=button.parentElement?.querySelector('.checkResultMeta');
+    if(help) help.textContent='Imports and shared data refreshes update source data only. Categorization never runs automatically. Press Categorize Data when you want to rebuild the Non-Date and Dated databases.';
+  }
 })();
