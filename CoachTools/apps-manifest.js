@@ -17,7 +17,14 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/allstar.png",
       "initials": "AS",
       "category": "Core",
-      "keywords": ["all star", "report", "model", "research", "organization", "qualtrics"],
+      "keywords": [
+        "all star",
+        "report",
+        "model",
+        "research",
+        "organization",
+        "qualtrics"
+      ],
       "data": [],
       "favorite": true,
       "featured": true,
@@ -34,7 +41,15 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/weekly-data.png",
       "initials": "WD",
       "category": "Data",
-      "keywords": ["loader", "import", "build", "scope", "teams", "coordinators", "select all"],
+      "keywords": [
+        "loader",
+        "import",
+        "build",
+        "scope",
+        "teams",
+        "coordinators",
+        "select all"
+      ],
       "data": [],
       "favorite": true,
       "featured": false,
@@ -51,8 +66,26 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/default-app.png",
       "initials": "PP",
       "category": "People",
-      "keywords": ["people", "profile", "coach", "representative", "rep", "performance", "ranking", "coaching", "qa", "checklist", "timeline"],
-      "data": ["weeklyRetail", "weeklyReferral", "qa", "documentedCoaching", "checklist"],
+      "keywords": [
+        "people",
+        "profile",
+        "coach",
+        "representative",
+        "rep",
+        "performance",
+        "ranking",
+        "coaching",
+        "qa",
+        "checklist",
+        "timeline"
+      ],
+      "data": [
+        "weeklyRetail",
+        "weeklyReferral",
+        "qa",
+        "documentedCoaching",
+        "checklist"
+      ],
       "favorite": true,
       "featured": false,
       "preload": false,
@@ -68,8 +101,24 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/default-app.png",
       "initials": "CC",
       "category": "Coaching",
-      "keywords": ["today", "coaching", "priority", "follow-up", "debt", "checklist", "support", "recognition", "intelligence"],
-      "data": ["weeklyRetail", "weeklyReferral", "qa", "documentedCoaching", "checklist"],
+      "keywords": [
+        "today",
+        "coaching",
+        "priority",
+        "follow-up",
+        "debt",
+        "checklist",
+        "support",
+        "recognition",
+        "intelligence"
+      ],
+      "data": [
+        "weeklyRetail",
+        "weeklyReferral",
+        "qa",
+        "documentedCoaching",
+        "checklist"
+      ],
       "favorite": true,
       "featured": false,
       "preload": false,
@@ -85,8 +134,20 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/coaching-gaps.png",
       "initials": "CG",
       "category": "Coaching",
-      "keywords": ["coach", "performance", "opportunities", "teams", "corrective"],
-      "data": ["weeklyRetail", "weeklyReferral", "qa", "documentedCoaching", "checklist"],
+      "keywords": [
+        "coach",
+        "performance",
+        "opportunities",
+        "teams",
+        "corrective"
+      ],
+      "data": [
+        "weeklyRetail",
+        "weeklyReferral",
+        "qa",
+        "documentedCoaching",
+        "checklist"
+      ],
       "favorite": false,
       "featured": false,
       "preload": false,
@@ -102,8 +163,17 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/coach-timeline.png",
       "initials": "CT",
       "category": "Coaching",
-      "keywords": ["timeline", "checklist", "coaching", "speed", "coordinator"],
-      "data": ["documentedCoaching", "checklist"],
+      "keywords": [
+        "timeline",
+        "checklist",
+        "coaching",
+        "speed",
+        "coordinator"
+      ],
+      "data": [
+        "documentedCoaching",
+        "checklist"
+      ],
       "favorite": false,
       "featured": false,
       "preload": false,
@@ -119,8 +189,19 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/kpi-impact.png",
       "initials": "KI",
       "category": "Performance",
-      "keywords": ["kpi", "impact", "retail", "referral", "coaching", "trend"],
-      "data": ["weeklyRetail", "weeklyReferral", "documentedCoaching"],
+      "keywords": [
+        "kpi",
+        "impact",
+        "retail",
+        "referral",
+        "coaching",
+        "trend"
+      ],
+      "data": [
+        "weeklyRetail",
+        "weeklyReferral",
+        "documentedCoaching"
+      ],
       "favorite": false,
       "featured": false,
       "preload": false,
@@ -136,8 +217,26 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/default-app.png",
       "initials": "PS",
       "category": "Performance",
-      "keywords": ["scorecard", "team", "representative", "kpi", "appointment", "wiper", "qa", "call quality", "coaching", "checklist", "profile"],
-      "data": ["weeklyRetail", "weeklyReferral", "qa", "documentedCoaching", "checklist"],
+      "keywords": [
+        "scorecard",
+        "team",
+        "representative",
+        "kpi",
+        "appointment",
+        "wiper",
+        "qa",
+        "call quality",
+        "coaching",
+        "checklist",
+        "profile"
+      ],
+      "data": [
+        "weeklyRetail",
+        "weeklyReferral",
+        "qa",
+        "documentedCoaching",
+        "checklist"
+      ],
       "favorite": false,
       "featured": false,
       "preload": false,
@@ -153,8 +252,21 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/default-app.png",
       "initials": "WC",
       "category": "Performance",
-      "keywords": ["weekly", "comparison", "calculator", "retail", "names", "columns", "rate", "volume", "divide", "trend"],
-      "data": ["weeklyRetail"],
+      "keywords": [
+        "weekly",
+        "comparison",
+        "calculator",
+        "retail",
+        "names",
+        "columns",
+        "rate",
+        "volume",
+        "divide",
+        "trend"
+      ],
+      "data": [
+        "weeklyRetail"
+      ],
       "favorite": false,
       "featured": false,
       "preload": false,
@@ -170,8 +282,17 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/qa-scores.png",
       "initials": "QA",
       "category": "Quality",
-      "keywords": ["qa", "quality", "monitor", "reviewer", "coaching"],
-      "data": ["qa", "documentedCoaching"],
+      "keywords": [
+        "qa",
+        "quality",
+        "monitor",
+        "reviewer",
+        "coaching"
+      ],
+      "data": [
+        "qa",
+        "documentedCoaching"
+      ],
       "favorite": false,
       "featured": false,
       "preload": false,
@@ -187,8 +308,17 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/audit-checklist.png",
       "initials": "AC",
       "category": "Quality",
-      "keywords": ["audit", "checklist", "correctives", "addressed", "speed"],
-      "data": ["documentedCoaching", "checklist"],
+      "keywords": [
+        "audit",
+        "checklist",
+        "correctives",
+        "addressed",
+        "speed"
+      ],
+      "data": [
+        "documentedCoaching",
+        "checklist"
+      ],
       "favorite": false,
       "featured": false,
       "preload": false,
@@ -204,7 +334,12 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/checklist-and-documentation.png",
       "initials": "CC",
       "category": "Quality",
-      "keywords": ["checklist", "documentation", "dynamics", "contact center"],
+      "keywords": [
+        "checklist",
+        "documentation",
+        "dynamics",
+        "contact center"
+      ],
       "data": [],
       "favorite": false,
       "featured": false,
@@ -221,7 +356,13 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/video-player.png",
       "initials": "TV",
       "category": "Training",
-      "keywords": ["video", "training", "coaching", "mp4", "library"],
+      "keywords": [
+        "video",
+        "training",
+        "coaching",
+        "mp4",
+        "library"
+      ],
       "data": [],
       "favorite": false,
       "featured": false,
