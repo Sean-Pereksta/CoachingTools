@@ -30,4 +30,22 @@ assert.equal(insights.concentration({affectedOrganizations:5,totalOrganizations:
 assert.equal(insights.trendLabel({observations:8,improving:.7,worsening:.2}),'Improving');
 assert.equal(insights.evidenceConfidence({people:1,observations:2,weeks:2}),'Limited sample');
 
+const occurrenceA=insights.concernOccurrenceKey({repKey:'EMP-42',ruleId:'save-sale',runId:'2026-08'});
+const occurrenceDuplicate=insights.concernOccurrenceKey({repKey:' emp-42 ',ruleId:'SAVE-SALE',reportPeriod:'2026-08'});
+const occurrenceNext=insights.concernOccurrenceKey({repKey:'EMP-42',ruleId:'save-sale',runId:'2026-09'});
+assert.equal(occurrenceA,occurrenceDuplicate,'The same representative/rule/run must have one deterministic occurrence key.');
+assert.notEqual(occurrenceA,occurrenceNext,'A different run/report period must create a new occurrence.');
+const concernSummary=insights.summarizeConcernHistory([
+  {repKey:'EMP-42',ruleId:'save-sale',runId:'2026-08'},
+  {repKey:'emp-42',ruleId:'SAVE-SALE',runId:'2026-08'},
+  {repKey:'EMP-42',ruleId:'save-sale',runId:'2026-09'}
+]);
+assert.equal(concernSummary.occurrences.size,2,'Duplicate report regeneration/import must not inflate appearance history.');
+assert.equal(concernSummary.byRepRule.get('emp-42\u001fsave-sale'),2);
+assert.deepEqual(insights.classifyConcernHistory({appearances:1,relatedCoachingLast21:0}),{key:'new',label:'New'});
+assert.deepEqual(insights.classifyConcernHistory({appearances:2,relatedCoachingLast21:0}),{key:'undercoached',label:'Undercoached'});
+assert.deepEqual(insights.classifyConcernHistory({appearances:3,relatedCoachingLast21:1}),{key:'undercoached',label:'Undercoached'});
+assert.deepEqual(insights.classifyConcernHistory({appearances:3,relatedCoachingLast21:3}),{key:'review-option',label:'Review Option'});
+assert.deepEqual(insights.classifyConcernHistory({appearances:2,relatedCoachingLast21:2}),{key:'monitor',label:'Monitor'});
+
 console.log('PASS Qualtrics insights tests');

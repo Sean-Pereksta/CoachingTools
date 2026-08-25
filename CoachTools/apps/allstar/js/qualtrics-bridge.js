@@ -25,6 +25,8 @@ function bridgeValue(v){ if(v instanceof Date) return isNaN(v)?'':ymd(v); if(typ
 function qualtricsBridgeRow(row,kind,sourceLabel=''){
   const out={}; Object.entries(row||{}).forEach(([k,v])=>{ if(k.startsWith('_')) return; const val=bridgeValue(v); if(val!==''||v===0||v===false) out[k]=val; });
   const rep=row?._rep||row?.Representative||row?.['Agent Name']||row?.['Associate Name']||'', team=row?._team||row?.Team||row?.['Team Name']||'', date=row?._date||row?._interactionDate||row?.Date||'';
+  const stableRepKey=row?._rosterId||row?._stableRepKey||row?._employeeId||row?._email||'';
+  if(stableRepKey&&!out['All-Star Representative Key']) out['All-Star Representative Key']=bridgeValue(stableRepKey);
   if(kind==='qa'){ if(!out['Agent Name']&&rep) out['Agent Name']=rep; if(!out.Team&&team) out.Team=team; if(!out.Coach&&team) out.Coach=team; if(!out['Interaction Start Time']&&date) out['Interaction Start Time']=bridgeValue(date); if(!out['Score %']&&Number.isFinite(row?._score)) out['Score %']=row._score; }
   if(kind==='coaching'){ if(!out['Associate Name']&&rep) out['Associate Name']=rep; if(!out['Job Coach']&&team) out['Job Coach']=team; if(!out.Date&&date) out.Date=bridgeValue(date); }
   if(kind==='checklist'){ if(!out['Associate Name']&&rep) out['Associate Name']=rep; if(!out['Job Coach']&&team) out['Job Coach']=team; if(!out['Incident Date']&&date) out['Incident Date']=bridgeValue(date); }
@@ -62,9 +64,9 @@ async function buildQualtricsCorePayload(){
   const coachingRows=await qualtricsBridgeRowsDeferred(state.data.documented_coaching.rows||[],'coaching');
   const checklistRows=await qualtricsBridgeRowsDeferred(state.data.checklist.rows||[],'checklist');
   return {sentAt:new Date().toISOString(),organizations:(state.orgs||[]).map(o=>({id:o.id,name:o.name,coachNames:[...(o.coachNames||[])]})),lookupSources:qualtricsHireDateSourceCatalog(),files:{
-    qa:{fileName:state.data.qa.fileName||'All-Star QA',sheetName:'90-day KPI',headers:qualtricsBridgeHeaders('qa',qaRows,['Agent Name','Team','Coach','Interaction Start Time','Score %']),rows:qaRows},
-    coaching:{fileName:state.data.documented_coaching.fileName||'All-Star Documented Coaching',sheetName:'Documented Coaching',headers:qualtricsBridgeHeaders('documented_coaching',coachingRows,['Associate Name','Job Coach','Date']),rows:coachingRows},
-    checklist:{fileName:state.data.checklist.fileName||'All-Star Checklist',sheetName:'Checklist',headers:qualtricsBridgeHeaders('checklist',checklistRows,['Associate Name','Job Coach','Incident Date']),rows:checklistRows}
+    qa:{fileName:state.data.qa.fileName||'All-Star QA',sheetName:'90-day KPI',headers:qualtricsBridgeHeaders('qa',qaRows,['All-Star Representative Key','Agent Name','Team','Coach','Interaction Start Time','Score %']),rows:qaRows},
+    coaching:{fileName:state.data.documented_coaching.fileName||'All-Star Documented Coaching',sheetName:'Documented Coaching',headers:qualtricsBridgeHeaders('documented_coaching',coachingRows,['All-Star Representative Key','Associate Name','Job Coach','Date']),rows:coachingRows},
+    checklist:{fileName:state.data.checklist.fileName||'All-Star Checklist',sheetName:'Checklist',headers:qualtricsBridgeHeaders('checklist',checklistRows,['All-Star Representative Key','Associate Name','Job Coach','Incident Date']),rows:checklistRows}
   }};
 }
 async function sendQualtricsHireDateSource(request={}){
@@ -89,7 +91,7 @@ async function buildQualtricsWeeklyPayload(){
   const stats=qualtricsStatRows(els.qualtricsStatsSource?.value||'auto'), rows=await qualtricsBridgeRowsDeferred(stats.rows,'stats',stats.label);
   let headers=[];
   if(stats.key==='combined_sv2') headers=[...(getHeaders('retail_sv2')||[]),...(getHeaders('referral_sv2')||[])]; else headers=getHeaders(stats.key)||[];
-  return {sentAt:new Date().toISOString(),statsSource:stats.label,files:{stats:{fileName:`All-Star ${stats.label}`,sheetName:'Weekly Stats',headers:[...new Set([...headers,...Object.keys(rows[0]||{}),'Agent Name','Team','Coach','Date Column','All-Star Source'])],rows}}};
+  return {sentAt:new Date().toISOString(),statsSource:stats.label,files:{stats:{fileName:`All-Star ${stats.label}`,sheetName:'Weekly Stats',headers:[...new Set([...headers,...Object.keys(rows[0]||{}),'All-Star Representative Key','Agent Name','Team','Coach','Date Column','All-Star Source'])],rows}}};
 }
 async function sendQualtricsCoreFiles(force=false){
   if(!state.qualtricsReady||!els.qualtricsEmailFrame?.contentWindow){ if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent='Opening the Qualtrics email workspace…'; return; }

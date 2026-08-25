@@ -133,5 +133,27 @@
     if(worsening-improving>=.2) return 'Declining';
     return 'Stable';
   }
-  return {normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,formatDisplayText,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel};
+  function normalizeConcernIdentity(value){ return String(value??'').trim().toLowerCase().replace(/\s+/g,' '); }
+  function concernOccurrenceKey(raw){
+    const input=raw||{}, rep=normalizeConcernIdentity(input.repKey), rule=normalizeConcernIdentity(input.ruleId), run=normalizeConcernIdentity(input.runId||input.reportPeriod||input.reportDate);
+    return rep&&rule&&run?`${rep}\u001f${rule}\u001f${run}`:'';
+  }
+  function classifyConcernHistory(raw){
+    const appearances=Math.max(1,Math.floor(Number(raw?.appearances)||1)), relatedCoachingLast21=Math.max(0,Math.floor(Number(raw?.relatedCoachingLast21)||0));
+    if(appearances===1) return {key:'new',label:'New'};
+    if(appearances>=2&&relatedCoachingLast21<=1) return {key:'undercoached',label:'Undercoached'};
+    if(appearances>=3&&relatedCoachingLast21>=3) return {key:'review-option',label:'Review Option'};
+    return {key:relatedCoachingLast21>=2?'monitor':'repeat',label:relatedCoachingLast21>=2?'Monitor':'Repeat'};
+  }
+  function summarizeConcernHistory(rows){
+    const occurrences=new Map();
+    for(const row of rows||[]){ const key=concernOccurrenceKey(row); if(key&&!occurrences.has(key)) occurrences.set(key,row); }
+    const byRepRule=new Map();
+    for(const row of occurrences.values()){
+      const key=`${normalizeConcernIdentity(row.repKey)}\u001f${normalizeConcernIdentity(row.ruleId)}`;
+      byRepRule.set(key,(byRepRule.get(key)||0)+1);
+    }
+    return {occurrences,byRepRule};
+  }
+  return {normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,formatDisplayText,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel,normalizeConcernIdentity,concernOccurrenceKey,classifyConcernHistory,summarizeConcernHistory};
 });

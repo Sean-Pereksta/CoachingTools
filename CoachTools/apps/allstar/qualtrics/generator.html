@@ -460,7 +460,8 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
 
   <section class="view" id="view-report">
     <div class="card">
-      <div class="row"><h2>Generated Report</h2><span class="spacer"></span><button class="btn primary" id="generateReportBtn">Generate Report</button><button class="btn" id="saveHistoryBtn">Save Follow-Up History</button><button class="btn blue" id="exportEmailsBtn">Export Coach Email Files</button><button class="btn good" id="exportUrgencyPdfBtn">Export Email PDF</button><button class="btn" id="exportProblemRepsBtn">Export Follow-Up History Excel</button><label class="btn" style="display:inline-flex;text-transform:none;letter-spacing:0;color:#0f172a">Import Follow-Up History Excel<input id="importProblemRepsInput" type="file" accept=".xlsx,.xls,.csv,.txt" class="hidden"></label></div>
+      <div class="row"><h2>Generated Report</h2><span class="spacer"></span><button class="btn primary" id="generateReportBtn">Generate Report</button><button class="btn" id="saveHistoryBtn">Save Concern History</button><button class="btn blue" id="exportEmailsBtn">Export Coach Email Files</button><button class="btn good" id="exportUrgencyPdfBtn">Export Email PDF</button><button class="btn" id="exportProblemRepsBtn">Export Concern History Excel</button><label class="btn" style="display:inline-flex;text-transform:none;letter-spacing:0;color:#0f172a">Load Concern History Excel<input id="importProblemRepsInput" type="file" accept=".xlsx,.xls,.csv,.txt" class="hidden"></label></div>
+      <div class="sub" style="margin-top:7px">Concern history counts one appearance per representative, rule, and report period. Status uses matching coaching for that rule in the last 21 days; malformed imported rows are skipped safely.</div>
       <div class="reportAudienceControls"><label>Report for<select id="reportAudienceScope"><option value="all">All organizations and coaches</option><option value="org">One organization</option><option value="coach">One specific coach</option></select></label><label id="reportAudienceSearchField">Search organizations / coaches<input id="reportAudienceSearch" type="search" placeholder="Type to narrow the dropdown..."></label><label id="reportAudienceValueField">Organization / coach<select id="reportAudienceValue"><option value="">Choose a selection</option></select></label><label>Min people per team<input id="minTeamReportReps" type="number" min="1" step="1" value="1"></label></div>
       <div id="reportAudienceStatus" class="note">All available coaches will be included, then the minimum-people filter will be applied.</div><div class="reportAudienceControls impactSessionControls"><label>Recent coaching lookback days<input id="impactRecentLookbackDays" type="number" min="1" max="365" value="28"></label><label>Trend KPI<select id="impactReportKpiSelect"><option value="">All KPIs</option></select></label><label>Episode window<input value="Fixed 7 calendar days" disabled></label><button class="btn blue" type="button" id="exportImpactCsvBtn">Export Coaching Impact</button></div><details style="margin:10px 0;border:1px solid #dbe2ea;border-radius:12px;background:#f8fafc;padding:9px 11px"><summary style="cursor:pointer;font-weight:1000;color:#334155">Team Urgency Summary settings</summary><div class="reportAudienceControls" style="padding-bottom:0"><label>Green coaching coverage starts at %<input id="urgencyCoverageGreen" type="number" min="0" max="100" step="1" value="70"></label><label>Yellow coaching coverage starts at %<input id="urgencyCoverageYellow" type="number" min="0" max="100" step="1" value="40"></label></div><div class="sub">Coverage at or above the green threshold is strong; coverage at or above the yellow threshold is moderate; lower coverage is red. Missing coaching data is gray.</div></details>
       <div class="hireDateFilterCard">
@@ -561,7 +562,9 @@ const state = {
   coachAliasIndex:{auto:new Map(), unresolved:[], names:[]},
   coachAliasOverrides:{},
   report:null,
-  history:[]
+  history:[],
+  historyIndex:{occurrences:new Map(),byRepRule:new Map()},
+  historyWarnings:[]
 };
 const els = {};
 function $(id){ return document.getElementById(id); }
@@ -729,6 +732,15 @@ function lastNameKey(s){ const t=nameTokens(s); return t.length ? t[t.length-1] 
 function firstInitialLastKey(s){ const t=nameTokens(s); return t.length>=2 ? `${t[0][0]} ${t[t.length-1]}` : ''; }
 function isLikelyFullName(s){ return nameTokens(s).length >= 2; }
 function displayName(raw){ return String(raw ?? '').replace(/\([^)]*\)/g,' ').replace(/\s+/g,' ').trim(); }
+function stableRepresentativeValue(row){
+  if(!row||typeof row!=='object') return '';
+  const priority=['All-Star Representative Key','All Star Representative Key','Employee ID','Employee Id','Employee Number','Employee Email','Work Email','Email Address','Email','Agent ID','Associate ID','Representative ID','Rep ID'];
+  for(const header of priority){ const value=row[header]; if(String(value??'').trim()) return String(value).trim(); }
+  const wanted=new Set(priority.map(headerKey));
+  for(const [header,value] of Object.entries(row)){ if(wanted.has(headerKey(header))&&String(value??'').trim()) return String(value).trim(); }
+  return '';
+}
+function stableRepresentativeKey(row){ const value=stableRepresentativeValue(row); return value?'stable:'+String(value).trim().toLowerCase().replace(/\s+/g,' '):''; }
 function resolveIdentity(raw){
   const original = displayName(raw);
   const exact = repKey(original);
@@ -739,14 +751,21 @@ function resolveIdentity(raw){
   if(fi && state.identityAliases?.has(fi)) return state.identityAliases.get(fi);
   return { key:exact, name:original };
 }
+function resolveIdentityFromRow(row,raw){
+  const original=displayName(raw), stableKey=stableRepresentativeKey(row);
+  if(stableKey) return {key:stableKey,name:original||stableRepresentativeValue(row),stable:true};
+  return resolveIdentity(original);
+}
 function rebuildIdentityAliases(){
   const fulls = new Map();
-  const addFull = n => { const name=displayName(n); const key=repKey(name); if(key && isLikelyFullName(name)) fulls.set(key,name); };
-  for(const arr of [state.coachingRows,state.checklistRows,state.qaRows]) for(const r of arr||[]) addFull(r.rawName || r.name || r.rep);
+  const stableByName=new Map();
+  const addFull = row => { const name=displayName(row?.rawName||row?.name||row?.rep), nameKey=repKey(name), key=row?.repKey||row?.key||nameKey; if(nameKey&&key&&isLikelyFullName(name)){ fulls.set(key,name); if(String(key).startsWith('stable:')) stableByName.set(nameKey,{key,name}); } };
+  for(const arr of [state.coachingRows,state.checklistRows,state.qaRows,state.weeklyStatsRows]) for(const r of arr||[]) addFull(r);
   const alias = new Map(); const lastBuckets = new Map(); const fiBuckets = new Map();
   for(const [key,name] of fulls.entries()){
     const ident={ key, name };
     alias.set(key, ident);
+    const normalizedName=repKey(name); if(normalizedName&&!alias.has(normalizedName)) alias.set(normalizedName,stableByName.get(normalizedName)||ident);
     const last=lastNameKey(name); if(last){ if(!lastBuckets.has(last)) lastBuckets.set(last,[]); lastBuckets.get(last).push(ident); }
     const fi=firstInitialLastKey(name); if(fi){ if(!fiBuckets.has(fi)) fiBuckets.set(fi,[]); fiBuckets.get(fi).push(ident); }
   }
@@ -1814,7 +1833,7 @@ async function loadTeamMap(file){
   for(const row of rows){
     const name=String(rowVal(row,['Agent Name','Associate Name','Representative','Rep','CSR Name','SSR Name','Name'])||'').trim();
     if(!name) continue;
-    const ident=resolveIdentity(name);
+    const ident=resolveIdentityFromRow(row,name);
     const coach=String(rowVal(row,['Coach','Manager','Supervisor','Team Lead','Leader'])||'Unassigned').trim()||'Unassigned';
     const team=String(rowVal(row,['Team','Team Name','Coach Team','CSR Team'])||coach).trim()||coach;
     state.teamMap.set(ident.key,{name:ident.name, coach, rawCoach:coach, team, rawTeam:team, source:'Legacy map', date:new Date()});
@@ -1828,7 +1847,7 @@ async function loadCoaching(file, options={}){
     for(const row of sh.rows||[]){
       if(options.yieldEvery&&++processed%options.yieldEvery===0) await allStarBridgeYield();
       const rawName=rowVal(row,['Associate Name','Agent Name','Representative Name','Representative','Rep Name','Rep','CSR Name','SSR Name','Name']); if(!String(rawName||'').trim()) continue;
-      const ident=resolveIdentity(rawName);
+      const ident=resolveIdentityFromRow(row,rawName);
       const date=parseDate(rowVal(row,['Created On','Created','Create Date','Created Date','Date','Coaching Date','Documented Coaching Date','Date Completed','Completed Date','Completion Date','Submitted Date','Submit Date','Start Time','Interaction Date','Call Date','Form Date','Modified Date','Last Modified']));
       const type=extractCoachingType(row);
       const typeParts=splitCoachingTypes(type);
@@ -1851,7 +1870,7 @@ async function loadChecklist(file, options={}){
     for(const row of sh.rows||[]){
       if(options.yieldEvery&&++processed%options.yieldEvery===0) await allStarBridgeYield();
       const rawName=rowVal(row,['Associate Name','Agent Name','Representative','Rep','CSR Name','Name']); if(!String(rawName||'').trim()) continue;
-      const ident=resolveIdentity(rawName);
+      const ident=resolveIdentityFromRow(row,rawName);
       const date=parseDate(rowVal(row,['Created On','Date','Date Served','Incident Date','Start Time']));
       const incident=String(rowVal(row,['Incident','Incident Type','Category','Reason'])||'').trim();
       const all=Object.values(row).join(' ');
@@ -1884,7 +1903,7 @@ async function loadWeeklyStats(file, options={}){
     for(const row of sh.rows||[]){
       if(options.yieldEvery&&++processed%options.yieldEvery===0) await allStarBridgeYield();
       const rawName=rowVal(row,['Agent Name','Associate Name','Representative','Rep','CSR Name','Name']); if(!String(rawName||'').trim()) continue;
-      const ident=resolveIdentity(rawName);
+      const ident=resolveIdentityFromRow(row,rawName);
       const dateHeader=weeklyStatsDateHeader(row);
       const date=parseDate(dateHeader ? row[dateHeader] : '') || parseDate(sh.sheetName);
       if(dateHeader) dateHeaders.add(dateHeader);
@@ -1915,7 +1934,7 @@ async function loadQA(file, options={}){
     for(const row of sh.rows||[]){
       if(options.yieldEvery&&++processed%options.yieldEvery===0) await allStarBridgeYield();
       const rawName=rowVal(row,['Agent Name','Agent','Associate Name','Representative','Rep','CSR Name','Name']); if(!String(rawName||'').trim()) continue;
-      const ident=resolveIdentity(rawName);
+      const ident=resolveIdentityFromRow(row,rawName);
       const date=parseDate(rowVal(row,['Interaction Start Time','Interaction Start','Start Time','Scored Date','Date','Week','Week Start'])) || new Date();
       const scoreRaw=rowVal(row,['Score %','Score%','Score Pct','Score','QA Score','Call Quality','Average Score']);
       const score=pctValue(scoreRaw);
@@ -2362,7 +2381,7 @@ function buildStatCountRecords(rule,reportDate){
     if(range.start&&row.date<range.start) continue; if(range.end&&row.date>range.end) continue; scanned++;
     const raw=row.raw||{}; if(!statCountConditionPass(raw[c.conditionHeader],c)) continue;
     const rawName=String((c.nameHeader&&raw[c.nameHeader]!=null?raw[c.nameHeader]:(row.rawName||row.name||''))||'').trim(); if(!rawName) continue;
-    const ident=resolveIdentity(rawName); if(!ident.key) continue; const rec=ensure(ident,rawName); rec.count++; matchingRows++;
+    const ident=row.repKey?{key:row.repKey,name:row.name||displayName(rawName)}:resolveIdentityFromRow(raw,rawName); if(!ident.key) continue; const rec=ensure(ident,rawName); rec.count++; matchingRows++;
     if(rec.examples.length<3) rec.examples.push({date:row.date,value:raw[c.conditionHeader]});
   }
   const minimum=Math.max(0,Number(c.minCount)||0);
@@ -2426,7 +2445,7 @@ function buildHeaderCountRecords(rule, sources){
       scanned++;
       const rawName=getCountNameFromRow(raw, rule);
       if(!rawName) continue;
-      const ident=resolveIdentity(rawName);
+      const ident=resolveIdentityFromRow(raw,rawName);
       if(!ident.key) continue;
       const rec=ensure(ident, rawName, src.name, raw);
       rec.count += 1;
@@ -2488,7 +2507,7 @@ function renderRuleNamePreview(){
       scanned++;
       if((rule.criteria||[]).length && !rowMeetsRule(raw, rule)) continue;
       const rawName=getAgentFromRow(raw, rule); if(!rawName) continue;
-      const ident=resolveIdentity(rawName); if(!ident.key) continue;
+      const ident=resolveIdentityFromRow(raw,rawName); if(!ident.key) continue;
       const map=state.teamMap.get(ident.key) || {};
       const rec={repName:ident.name||displayName(rawName), rawName:displayName(rawName), repKey:ident.key, key:ident.key, coach:map.coach||'Unassigned', team:map.team||'Unassigned', source:src.name, raw, matchedValues:criteriaValueSummary(raw, rule)};
       const coaching=coachMatch(rec, rule, reportDate, lookback);
@@ -2644,9 +2663,41 @@ function computeStatCheck(repK, stat, reportDate){
   check.alarm=isFinite(check.pctLow)&&check.pctLow>=(pctValue(stat.alarmPctRaw)||.75);
   return check;
 }
+function normalizeConcernHistoryRow(raw){
+  if(!raw||typeof raw!=='object') return null;
+  const repName=displayName(raw.repName||raw.Representative||raw.Name||''), repK=String(raw.repKey||raw.RepKey||'').trim()||repKey(repName), ruleId=String(raw.ruleId||raw.RuleID||raw.RuleId||'').trim(), reportDate=ymd(parseDate(raw.reportDate||raw.ReportDate||raw['Report Date']));
+  const runId=String(raw.runId||raw.RunID||raw.ReportPeriod||reportDate).trim();
+  if(!repK||!ruleId||!reportDate||!runId) return null;
+  const occurrenceKey=QualtricsInsights.concernOccurrenceKey({repKey:repK,ruleId,runId});
+  if(!occurrenceKey) return null;
+  return {...raw,id:`concern:${occurrenceKey}`,occurrenceKey,repName:repName||String(raw.repName||''),repKey:repK,ruleId,reportDate,runId,createdAt:String(raw.createdAt||raw.CreatedAt||new Date().toISOString())};
+}
+function rebuildConcernHistoryIndex(){
+  const valid=[], warnings=[];
+  for(const raw of state.history||[]){ const row=normalizeConcernHistoryRow(raw); if(row) valid.push(row); else warnings.push('Skipped a malformed concern-history row.'); }
+  const summary=QualtricsInsights.summarizeConcernHistory(valid), rowsByRepRule=new Map();
+  for(const row of summary.occurrences.values()){
+    const key=`${QualtricsInsights.normalizeConcernIdentity(row.repKey)}\u001f${QualtricsInsights.normalizeConcernIdentity(row.ruleId)}`;
+    if(!rowsByRepRule.has(key)) rowsByRepRule.set(key,[]);
+    rowsByRepRule.get(key).push(row);
+  }
+  rowsByRepRule.forEach(rows=>rows.sort((a,b)=>String(a.reportDate).localeCompare(String(b.reportDate))));
+  state.history=[...summary.occurrences.values()];
+  state.historyIndex={...summary,rowsByRepRule}; state.historyWarnings=warnings; return state.historyIndex;
+}
+function concernRepRuleIndexKey(repK,ruleId){ return `${QualtricsInsights.normalizeConcernIdentity(repK)}\u001f${QualtricsInsights.normalizeConcernIdentity(ruleId)}`; }
+function concernHistoryForRecord(rec,rule,reportDate){
+  const runId=ymd(reportDate), occurrenceKey=QualtricsInsights.concernOccurrenceKey({repKey:rec.repKey,ruleId:rec.ruleId,runId});
+  const index=state.historyIndex?.occurrences instanceof Map?state.historyIndex:rebuildConcernHistoryIndex();
+  const prior=Number(index.byRepRule.get(concernRepRuleIndexKey(rec.repKey,rec.ruleId))||0), appearances=prior+(index.occurrences.has(occurrenceKey)?0:1);
+  const related=coachMatch(rec,rule,reportDate,3), relatedCoachingLast21=Number(related.recentMatchCount||related.recentCount||0);
+  const status=QualtricsInsights.classifyConcernHistory({appearances,relatedCoachingLast21});
+  return {appearanceCount:appearances,appearanceLabel:`${appearances}X`,status:status.label,statusKey:status.key,relatedCoachingLast21,occurrenceKey,runId};
+}
 function historyStats(repK, ruleId, reportDate){
   const days=Number(els.historyWindowDays.value)||30; const from=addDays(reportDate,-days);
-  const rows=state.history.filter(h=>h.repKey===repK && (!ruleId || h.ruleId===ruleId)).filter(h=>{ const d=parseDate(h.reportDate); return d && d>=from && d<=reportDate; });
+  const index=state.historyIndex?.rowsByRepRule instanceof Map?state.historyIndex:rebuildConcernHistoryIndex();
+  const rows=(ruleId?(index.rowsByRepRule.get(concernRepRuleIndexKey(repK,ruleId))||[]):state.history.filter(h=>h.repKey===repK)).filter(h=>{ const d=parseDate(h.reportDate); return d && d>=from && d<=reportDate; });
   const dates=[...new Set(rows.map(h=>h.reportDate))].sort();
   return {count:rows.length, dateCount:dates.length, first:dates[0]||'', last:dates[dates.length-1]||''};
 }
@@ -4182,8 +4233,7 @@ function impactDownloadRows(rows,baseName){
 function impactExportCurrent(){ const needs=state.activeTab==='overallcoaching'?impactScopedNeeds():(state.report?.coachingImpact?.needs||[]); impactDownloadRows(needs.map(impactExportShape),'coaching_impact_'+(state.report?.reportDate||ymd(new Date()))); }
 const impactExportProblemRepsBefore=exportProblemReps;
 exportProblemReps=function(){
-  const rows=(state.history||[]).map(function(row){ return {ReportDate:row.reportDate,Representative:row.repName,Coach:row.coach,Team:row.team,DateOfHire:row.hireDate||'',Rule:row.ruleTitle,Category:row.category,ReportPriority:Number(row.reportPriority??999999),ReportWeight:Number(row.reportWeight??1),Coached:row.coached?'Yes':'No',ElevatedPriority:row.alarming?'Yes':'No',NeedLevel:row.concern,NeedScore:row.concernScore,BroadMovement:row.broadMovementGroup||'',DetailedStatus:row.detailedImpactStatus||'',CoachingAlignment:row.coachingAlignmentGroup||'',CoachingTopic:row.coachingTopic||'',AssignedStatistic:row.assignedStatistic||'',Direction:row.statisticDirection||'',PreAverage:row.preAverage,PostAverage:row.postAverage,CurrentValue:row.currentValue,RawChange:row.statisticalChange,FavorableChange:row.favorableChange,EpisodeDates:row.episodeDates||'',EpisodeCount:row.episodeCount,MeasurableEpisodes:row.measurableEpisodeCount,CoachingContacts:row.coachingContactCount,LatestCoachingDate:row.latestCoachingDate||'',NeedIdentificationDate:row.needIdentificationDate||'',DaysToCoaching:row.daysToCoaching,Timeliness:row.timelinessCategory||'',ValidPrePeriods:row.validPrePeriods,ValidPostPeriods:row.validPostPeriods,ChecklistFollowThrough:row.checklistFollowThrough,Evidence:row.evidenceStatus||'',SuggestedAction:row.suggestedAction||'',CreatedAt:row.createdAt}; });
-  if(!rows.length) return impactExportProblemRepsBefore(); impactDownloadRows(rows,'coaching_follow_up_history_'+ymd(new Date()));
+  return impactExportProblemRepsBefore();
 };
 async function impactExportOverallPdf(){
   if(!state.report?.coachingImpact){ toast('Generate an Action Report first.'); return; }
@@ -4405,7 +4455,8 @@ function simpleQualtricsAnnotatedNames(source,coachedKeys,showCoachingDate){
     const order={critical:4,elevated:3,standard:2,improving:1,plain:0};
     const context=person.rows.map(function(row){ return row.correctiveContext; }).filter(Boolean).sort(function(a,b){ return (order[b.state]||0)-(order[a.state]||0); })[0]||{state:'standard',tags:[]};
     const tags=[...new Set(person.rows.flatMap(function(row){ return row.correctiveContext?.tags||[]; }))].slice(0,2);
-    return {name:person.name,state:context.state||'standard',evidence:simpleQualtricsPersonNameDetailText(person.rows),why:simpleQualtricsPersonWhyIdentifiedText(person.rows),coachingDate:showCoachingDate?simpleQualtricsLatestTopicCoachingDate(person.rows):'',badges:tags};
+    const concern=person.rows.map(function(row){ return row.concernHistory; }).filter(Boolean).sort(function(a,b){ return Number(b.appearanceCount||0)-Number(a.appearanceCount||0); })[0]||{appearanceCount:1,appearanceLabel:'1X',status:'New',statusKey:'new'};
+    return {name:person.name,state:context.state||'standard',evidence:simpleQualtricsPersonNameDetailText(person.rows),why:simpleQualtricsPersonWhyIdentifiedText(person.rows),coachingDate:showCoachingDate?simpleQualtricsLatestTopicCoachingDate(person.rows):'',badges:tags,appearanceLabel:concern.appearanceLabel||`${Number(concern.appearanceCount||1)}X`,concernStatus:concern.status||'New',concernStatusKey:concern.statusKey||'new'};
   });
 }
 function simpleQualtricsNamesHtml(names){
@@ -4413,7 +4464,9 @@ function simpleQualtricsNamesHtml(names){
     const value=typeof item==='string'?{name:item,state:'standard',evidence:'',why:'',badges:[]}:item;
     const colors={critical:['#991b1b','#fee2e2'],elevated:['#9a3412','#ffedd5'],standard:['#854d0e','#fef9c3'],improving:['#166534','#dcfce7'],plain:['#0f172a','transparent']}, style=colors[value.state]||colors.plain;
     const badges=(value.badges||[]).map(function(label){ return '<span style="display:inline-block;margin:2px 3px 0 0;padding:2px 5px;border-radius:999px;background:'+style[1]+';color:'+style[0]+';font-size:9px;font-weight:1000">'+esc(label)+'</span>'; }).join('');
-    return '<div style="margin-bottom:8px"><span style="font-weight:1000;color:'+style[0]+';background:'+style[1]+';border-radius:5px;padding:1px 3px">'+esc(value.name)+'</span>'+(badges?'<div>'+badges+'</div>':'')+(value.coachingDate?'<div style="font-size:10px;color:#475569"><strong>Latest matching coaching:</strong> '+esc(value.coachingDate)+'</div>':'')+(value.evidence?'<div style="font-size:10px;color:#0f172a"><strong>Rule-specific evidence:</strong> '+esc(value.evidence)+'</div>':'')+(value.why?'<div style="font-size:9px;color:#64748b"><strong>Why identified:</strong> '+esc(value.why)+'</div>':'')+'</div>';
+    const statusColors={'review-option':['#7c2d12','#ffedd5'],undercoached:['#991b1b','#fee2e2'],monitor:['#1e3a8a','#dbeafe'],repeat:['#854d0e','#fef9c3'],new:['#166534','#dcfce7']}, statusStyle=statusColors[value.concernStatusKey]||statusColors.new;
+    const statusBadge='<span style="display:inline-block;margin:2px 3px 0 0;padding:2px 5px;border-radius:999px;background:'+statusStyle[1]+';color:'+statusStyle[0]+';font-size:9px;font-weight:1000">'+esc(value.concernStatus||'New')+'</span>';
+    return '<div style="margin-bottom:8px"><span style="font-weight:1000;color:'+style[0]+';background:'+style[1]+';border-radius:5px;padding:1px 3px">'+esc(value.name)+' '+esc(value.appearanceLabel||'1X')+'</span><div>'+statusBadge+badges+'</div>'+(value.coachingDate?'<div style="font-size:10px;color:#475569"><strong>Latest matching coaching:</strong> '+esc(value.coachingDate)+'</div>':'')+(value.evidence?'<div style="font-size:10px;color:#0f172a"><strong>Rule-specific evidence:</strong> '+esc(value.evidence)+'</div>':'')+(value.why?'<div style="font-size:9px;color:#64748b"><strong>Why identified:</strong> '+esc(value.why)+'</div>':'')+'</div>';
   }).join('')+'</div>':'<span style="color:#94a3b8">—</span>';
 }
 function simpleQualtricsFollowUpHtml(rows){
@@ -4741,7 +4794,8 @@ function simpleQualtricsStoryListHtml(items){
 }
 function simpleQualtricsCorrectiveLegendHtml(rows){
   const hasContext=(rows||[]).some(function(row){ return Number(row.correctiveContext?.historyCount||0)>0; })||(state.report?.followUpWatchlist||[]).length>0;
-  return hasContext?'<div style="margin:8px 0;padding:7px 9px;border:1px solid #fed7aa;border-left:4px solid #f97316;border-radius:8px;background:#fff7ed;color:#7c2d12;font-size:10px;line-height:1.4"><strong>Corrective context:</strong> indicates relevant corrective/checklist history combined with current performance evidence. It does not necessarily indicate an active corrective.</div>':'';
+  const corrective=hasContext?'<div><strong>Corrective context:</strong> indicates relevant corrective/checklist history combined with current performance evidence. It does not necessarily indicate an active corrective.</div>':'';
+  return '<div style="margin:8px 0;padding:7px 9px;border:1px solid #fed7aa;border-left:4px solid #f97316;border-radius:8px;background:#fff7ed;color:#7c2d12;font-size:10px;line-height:1.4">'+corrective+'<div><strong>Review Option</strong> = repeated concern despite related coaching; consider whether another coaching or performance-management step may be appropriate.</div></div>';
 }
 function simpleQualtricsCoachOverviewHtml(rows){
   const coverage=urgencyCoachingCoverage(rows||[]), reps=new Set((rows||[]).map(function(row){ return row.repKey; }).filter(Boolean)), needs=simpleQualtricsTopNeeds(rows), stories=simpleQualtricsSuccessStories(rows);
@@ -4827,7 +4881,7 @@ async function generateReport(){
     reportSetting=reportSetting||reportSettingForRule(rule,1);
     const reportItemKey=customReportConfiguration?reportSetting.key:`rule:${rule.id}`;
     const key=`${k}::${rule.id}::${reportItemKey}`; const categories=ruleCategories(rule); const dataSource=ruleDataSource(rule);
-    if(!reps.has(key)) reps.set(key,{repName:name, repKey:k, coach:canonicalCoachName(coach)||'Unassigned', team:canonicalTeamName(team)||canonicalCoachName(coach)||'Unassigned', ruleId:rule.id, ruleTitle:rule.title, dataSource, reportItemKey, reportWeight:effectiveReportWeight(reportSetting), reportPriority:effectiveReportPriority(reportSetting), category:categories[0], categories, fileNames:new Set(), rawRows:[], dashboardValues:[], coached:null, checklist:null, statChecks:[], history:null, concernScore:0, concern:'', alarm:false, specialMetrics:null, statCountMetrics:null, directStatCheck:null, precomputedCoached:null, precomputedChecklist:null});
+    if(!reps.has(key)) reps.set(key,{repName:name, repKey:k, coach:canonicalCoachName(coach)||'Unassigned', team:canonicalTeamName(team)||canonicalCoachName(coach)||'Unassigned', ruleId:rule.id, ruleTitle:rule.title, dataSource, reportItemKey, reportWeight:effectiveReportWeight(reportSetting), reportPriority:effectiveReportPriority(reportSetting), category:categories[0], categories, fileNames:new Set(), rawRows:[], dashboardValues:[], coached:null, checklist:null, statChecks:[], history:null, concernHistory:null, concernScore:0, concern:'', alarm:false, specialMetrics:null, statCountMetrics:null, directStatCheck:null, precomputedCoached:null, precomputedChecklist:null});
     const rec=reps.get(key); if(fileName) rec.fileNames.add(fileName); if(rawRow) rec.rawRows.push(rawRow); if(valueSummary) rec.dashboardValues.push(valueSummary); return rec;
   };
   for(let i=0;i<state.dashboardFiles.length;i++){
@@ -4844,7 +4898,7 @@ async function generateReport(){
     }
     for(const raw of f.rows||[]){
       if(!rowMeetsRule(raw,rule)) continue;
-      const rawName=getAgentFromRow(raw,rule); if(!rawName) continue; const ident=resolveIdentity(rawName); const name=ident.name; const k=ident.key; const map=state.teamMap.get(k) || {};
+      const rawName=getAgentFromRow(raw,rule); if(!rawName) continue; const ident=resolveIdentityFromRow(raw,rawName); const name=ident.name; const k=ident.key; const map=state.teamMap.get(k) || {};
       const coach=map.coach || String(rowVal(raw,['Coach','Manager','Supervisor','Team Lead','Job Coach'])||rowVal(raw,['Team','Team Name','Coach Team','Sheet'])||'Unassigned').trim() || 'Unassigned';
       const team=map.team || String(rowVal(raw,['Sheet','Team','Team Name','Coach Team'])||coach).trim() || coach;
       addRepRecord(k, name, coach, team, rule, f.fileName, raw, criteriaValueSummary(raw, rule), reportSetting);
@@ -4894,6 +4948,7 @@ async function generateReport(){
   for(let i=0;i<allFlagged.length;i++){
     const rec=allFlagged[i]; const rule=state.rules.find(r=>r.id===rec.ruleId); const lookback=Number(rule?.coachLookbackWeeks)||globalLookback;
     rec.coached = rec.precomputedCoached || coachMatch(rec, rule, reportDate, lookback);
+    rec.concernHistory = concernHistoryForRecord(rec,rule,reportDate);
     rec.checklist = rec.precomputedChecklist || checklistMatch(rec, rule, reportDate, 10);
     rec.statChecks = rec.directStatCheck ? [rec.directStatCheck] : (rule?.stats||[]).map(s=>computeStatCheck(rec.repKey,s,reportDate)).filter(Boolean);
     rec.alarm = rec.statChecks.some(s=>s.alarm) || (isCoachingCorrectiveRule(rule) && rec.specialMetrics?.checklistCount===0);
@@ -5099,13 +5154,20 @@ function emailPreviewReportHtml(coachRows){
 }
 function historyRowsForCurrentReport(){
   if(!state.report) return [];
-  return state.report.flagged.map(r=>({ id:uid(), reportDate:state.report.reportDate, createdAt:new Date().toISOString(), repName:r.repName, repKey:r.repKey, coach:r.coach, team:r.team, hireDate:r.hireDate||'', ruleId:r.ruleId, ruleTitle:r.ruleTitle, category:r.category, reportWeight:Number(r.reportWeight??1), reportPriority:Number(r.reportPriority??999999), coached:!!r.coached?.isCoached, alarming:!!r.alarm, concern:r.concern, concernScore:r.concernScore }));
+  const unique=new Map(), createdAt=new Date().toISOString();
+  for(const r of state.report.flagged){
+    const concern=r.concernHistory||concernHistoryForRecord(r,state.rules.find(rule=>rule.id===r.ruleId),parseDate(state.report.reportDate)||new Date());
+    const row=normalizeConcernHistoryRow({reportDate:state.report.reportDate,runId:concern.runId||state.report.reportDate,createdAt,repName:r.repName,repKey:r.repKey,coach:r.coach,team:r.team,hireDate:r.hireDate||'',ruleId:r.ruleId,ruleTitle:r.ruleTitle,category:r.category,reportWeight:Number(r.reportWeight??1),reportPriority:Number(r.reportPriority??999999),coached:!!r.coached?.isCoached,relatedCoachingLast21:Number(concern.relatedCoachingLast21||0),appearanceCount:Number(concern.appearanceCount||1),concernStatus:concern.status||'New',alarming:!!r.alarm,concern:r.concern,concernScore:r.concernScore});
+    if(row&&!unique.has(row.occurrenceKey)) unique.set(row.occurrenceKey,row);
+  }
+  return [...unique.values()];
 }
 async function saveProblemHistory(){
   const rows=historyRowsForCurrentReport(); if(!rows.length){ toast('Generate a report first.'); return; }
   for(const r of rows) await put(STORES.history,r);
   state.history = await getAll(STORES.history);
-  toast(`Saved ${rows.length} follow-up history row(s).`);
+  rebuildConcernHistoryIndex();
+  toast(`Saved ${rows.length} unique concern appearance(s). Re-saving this report period will update, not duplicate, them.`);
 }
 function emailRepRowInline(r){
   const status=esc(coachingStatusPlainText(r.coached));
@@ -5213,16 +5275,43 @@ async function exportEmails(){
   }
   const blob=await zip.generateAsync({type:'blob'}); downloadBlob(blob,`coaching_opportunity_emails_${state.report.reportDate}.zip`);
 }
+function concernHistoryAppearanceExportRows(){
+  rebuildConcernHistoryIndex();
+  return (state.history||[]).slice().sort((a,b)=>String(a.reportDate).localeCompare(String(b.reportDate))||String(a.repName).localeCompare(String(b.repName))||String(a.ruleTitle).localeCompare(String(b.ruleTitle))).map(h=>({OccurrenceKey:h.occurrenceKey,RunID:h.runId,ReportDate:h.reportDate,Representative:h.repName,RepKey:h.repKey,Coach:h.coach,Team:h.team,DateOfHire:h.hireDate||'',RuleID:h.ruleId,Rule:h.ruleTitle,Category:h.category,AppearanceCount:Number(h.appearanceCount||0),ConcernStatus:h.concernStatus||'',RelatedCoachingLast21:Number(h.relatedCoachingLast21||0),ReportPriority:Number(h.reportPriority??999999),ReportWeight:Number(h.reportWeight??1),Coached:h.coached?'Yes':'No',ElevatedPriority:h.alarming?'Yes':'No',NeedLevel:h.concern==='High'?'High Priority':h.concern==='Medium'?'Moderate Priority':'Monitor',NeedScore:h.concernScore,BroadMovement:h.broadMovementGroup||'',DetailedStatus:h.detailedImpactStatus||'',CoachingAlignment:h.coachingAlignmentGroup||'',CoachingTopic:h.coachingTopic||'',AssignedStatistic:h.assignedStatistic||'',Direction:h.statisticDirection||'',PreAverage:h.preAverage,PostAverage:h.postAverage,CurrentValue:h.currentValue,RawChange:h.statisticalChange,FavorableChange:h.favorableChange,EpisodeDates:h.episodeDates||'',EpisodeCount:h.episodeCount,MeasurableEpisodes:h.measurableEpisodeCount,CoachingContacts:h.coachingContactCount,LatestCoachingDate:h.latestCoachingDate||'',NeedIdentificationDate:h.needIdentificationDate||'',DaysToCoaching:h.daysToCoaching,Timeliness:h.timelinessCategory||'',ValidPrePeriods:h.validPrePeriods,ValidPostPeriods:h.validPostPeriods,ChecklistFollowThrough:h.checklistFollowThrough,Evidence:h.evidenceStatus||'',SuggestedAction:h.suggestedAction||'',CreatedAt:h.createdAt}));
+}
+function concernHistorySummaryExportRows(){
+  const groups=new Map();
+  for(const row of state.history||[]){ const key=concernRepRuleIndexKey(row.repKey,row.ruleId); if(!groups.has(key)) groups.set(key,[]); groups.get(key).push(row); }
+  return [...groups.values()].map(rows=>{ rows.sort((a,b)=>String(a.reportDate).localeCompare(String(b.reportDate))); const first=rows[0],last=rows[rows.length-1]; return {Representative:last.repName,RepKey:last.repKey,RuleID:last.ruleId,Rule:last.ruleTitle,AppearanceCount:rows.length,FirstAppearance:first.reportDate,LastAppearance:last.reportDate,LatestStatus:last.concernStatus||'',LatestRelatedCoaching21:Number(last.relatedCoachingLast21||0),Coach:last.coach,Team:last.team}; }).sort((a,b)=>String(a.Representative).localeCompare(String(b.Representative))||String(a.Rule).localeCompare(String(b.Rule)));
+}
 function exportProblemReps(){
-  const rows = (state.history||[]).map(h=>({ReportDate:h.reportDate, Representative:h.repName, Coach:h.coach, Team:h.team, DateOfHire:h.hireDate||'', Rule:h.ruleTitle, Category:h.category, ReportPriority:Number(h.reportPriority??999999), ReportWeight:Number(h.reportWeight??1), Coached:h.coached?'Yes':'No', ElevatedPriority:h.alarming?'Yes':'No', NeedLevel:h.concern==='High'?'High Priority':h.concern==='Medium'?'Moderate Priority':'Monitor', NeedScore:h.concernScore, CreatedAt:h.createdAt}));
-  if(!rows.length){ toast('No saved follow-up history yet.'); return; }
-  if(window.XLSX){ const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Follow-Up History'); XLSX.writeFile(wb,`coaching_follow_up_history_${ymd(new Date())}.xlsx`); }
-  else { const headers=Object.keys(rows[0]); const csv=[headers.join(',')].concat(rows.map(r=>headers.map(h=>`"${String(r[h]??'').replace(/"/g,'""')}"`).join(','))).join('\n'); downloadBlob(new Blob([csv],{type:'text/csv'}),`coaching_follow_up_history_${ymd(new Date())}.csv`); }
+  const rows=concernHistoryAppearanceExportRows();
+  if(!rows.length){ toast('No saved concern history yet.'); return; }
+  if(window.XLSX){ const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Appearance History'); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(concernHistorySummaryExportRows()),'Summary'); XLSX.writeFile(wb,`qualtrics_concern_history_${ymd(new Date())}.xlsx`); }
+  else { const headers=Object.keys(rows[0]); const csv=[headers.join(',')].concat(rows.map(r=>headers.map(h=>`"${String(r[h]??'').replace(/"/g,'""')}"`).join(','))).join('\n'); downloadBlob(new Blob([csv],{type:'text/csv'}),`qualtrics_concern_history_${ymd(new Date())}.csv`); }
 }
 async function importProblemReps(file){
-  if(!file) return; const parsed=await readFileAsWorkbookRows(file,'Representative'); const rows=[]; for(const sh of parsed.sheets) rows.push(...sh.rows);
-  let count=0; for(const r of rows){ const name=String(rowVal(r,['Representative','Rep','Agent Name','Name'])||'').trim(); if(!name) continue; await put(STORES.history,{ id:uid(), reportDate:ymd(parseDate(rowVal(r,['ReportDate','Report Date','Date']))||new Date()), createdAt:new Date().toISOString(), repName:name, repKey:repKey(name), coach:String(rowVal(r,['Coach'])||'Unassigned'), team:String(rowVal(r,['Team'])||''), hireDate:String(rowVal(r,['DateOfHire','Date Of Hire','Date of Hire','Hire Date'])||''), ruleId:'imported', ruleTitle:String(rowVal(r,['Rule','Topic','Category'])||'Imported'), category:String(rowVal(r,['Category','Rule','Topic'])||'Imported'), reportPriority:Math.max(1,Number(rowVal(r,['ReportPriority','Report Priority','Priority']))||999999), reportWeight:Math.max(0,Number(rowVal(r,['ReportWeight','Report Weight','Weight']))||1), coached:/yes|true/i.test(String(rowVal(r,['Coached']))), alarming:/yes|true/i.test(String(rowVal(r,['ElevatedPriority','PriorityElevated','Alarming']))), concern:(()=>{ const v=String(rowVal(r,['NeedLevel','Concern'])||''); return /high/i.test(v)?'High':/moderate|medium/i.test(v)?'Medium':/monitor|lower|low/i.test(v)?'Lower':v; })(), concernScore:Number(rowVal(r,['NeedScore','ConcernScore','Concern Score']))||0 }); count++; }
-  state.history=await getAll(STORES.history); toast(`Imported ${count} follow-up history row(s).`);
+  if(!file) return;
+  try{
+    const parsed=await readFileAsWorkbookRows(file,'Representative'); const rows=[]; for(const sh of parsed.sheets) rows.push(...sh.rows);
+    let count=0, skipped=0; const unique=new Map();
+    for(const r of rows){
+      const name=String(rowVal(r,['Representative','Rep','Agent Name','Name'])||'').trim(), reportDate=ymd(parseDate(rowVal(r,['ReportDate','Report Date','Date']))), runId=String(rowVal(r,['RunID','Run ID','ReportPeriod','Report Period'])||reportDate).trim();
+      if(!name||!reportDate||!runId){ skipped++; continue; }
+      const ruleTitle=String(rowVal(r,['Rule','Topic','Category'])||'').trim(); let ruleId=String(rowVal(r,['RuleID','Rule ID','RuleId'])||'').trim();
+      if(!ruleId&&ruleTitle) ruleId=state.rules.find(rule=>norm(rule.title)===norm(ruleTitle))?.id||'';
+      if(!ruleId){ skipped++; continue; }
+      const exportedRepKey=String(rowVal(r,['RepKey','Rep Key','RepresentativeKey','Representative Key','All-Star Representative Key'])||'').trim();
+      const ident=exportedRepKey?{key:exportedRepKey,name}:{...resolveIdentityFromRow(r,name)};
+      const concernValue=String(rowVal(r,['NeedLevel','Concern'])||'');
+      const row=normalizeConcernHistoryRow({reportDate,runId,createdAt:String(rowVal(r,['CreatedAt','Created At'])||new Date().toISOString()),repName:name,repKey:ident.key,coach:String(rowVal(r,['Coach'])||'Unassigned'),team:String(rowVal(r,['Team'])||''),hireDate:String(rowVal(r,['DateOfHire','Date Of Hire','Date of Hire','Hire Date'])||''),ruleId,ruleTitle:ruleTitle||state.rules.find(rule=>rule.id===ruleId)?.title||ruleId,category:String(rowVal(r,['Category','Rule','Topic'])||ruleTitle),reportPriority:Math.max(1,Number(rowVal(r,['ReportPriority','Report Priority','Priority']))||999999),reportWeight:Math.max(0,Number(rowVal(r,['ReportWeight','Report Weight','Weight']))||1),coached:/yes|true/i.test(String(rowVal(r,['Coached']))),relatedCoachingLast21:Math.max(0,Number(rowVal(r,['RelatedCoachingLast21','Related Coaching Last 21']))||0),appearanceCount:Math.max(1,Number(rowVal(r,['AppearanceCount','Appearance Count']))||1),concernStatus:String(rowVal(r,['ConcernStatus','Concern Status'])||''),alarming:/yes|true/i.test(String(rowVal(r,['ElevatedPriority','PriorityElevated','Alarming']))),concern:/high/i.test(concernValue)?'High':/moderate|medium/i.test(concernValue)?'Medium':/monitor|lower|low/i.test(concernValue)?'Lower':concernValue,concernScore:Number(rowVal(r,['NeedScore','ConcernScore','Concern Score']))||0});
+      if(!row){ skipped++; continue; }
+      unique.set(row.occurrenceKey,row);
+    }
+    for(const row of unique.values()) await put(STORES.history,row);
+    count=unique.size; state.history=await getAll(STORES.history); rebuildConcernHistoryIndex();
+    toast(`Loaded ${count} unique concern appearance(s)${skipped?`; skipped ${skipped} summary, unknown, or malformed row(s)`:''}. Existing occurrence keys were updated, not duplicated.`);
+  }catch(err){ console.error(err); toast(`Concern history could not be loaded: ${err?.message||err}`); }
 }
 
 function debounce(fn, wait=350){
@@ -5369,10 +5458,10 @@ async function init(){
   switchTab('keyfiles');
   rebuildCoachAliasIndex();
   renderHireDateControls(); renderCoreChips(); renderDashboardFileList(); renderUploadReadiness(); renderOtherRulePicker(); renderStatCountSelectors(currentRule()); updateStatCountFieldVisibility(); renderReportAudienceControls(); populateOrgSummarySelect(); markRulePreviewStale('Select a saved rule, then use Refresh Preview when ready.');
-  state.db=await openDB(); state.rules=(await getAll(STORES.rules)).map(normalizeRule); state.history=await getAll(STORES.history);
+  state.db=await openDB(); state.rules=(await getAll(STORES.rules)).map(normalizeRule); state.history=await getAll(STORES.history); rebuildConcernHistoryIndex();
   if(state.rules.length) state.currentRuleId=state.rules[0].id;
   renderRules(); renderOtherRulePicker(); if(state.currentRuleId) fillRuleForm(state.rules[0]); else fillRuleForm(null);
-  setStatus(`Ready. Loaded ${state.rules.length} saved rule set(s) and ${state.history.length} follow-up history row(s).`);
+  setStatus(`Ready. Loaded ${state.rules.length} saved rule set(s) and ${state.history.length} unique concern appearance(s).`);
   if(window.parent!==window) window.parent.postMessage({type:'qualtrics-generator-ready'},'*');
 }
 init().catch(err=>{ console.error(err); setStatus('Startup error: '+(err.message||err)); });

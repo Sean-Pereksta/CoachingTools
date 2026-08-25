@@ -24,7 +24,9 @@ qualtrics/generator.html is the only maintained Qualtrics source. generator-sour
 
 WORKFLOW MODERNIZATION
 - Import now includes cached Source Health metadata.
-- Recognized multi-file imports and shared CoachTools IndexedDB updates automatically rebuild the same Dated and Non-Date databases produced by the manual Categorize Data button. The button remains available after header or identity-mapping edits.
+- Recognized multi-file imports and shared CoachTools IndexedDB updates refresh normalized source rows only. They preserve the last categorized Dated and Non-Date databases, mark them Data Changed — Categorize, and require the user to press Categorize Data before reports that depend on them can run.
+- Manual categorization reuses unchanged normalized source fragments when their source, header map, and team/identity signatures remain safe; changed fragments rebuild in responsive browser slices.
+- The Qualtrics workspace stores concern appearances by stable representative key, rule, and report period; its Excel backup contains Appearance History and Summary sheets and safely upserts repeated imports.
 - Workbook imports inspect only a small worksheet prefix while detecting headers, materialize only the selected/required tabs, and build normalized row objects once.
 - Package Imported Data now writes All_Star_Data_Package.json. Loading that JSON validates the versioned package and hydrates normalized rows directly; legacy .xlsx/.xls packages remain supported.
 - Run uses shared Preflight diagnostics; only blocking errors stop execution.
@@ -61,7 +63,7 @@ SOURCE LAYOUT
 - js/imports.js: imports, roster intake, categorization, troubleshooting
 - js/calculations.js: scoring, filters, QA calculations, Display Column
 - js/research.js: complete Research and Metrics workspaces
-- js/organizations.js: organizations and run coverage
+- js/organizations-core.js: organizations and run coverage
 - js/workflow.js: source health, shared diagnostics, Run Preflight, Model Health, presets, saved reports, notes, and comparison
 - js/list-tester.js: List Tester and detailed exports
 - js/reports.js: report runs, rankings, team tools, PDF/export

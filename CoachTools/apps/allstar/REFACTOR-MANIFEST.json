@@ -19,7 +19,7 @@
     "js/calculations.js",
     "js/reports.js",
     "js/research.js",
-    "js/organizations.js",
+    "js/organizations-core.js",
     "js/workflow.js",
     "js/list-tester.js",
     "js/qualtrics-bridge.js",
@@ -57,7 +57,7 @@
       "sha256": "d64cfe7e1306907f77c9c4ae887984140fb8955d928ed679c4381583eeab849b"
     },
     {
-      "file": "js/organizations.js",
+      "file": "js/organizations-core.js",
       "bytes": 16393,
       "sha256": "d93517226daac6c57fc7b8a50446b7bacd65e3cb129c25b546ed77ae292ef376"
     },

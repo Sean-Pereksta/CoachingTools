@@ -437,6 +437,10 @@ function afterImportedDataRestored(reason='local cache loaded', opts={}){
   state.data.retail.teamTotals=rebuildTeamTotalsIndex(state.data.retail.teamTotals||emptyTeamTotalsDataset('retail'));
   state.data.referral.teamTotals=rebuildTeamTotalsIndex(state.data.referral.teamTotals||emptyTeamTotalsDataset('referral'));
   state.categorized=state.categorized||{nondated:{headers:['Representative','Coach'],rows:[],builtAt:'',sourceStats:[]},dated:{headers:['Representative','Coach','Date'],rows:[],builtAt:'',sourceStats:[]},warnings:[]};
+  state.categorized={...state.categorized,stale:!!state.categorized.stale,staleReason:state.categorized.staleReason||'',changedSources:state.categorized.changedSources||[],sourceSignatures:state.categorized.sourceSignatures||{},fragments:state.categorized.fragments||{}};
+  state.categorizedFragments=state.categorized.fragments;
+  state.categorizationPending=!!state.categorized.stale;
+  state.categorizationPendingReason=state.categorized.staleReason||'';
   applyRepAliasMappingsToAllRows(); markDataIndexDirty(reason); state.teamIndexCache=buildCompactTeamIndexFromRows(reason); selectiveResearchInvalidation({reason,aliases:true,teams:true,mappings:true,silent:!!opts.deferRender});
   if(!opts.deferRender) renderAllStarAfterDataBatch({sourcesChanged:allSourceKeys(),teamsChanged:true,aliasesChanged:true,reason});
 }
