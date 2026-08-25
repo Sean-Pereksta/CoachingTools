@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Weekly Comparison — CoachTools</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="coachtools-id" content="weekly-comparison" />
+<meta name="coachtools-name" content="Weekly Comparison" />
+<meta name="coachtools-description" content="Search Retail representatives and compare configurable metrics across two selected week sets." />
+<meta name="coachtools-category" content="Performance" />
+<meta name="coachtools-icon" content="icons/default-app.png" />
+<meta name="coachtools-initials" content="WC" />
+<meta name="coachtools-keywords" content="weekly, comparison, calculator, retail, names, columns, rate, volume, divide, trend" />
+<meta name="coachtools-data" content="weeklyRetail" />
+<meta name="coachtools-order" content="55" />
+<meta name="coachtools-version" content="1.0" />
+
+<script src="../shared/coachtools-storage.js"></script>
+<script src="../shared/coachtools-app-data.js"></script>
+<script src="../shared/coachtools-identity.js"></script>
+<script src="../shared/coachtools-shell.js"></script>
+
+<style>
+:root{
+  --bg:#f4f7fb;--panel:#fff;--soft:#f8fafc;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
+  --accent:#c9252d;--accent-dark:#a91d24;--good:#15803d;--bad:#b91c1c;--warn:#b45309;--info:#1d4ed8;
+  --shadow:0 12px 34px rgba(15,23,42,.07);--r:16px
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+button,input,select,textarea{font:inherit}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid rgba(201,37,45,.18);outline-offset:2px}
+.app{max-width:1500px;margin:0 auto;padding:16px;display:grid;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.top{position:sticky;top:10px;z-index:20;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{display:flex;align-items:center;gap:11px}.mark{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#111827,#334155);color:#fff;display:grid;place-items:center;font-weight:900}
+.title{font-size:17px;font-weight:900;letter-spacing:-.02em}.sub{font-size:11px;color:var(--muted);font-weight:700;margin-top:3px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.btn{appearance:none;border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);padding:8px 11px;cursor:pointer;font-weight:800}
+.btn:hover{background:var(--soft)}.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}.btn.primary:hover{background:var(--accent-dark)}
+.btn.small{font-size:11px;padding:6px 8px}.btn.danger{color:var(--bad)}
+.status{font-size:11px;color:var(--muted);font-weight:750}
+.panelHead{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px}
+.panelHead b{font-size:14px}.panelBody{padding:14px}.hint{font-size:11px;color:var(--muted);font-weight:700;line-height:1.45}
+.setupGrid{display:grid;grid-template-columns:minmax(280px,.85fr) minmax(0,1.15fr);gap:14px}
+.namesBox textarea{width:100%;min-height:170px;resize:vertical;border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;color:var(--ink);outline:0}
+.nameTools{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.pill{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:5px 8px;background:var(--soft);font-size:10px;font-weight:800;color:var(--muted)}
+.matchWrap{margin-top:10px;max-height:270px;overflow:auto;border:1px solid var(--line);border-radius:12px}
+table{width:100%;border-collapse:collapse}th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:11px}th{background:var(--soft);position:sticky;top:0;z-index:1;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+tr:last-child td{border-bottom:0}.good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}.muted{color:var(--muted)}
+.periodGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.period{border:1px solid var(--line);border-radius:13px;background:var(--soft);overflow:hidden}
+.periodHead{padding:10px 11px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px}.periodTitle{font-weight:900;font-size:12px}
+.periodBtns{display:flex;gap:5px;flex-wrap:wrap}.weekList{max-height:330px;overflow:auto;padding:7px}
+.week{display:flex;gap:8px;align-items:flex-start;padding:8px;border-radius:9px;cursor:pointer;font-size:11px;font-weight:750}.week:hover{background:#fff}.week input{margin-top:1px;accent-color:var(--accent)}
+.weekMeta{display:block;color:var(--muted);font-size:9px;font-weight:700;margin-top:2px}
+.statsList{display:grid;gap:8px}.statRow{display:grid;grid-template-columns:minmax(150px,.8fr) 140px minmax(150px,1fr) minmax(150px,1fr) 112px auto;gap:7px;align-items:end;border:1px solid var(--line);border-radius:13px;padding:10px;background:var(--soft)}
+.field{display:grid;gap:4px}.field label{font-size:9px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.04em}.field input,.field select{width:100%;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);padding:7px 8px;outline:0}
+.statHelp{margin-top:9px;display:flex;gap:7px;flex-wrap:wrap}.calcTag{font-size:10px;border:1px solid var(--line);border-radius:999px;padding:5px 8px;background:#fff;color:var(--muted);font-weight:750}
+.resultsEmpty{padding:28px;text-align:center;color:var(--muted);font-weight:800}
+.resultScroller{overflow:auto}.resultTable{min-width:760px}.resultTable th{position:sticky;top:0}.resultTable td strong{font-size:12px}
+.cellSub{display:block;color:var(--muted);font-size:9px;margin-top:3px;font-weight:650;white-space:nowrap}
+.delta.up{color:var(--good);font-weight:900}.delta.down{color:var(--bad);font-weight:900}.delta.flat{color:var(--muted);font-weight:900}
+.summaryBar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}.summaryBar .pill{background:#fff}
+.detailsHead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;margin-bottom:8px}
+.personTable{min-width:900px}.personTable th.group{text-align:center;border-left:1px solid var(--line)}.personTable td.groupStart{border-left:1px solid var(--line)}
+.toast{position:fixed;right:15px;bottom:15px;z-index:99;background:#111827;color:#fff;padding:10px 12px;border-radius:11px;box-shadow:var(--shadow);font-size:11px;font-weight:750;display:none;max-width:min(420px,calc(100vw - 30px))}
+.toast.show{display:block}
+@media(max-width:1050px){.setupGrid{grid-template-columns:1fr}.statRow{grid-template-columns:1fr 1fr 1fr}.statRow .removeWrap{grid-column:3}}
+@media(max-width:720px){.app{padding:9px}.top{position:static;align-items:flex-start;flex-direction:column}.actions{justify-content:flex-start}.periodGrid{grid-template-columns:1fr}.statRow{grid-template-columns:1fr 1fr}.statRow .removeWrap{grid-column:auto}}
+@media(max-width:480px){.statRow{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="card top">
+    <div class="brand"><div class="mark">WC</div><div><div class="title">Weekly Comparison</div><div class="sub">Retail weekly calculator · names + columns + two selectable time periods</div></div></div>
+    <div class="actions"><span class="status" id="dataStatus">Loading Retail weekly…</span><button class="btn" id="reloadBtn" type="button">Reload Data</button><button class="btn primary" id="compareBtn" type="button">Compare</button></div>
+  </section>
+
+  <section class="setupGrid">
+    <div class="card namesBox">
+      <div class="panelHead"><b>1 · Names</b><span class="hint">Paste one name per line from Excel, or separate names with semicolons.</span></div>
+      <div class="panelBody">
+        <textarea id="nameInput" placeholder="John Doe&#10;Jane Smith&#10;Alex Johnson"></textarea>
+        <div class="nameTools">
+          <div><span class="pill" id="matchCount">0 matched</span> <span class="pill" id="unmatchedCount">0 unmatched</span></div>
+          <div class="actions"><button class="btn small" id="matchBtn" type="button">Match Names</button><button class="btn small" id="clearNamesBtn" type="button">Clear</button></div>
+        </div>
+        <div class="matchWrap" id="matchWrap"><div class="resultsEmpty">Paste names to match them against Retail weekly.</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="panelHead"><b>2 · Compare two time periods</b><span class="hint">Each side can be one week or any set of weeks.</span></div>
+      <div class="panelBody">
+        <div class="periodGrid">
+          <div class="period">
+            <div class="periodHead"><div><div class="periodTitle">Set 1 · Earlier / baseline</div><div class="hint" id="set1Count">0 weeks selected</div></div><div class="periodBtns"><button class="btn small" data-period="1" data-action="previous" type="button">Previous</button><button class="btn small" data-period="1" data-action="all" type="button">All</button><button class="btn small" data-period="1" data-action="clear" type="button">Clear</button></div></div>
+            <div class="weekList" id="weekList1"></div>
+          </div>
+          <div class="period">
+            <div class="periodHead"><div><div class="periodTitle">Set 2 · Later / comparison</div><div class="hint" id="set2Count">0 weeks selected</div></div><div class="periodBtns"><button class="btn small" data-period="2" data-action="latest" type="button">Latest</button><button class="btn small" data-period="2" data-action="all" type="button">All</button><button class="btn small" data-period="2" data-action="clear" type="button">Clear</button></div></div>
+            <div class="weekList" id="weekList2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="panelHead"><b>3 · Stats to display</b><div class="actions"><button class="btn small" id="addAverageBtn" type="button">+ Average</button><button class="btn small" id="addVolumeBtn" type="button">+ Volume</button><button class="btn small" id="addRatioBtn" type="button">+ Divide</button></div></div>
+    <div class="panelBody">
+      <div class="statsList" id="statsList"></div>
+      <div class="statHelp">
+        <span class="calcTag"><b>Average:</b> average people inside each week, then average the selected weeks.</span>
+        <span class="calcTag"><b>Volume:</b> add every selected value.</span>
+        <span class="calcTag"><b>Divide:</b> add every numerator and denominator first, then divide ΣA ÷ ΣB.</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="panelHead"><b>4 · Comparison results</b><div class="actions"><button class="btn small" id="exportBtn" type="button" disabled>Export CSV</button></div></div>
+    <div class="panelBody" id="results"><div class="resultsEmpty">Match names, select weeks, choose stats, then compare.</div></div>
+  </section>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+const WORKSPACE_KEY = 'coachtools.weeklyComparison.v1';
+let retailDock = null;
+let rows = [];
+let headers = [];
+let availableWeeks = [];
+let rowsByWeekName = new Map();
+let namesIndex = new Map();
+let signatureIndex = new Map();
+let matchedEntries = [];
+let stats = [];
+let selectedWeeks1 = new Set();
+let selectedWeeks2 = new Set();
+let lastComparison = null;
+let matchRun = 0;
+let inputTimer = null;
+
+const $ = id => document.getElementById(id);
+const clean = v => String(v == null ? '' : v).trim().replace(/\s+/g,' ');
+const toNumber = v => {
+  if(v == null || v === '') return NaN;
+  if(typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  let s = String(v).trim();
+  if(!s) return NaN;
+  const neg = /^\(.*\)$/.test(s);
+  s = s.replace(/[,$%]/g,'').replace(/[()]/g,'').trim();
+  const n = Number(s);
+  return Number.isFinite(n) ? (neg ? -n : n) : NaN;
+};
+function normalizeName(value){
+  if(window.CoachToolsIdentity?.normalizeName) return window.CoachToolsIdentity.normalizeName(value);
+  let s = clean(value);
+  if(s.includes(',')){
+    const parts = s.split(',');
+    const last = clean(parts.shift());
+    const rest = clean(parts.join(' '));
+    if(last && rest) s = `${rest} ${last}`;
+  }
+  return s.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[.’'`]/g,'').replace(/[^a-zA-Z0-9]+/g,' ').trim().replace(/\s+/g,' ').toLowerCase();
+}
+function displayName(value){
+  return window.CoachToolsIdentity?.displayName ? window.CoachToolsIdentity.displayName(value) : clean(value);
+}
+function normHdr(value){return clean(value).toLowerCase().replace(/[^a-z0-9%]/g,'');}
+function excelSerialToDate(n){
+  const base = Date.UTC(1899,11,30);
+  const d = new Date(base + Math.round(n * 86400000));
+  return new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());
+}
+function parseDate(value){
+  if(value instanceof Date && !isNaN(value)) return new Date(value.getFullYear(),value.getMonth(),value.getDate());
+  if(typeof value === 'number' && value > 20000 && value < 80000) return excelSerialToDate(value);
+  const s = clean(value);
+  if(!s) return null;
+  if(/^\d+(\.\d+)?$/.test(s)){
+    const n = Number(s);
+    if(n > 20000 && n < 80000) return excelSerialToDate(n);
+  }
+  const d = new Date(s);
+  return isNaN(d) ? null : new Date(d.getFullYear(),d.getMonth(),d.getDate());
+}
+function isoWeekKey(d){
+  const date = new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const day = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+  const week = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return `${date.getUTCFullYear()}-W${String(week).padStart(2,'0')}`;
+}
+function weekStartFromKey(key){
+  const m = String(key||'').match(/^(\d{4})-W(\d{2})$/);
+  if(!m) return null;
+  const year = Number(m[1]), week = Number(m[2]);
+  const jan4 = new Date(Date.UTC(year,0,4));
+  const day = jan4.getUTCDay() || 7;
+  const monday = new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate() - day + 1 + ((week - 1) * 7));
+  return new Date(monday.getUTCFullYear(),monday.getUTCMonth(),monday.getUTCDate());
+}
+function shortDate(d){return d ? `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(-2)}` : '';}
+function weekLabel(key){
+  const start = weekStartFromKey(key);
+  if(!start) return key;
+  const end = new Date(start); end.setDate(end.getDate()+6);
+  return `${shortDate(start)} – ${shortDate(end)}`;
+}
+function isTotalName(name){return /^(total|totals|team totals?|summary)(\b|$)/i.test(clean(name));}
+function pickField(row,candidates){
+  const map = new Map(Object.keys(row||{}).map(k=>[normHdr(k),k]));
+  for(const c of candidates){const key=map.get(normHdr(c));if(key != null) return row[key];}
+  return undefined;
+}
+function aoaToRows(aoa){
+  if(!Array.isArray(aoa) || aoa.length < 2) return [];
+  let best = {idx:-1,score:0,header:[]};
+  const known = ['date','day','name','associatename','representative','employee','coach','jobcoach','team','sheet'];
+  for(let i=0;i<Math.min(60,aoa.length);i++){
+    const h = Array.isArray(aoa[i]) ? aoa[i].map(clean) : [];
+    const score = h.reduce((sum,x)=>sum+(known.includes(normHdr(x))?1:0),0);
+    if(score > best.score) best = {idx:i,score,header:h};
+  }
+  if(best.idx < 0 || best.score < 2) return [];
+  return aoa.slice(best.idx+1).map(vals=>{
+    const obj={}; let any=false;
+    best.header.forEach((h,i)=>{if(!h)return;const v=Array.isArray(vals)?vals[i]:'';obj[h]=v;if(clean(v))any=true;});
+    return any?obj:null;
+  }).filter(Boolean);
+}
+function extractRowArrays(root){
+  const found=[], seen=new Set();
+  function push(arr,sheet){
+    if(!Array.isArray(arr)||!arr.length)return;
+    const data = Array.isArray(arr[0]) ? aoaToRows(arr) : arr;
+    if(!data.length)return;
+    const key = `${sheet||''}|${data.length}|${Object.keys(data[0]||{}).join('|')}`;
+    if(seen.has(key))return; seen.add(key); found.push({rows:data,sheetName:sheet||''});
+  }
+  function walk(node,sheet){
+    if(node == null)return;
+    if(Array.isArray(node)){push(node,sheet);return;}
+    if(typeof node !== 'object')return;
+    if(Array.isArray(node.rows))push(node.rows,sheet);
+    if(Array.isArray(node.data))push(node.data,sheet);
+    if(Array.isArray(node.aoa))push(node.aoa,sheet);
+    if(node.workbook?.data && typeof node.workbook.data === 'object') for(const [sn,v] of Object.entries(node.workbook.data)) walk(v,sn);
+    if(node.sheets && typeof node.sheets === 'object' && !Array.isArray(node.sheets)) for(const [sn,v] of Object.entries(node.sheets)) walk(v,sn);
+    for(const [k,v] of Object.entries(node)){if(['rows','data','aoa','workbook','sheets','meta'].includes(k))continue;walk(v,sheet);}
+  }
+  walk(root,'');
+  return found;
+}
+function canonicalizeRetail(dock){
+  const out=[];
+  for(const pack of extractRowArrays(dock)){
+    for(const raw of pack.rows){
+      if(!raw || typeof raw !== 'object') continue;
+      const dateRaw = pickField(raw,['Date','Day','Dt','Created On','Created']);
+      const nameRaw = pickField(raw,['Associate Name','Representative','Name','Rep','Employee','Agent Name','CSR/SSR Name']);
+      const d = parseDate(dateRaw);
+      const name = clean(nameRaw);
+      if(!d || !name || isTotalName(name)) continue;
+      const row = {...raw,__date:d,__week:isoWeekKey(d),__name:name,__nameKey:normalizeName(name),__sheet:clean(pickField(raw,['Sheet','Team','Coach','Job Coach']) || pack.sheetName)};
+      if(row.__nameKey) out.push(row);
+    }
+  }
+  return out;
+}
+function signature(value){
+  const tokens = normalizeName(value).split(' ').filter(Boolean);
+  if(tokens.length < 2) return '';
+  return `${tokens[0]}|${tokens[tokens.length-1]}`;
+}
+function levenshtein(a,b){
+  a=String(a||'');b=String(b||'');
+  if(!a)return b.length;if(!b)return a.length;
+  const prev=Array.from({length:b.length+1},(_,i)=>i), cur=new Array(b.length+1);
+  for(let i=1;i<=a.length;i++){
+    cur[0]=i;
+    for(let j=1;j<=b.length;j++) cur[j]=Math.min(cur[j-1]+1,prev[j]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    for(let j=0;j<=b.length;j++) prev[j]=cur[j];
+  }
+  return prev[b.length];
+}
+function nameScore(a,b){
+  const A=normalizeName(a),B=normalizeName(b);
+  if(!A||!B)return 0;if(A===B)return 1;
+  const edit=1-(levenshtein(A,B)/Math.max(A.length,B.length,1));
+  const ta=new Set(A.split(' ')),tb=new Set(B.split(' '));
+  const overlap=[...ta].filter(x=>tb.has(x)).length;
+  const dice=(2*overlap)/Math.max(1,ta.size+tb.size);
+  return (edit*.65)+(dice*.35);
+}
+function parseNames(text){
+  return Array.from(new Set(String(text||'').split(/[\n\r;\t]+/).map(clean).filter(Boolean)));
+}
+function buildIndexes(){
+  namesIndex = new Map(); signatureIndex = new Map(); rowsByWeekName = new Map();
+  for(const row of rows){
+    if(!namesIndex.has(row.__nameKey)) namesIndex.set(row.__nameKey,{key:row.__nameKey,displayNames:new Set(),rowCount:0});
+    const info=namesIndex.get(row.__nameKey); info.displayNames.add(row.__name); info.rowCount++;
+    const sig=signature(row.__nameKey);
+    if(sig){if(!signatureIndex.has(sig))signatureIndex.set(sig,new Set());signatureIndex.get(sig).add(row.__nameKey);}
+    if(!rowsByWeekName.has(row.__week))rowsByWeekName.set(row.__week,new Map());
+    const wm=rowsByWeekName.get(row.__week); if(!wm.has(row.__nameKey))wm.set(row.__nameKey,[]); wm.get(row.__nameKey).push(row);
+  }
+  for(const info of namesIndex.values()) info.display = [...info.displayNames].sort((a,b)=>a.localeCompare(b))[0];
+}
+function numericHeaders(){
+  const skip = new Set(['date','day','dt','name','associatename','representative','rep','employee','agentname','csrssrname','sheet','team','coach','jobcoach','source']);
+  const all = Array.from(new Set(rows.flatMap(r=>Object.keys(r).filter(k=>!k.startsWith('__')))));
+  return all.filter(h=>!skip.has(normHdr(h)) && rows.some(r=>Number.isFinite(toNumber(r[h])))).sort((a,b)=>a.localeCompare(b));
+}
+function loadWorkspace(){
+  let s={};try{s=JSON.parse(localStorage.getItem(WORKSPACE_KEY)||'{}')||{};}catch(_){}
+  if(typeof s.names === 'string') $('nameInput').value=s.names;
+  stats=Array.isArray(s.stats)?s.stats:[];
+  selectedWeeks1=new Set(Array.isArray(s.weeks1)?s.weeks1:[]);
+  selectedWeeks2=new Set(Array.isArray(s.weeks2)?s.weeks2:[]);
+}
+function saveWorkspace(){
+  try{localStorage.setItem(WORKSPACE_KEY,JSON.stringify({names:$('nameInput').value,stats,weeks1:[...selectedWeeks1],weeks2:[...selectedWeeks2]}));}catch(_){}
+}
+function toast(msg){
+  const el=$('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('show'),2600);
+}
+function ensureDefaultWeeks(){
+  selectedWeeks1=new Set([...selectedWeeks1].filter(w=>availableWeeks.includes(w)));
+  selectedWeeks2=new Set([...selectedWeeks2].filter(w=>availableWeeks.includes(w)));
+  if(!selectedWeeks2.size && availableWeeks.length) selectedWeeks2.add(availableWeeks[availableWeeks.length-1]);
+  if(!selectedWeeks1.size && availableWeeks.length>1) selectedWeeks1.add(availableWeeks[availableWeeks.length-2]);
+  else if(!selectedWeeks1.size && availableWeeks.length) selectedWeeks1.add(availableWeeks[0]);
+}
+function renderWeeks(){
+  for(const period of [1,2]){
+    const host=$(`weekList${period}`), selected=period===1?selectedWeeks1:selectedWeeks2;
+    host.innerHTML='';
+    [...availableWeeks].reverse().forEach(key=>{
+      const label=document.createElement('label');label.className='week';
+      const cb=document.createElement('input');cb.type='checkbox';cb.checked=selected.has(key);
+      cb.addEventListener('change',()=>{cb.checked?selected.add(key):selected.delete(key);updateWeekCounts();saveWorkspace();scheduleCompare();});
+      const text=document.createElement('span');text.innerHTML=`${key}<span class="weekMeta">${weekLabel(key)}</span>`;
+      label.append(cb,text);host.appendChild(label);
+    });
+  }
+  updateWeekCounts();
+}
+function updateWeekCounts(){
+  $('set1Count').textContent=`${selectedWeeks1.size} week${selectedWeeks1.size===1?'':'s'} selected`;
+  $('set2Count').textContent=`${selectedWeeks2.size} week${selectedWeeks2.size===1?'':'s'} selected`;
+}
+function periodAction(period,action){
+  const target=period===1?selectedWeeks1:selectedWeeks2;
+  target.clear();
+  if(action==='all') availableWeeks.forEach(w=>target.add(w));
+  if(action==='latest' && availableWeeks.length) target.add(availableWeeks[availableWeeks.length-1]);
+  if(action==='previous'){
+    if(availableWeeks.length>1) target.add(availableWeeks[availableWeeks.length-2]);
+    else if(availableWeeks.length) target.add(availableWeeks[0]);
+  }
+  renderWeeks();saveWorkspace();scheduleCompare();
+}
+function statId(){return `s_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,6)}`;}
+function addStat(mode){
+  const first=headers[0]||'';
+  let A=first,B=headers[1]||first,label='';
+  if(mode==='ratio'){
+    const app=headers.find(h=>/\bappointments?\b/i.test(h));
+    const opp=headers.find(h=>/\bopportunit/i.test(h));
+    if(app&&opp){A=app;B=opp;label='Appointment Rate';}
+  }
+  stats.push({id:statId(),label,mode,colA:A,colB:B,format:mode==='ratio'?'percent':'auto'});
+  renderStats();saveWorkspace();scheduleCompare();
+}
+function ensureStats(){
+  stats=stats.filter(s=>s && ['average','volume','ratio'].includes(s.mode||''));
+  for(const s of stats){
+    if(!headers.includes(s.colA))s.colA=headers[0]||'';
+    if(!headers.includes(s.colB))s.colB=headers[1]||headers[0]||'';
+    if(!['auto','number','percent'].includes(s.format))s.format=s.mode==='ratio'?'percent':'auto';
+  }
+  if(!stats.length){
+    const app=headers.find(h=>/\bappointments?\b/i.test(h));
+    const opp=headers.find(h=>/\bopportunit/i.test(h));
+    if(app&&opp) stats=[{id:statId(),label:'Appointment Rate',mode:'ratio',colA:app,colB:opp,format:'percent'}];
+    else stats=[{id:statId(),label:'',mode:'average',colA:headers[0]||'',colB:headers[1]||headers[0]||'',format:'auto'}];
+  }
+}
+function optionList(selected){
+  return headers.map(h=>`<option value="${escapeAttr(h)}"${h===selected?' selected':''}>${escapeHtml(h)}</option>`).join('');
+}
+function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function escapeAttr(v){return escapeHtml(v);}
+function renderStats(){
+  const host=$('statsList');host.innerHTML='';
+  if(!headers.length){host.innerHTML='<div class="resultsEmpty">No numeric Retail columns were found.</div>';return;}
+  stats.forEach(stat=>{
+    const row=document.createElement('div');row.className='statRow';row.dataset.id=stat.id;
+    row.innerHTML=`
+      <div class="field"><label>Label</label><input class="statLabel" value="${escapeAttr(stat.label||'')}" placeholder="${escapeAttr(stat.colA||'Metric')}"></div>
+      <div class="field"><label>Calculation</label><select class="statMode">
+        <option value="average"${stat.mode==='average'?' selected':''}>Average</option>
+        <option value="volume"${stat.mode==='volume'?' selected':''}>Volume</option>
+        <option value="ratio"${stat.mode==='ratio'?' selected':''}>Divide A ÷ B</option>
+      </select></div>
+      <div class="field"><label class="aLabel">${stat.mode==='ratio'?'Numerator A':'Column'}</label><select class="statA">${optionList(stat.colA)}</select></div>
+      <div class="field bField" style="${stat.mode==='ratio'?'':'visibility:hidden'}"><label>Denominator B</label><select class="statB">${optionList(stat.colB)}</select></div>
+      <div class="field"><label>Format</label><select class="statFormat">
+        <option value="auto"${stat.format==='auto'?' selected':''}>Auto</option>
+        <option value="number"${stat.format==='number'?' selected':''}>Number</option>
+        <option value="percent"${stat.format==='percent'?' selected':''}>Percent</option>
+      </select></div>
+      <div class="removeWrap"><button class="btn small danger removeStat" type="button">Remove</button></div>`;
+    const update=()=>{
+      stat.label=row.querySelector('.statLabel').value;
+      stat.mode=row.querySelector('.statMode').value;
+      stat.colA=row.querySelector('.statA').value;
+      stat.colB=row.querySelector('.statB').value;
+      stat.format=row.querySelector('.statFormat').value;
+      row.querySelector('.bField').style.visibility=stat.mode==='ratio'?'visible':'hidden';
+      row.querySelector('.aLabel').textContent=stat.mode==='ratio'?'Numerator A':'Column';
+      if(stat.mode==='ratio' && stat.format==='auto'){stat.format='percent';row.querySelector('.statFormat').value='percent';}
+      saveWorkspace();scheduleCompare();
+    };
+    row.querySelectorAll('input,select').forEach(el=>el.addEventListener(el.tagName==='INPUT'?'input':'change',update));
+    row.querySelector('.removeStat').addEventListener('click',()=>{stats=stats.filter(s=>s.id!==stat.id);renderStats();saveWorkspace();scheduleCompare();});
+    host.appendChild(row);
+  });
+}
+async function identityDatasetKeys(input){
+  if(!window.CoachToolsIdentity?.resolve) return [];
+  try{
+    const result=await window.CoachToolsIdentity.resolve(input);
+    const people=result.person?[result.person]:(result.candidates||[]);
+    const keys=[];
+    for(const person of people){
+      const sourceNames=[
+        ...(person.sourceNames?.weeklyRetail||[]),
+        ...(person.aliases||[]),
+        person.displayName
+      ].filter(Boolean);
+      for(const sourceName of sourceNames){
+        const key=normalizeName(sourceName);
+        if(namesIndex.has(key))keys.push(key);
+      }
+    }
+    return Array.from(new Set(keys));
+  }catch(_){return [];}
+}
+async function matchOne(input){
+  const key=normalizeName(input);
+  if(namesIndex.has(key)) return {input,key,matchedName:namesIndex.get(key).display,confidence:'Exact',suggestions:[]};
+  const identityKeys=await identityDatasetKeys(input);
+  if(identityKeys.length===1) return {input,key:identityKeys[0],matchedName:namesIndex.get(identityKeys[0]).display,confidence:'Identity',suggestions:[]};
+  const sig=signature(input), sigKeys=sig?[...(signatureIndex.get(sig)||[])]:[];
+  if(sigKeys.length===1) return {input,key:sigKeys[0],matchedName:namesIndex.get(sigKeys[0]).display,confidence:'First / last',suggestions:[]};
+  const scored=[...namesIndex.values()].map(info=>({key:info.key,name:info.display,score:nameScore(input,info.display)})).sort((a,b)=>b.score-a.score).slice(0,4);
+  const top=scored[0],second=scored[1];
+  if(top && top.score>=.88 && (!second || top.score-second.score>=.05)) return {input,key:top.key,matchedName:top.name,confidence:'Close match',suggestions:scored};
+  return {input,key:null,matchedName:'',confidence:'No confident match',suggestions:scored};
+}
+async function matchNames(){
+  const run=++matchRun;
+  const inputs=parseNames($('nameInput').value);
+  if(!inputs.length){matchedEntries=[];renderMatches();scheduleCompare();return;}
+  const results=await Promise.all(inputs.map(matchOne));
+  if(run!==matchRun)return;
+  matchedEntries=results;renderMatches();saveWorkspace();scheduleCompare();
+}
+function renderMatches(){
+  const matched=matchedEntries.filter(x=>x.key),unmatched=matchedEntries.filter(x=>!x.key);
+  $('matchCount').textContent=`${matched.length} matched`;
+  $('unmatchedCount').textContent=`${unmatched.length} unmatched`;
+  const host=$('matchWrap');
+  if(!matchedEntries.length){host.innerHTML='<div class="resultsEmpty">Paste names to match them against Retail weekly.</div>';return;}
+  const table=document.createElement('table');
+  table.innerHTML='<thead><tr><th>Entered</th><th>Retail match</th><th>Status</th></tr></thead><tbody></tbody>';
+  const body=table.querySelector('tbody');
+  matchedEntries.forEach(item=>{
+    const tr=document.createElement('tr');
+    const sugg=item.suggestions?.length?item.suggestions.slice(0,3).map(s=>`${s.name} (${Math.round(s.score*100)}%)`).join(' • '):'';
+    tr.innerHTML=`<td>${escapeHtml(item.input)}</td><td>${item.key?escapeHtml(item.matchedName):`<span class="muted">${escapeHtml(sugg||'No suggestion')}</span>`}</td><td class="${item.key?'good':'warn'}">${escapeHtml(item.confidence)}</td>`;
+    body.appendChild(tr);
+  });
+  host.innerHTML='';host.appendChild(table);
+}
+function getRowsFor(week,key){return rowsByWeekName.get(week)?.get(key)||[];}
+function metricLabel(stat){
+  if(clean(stat.label))return clean(stat.label);
+  return stat.mode==='ratio'?`${stat.colA} ÷ ${stat.colB}`:stat.colA;
+}
+function inferredPercent(stat){
+  if(stat.format==='percent')return true;if(stat.format==='number')return false;
+  const h=`${stat.label||''} ${stat.colA||''} ${stat.colB||''}`.toLowerCase();
+  return stat.mode==='ratio'||/%|rate|pct|percent/.test(h);
+}
+function average(values){const v=values.filter(Number.isFinite);return v.length?v.reduce((a,b)=>a+b,0)/v.length:NaN;}
+function calculateMetric(nameKeys,weeks,stat){
+  const selected=[...weeks].filter(w=>availableWeeks.includes(w));
+  if(!selected.length||!nameKeys.length)return {value:NaN,detail:'No selected data',weeksUsed:0,rowsUsed:0};
+  if(stat.mode==='ratio'){
+    let A=0,B=0,aCount=0,bCount=0,rowCount=0;
+    for(const w of selected) for(const key of nameKeys) for(const row of getRowsFor(w,key)){
+      const a=toNumber(row[stat.colA]),b=toNumber(row[stat.colB]);
+      if(Number.isFinite(a)){A+=a;aCount++;} if(Number.isFinite(b)){B+=b;bCount++;} if(Number.isFinite(a)||Number.isFinite(b))rowCount++;
+    }
+    return {value:B!==0&&bCount?A/B:NaN,detail:`ΣA ${formatRaw(A)} • ΣB ${formatRaw(B)}`,weeksUsed:selected.length,rowsUsed:rowCount,A,B};
+  }
+  if(stat.mode==='volume'){
+    let total=0,count=0,weeksUsed=0;
+    for(const w of selected){
+      let used=false;
+      for(const key of nameKeys) for(const row of getRowsFor(w,key)){const v=toNumber(row[stat.colA]);if(Number.isFinite(v)){total+=v;count++;used=true;}}
+      if(used)weeksUsed++;
+    }
+    return {value:count?total:NaN,detail:`${count.toLocaleString()} value${count===1?'':'s'} • ${weeksUsed}/${selected.length} weeks`,weeksUsed,rowsUsed:count};
+  }
+  const weekAverages=[];let rowCount=0;
+  for(const w of selected){
+    const personAverages=[];
+    for(const key of nameKeys){
+      const vals=getRowsFor(w,key).map(r=>toNumber(r[stat.colA])).filter(Number.isFinite);
+      rowCount+=vals.length;
+      if(vals.length)personAverages.push(average(vals));
+    }
+    if(personAverages.length)weekAverages.push(average(personAverages));
+  }
+  return {value:average(weekAverages),detail:`${weekAverages.length}/${selected.length} weeks • equal week weighting`,weeksUsed:weekAverages.length,rowsUsed:rowCount};
+}
+function formatRaw(v){
+  if(!Number.isFinite(v))return '—';
+  return Math.abs(v)>=1000?v.toLocaleString(undefined,{maximumFractionDigits:1}):v.toLocaleString(undefined,{maximumFractionDigits:3});
+}
+function displayValue(v,stat){
+  if(!Number.isFinite(v))return '—';
+  if(inferredPercent(stat)){
+    const pct=Math.abs(v)<=1.5?v*100:v;
+    return `${pct.toFixed(1)}%`;
+  }
+  if(stat.mode==='volume')return v.toLocaleString(undefined,{maximumFractionDigits:1});
+  return v.toLocaleString(undefined,{maximumFractionDigits:2});
+}
+function displayDelta(a,b,stat){
+  if(!Number.isFinite(a)||!Number.isFinite(b))return {text:'—',cls:'flat'};
+  const d=b-a;
+  let text;
+  if(inferredPercent(stat)){
+    const mult=(Math.abs(a)<=1.5&&Math.abs(b)<=1.5)?100:1;
+    text=`${d>0?'+':''}${(d*mult).toFixed(1)} pts`;
+  }else{
+    text=`${d>0?'+':''}${d.toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  }
+  return {text,cls:d>0?'up':d<0?'down':'flat'};
+}
+function relativeChange(a,b){
+  if(!Number.isFinite(a)||!Number.isFinite(b)||a===0)return '—';
+  const r=((b-a)/Math.abs(a))*100;
+  return `${r>0?'+':''}${r.toFixed(1)}%`;
+}
+function matchedKeys(){return Array.from(new Set(matchedEntries.filter(x=>x.key).map(x=>x.key)));}
+function compare(){
+  const keys=matchedKeys();
+  if(!rows.length){$('results').innerHTML='<div class="resultsEmpty">Retail weekly is not loaded.</div>';return;}
+  if(!keys.length){$('results').innerHTML='<div class="resultsEmpty">No names are matched yet.</div>';return;}
+  if(!selectedWeeks1.size||!selectedWeeks2.size){$('results').innerHTML='<div class="resultsEmpty">Choose at least one week in both Set 1 and Set 2.</div>';return;}
+  const validStats=stats.filter(s=>s.colA && (s.mode!=='ratio'||s.colB));
+  if(!validStats.length){$('results').innerHTML='<div class="resultsEmpty">Add at least one statistic.</div>';return;}
+  const group=validStats.map(stat=>({stat,set1:calculateMetric(keys,selectedWeeks1,stat),set2:calculateMetric(keys,selectedWeeks2,stat)}));
+  const people=matchedEntries.filter(x=>x.key).map(entry=>({entry,metrics:validStats.map(stat=>({stat,set1:calculateMetric([entry.key],selectedWeeks1,stat),set2:calculateMetric([entry.key],selectedWeeks2,stat)}))}));
+  lastComparison={group,people,validStats,keys,weeks1:[...selectedWeeks1],weeks2:[...selectedWeeks2]};
+  renderResults();$('exportBtn').disabled=false;
+}
+function renderResults(){
+  const data=lastComparison,host=$('results');
+  if(!data){host.innerHTML='<div class="resultsEmpty">Match names, select weeks, choose stats, then compare.</div>';return;}
+  host.innerHTML='';
+  const bar=document.createElement('div');bar.className='summaryBar';
+  bar.innerHTML=`<span class="pill">${data.keys.length} matched person${data.keys.length===1?'':'s'}</span><span class="pill">Set 1: ${data.weeks1.length} week${data.weeks1.length===1?'':'s'}</span><span class="pill">Set 2: ${data.weeks2.length} week${data.weeks2.length===1?'':'s'}</span><span class="pill">${data.validStats.length} stat${data.validStats.length===1?'':'s'}</span>`;
+  host.appendChild(bar);
+  const wrap=document.createElement('div');wrap.className='resultScroller';
+  const table=document.createElement('table');table.className='resultTable';
+  table.innerHTML='<thead><tr><th>Statistic</th><th>Set 1</th><th>Set 2</th><th>Difference</th><th>Relative change</th></tr></thead><tbody></tbody>';
+  const body=table.querySelector('tbody');
+  data.group.forEach(item=>{
+    const delta=displayDelta(item.set1.value,item.set2.value,item.stat);
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td><strong>${escapeHtml(metricLabel(item.stat))}</strong><span class="cellSub">${item.stat.mode==='ratio'?'Divide totals':item.stat.mode==='volume'?'Volume':'Average'}</span></td>
+      <td><strong>${displayValue(item.set1.value,item.stat)}</strong><span class="cellSub">${escapeHtml(item.set1.detail)}</span></td>
+      <td><strong>${displayValue(item.set2.value,item.stat)}</strong><span class="cellSub">${escapeHtml(item.set2.detail)}</span></td>
+      <td class="delta ${delta.cls}">${delta.text}</td><td>${relativeChange(item.set1.value,item.set2.value)}</td>`;
+    body.appendChild(tr);
+  });
+  wrap.appendChild(table);host.appendChild(wrap);
+
+  const head=document.createElement('div');head.className='detailsHead';head.innerHTML='<b>Per-person comparison</b><span class="hint">Same math, calculated separately for every matched Retail name.</span>';host.appendChild(head);
+  const pwrap=document.createElement('div');pwrap.className='resultScroller';
+  const pt=document.createElement('table');pt.className='personTable';
+  const top=document.createElement('tr');top.innerHTML='<th rowspan="2">Name</th>';
+  data.validStats.forEach(stat=>{top.innerHTML+=`<th class="group" colspan="3">${escapeHtml(metricLabel(stat))}</th>`;});
+  const sub=document.createElement('tr');
+  data.validStats.forEach(()=>{sub.innerHTML+='<th class="group">Set 1</th><th>Set 2</th><th>Δ</th>';});
+  const thead=document.createElement('thead');thead.append(top,sub);pt.appendChild(thead);
+  const tbody=document.createElement('tbody');
+  data.people.forEach(person=>{
+    const tr=document.createElement('tr');tr.innerHTML=`<td><strong>${escapeHtml(person.entry.matchedName)}</strong><span class="cellSub">${escapeHtml(person.entry.input===person.entry.matchedName?'':`Entered: ${person.entry.input}`)}</span></td>`;
+    person.metrics.forEach(m=>{const d=displayDelta(m.set1.value,m.set2.value,m.stat);tr.innerHTML+=`<td class="groupStart">${displayValue(m.set1.value,m.stat)}</td><td>${displayValue(m.set2.value,m.stat)}</td><td class="delta ${d.cls}">${d.text}</td>`;});
+    tbody.appendChild(tr);
+  });
+  pt.appendChild(tbody);pwrap.appendChild(pt);host.appendChild(pwrap);
+}
+function csvCell(v){const s=String(v??'');return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}
+function exportCsv(){
+  if(!lastComparison)return;
+  const lines=[];
+  lines.push(['Scope','Statistic','Set 1','Set 2','Difference','Relative Change'].map(csvCell).join(','));
+  lastComparison.group.forEach(item=>{const d=displayDelta(item.set1.value,item.set2.value,item.stat);lines.push(['Group',metricLabel(item.stat),displayValue(item.set1.value,item.stat),displayValue(item.set2.value,item.stat),d.text,relativeChange(item.set1.value,item.set2.value)].map(csvCell).join(','));});
+  lines.push('');
+  lines.push(['Name',...lastComparison.validStats.flatMap(stat=>[`${metricLabel(stat)} Set 1`,`${metricLabel(stat)} Set 2`,`${metricLabel(stat)} Delta`])].map(csvCell).join(','));
+  lastComparison.people.forEach(person=>{const row=[person.entry.matchedName];person.metrics.forEach(m=>{const d=displayDelta(m.set1.value,m.set2.value,m.stat);row.push(displayValue(m.set1.value,m.stat),displayValue(m.set2.value,m.stat),d.text);});lines.push(row.map(csvCell).join(','));});
+  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`weekly-comparison-${new Date().toISOString().slice(0,10)}.csv`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},0);
+}
+let compareTimer=null;
+function scheduleCompare(){clearTimeout(compareTimer);compareTimer=setTimeout(()=>{if(matchedKeys().length)compare();},120);}
+function scheduleMatch(){clearTimeout(inputTimer);inputTimer=setTimeout(()=>matchNames(),450);}
+async function refreshData(){
+  $('dataStatus').textContent='Loading Retail weekly…';
+  await window.CoachToolsAppData.getMany(['weeklyRetail']);
+  retailDock=window.CoachToolsAppData.peek('weeklyRetail');
+  rows=canonicalizeRetail(retailDock);
+  buildIndexes();
+  headers=numericHeaders();
+  availableWeeks=Array.from(new Set(rows.map(r=>r.__week))).sort();
+  ensureDefaultWeeks();ensureStats();renderWeeks();renderStats();
+  $('dataStatus').textContent=rows.length?`Retail ready • ${rows.length.toLocaleString()} rows • ${availableWeeks.length} weeks • ${namesIndex.size.toLocaleString()} names`:'Retail weekly has no readable rows';
+  if($('nameInput').value.trim())await matchNames();else renderMatches();
+  saveWorkspace();
+}
+$('reloadBtn').addEventListener('click',()=>refreshData().catch(e=>{console.error(e);toast(e.message||'Could not reload Retail weekly.');}));
+$('compareBtn').addEventListener('click',compare);
+$('matchBtn').addEventListener('click',matchNames);
+$('clearNamesBtn').addEventListener('click',()=>{$('nameInput').value='';matchedEntries=[];renderMatches();lastComparison=null;renderResults();$('exportBtn').disabled=true;saveWorkspace();});
+$('nameInput').addEventListener('input',()=>{saveWorkspace();scheduleMatch();});
+$('addAverageBtn').addEventListener('click',()=>addStat('average'));
+$('addVolumeBtn').addEventListener('click',()=>addStat('volume'));
+$('addRatioBtn').addEventListener('click',()=>addStat('ratio'));
+$('exportBtn').addEventListener('click',exportCsv);
+document.querySelectorAll('[data-period][data-action]').forEach(btn=>btn.addEventListener('click',()=>periodAction(Number(btn.dataset.period),btn.dataset.action)));
+
+(async function boot(){
+  loadWorkspace();
+  await refreshData();
+  window.CoachToolsAppData.subscribe(['weeklyRetail'],async()=>{await refreshData();});
+})().catch(error=>{
+  console.error('[Weekly Comparison] Startup failed.',error);
+  $('dataStatus').textContent='Retail weekly unavailable';
+  $('results').innerHTML=`<div class="resultsEmpty">Could not load Retail weekly: ${escapeHtml(error.message||error)}</div>`;
+});
+</script>
+</body>
+</html>
