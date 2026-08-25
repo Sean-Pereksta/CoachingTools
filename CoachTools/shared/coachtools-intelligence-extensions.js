@@ -21,4 +21,7 @@
     append(from('coaching-gaps-list-analysis.js'));
     append(from('coaching-gaps-timeline-enhancements.js'));
   }
+  if (appId === 'qa-scores') {
+    append(from('qa-scores-kpi-drilldowns.js'));
+  }
 })();
