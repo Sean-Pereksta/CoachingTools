@@ -17,324 +17,41 @@ window.COACHTOOLS_MANIFEST = {
       "icon": "icons/allstar.png",
       "initials": "AS",
       "category": "Core",
-      "keywords": [
-        "all star",
-        "report",
-        "model",
-        "research",
-        "organization",
-        "qualtrics"
-      ],
-      "data": [],
-      "favorite": true,
-      "featured": true,
-      "preload": false,
-      "order": 10,
-      "version": "1.0",
-      "enabled": true
+      "keywords": ["all star","report","model","research","organization","qualtrics"],
+      "data": [],"favorite": true,"featured": true,"preload": false,"order": 10,"version": "1.0","enabled": true
     },
     {
-      "id": "weekly-data",
-      "name": "Data Manager",
-      "description": "Import current and historical CoachTools data, review status, correct coach names, and manage weekly scope.",
-      "file": "apps/weekly-data.html",
-      "icon": "icons/weekly-data.png",
-      "initials": "WD",
-      "category": "Data",
-      "keywords": [
-        "loader",
-        "import",
-        "build",
-        "scope",
-        "teams",
-        "coordinators",
-        "select all"
-      ],
-      "data": [],
-      "favorite": true,
-      "featured": false,
-      "preload": false,
-      "order": 20,
-      "version": "1.0",
-      "enabled": true
+      "id": "weekly-data","name": "Data Manager","description": "Import current and historical CoachTools data, review status, correct coach names, and manage weekly scope.","file": "apps/weekly-data.html","icon": "icons/weekly-data.png","initials": "WD","category": "Data","keywords": ["loader","import","build","scope","teams","coordinators","select all"],"data": [],"favorite": true,"featured": false,"preload": false,"order": 20,"version": "1.0","enabled": true
     },
     {
-      "id": "people-profiles",
-      "name": "People Profiles",
-      "description": "Find a coach or representative and review department-relative performance, rankings, coaching, checklist, QA, and timeline details.",
-      "file": "apps/people-profiles.html",
-      "icon": "icons/default-app.png",
-      "initials": "PP",
-      "category": "People",
-      "keywords": [
-        "people",
-        "profile",
-        "coach",
-        "representative",
-        "rep",
-        "performance",
-        "ranking",
-        "coaching",
-        "qa",
-        "checklist",
-        "timeline"
-      ],
-      "data": [
-        "weeklyRetail",
-        "weeklyReferral",
-        "qa",
-        "documentedCoaching",
-        "checklist"
-      ],
-      "favorite": true,
-      "featured": false,
-      "preload": false,
-      "order": 25,
-      "version": "1.0",
-      "enabled": true
+      "id": "people-profiles","name": "People Profiles","description": "Find a coach or representative and review department-relative performance, rankings, coaching, checklist, QA, and timeline details.","file": "apps/people-profiles.html","icon": "icons/default-app.png","initials": "PP","category": "People","keywords": ["people","profile","coach","representative","rep","performance","ranking","coaching","qa","checklist","timeline"],"data": ["weeklyRetail","weeklyReferral","qa","documentedCoaching","checklist"],"favorite": true,"featured": false,"preload": false,"order": 25,"version": "1.0","enabled": true
     },
     {
-      "id": "coaching-command-center",
-      "name": "Coaching Command Center",
-      "description": "Prioritize coaching needs, follow-ups, support delays, and recognition from shared CoachTools data.",
-      "file": "apps/coaching-command-center.html",
-      "icon": "icons/default-app.png",
-      "initials": "CC",
-      "category": "Coaching",
-      "keywords": [
-        "today",
-        "coaching",
-        "priority",
-        "follow-up",
-        "debt",
-        "checklist",
-        "support",
-        "recognition",
-        "intelligence"
-      ],
-      "data": [
-        "weeklyRetail",
-        "weeklyReferral",
-        "qa",
-        "documentedCoaching",
-        "checklist"
-      ],
-      "favorite": true,
-      "featured": false,
-      "preload": false,
-      "order": 27,
-      "version": "1.0",
-      "enabled": true
+      "id": "coaching-command-center","name": "Coaching Command Center","description": "Prioritize coaching needs, follow-ups, support delays, and recognition from shared CoachTools data.","file": "apps/coaching-command-center.html","icon": "icons/default-app.png","initials": "CC","category": "Coaching","keywords": ["today","coaching","priority","follow-up","debt","checklist","support","recognition","intelligence"],"data": ["weeklyRetail","weeklyReferral","qa","documentedCoaching","checklist"],"favorite": true,"featured": false,"preload": false,"order": 27,"version": "1.0","enabled": true
     },
     {
-      "id": "coaching-gaps",
-      "name": "Coaching Gaps",
-      "description": "Compare documented coaching, performance, QA, and checklist gaps.",
-      "file": "apps/coaching-gaps.html",
-      "icon": "icons/coaching-gaps.png",
-      "initials": "CG",
-      "category": "Coaching",
-      "keywords": [
-        "coach",
-        "performance",
-        "opportunities",
-        "teams",
-        "corrective"
-      ],
-      "data": [
-        "weeklyRetail",
-        "weeklyReferral",
-        "qa",
-        "documentedCoaching",
-        "checklist"
-      ],
-      "favorite": false,
-      "featured": false,
-      "preload": false,
-      "order": 30,
-      "version": "1.0",
-      "enabled": true
+      "id": "coaching-gaps","name": "Coaching Gaps","description": "Compare documented coaching, performance, QA, and checklist gaps.","file": "apps/coaching-gaps.html","icon": "icons/coaching-gaps.png","initials": "CG","category": "Coaching","keywords": ["coach","performance","opportunities","teams","corrective"],"data": ["weeklyRetail","weeklyReferral","qa","documentedCoaching","checklist"],"favorite": false,"featured": false,"preload": false,"order": 30,"version": "1.0","enabled": true
     },
     {
-      "id": "coach-timeline",
-      "name": "Coach Timeline",
-      "description": "Follow checklist response speed and documented coaching over time.",
-      "file": "apps/coach-timeline.html",
-      "icon": "icons/coach-timeline.png",
-      "initials": "CT",
-      "category": "Coaching",
-      "keywords": [
-        "timeline",
-        "checklist",
-        "coaching",
-        "speed",
-        "coordinator"
-      ],
-      "data": [
-        "documentedCoaching",
-        "checklist"
-      ],
-      "favorite": false,
-      "featured": false,
-      "preload": false,
-      "order": 40,
-      "version": "1.0",
-      "enabled": true
+      "id": "coach-timeline","name": "Coach Timeline","description": "Follow checklist response speed and documented coaching over time.","file": "apps/coach-timeline.html","icon": "icons/coach-timeline.png","initials": "CT","category": "Coaching","keywords": ["timeline","checklist","coaching","speed","coordinator"],"data": ["documentedCoaching","checklist"],"favorite": false,"featured": false,"preload": false,"order": 40,"version": "1.0","enabled": true
     },
     {
-      "id": "kpi-impact",
-      "name": "KPI Impact",
-      "description": "Measure KPI movement and the coaching associated with performance change.",
-      "file": "apps/kpi-impact.html",
-      "icon": "icons/kpi-impact.png",
-      "initials": "KI",
-      "category": "Performance",
-      "keywords": [
-        "kpi",
-        "impact",
-        "retail",
-        "referral",
-        "coaching",
-        "trend"
-      ],
-      "data": [
-        "weeklyRetail",
-        "weeklyReferral",
-        "documentedCoaching"
-      ],
-      "favorite": false,
-      "featured": false,
-      "preload": false,
-      "order": 50,
-      "version": "1.0",
-      "enabled": true
+      "id": "kpi-impact","name": "KPI Impact","description": "Measure KPI movement and the coaching associated with performance change.","file": "apps/kpi-impact-galactic.html","icon": "icons/kpi-impact.png","initials": "KI","category": "Performance","keywords": ["kpi","impact","retail","referral","coaching","trend"],"data": ["weeklyRetail","weeklyReferral","documentedCoaching"],"favorite": false,"featured": false,"preload": false,"order": 50,"version": "1.1","enabled": true
     },
     {
-      "id": "weekly-comparison",
-      "name": "Weekly Comparison",
-      "description": "Search Retail representatives and compare configurable metrics across two selected week sets.",
-      "file": "apps/weekly-comparison.html",
-      "icon": "icons/calculator.png",
-      "initials": "WC",
-      "category": "Performance",
-      "keywords": [
-        "weekly",
-        "comparison",
-        "calculator",
-        "retail",
-        "names",
-        "columns",
-        "rate",
-        "volume",
-        "divide",
-        "trend"
-      ],
-      "data": [
-        "weeklyRetail"
-      ],
-      "favorite": false,
-      "featured": false,
-      "preload": false,
-      "order": 55,
-      "version": "1.0",
-      "enabled": true
+      "id": "weekly-comparison","name": "Weekly Comparison","description": "Search Retail representatives and compare configurable metrics across two selected week sets.","file": "apps/weekly-comparison.html","icon": "icons/calculator.png","initials": "WC","category": "Performance","keywords": ["weekly","comparison","calculator","retail","names","columns","rate","volume","divide","trend"],"data": ["weeklyRetail"],"favorite": false,"featured": false,"preload": false,"order": 55,"version": "1.0","enabled": true
     },
     {
-      "id": "qa-scores",
-      "name": "QA Scores",
-      "description": "Review QA performance, reviewer alignment, and Call Quality coaching.",
-      "file": "apps/qa-scores.html",
-      "icon": "icons/qa-scores.png",
-      "initials": "QA",
-      "category": "Quality",
-      "keywords": [
-        "qa",
-        "quality",
-        "monitor",
-        "reviewer",
-        "coaching"
-      ],
-      "data": [
-        "qa",
-        "documentedCoaching"
-      ],
-      "favorite": false,
-      "featured": false,
-      "preload": false,
-      "order": 60,
-      "version": "1.0",
-      "enabled": true
+      "id": "qa-scores","name": "QA Scores","description": "Review QA performance, reviewer alignment, and Call Quality coaching.","file": "apps/qa-scores.html","icon": "icons/qa-scores.png","initials": "QA","category": "Quality","keywords": ["qa","quality","monitor","reviewer","coaching"],"data": ["qa","documentedCoaching"],"favorite": false,"featured": false,"preload": false,"order": 60,"version": "1.0","enabled": true
     },
     {
-      "id": "audit-checklist",
-      "name": "Audit / Checklist",
-      "description": "Analyze checklist addressing speed alongside documented coaching.",
-      "file": "apps/audit-checklist.html",
-      "icon": "icons/audit-checklist.png",
-      "initials": "AC",
-      "category": "Quality",
-      "keywords": [
-        "audit",
-        "checklist",
-        "correctives",
-        "addressed",
-        "speed"
-      ],
-      "data": [
-        "documentedCoaching",
-        "checklist"
-      ],
-      "favorite": false,
-      "featured": false,
-      "preload": false,
-      "order": 70,
-      "version": "1.0",
-      "enabled": true
+      "id": "audit-checklist","name": "Audit / Checklist","description": "Analyze checklist addressing speed alongside documented coaching.","file": "apps/audit-checklist.html","icon": "icons/audit-checklist.png","initials": "AC","category": "Quality","keywords": ["audit","checklist","correctives","addressed","speed"],"data": ["documentedCoaching","checklist"],"favorite": false,"featured": false,"preload": false,"order": 70,"version": "1.0","enabled": true
     },
     {
-      "id": "contact-center-checklist",
-      "name": "Contact Center Checklist",
-      "description": "Open contact center checklist and documentation records in Dynamics.",
-      "file": "apps/contact_center_checklist_iframe.html",
-      "icon": "icons/checklist-and-documentation.png",
-      "initials": "CC",
-      "category": "Quality",
-      "keywords": [
-        "checklist",
-        "documentation",
-        "dynamics",
-        "contact center"
-      ],
-      "data": [],
-      "favorite": false,
-      "featured": false,
-      "preload": false,
-      "order": 80,
-      "version": "1.0",
-      "enabled": true
+      "id": "contact-center-checklist","name": "Contact Center Checklist","description": "Open contact center checklist and documentation records in Dynamics.","file": "apps/contact_center_checklist_iframe.html","icon": "icons/checklist-and-documentation.png","initials": "CC","category": "Quality","keywords": ["checklist","documentation","dynamics","contact center"],"data": [],"favorite": false,"featured": false,"preload": false,"order": 80,"version": "1.0","enabled": true
     },
     {
-      "id": "video-library",
-      "name": "Training Videos",
-      "description": "Browse and watch CoachTools training videos from the Videos folder.",
-      "file": "apps/video-library.html",
-      "icon": "icons/video-player.png",
-      "initials": "TV",
-      "category": "Training",
-      "keywords": [
-        "video",
-        "training",
-        "coaching",
-        "mp4",
-        "library"
-      ],
-      "data": [],
-      "favorite": false,
-      "featured": false,
-      "preload": false,
-      "order": 90,
-      "version": "1.0",
-      "enabled": true
+      "id": "video-library","name": "Training Videos","description": "Browse and watch CoachTools training videos from the Videos folder.","file": "apps/video-library.html","icon": "icons/video-player.png","initials": "TV","category": "Training","keywords": ["video","training","coaching","mp4","library"],"data": [],"favorite": false,"featured": false,"preload": false,"order": 90,"version": "1.0","enabled": true
     }
   ]
 };
