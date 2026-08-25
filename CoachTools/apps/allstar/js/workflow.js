@@ -74,6 +74,9 @@ function modelHealthDiagnostics(model,settings={}){
   if(!model){ out.push(allStarDiagnostic({severity:'error',module:'model',title:'No model selected',message:'Choose a saved model before running.',blocking:true})); return out; }
   if(!(model.criteria||[]).length) out.push(allStarDiagnostic({severity:'error',module:'model',title:'Model has no criteria',message:'Add at least one criterion.',blocking:true}));
   const required=requiredColumnsForModel(model);
+  if([...required.keys()].some(source=>isCategorizedSource(source)) && typeof categorizationIsStale==='function' && categorizationIsStale()){
+    out.push(allStarDiagnostic({severity:'error',module:'categorization',title:'Categorization Needed',message:'Source data changed after the last manual categorization. Open Import and press Categorize Data before running this report.',blocking:true}));
+  }
   required.forEach((items,source)=>{
     if(!sourceHasImportedData(source)) out.push(allStarDiagnostic({severity:'error',module:'import',source,title:`${labelSource(source)} is missing`,message:'This source is required by the selected model.',blocking:true}));
     const headers=getHeaders(source)||[];

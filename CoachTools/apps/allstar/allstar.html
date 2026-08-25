@@ -120,7 +120,7 @@
           <button id="categorizeDataBtn" class="green" type="button">Categorize Data</button>
           <button id="viewSpreadsheetDataBtn" class="dark" type="button">View Spreadsheet Data</button>
           <button id="packageDataBtn" class="green" type="button">Package Imported Data</button>
-          <span class="checkResultMeta">Recognized multi-file uploads and shared IndexedDB updates automatically rebuild one Non-Date database and one Dated database. Use Categorize Data to force a manual rebuild after header or name-mapping changes.</span>
+          <span class="checkResultMeta">Imports and shared data refreshes update source data only. Categorization never runs automatically. Press Categorize Data when you want to rebuild the Non-Date and Dated databases.</span>
         </div>
         <div id="fixTeamsPanel" class="fixTeamsPanel hidden">
           <div class="panelTitle">Coach / Team Name Matches</div>
@@ -736,7 +736,7 @@
 <script src="js/calculations.js"></script>
 <script src="js/reports.js"></script>
 <script src="js/research.js"></script>
-<script src="js/organizations.js"></script>
+<script src="js/organizations-core.js"></script>
 <script src="js/workflow.js"></script>
 <script src="js/list-tester.js"></script>
 <script src="js/qualtrics-bridge.js"></script>

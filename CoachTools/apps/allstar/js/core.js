@@ -56,8 +56,15 @@ const state = {
   categorized: {
     nondated: { headers:['Representative','Coach'], rows:[], builtAt:'', sourceStats:[] },
     dated: { headers:['Representative','Coach','Date'], rows:[], builtAt:'', sourceStats:[] },
-    warnings: []
+    warnings: [],
+    stale: false,
+    staleReason: '',
+    changedSources: [],
+    sourceSignatures: {},
+    fragments: {}
   },
+  categorizationPending: false,
+  categorizationPendingReason: '',
   customSources: [],
   books: {
     nondate:{fileName:'',sheetNames:[],aoaBySheet:{},selectedSheets:{}},

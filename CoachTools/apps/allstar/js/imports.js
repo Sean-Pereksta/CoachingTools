@@ -544,6 +544,41 @@ function normalizeImportedRowOnce(row, headers, cfg, source, meta, i){
   const dateRaw=meta.detectedDateColumn?row[meta.detectedDateColumn]:'';
   return {...row,_rowId:`${source}:${i+1}`,_source:labelSource(source),_sourceKey:source,_sourceArea:sourceArea,_rawRep:rep,_rawRepKey:fullNameIdentityKey(rep),_rep:rep,_repKey:fullNameIdentityKey(rep),_team:team,_teamKey:coachNameKey(team),_coach:team,_coachKey:coachNameKey(team),_rosterId:safeFallbackRosterIdentity({_rep:rep,_team:team},sourceArea),_date:dateRaw,_dateValue:dateRaw?cachedSourceDateValue(source,meta.detectedDateColumn,dateRaw):NaN,_week:meta.weekColumn?row[meta.weekColumn]:'',_text:meta.textColumn?String(row[meta.textColumn]??''):'',_score:meta.scoreColumn?normalizeScore(row[meta.scoreColumn]):NaN,_aliasApplied:false,_aliasRecord:null};
 }
+function categorizationSourceAffects(source){
+  return !!source && source!==QA_DIRECT_SOURCE && !isCategorizedSource(source) && !TEAM_TOTAL_SOURCE_KEYS.includes(source);
+}
+function categorizationIsStale(){
+  return !!(state.categorized?.stale || state.categorizationPending);
+}
+function markCategorizationNeeded(reason='source data changed', sources=[]){
+  state.categorized=state.categorized||{};
+  const changed=new Set(state.categorized.changedSources||[]);
+  (Array.isArray(sources)?sources:[sources]).filter(categorizationSourceAffects).forEach(source=>changed.add(source));
+  state.categorized.stale=true;
+  state.categorized.staleReason=String(reason||'source data changed');
+  state.categorized.changedSources=[...changed];
+  state.categorizationPending=true;
+  state.categorizationPendingReason=state.categorized.staleReason;
+  markImportCacheDirty('misc','categorized','categorization marked stale');
+  if(!state.coachToolsBatchImportRunning&&!state.centralSyncStageActive&&typeof renderCategorizedSummary==='function') renderCategorizedSummary();
+}
+function clearCategorizationNeeded(){
+  state.categorized.stale=false;
+  state.categorized.staleReason='';
+  state.categorized.changedSources=[];
+  state.categorizationPending=false;
+  state.categorizationPendingReason='';
+}
+function noteCategorizationSourceVersion(source, rows=getRowsRaw(source)||[], headers=getHeaders(source)||[]){
+  if(!categorizationSourceAffects(source)) return;
+  state.sourceMeta=state.sourceMeta||{};
+  const prior=state.sourceMeta[source]||{};
+  state.sourceMeta[source]={...prior,sourceVersion:nextSourceVersion(source),rowCount:rows.length,originalHeaders:[...headers],normalizedHeaders:[...headers],dirtyCategorized:true,lastImportedAt:new Date().toISOString()};
+  state.categorizedFragments=state.categorizedFragments||state.categorized?.fragments||{};
+  state.categorizedFragments[source]={...(state.categorizedFragments[source]||{}),dirty:true};
+  if(state.categorized) state.categorized.fragments=state.categorizedFragments;
+  markImportCacheDirty('misc','sourceMeta',`${labelSource(source)} source version updated`);
+}
 function commitImportedSource(source, file, pack, rows, cfg, meta, options={}){
   state.sourceMeta=state.sourceMeta||{}; state.categorizedFragments=state.categorizedFragments||{};
   const sourceVersion=meta.sourceVersion;
@@ -554,6 +589,7 @@ function commitImportedSource(source, file, pack, rows, cfg, meta, options={}){
   else if(source===QA_DIRECT_SOURCE){ state.data.qa_direct={fileName:file.name,headers:pack.headers,rows,aoa:getSourceAoa(source),sheetName:cfg.sheetName||''}; }
   else if(state.data[source]){ state.data[source]={...state.data[source],fileName:file.name,headers:pack.headers,rows}; }
   state.categorizedFragments[source]={sourceVersion,datedRows:null,nonDatedRows:null,dirty:true};
+  if(categorizationSourceAffects(source)) markCategorizationNeeded(`${labelSource(source)} source data updated`,source);
   markSourceCacheDirty(source,`${labelSource(source)} source rows updated`);
   markImportCacheDirty('misc','sourceMeta',`${labelSource(source)} source metadata updated`);
 }
@@ -683,7 +719,7 @@ function cloneImportDirtyForStage(value){
 }
 function beginAllStarCentralStage(){
   const previous={
-    data:state.data, books:state.books, categorized:state.categorized, sourceMeta:state.sourceMeta, categorizedFragments:state.categorizedFragments, models:state.models,
+    data:state.data, books:state.books, categorized:state.categorized, categorizationPending:state.categorizationPending, categorizationPendingReason:state.categorizationPendingReason, sourceMeta:state.sourceMeta, categorizedFragments:state.categorizedFragments, models:state.models,
     versions:state.versions, importCacheDirty:state.importCacheDirty, importCacheSaveReasons:state.importCacheSaveReasons,
     dataIndex:state.dataIndex, indexes:state.indexes, teamIndexCache:state.teamIndexCache, rosterIndex:state.rosterIndex,
     repTeams:state.repTeams, teams:state.teams, selectedTeams:state.selectedTeams, teamSelectionInitialized:state.teamSelectionInitialized,
@@ -788,9 +824,8 @@ async function syncAllStarFromCoachToolsData(options={}){
     const invalidation=invalidateAllStarCentralBatch(applied);
     const categorizable=applied.some(type=>['monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist','compCoaching'].includes(type));
     if(categorizable){
-      if(job) setAllStarStartupPhase(job,90,96,'Updating affected categorized data…');
-      const categorized=await categorizeImportedData({automatic:true,reason:options.reason||'central IndexedDB synchronization',batch:true,render:false,persist:false,manageProgress:false,silent:true,generation:lifecycleGeneration});
-      if(categorized===false && active()) throw new Error('Categorized data could not be rebuilt.');
+      if(job) setAllStarStartupPhase(job,90,96,'Source data refreshed — categorization is waiting for the button…');
+      markCategorizationNeeded(options.reason||'central IndexedDB synchronization',invalidation.sources);
     }
     if(!active()) throw Object.assign(new Error('Central synchronization cancelled.'),{cancelled:true});
     const saved=options.persist===false?true:await flushImportCacheSave('central CoachTools batch complete',{dirtyOnly:true,noCompaction:true,noRender:true,mutateRows:false});
@@ -832,7 +867,7 @@ async function importCoachToolsBatch(){
   if(!batch?.recognized?.length) return;
   els.coachtoolsImportAllBtn.disabled=true;
   state.coachToolsBatchImportRunning=true;
-  let imported=0, failed=0, categorizable=0, categorized=false;
+  let imported=0, failed=0, categorizable=0;
   try{
     for(let index=0;index<batch.recognized.length;index++){
       const entry=batch.recognized[index], type=entry.classification.id;
@@ -851,13 +886,14 @@ async function importCoachToolsBatch(){
       }catch(error){ console.error('[All-Star] Shared batch import failed',entry.file?.name,error); failed++; }
     }
     hideProgress();
-    if(categorizable) categorized=await categorizeImportedData({automatic:true,reason:'shared multi-file upload'});
+    if(categorizable) markCategorizationNeeded('shared multi-file upload',batch.recognized.map(entry=>entry.classification.id).flatMap(allStarSourcesForDataset));
   }finally{
     state.coachToolsBatchImportRunning=false;
     hideProgress();
     els.coachtoolsImportAllBtn.disabled=false;
   }
-  if(els.coachtoolsImportSummary) els.coachtoolsImportSummary.textContent=`CoachTools Data Ready · ${imported} source${imported===1?'':'s'} updated${categorized?' · Dated and Non-Date databases rebuilt':''}${failed?` · ${failed} failed`:''}.`;
+  if(els.coachtoolsImportSummary) els.coachtoolsImportSummary.textContent=`CoachTools Data Ready · ${imported} source${imported===1?'':'s'} updated${categorizable?' · Categorization Needed':''}${failed?` · ${failed} failed`:''}.`;
+  if(categorizable) renderCategorizedSummary();
 }
 function setSourceRowsAndHeaders(source, headers, rows, model){
   if(source===NONDATED_SOURCE || source===DATED_SOURCE){
@@ -877,6 +913,7 @@ function setSourceRowsAndHeaders(source, headers, rows, model){
   if(source==='checklist'){ const c=getSourceSetting(model,'checklist').columns||{}; state.data.checklist.headers=headers; state.data.checklist.rows=rows.map(r=>normalizeChecklistRow(r,headers,c,'checklist')).filter(r=>r._repKey||r._team); }
   if(source==='documented_coaching'){ const c=getSourceSetting(model,'documented_coaching').columns||{}; state.data.documented_coaching.headers=headers; state.data.documented_coaching.rows=rows.map(r=>normalizeChecklistRow(r,headers,c,'documented_coaching')).filter(r=>r._repKey||r._team); }
   if(source==='comp_calls'){ const c=getSourceSetting(model,'comp_calls').columns||{}; state.data.comp_calls.headers=headers; state.data.comp_calls.rows=rows.map(r=>normalizeChecklistRow(r,headers,c,'comp_calls')).filter(r=>r._repKey||r._team); }
+  if(categorizationSourceAffects(source)){ noteCategorizationSourceVersion(source,getRowsRaw(source)||[],getHeaders(source)||[]); markCategorizationNeeded(`${labelSource(source)} rows updated`,source); }
   markSourceCacheDirty(source,`${labelSource(source)} rows updated`);
   markDataIndexDirty(`${labelSource(source)} rows updated`);
 }
@@ -1075,6 +1112,13 @@ function renderCategorizedSummary(){
   if(!els.categorizedDataSummary) return;
   const nd=state.categorized.nondated, dt=state.categorized.dated, built=nd.builtAt||dt.builtAt;
   const warnings=(state.categorized.warnings||[]).slice(0,2);
+  if(categorizationIsStale()){
+    const hasPrevious=Number(nd.rows?.length||0)>0 || Number(dt.rows?.length||0)>0;
+    els.categorizedDataSummary.textContent=hasPrevious
+      ? `Data Changed — Categorize. The last manual result remains loaded (${Number(nd.rows?.length||0).toLocaleString()} non-date reps and ${Number(dt.rows?.length||0).toLocaleString()} dated rows), but it is stale. Press Categorize Data to rebuild it.`
+      : 'Categorization Needed. Source data is loaded, but categorization has not run. Press Categorize Data.';
+    return;
+  }
   els.categorizedDataSummary.textContent=built
     ? `Categorized ${Number(nd.rows?.length||0).toLocaleString()} non-date reps and ${Number(dt.rows?.length||0).toLocaleString()} dated rows. Use !nondate.Column or !date.Column in Research, Metrics, and Models.${warnings.length?' '+warnings.join(' '):''}`
     : 'Categorized database not built yet.';
@@ -1092,15 +1136,107 @@ function renderSpreadsheetDataPreview(){
     return `<details class="panel"><summary><strong>${esc(labelSource(src))}</strong> <span class="badge">${rows.length.toLocaleString()} rows</span> <span class="badge">${headers.length} headers</span></summary><div class="checkResultMeta">${headers.map(esc).join(' | ')||'No headers'}</div><div class="checkResultMeta">Showing first ${shown.length.toLocaleString()} rows.</div>${table}</details>`;
   }).join('');
 }
+function categorizationMapSignature(map){
+  return [...(map||new Map()).entries()].map(([sourceHeader,targetHeader])=>[sourceHeader,targetHeader]);
+}
+function categorizationTeamSignature(teamInfo,packs){
+  const versions=state.versions||{};
+  const signature={trustedRoster:!!teamInfo?.usingTrustedRoster,roster:Number(versions.roster||0),aliases:Number(versions.aliases||0),teams:Number(versions.teams||0),mappings:Number(versions.mappings||0)};
+  // Without a trusted roster, the chosen team is derived from every imported
+  // source. Include every source version so a team change safely rebuilds all
+  // fragments instead of reusing a fragment with an obsolete Coach value.
+  if(!teamInfo?.usingTrustedRoster) signature.derivedSources=(packs||[]).map(pack=>[pack.source,Number(state.sourceMeta?.[pack.source]?.sourceVersion||0),(pack.rows||[]).length]);
+  return JSON.stringify(signature);
+}
+function categorizationPackSignature(pack,maps,teamSignature){
+  return JSON.stringify({schema:2,source:pack.source,sourceVersion:Number(state.sourceMeta?.[pack.source]?.sourceVersion||0),rowCount:(pack.rows||[]).length,headers:pack.headers||[],hasDate:!!maps.hasDate,nondate:categorizationMapSignature(maps.nondate),dated:categorizationMapSignature(maps.dated),teamSignature});
+}
+async function buildCategorizedSourceFragment(pack,maps,teamInfo,signature,context={}){
+  const nondateByRep=new Map(), datedRows=[], missingCoachRows=[];
+  let sliceStart=performance.now();
+  for(const row of pack.rows||[]){
+    if(context.active && !context.active()) return null;
+    const rep=cleanName(row._rep||''), key=row._rosterId || safeFallbackRosterIdentity(row,sourceAreaForSource(pack.source)||row._sourceArea||'');
+    if(key){
+      const directCoach=sourceSkipsTeamBuild(pack.source) ? '' : canonicalCoachName(rowTeam(row,{mutate:false})||row._team||'');
+      const coach=canonicalCoachName(directCoach||teamInfo.chosen.get(row._repKey||fullNameIdentityKey(rep))||(teamInfo.usingTrustedRoster?NA_TEAM:''));
+      if(!coach) missingCoachRows.push(rep);
+      const date=bestDateForCategorizedRow(pack.source,row,pack.headers);
+      if(maps.hasDate){
+        const out={Representative:rep,Coach:coach||'',Date:date?ymd(date):'',Source:labelSource(pack.source),_rep:rep,_repKey:row._repKey||fullNameIdentityKey(rep),_rosterId:row._rosterId||key,_rawRep:row._rawRep||rep,_team:coach||'',_sourceArea:sourceAreaForSource(pack.source)||row._sourceArea||'',_sourceKey:pack.source,_sourceRow:row._sourceRow||row.rowNumber||'',_date:date||null};
+        maps.dated.forEach((target,srcHeader)=>{ out[target]=row[srcHeader]??''; });
+        datedRows.push(out);
+      }else{
+        if(!nondateByRep.has(key)) nondateByRep.set(key,{Representative:rep,Coach:coach||'',_rep:rep,_repKey:row._repKey||fullNameIdentityKey(rep),_rosterId:row._rosterId||key,_rawRep:row._rawRep||rep,_team:coach||'',_sourceArea:sourceAreaForSource(pack.source)||row._sourceArea||'',_sourceRows:[]});
+        const out=nondateByRep.get(key);
+        out._sourceRows.push({source:pack.source,row:row._sourceRow||row.rowNumber||'',rawRep:row._rawRep||rep});
+        if(coach && !out.Coach){ out.Coach=coach; out._team=coach; }
+        maps.nondate.forEach((target,srcHeader)=>mergeCategorizedCell(out,target,row[srcHeader]));
+      }
+    }
+    if(context.rowDone) context.rowDone();
+    if(performance.now()-sliceStart>=8){ if(context.yieldProgress) await context.yieldProgress(); sliceStart=performance.now(); }
+  }
+  return {source:pack.source,signature,sourceVersion:Number(state.sourceMeta?.[pack.source]?.sourceVersion||0),hasDate:!!maps.hasDate,nonDatedRows:[...nondateByRep.values()],datedRows,missingCoachRows,builtAt:new Date().toISOString(),dirty:false};
+}
+function mergeCategorizedNonDateFragment(target,partial){
+  const key=partial._rosterId||safeFallbackRosterIdentity(partial,partial._sourceArea||'');
+  if(!key) return;
+  if(!target.has(key)){ target.set(key,{...partial,_sourceRows:[...(partial._sourceRows||[])]}); return; }
+  const out=target.get(key);
+  out._sourceRows.push(...(partial._sourceRows||[]));
+  if(partial.Coach && !out.Coach){ out.Coach=partial.Coach; out._team=partial._team||partial.Coach; }
+  Object.entries(partial).forEach(([header,value])=>{
+    if(header==='Representative'||header==='Coach'||header.startsWith('_')) return;
+    mergeCategorizedCell(out,header,value);
+  });
+}
+function invalidateCategorizedConsumers(source,rows,headers,reason){
+  state.sourceMeta=state.sourceMeta||{};
+  const previous=state.sourceMeta[source]||{}, version=Math.max(Number(previous.version||0),Number(previous.sourceVersion||0))+1;
+  state.sourceMeta[source]={...previous,version,sourceVersion:version,rowCount:(rows||[]).length,headerCount:(headers||[]).length,dirtyCategorized:false,lastCategorizedAt:new Date().toISOString()};
+  if(typeof invalidateRunSourceIndex==='function') invalidateRunSourceIndex(source,reason);
+  if(state.dataIndex?.sources) delete state.dataIndex.sources[source];
+  if(state.researchSourceIndexes instanceof Map) state.researchSourceIndexes.delete(source);
+  if(state.researchSourceIndexJobs instanceof Map) state.researchSourceIndexJobs.delete(source);
+  if(typeof selectiveResearchInvalidation==='function') selectiveResearchInvalidation({reason,source,silent:true});
+}
+function refreshCategorizedGlobalIndexes(sources){
+  if(!dataIndexReady()) return false;
+  const nextVersion=Number(state.dataIndex.version||0)+1;
+  for(const source of sources){
+    const rows=getRowsRaw(source)||[], idx=makeResearchSourceIndex(source,rows); idx.version=nextVersion;
+    rows.forEach((row,index)=>addResearchIndexedRow(idx,source,row,index));
+    idx.byRepSortedDate.forEach(list=>list.sort((a,b)=>(idx.rowMeta.get(a)?.dateMs||0)-(idx.rowMeta.get(b)?.dateMs||0)));
+    idx.byTeamSortedDate.forEach(list=>list.sort((a,b)=>(idx.rowMeta.get(a)?.dateMs||0)-(idx.rowMeta.get(b)?.dateMs||0)));
+    idx.dateSortedRows.sort((a,b)=>(idx.rowMeta.get(a)?.dateMs||0)-(idx.rowMeta.get(b)?.dateMs||0));
+    finalizeResearchSourceIndex(idx,source); state.dataIndex.sources[source]=idx;
+    if(source===DATED_SOURCE&&state.dataIndex.dateRanges?.date instanceof Map){ const range=rows.reduce((out,row)=>addDateToRange(out,row.Date||row._date),null); state.dataIndex.dateRanges.date.set('Date',range); }
+  }
+  state.dataIndex.version=nextVersion; state.dataIndex.signature=dataIndexSignature(); state.dataIndex.reason='manual categorized database build'; state.indexes=state.dataIndex.sources;
+  return true;
+}
 async function categorizeImportedData(options={}){
-  const automatic=!!options.automatic;
+  // Categorization is deliberately a user action. Imports and shared-data
+  // refreshes may only mark the prior result stale.
+  const trigger=options.triggerEvent, directButtonClick=!!(options.manual&&trigger&&trigger.type==='click'&&trigger.isTrusted===true&&trigger.currentTarget===els.categorizeDataBtn);
+  if(!directButtonClick){
+    markCategorizationNeeded(options.reason||'source data changed');
+    console.info('[All Star] Automatic categorization request blocked; press Categorize Data.');
+    return false;
+  }
+  if(state.coachToolsBatchImportRunning){ alert('The import is still being applied. Finish the import, then press Categorize Data.'); return false; }
   const manageProgress=options.manageProgress!==false;
   const generation=Number(options.generation??state.lifecycle?.generation??0);
   const active=()=>!state.lifecycle?.closing && !state.lifecycle?.hidden && generation===Number(state.lifecycle?.generation||0);
   const packs=categorizedSourceRowsForBuild().filter(p=>(p.rows||[]).length);
-  if(!packs.length){ if(!automatic) alert('Import data before categorizing.'); return false; }
+  if(!packs.length){ alert('Import data before categorizing.'); return false; }
   const timing=importTiming('categorization');
-  if(manageProgress) showProgress(automatic?'Auto-categorizing Dated and Non-Date data...':'Preparing categorized databases...',4);
+  const button=els.categorizeDataBtn;
+  const categorizedBefore={...state.categorized,nondated:state.categorized.nondated,dated:state.categorized.dated,warnings:state.categorized.warnings,changedSources:state.categorized.changedSources,sourceSignatures:state.categorized.sourceSignatures,fragments:state.categorized.fragments}, categorizedFragmentsBefore=state.categorizedFragments, categorizationPendingBefore=!!state.categorizationPending, categorizationPendingReasonBefore=state.categorizationPendingReason||'';
+  let committed=false;
+  if(button) button.disabled=true;
+  if(manageProgress) showProgress('Preparing categorized databases...',4);
   try{
     if(!active()) return false;
     await yieldToBrowser();
@@ -1110,38 +1246,35 @@ async function categorizeImportedData(options={}){
     timing.mark('categorization', 'known team lookup prepared');
     const headerMaps=buildCategorizedHeaderMaps(packs);
     timing.mark('preparing headers/dropdowns', `${packs.length} source header maps`);
+    const teamSignature=categorizationTeamSignature(teamInfo,packs);
+    const previousFragments=state.categorizedFragments||state.categorized?.fragments||{};
+    const fragments={}, rebuilt=[], reused=[];
+    const total=Math.max(1,packs.reduce((n,p)=>n+(p.rows||[]).length,0)); let done=0;
+    const updateRowProgress=()=>updateProgress(`Categorizing rows... ${done.toLocaleString()} / ${total.toLocaleString()}`,8+72*(done/total));
+    for(const pack of packs){
+      const maps=headerMaps.get(pack.source)||{nondate:new Map(),dated:new Map(),hasDate:false};
+      const signature=categorizationPackSignature(pack,maps,teamSignature), prior=previousFragments[pack.source];
+      if(prior && !prior.dirty && prior.signature===signature && Array.isArray(prior.nonDatedRows) && Array.isArray(prior.datedRows)){
+        fragments[pack.source]=prior; reused.push(pack.source); done+=(pack.rows||[]).length; updateRowProgress();
+      }else{
+        const fragment=await buildCategorizedSourceFragment(pack,maps,teamInfo,signature,{active,rowDone:()=>{ done++; },yieldProgress:async()=>{ updateRowProgress(); await yieldToBrowser(); }});
+        if(!fragment) return false;
+        fragments[pack.source]=fragment; rebuilt.push(pack.source);
+      }
+    }
     const nondateByRep=new Map(), datedRows=[], missingCoachRows=[];
     const nondateHeaders=['Representative','Coach'], datedHeaders=['Representative','Coach','Date','Source'];
     headerMaps.forEach(map=>{ map.nondate.forEach(h=>{ if(!nondateHeaders.includes(h)) nondateHeaders.push(h); }); map.dated.forEach(h=>{ if(!datedHeaders.includes(h)) datedHeaders.push(h); }); });
-    const total=Math.max(1,packs.reduce((n,p)=>n+(p.rows||[]).length,0)); let done=0, sliceStart=performance.now();
     for(const pack of packs){
-      const maps=headerMaps.get(pack.source)||{nondate:new Map(),dated:new Map(),hasDate:false};
-      for(const row of pack.rows||[]){
-        const rep=cleanName(row._rep||''), key=row._rosterId || safeFallbackRosterIdentity(row,sourceAreaForSource(pack.source)||row._sourceArea||'');
-        if(!key){ done++; continue; }
-        const directCoach=sourceSkipsTeamBuild(pack.source) ? '' : canonicalCoachName(rowTeam(row,{mutate:!options.batch})||row._team||'');
-        const coach=canonicalCoachName(directCoach||teamInfo.chosen.get(row._repKey||fullNameIdentityKey(rep))||(teamInfo.usingTrustedRoster?NA_TEAM:''));
-        if(!coach) missingCoachRows.push(rep);
-        const date=bestDateForCategorizedRow(pack.source,row,pack.headers);
-        if(maps.hasDate){
-          const out={Representative:rep,Coach:coach||'',Date:date?ymd(date):'',Source:labelSource(pack.source),_rep:rep,_repKey:row._repKey||fullNameIdentityKey(rep),_rosterId:row._rosterId||key,_rawRep:row._rawRep||rep,_team:coach||'',_sourceArea:sourceAreaForSource(pack.source)||row._sourceArea||'',_sourceKey:pack.source,_sourceRow:row._sourceRow||row.rowNumber||'',_date:date||null};
-          maps.dated.forEach((target,srcHeader)=>{ out[target]=row[srcHeader]??''; });
-          datedRows.push(out);
-        }else{
-          if(!nondateByRep.has(key)) nondateByRep.set(key,{Representative:rep,Coach:coach||'',_rep:rep,_repKey:row._repKey||fullNameIdentityKey(rep),_rosterId:row._rosterId||key,_rawRep:row._rawRep||rep,_team:coach||'',_sourceArea:sourceAreaForSource(pack.source)||row._sourceArea||'',_sourceRows:[]});
-          const out=nondateByRep.get(key);
-          out._sourceRows=out._sourceRows||[]; out._sourceRows.push({source:pack.source,row:row._sourceRow||row.rowNumber||'',rawRep:row._rawRep||rep});
-          if(coach && !out.Coach){ out.Coach=coach; out._team=coach; }
-          maps.nondate.forEach((target,srcHeader)=>mergeCategorizedCell(out,target,row[srcHeader]));
-        }
-        done++;
-        if(performance.now()-sliceStart>=8){ if(!active()) return false; updateProgress(`Categorizing rows... ${done.toLocaleString()} / ${total.toLocaleString()}`, 8 + 72*(done/total)); await yieldToBrowser(); sliceStart=performance.now(); }
-      }
+      const fragment=fragments[pack.source];
+      (fragment.nonDatedRows||[]).forEach(row=>mergeCategorizedNonDateFragment(nondateByRep,row));
+      datedRows.push(...(fragment.datedRows||[]));
+      missingCoachRows.push(...(fragment.missingCoachRows||[]));
     }
     const warnings=[];
     const unknown=[...new Set(missingCoachRows.map(cleanName).filter(Boolean))];
     if(unknown.length) warnings.push(`${unknown.length.toLocaleString()} reps had no coach in any imported source; their Coach cell was left blank.`);
-    if(unknown.length && !automatic && !confirm(`${unknown.length.toLocaleString()} representative name${unknown.length===1?'':'s'} could not be tied to a coach/team from any imported source. Proceed and categorize the rest anyway?`)){
+    if(unknown.length && !confirm(`${unknown.length.toLocaleString()} representative name${unknown.length===1?'':'s'} could not be tied to a coach/team from any imported source. Proceed and categorize the rest anyway?`)){
       updateProgress('Categorize cancelled before saving.',100);
       return false;
     }
@@ -1149,22 +1282,35 @@ async function categorizeImportedData(options={}){
     datedRows.sort((a,b)=>(a.Date||'').localeCompare(b.Date||'')||(a.Coach||'').localeCompare(b.Coach||'')||a.Representative.localeCompare(b.Representative));
     const nondateStats=packs.filter(p=>!(headerMaps.get(p.source)||{}).hasDate).map(p=>({source:p.source,rows:p.rows.length}));
     const datedStats=packs.filter(p=>(headerMaps.get(p.source)||{}).hasDate).map(p=>({source:p.source,rows:p.rows.length}));
-    state.categorized.nondated={headers:nondateHeaders,rows:nonRows,builtAt:new Date().toISOString(),sourceStats:nondateStats};
-    state.categorized.dated={headers:datedHeaders,rows:datedRows,builtAt:new Date().toISOString(),sourceStats:datedStats};
+    const builtAt=new Date().toISOString();
+    state.categorized.nondated={headers:nondateHeaders,rows:nonRows,builtAt,sourceStats:nondateStats};
+    state.categorized.dated={headers:datedHeaders,rows:datedRows,builtAt,sourceStats:datedStats};
     state.categorized.warnings=warnings;
+    state.categorized.fragments=fragments;
+    state.categorized.sourceSignatures=Object.fromEntries(Object.entries(fragments).map(([source,fragment])=>[source,fragment.signature]));
+    state.categorizedFragments=fragments;
+    clearCategorizationNeeded();
+    Object.keys(fragments).forEach(source=>{ if(state.sourceMeta?.[source]) state.sourceMeta[source]={...state.sourceMeta[source],dirtyCategorized:false,categorizedVersion:state.sourceMeta[source].sourceVersion||0}; });
     timing.mark('building date/non-date datasets', `${nonRows.length.toLocaleString()} non-date, ${datedRows.length.toLocaleString()} dated`);
     updateProgress('Finalizing categorized import...',86); await yieldToBrowser();
     markImportCacheDirty('misc','categorized','categorized database build');
     markImportCacheDirty('misc','sourceMeta','categorized database build');
-    if(options.batch){ state.dataIndex=state.dataIndex||{dirty:true,reason:'categorized database build',sources:{}}; state.dataIndex.dirty=true; state.dataIndex.reason='categorized database build'; }
-    else await finishDataChanged('categorized database build',88);
-    if(options.persist!==false){ updateProgress('Saving categorized databases to IndexedDB...',97,{force:true}); await flushImportCacheSave('categorized database build complete'); }
+    invalidateCategorizedConsumers(NONDATED_SOURCE,nonRows,nondateHeaders,'manual categorized database build');
+    invalidateCategorizedConsumers(DATED_SOURCE,datedRows,datedHeaders,'manual categorized database build');
+    refreshCategorizedGlobalIndexes([NONDATED_SOURCE,DATED_SOURCE]);
+    if(!dataIndexReady()&&state.indexes&&typeof state.indexes==='object'){ delete state.indexes[NONDATED_SOURCE]; delete state.indexes[DATED_SOURCE]; }
+    if(options.render!==false){ setStatus(); renderEditModelSafe(); updateResearchCacheBadge(); }
+    if(options.persist!==false){ updateProgress('Saving categorized databases to IndexedDB...',97,{force:true}); const saved=await flushImportCacheSave('categorized database build complete'); if(!saved) throw new Error(state.importCache?.lastError||'The categorized databases could not be saved.'); }
+    committed=true;
     if(options.render!==false) renderCategorizedSummary();
-    timing.mark('rendering previews', 'summary only; full preview deferred until opened');
+    timing.mark('rendering previews', `${rebuilt.length} source fragments rebuilt; ${reused.length} reused`);
     timing.end('categorize complete');
     return true;
-  }catch(err){ if(err?.cancelled && options.batch) throw err; console.error(err); if(!automatic && !options.silent && !state.lifecycle?.closing && !state.lifecycle?.hidden) alert('Categorize failed. Check the console for details.'); return false; }
-  finally{ if(manageProgress) hideProgress(); }
+  }catch(err){
+    if(!committed){ state.categorized=categorizedBefore; state.categorizedFragments=categorizedFragmentsBefore; state.categorizationPending=categorizationPendingBefore; state.categorizationPendingReason=categorizationPendingReasonBefore; if(typeof renderCategorizedSummary==='function') renderCategorizedSummary(); }
+    if(err?.cancelled && options.batch) throw err; console.error(err); if(!options.silent && !state.lifecycle?.closing && !state.lifecycle?.hidden) alert('Categorize failed. The previous categorized data was kept. Check the console for details.'); return false;
+  }
+  finally{ if(button) button.disabled=false; if(manageProgress) hideProgress(); }
 }
 
 function packageSheetToSource(sheetName){
@@ -1246,9 +1392,10 @@ async function packageSourceSheetChunked(source, table, reportProgress){
 }
 async function packageImportedData(){
   const hasReusableData=allSourceKeys().some(source=>(getRowsRaw(source)||[]).length)||(state.data.referral.itac||[]).length||controlRosterRows().length||(state.data.retail.teamTotals?.rows||[]).length||(state.data.referral.teamTotals?.rows||[]).length;
-  if(!(state.categorized.nondated.rows||[]).length && !(state.categorized.dated.rows||[]).length){
-    await categorizeImportedData();
-    if(!hasReusableData && !(state.categorized.nondated.rows||[]).length && !(state.categorized.dated.rows||[]).length) return;
+  if(categorizationIsStale() || (!(state.categorized.nondated.rows||[]).length && !(state.categorized.dated.rows||[]).length)){
+    if(!hasReusableData) return alert('Import data before creating a package.');
+    alert('Package creation will not run categorization automatically. Press Categorize Data first, let it finish, then create the package.');
+    return false;
   }
   const packageButton=els.packageDataBtn;
   if(packageButton) packageButton.disabled=true;
@@ -1283,7 +1430,7 @@ function jsonSafeTeamTotals(source){
 function buildAllStarJsonPackage(){
   const sources={}; JSON_PACKAGE_SOURCE_KEYS.forEach(source=>{ sources[source]=jsonPackageSourceRecord(source); });
   const customSources=(state.customSources||[]).map(c=>({id:c.id||id(),sourceKey:c.sourceKey,name:c.name||c.sourceKey,displayName:c.displayName||c.name||c.sourceKey,sourceType:'custom',framework:c.framework||'generic_table',fileName:c.fileName||'',sheetName:c.sheetName||'',headers:c.headers||[],rows:c.rows||[],headerRow:Number(c.headerRow||1),startCol:Number(c.startCol||1),manualHeaders:c.manualHeaders||[],columns:c.columns||{},aggregation:c.aggregation||{}}));
-  const categorized={nondated:{headers:state.categorized.nondated.headers||[],rows:state.categorized.nondated.rows||[],builtAt:state.categorized.nondated.builtAt||'',sourceStats:state.categorized.nondated.sourceStats||[]},dated:{headers:state.categorized.dated.headers||[],rows:state.categorized.dated.rows||[],builtAt:state.categorized.dated.builtAt||'',sourceStats:state.categorized.dated.sourceStats||[]},warnings:state.categorized.warnings||[]};
+  const categorized={nondated:{headers:state.categorized.nondated.headers||[],rows:state.categorized.nondated.rows||[],builtAt:state.categorized.nondated.builtAt||'',sourceStats:state.categorized.nondated.sourceStats||[]},dated:{headers:state.categorized.dated.headers||[],rows:state.categorized.dated.rows||[],builtAt:state.categorized.dated.builtAt||'',sourceStats:state.categorized.dated.sourceStats||[]},warnings:state.categorized.warnings||[],stale:categorizationIsStale(),staleReason:state.categorized.staleReason||'',changedSources:state.categorized.changedSources||[],sourceSignatures:state.categorized.sourceSignatures||{},fragments:state.categorized.fragments||{}};
   const totalRows=Object.values(sources).reduce((n,s)=>n+(s.rows||[]).length,0)+customSources.reduce((n,s)=>n+(s.rows||[]).length,0)+(categorized.nondated.rows||[]).length+(categorized.dated.rows||[]).length;
   return {packageType:ALL_STAR_JSON_PACKAGE_TYPE,schemaVersion:ALL_STAR_JSON_PACKAGE_SCHEMA,createdAt:new Date().toISOString(),appVersion:'all-star-modular',sources,rosters:{retail:state.data.retail.controlRoster||[],referral:state.data.referral.controlRoster||[]},teamTotals:{retail:jsonSafeTeamTotals('retail_team_totals'),referral:jsonSafeTeamTotals('referral_team_totals')},categorized,customSources,sourceMeta:state.sourceMeta||{},categorizedFragments:state.categorizedFragments||{},organizations:state.orgs||[],sourceSettings:{activeModelId:activeModelForImport()?.id||'',byModel:Object.fromEntries((state.models||[]).map(m=>[m.id,m.sourceSettings||{}]))},sourceFiles:{retail:state.data.retail.fileName||'',referral:state.data.referral.fileName||''},statistics:{totalRows,sourceCount:Object.keys(sources).length+customSources.length}};
 }
@@ -1338,7 +1485,7 @@ function stageAllStarJsonPackage(pkg,fileName){
   nextData.retail.controlRoster=Array.isArray(pkg.rosters.retail)?pkg.rosters.retail:[]; nextData.referral.controlRoster=Array.isArray(pkg.rosters.referral)?pkg.rosters.referral:[];
   nextData.retail.teamTotals=normalizeTeamTotalsDataset({...emptyTeamTotalsDataset('retail'),...(pkg.teamTotals.retail||{})},'retail_team_totals',{force:true});
   nextData.referral.teamTotals=normalizeTeamTotalsDataset({...emptyTeamTotalsDataset('referral'),...(pkg.teamTotals.referral||{})},'referral_team_totals',{force:true});
-  const categorized={nondated:{headers:pkg.categorized.nondated?.headers||['Representative','Coach'],rows:Array.isArray(pkg.categorized.nondated?.rows)?pkg.categorized.nondated.rows:[],builtAt:pkg.categorized.nondated?.builtAt||'',sourceStats:pkg.categorized.nondated?.sourceStats||[]},dated:{headers:pkg.categorized.dated?.headers||['Representative','Coach','Date'],rows:Array.isArray(pkg.categorized.dated?.rows)?pkg.categorized.dated.rows:[],builtAt:pkg.categorized.dated?.builtAt||'',sourceStats:pkg.categorized.dated?.sourceStats||[]},warnings:Array.isArray(pkg.categorized.warnings)?pkg.categorized.warnings:[]};
+  const categorized={nondated:{headers:pkg.categorized.nondated?.headers||['Representative','Coach'],rows:Array.isArray(pkg.categorized.nondated?.rows)?pkg.categorized.nondated.rows:[],builtAt:pkg.categorized.nondated?.builtAt||'',sourceStats:pkg.categorized.nondated?.sourceStats||[]},dated:{headers:pkg.categorized.dated?.headers||['Representative','Coach','Date'],rows:Array.isArray(pkg.categorized.dated?.rows)?pkg.categorized.dated.rows:[],builtAt:pkg.categorized.dated?.builtAt||'',sourceStats:pkg.categorized.dated?.sourceStats||[]},warnings:Array.isArray(pkg.categorized.warnings)?pkg.categorized.warnings:[],stale:!!pkg.categorized.stale,staleReason:pkg.categorized.staleReason||'',changedSources:Array.isArray(pkg.categorized.changedSources)?pkg.categorized.changedSources:[],sourceSignatures:pkg.categorized.sourceSignatures||{},fragments:pkg.categorized.fragments||{}};
   const customSources=pkg.customSources.map((c,i)=>{ if(!c?.sourceKey || !Array.isArray(c.headers)||!Array.isArray(c.rows)) throw new Error(`Missing source data: custom source ${i+1}.`); return {...c,id:c.id||id(),sourceType:'custom',aoa:[],aoaBySheet:{},sheetNames:c.sheetName?[c.sheetName]:[]}; });
   const sourceMeta={...(pkg.sourceMeta||{})}; Object.entries(pkg.sources).forEach(([source,record])=>{sourceMeta[source]={...(sourceMeta[source]||{}),sourceVersion:Number(record.sourceVersion||sourceMeta[source]?.sourceVersion||1),originalHeaders:record.headers||[],normalizedHeaders:record.headers||[],rowCount:(record.rows||[]).length,hydratedFromJson:true};});
   if(pkg.organizations!==undefined&&!Array.isArray(pkg.organizations)) throw new Error('Invalid All-Star package: organizations must be an array.');
@@ -1348,7 +1495,12 @@ function stageAllStarJsonPackage(pkg,fileName){
 function commitStagedJsonPackage(staged){
   const previous={...state,versions:{...(state.versions||{})}}, priorResearchCache=(()=>{try{return localStorage.getItem(RESEARCH_CACHE_KEY);}catch(_){return null;}})();
   try{
-    state.data=staged.nextData; state.categorized=staged.categorized; state.customSources=staged.customSources; state.sourceMeta=staged.sourceMeta; state.categorizedFragments=staged.categorizedFragments; state.books=staged.books; state.orgs=staged.orgs; state.models=staged.models;
+    // Packages hydrate normalized source rows only. Preserve the user's last
+    // successful manual categorization and mark it stale like any other import.
+    state.data=staged.nextData; state.customSources=staged.customSources; state.sourceMeta=staged.sourceMeta; state.categorized={...previous.categorized,changedSources:[...(previous.categorized?.changedSources||[])],fragments:{...(previous.categorized?.fragments||{})}}; state.categorizedFragments={...(previous.categorizedFragments||previous.categorized?.fragments||{})}; state.categorized.fragments=state.categorizedFragments; state.books=staged.books; state.orgs=staged.orgs; state.models=staged.models;
+    const changedSources=allSourceKeys().filter(source=>categorizationSourceAffects(source)&&(getRowsRaw(source)||[]).length);
+    changedSources.forEach(source=>{ state.sourceMeta[source]={...(state.sourceMeta[source]||{}),dirtyCategorized:true}; state.categorizedFragments[source]={...(state.categorizedFragments[source]||{}),dirty:true}; });
+    markCategorizationNeeded('JSON package source data updated',changedSources);
     bumpVersion('roster'); bumpVersion('teams'); markDataIndexDirty('JSON package hydration'); clearResearchComputedCaches('JSON package hydration'); rebuildTeams();
   }catch(error){
     Object.assign(state,previous);
@@ -1370,6 +1522,7 @@ async function loadJsonPackageFile(file){
 }
 async function loadPackagedFile(file){
   const timing=importTiming('package load hydration');
+  const categorizedBefore={...state.categorized,nondated:state.categorized.nondated,dated:state.categorized.dated,warnings:state.categorized.warnings,changedSources:state.categorized.changedSources,sourceSignatures:state.categorized.sourceSignatures,fragments:state.categorized.fragments}, categorizedFragmentsBefore={...(state.categorizedFragments||{})}, categorizationPendingBefore=!!state.categorizationPending, categorizationPendingReasonBefore=state.categorizationPendingReason||'';
   showProgress('Reading packaged data...',3);
   try{
     await yieldToBrowser();
@@ -1383,7 +1536,7 @@ async function loadPackagedFile(file){
       try{ packageMeta=JSON.parse(sheetAoa(wb,metaSheet)?.[1]?.[0]||'{}')||{}; }
       catch(e){ console.warn('Package metadata could not be read',e); }
     }
-    if(packageMeta.preprocessed){ state.sourceMeta={...(state.sourceMeta||{}),...(packageMeta.sourceMeta||{})}; state.categorizedFragments={...(state.categorizedFragments||{}),...(packageMeta.categorizedFragments||{})}; }
+    if(packageMeta.preprocessed) state.sourceMeta={...(state.sourceMeta||{}),...(packageMeta.sourceMeta||{})};
     const sheetByNorm=new Map(names.map(sn=>[norm(sn),sn]));
     const resolveSheet=(candidate)=> candidate && (names.includes(candidate)?candidate:sheetByNorm.get(norm(candidate))||sheetByNorm.get(norm(String(candidate).slice(0,31)))||'');
     (packageMeta.customSources||[]).forEach(def=>{
@@ -1400,7 +1553,7 @@ async function loadPackagedFile(file){
     const m=activeModelForImport(); ensureSourceSettings(m);
     const legacyPackage=!packageMeta.schemaVersion;
     if(legacyPackage){ availableTroubleSources().filter(src=>src!==QA_DIRECT_SOURCE).forEach(src=>{ if(!assigned[src]) assigned[src]=pickBestSheetForSource(wb,src,m,SOURCE_SHEET_HINTS[src]); }); }
-    const packageSources=[...new Set([...(packageMeta.includedSources||[]),...Object.keys(assigned)])].filter(src=>src!==QA_DIRECT_SOURCE&&assigned[src]&&names.includes(assigned[src]));
+    const packageSources=[...new Set([...(packageMeta.includedSources||[]),...Object.keys(assigned)])].filter(src=>src!==QA_DIRECT_SOURCE&&!isCategorizedSource(src)&&assigned[src]&&names.includes(assigned[src]));
     if(!packageSources.length) throw new Error('No recognized All Star data sheets were found in the package.');
     updateProgress('Preparing packaged source sheets...',16); await yieldToBrowser();
     const groupedBooks={};
@@ -1424,7 +1577,6 @@ async function loadPackagedFile(file){
     }
     state.data.retail.fileName=file.name; state.data.referral.fileName=file.name;
     ['qa','checklist','documented_coaching','comp_calls'].forEach(src=>{ if(packageSources.includes(src)&&state.data[src]) state.data[src].fileName=file.name; });
-    if(packageMeta.categorized?.warnings) state.categorized.warnings=packageMeta.categorized.warnings;
     markImportCacheDirty('misc','customSources','packaged custom source definitions imported');
     markImportCacheDirty('misc','sourceMeta','packaged source metadata imported');
     markImportCacheDirty('misc','sourceSettings','packaged source settings imported');
@@ -1436,7 +1588,7 @@ async function loadPackagedFile(file){
     if(!saved) throw new Error(state.importCache.lastError||'The packaged data loaded, but its local IndexedDB save failed.');
     timing.mark('rendering previews', 'summary only; full preview deferred until opened');
     timing.end(`${packageSources.length} sheets imported and saved`);
-  }catch(err){ console.error(err); alert('Packaged data import failed: '+String(err?.message||err)); }
+  }catch(err){ state.categorized=categorizedBefore; state.categorizedFragments=categorizedFragmentsBefore; state.categorized.fragments=state.categorizedFragments; state.categorizationPending=categorizationPendingBefore; state.categorizationPendingReason=categorizationPendingReasonBefore; console.error(err); alert('Packaged data import failed: '+String(err?.message||err)); }
   finally{ hideProgress(); if(els.packagedFile) els.packagedFile.value=''; }
 }
 
@@ -1936,6 +2088,9 @@ function applyModelSourceSettings(model){
   if(state.data.documented_coaching.aoa?.length){ const p=sourceRowsFromStoredAoa('documented_coaching',model,true); const c=getSourceSetting(model,'documented_coaching').columns||{}; state.data.documented_coaching.headers=p.headers; state.data.documented_coaching.rows=p.rows.map(r=>normalizeChecklistRow(r,p.headers,c,'documented_coaching')).filter(r=>r._repKey||r._team); }
   if(state.data.comp_calls.aoa?.length){ const p=sourceRowsFromStoredAoa('comp_calls',model,true); const c=getSourceSetting(model,'comp_calls').columns||{}; state.data.comp_calls.headers=p.headers; state.data.comp_calls.rows=p.rows.map(r=>normalizeChecklistRow(r,p.headers,c,'comp_calls')).filter(r=>r._repKey||r._team); }
   customSourceKeys().forEach(src=>{ if(customSource(src)?.aoa?.length){ const p=sourceRowsFromStoredAoa(src,model,false); setSourceRowsAndHeaders(src,p.headers,p.rows,model); } });
+  const remappedSources=allSourceKeys().filter(source=>categorizationSourceAffects(source)&&(getRowsRaw(source)||[]).length);
+  remappedSources.forEach(source=>noteCategorizationSourceVersion(source));
+  if(remappedSources.length) markCategorizationNeeded('source header or identity mappings changed',remappedSources);
   rebuildTeams();
   markDataIndexDirty('source settings applied');
 }
@@ -1961,6 +2116,8 @@ async function loadRetailFile(file,options={}){
     const sv2Rows=await mapRowsChunked(sv2.rows,r=>normalizeStatRow(r,'retail','sv2',getSourceSetting(m,'retail_sv2').columns,sv2.headers),null,'Normalizing retail SV2 rows',40,47);
     const wiperRows=await mapRowsChunked(wip.rows,r=>normalizeStatRow(r,'retail','wiper',getSourceSetting(m,'retail_wiper').columns,wip.headers),null,'Normalizing retail wiper rows',47,54);
     state.data.retail={...state.data.retail,fileName:file.name,sv2:sv2Rows,wiper:wiperRows,controlRoster,teamTotals,headers:{sv2:sv2.headers,wiper:wip.headers}};
+    ['retail_sv2','retail_wiper'].forEach(source=>noteCategorizationSourceVersion(source));
+    markCategorizationNeeded('Retail source data updated',['retail_sv2','retail_wiper']);
     if(!options.batch){ bumpVersion('roster'); invalidateRosterIndex('retail control roster imported'); ensureRosterIndex(); }
     if(options.render!==false){ els.retailFileName.textContent=`${file.name}${controlRoster.length?` · ${controlRoster.length.toLocaleString()} Control reps`:''} · ${teamTotalsSummaryText('retail')}`; renderTeamTotalsImportControls(); }
     markRetailPersistenceDirty('retail import complete');
@@ -2061,6 +2218,8 @@ async function loadReferralFile(file,options={}){
     const itacMatch=attachItacToReferralSv2(sv2Rows,itacRows,sv2.headers);
     const mergedSv2Headers=[...sv2.headers]; ['Offered ITAC','Accepted ITAC'].forEach(h=>{if(!mergedSv2Headers.includes(h)) mergedSv2Headers.push(h);});
     state.data.referral={...state.data.referral,fileName:file.name,sv2:sv2Rows,wiper:wiperRows,itac:itacRows,itacAoa,controlRoster,teamTotals,headers:{sv2:mergedSv2Headers,wiper:wip.headers,itac:itacFound?.headers||[]},itacSheetName:itacFound?.sheetName||''};
+    ['referral_sv2','referral_wiper'].forEach(source=>noteCategorizationSourceVersion(source));
+    markCategorizationNeeded('Referral source data updated',['referral_sv2','referral_wiper']);
     if(!options.batch){ bumpVersion('roster'); invalidateRosterIndex('referral control roster imported'); ensureRosterIndex(); }
     const itacStatus=itacFound?` · ITAC ${itacMatch.matched.toLocaleString()} SV2 rows matched via ${itacMatch.phoneHeader||'Phone_ID missing'}`:' · no ITAC sheet detected';
     if(options.render!==false){ els.referralFileName.textContent=`${file.name}${controlRoster.length?` · ${controlRoster.length.toLocaleString()} Control reps`:''}${itacStatus} · ${teamTotalsSummaryText('referral')}`; renderTeamTotalsImportControls(); }

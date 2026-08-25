@@ -12,7 +12,7 @@ function wire(){
   if(els.applyFixTeamsBtn) els.applyFixTeamsBtn.onclick=applySelectedFixTeams;
   if(els.applyFixRepMatchesBtn) els.applyFixRepMatchesBtn.onclick=applySelectedFixRepMatches;
   if(els.cancelFixTeamsBtn) els.cancelFixTeamsBtn.onclick=()=>els.fixTeamsPanel?.classList.add('hidden');
-  if(els.categorizeDataBtn) els.categorizeDataBtn.onclick=categorizeImportedData;
+  if(els.categorizeDataBtn){ els.categorizeDataBtn.onclick=event=>categorizeImportedData({manual:true,triggerEvent:event,reason:'Categorize Data button'}); els.categorizeDataBtn.title='Categorization runs only when you press this button.'; }
   if(els.viewSpreadsheetDataBtn) els.viewSpreadsheetDataBtn.onclick=renderSpreadsheetDataPreview;
   if(els.packageDataBtn) els.packageDataBtn.onclick=packageImportedData;
   if(els.saveImportCacheBtn) els.saveImportCacheBtn.onclick=()=>saveImportedDataToIndexedDB('manual cache save',{silent:false,full:true});
