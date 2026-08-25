@@ -16,14 +16,7 @@
       "icon": "icons/allstar.png",
       "initials": "AS",
       "category": "Core",
-      "keywords": [
-        "all star",
-        "report",
-        "model",
-        "research",
-        "organization",
-        "qualtrics"
-      ],
+      "keywords": ["all star", "report", "model", "research", "organization", "qualtrics"],
       "data": [],
       "favorite": true,
       "featured": true,
@@ -40,15 +33,7 @@
       "icon": "icons/weekly-data.png",
       "initials": "WD",
       "category": "Data",
-      "keywords": [
-        "loader",
-        "import",
-        "build",
-        "scope",
-        "teams",
-        "coordinators",
-        "select all"
-      ],
+      "keywords": ["loader", "import", "build", "scope", "teams", "coordinators", "select all"],
       "data": [],
       "favorite": true,
       "featured": false,
@@ -65,26 +50,8 @@
       "icon": "icons/default-app.png",
       "initials": "PP",
       "category": "People",
-      "keywords": [
-        "people",
-        "profile",
-        "coach",
-        "representative",
-        "rep",
-        "performance",
-        "ranking",
-        "coaching",
-        "qa",
-        "checklist",
-        "timeline"
-      ],
-      "data": [
-        "weeklyRetail",
-        "weeklyReferral",
-        "qa",
-        "documentedCoaching",
-        "checklist"
-      ],
+      "keywords": ["people", "profile", "coach", "representative", "rep", "performance", "ranking", "coaching", "qa", "checklist", "timeline"],
+      "data": ["weeklyRetail", "weeklyReferral", "qa", "documentedCoaching", "checklist"],
       "favorite": true,
       "featured": false,
       "preload": false,
@@ -100,24 +67,8 @@
       "icon": "icons/default-app.png",
       "initials": "CC",
       "category": "Coaching",
-      "keywords": [
-        "today",
-        "coaching",
-        "priority",
-        "follow-up",
-        "debt",
-        "checklist",
-        "support",
-        "recognition",
-        "intelligence"
-      ],
-      "data": [
-        "weeklyRetail",
-        "weeklyReferral",
-        "qa",
-        "documentedCoaching",
-        "checklist"
-      ],
+      "keywords": ["today", "coaching", "priority", "follow-up", "debt", "checklist", "support", "recognition", "intelligence"],
+      "data": ["weeklyRetail", "weeklyReferral", "qa", "documentedCoaching", "checklist"],
       "favorite": true,
       "featured": false,
       "preload": false,
@@ -133,20 +84,8 @@
       "icon": "icons/coaching-gaps.png",
       "initials": "CG",
       "category": "Coaching",
-      "keywords": [
-        "coach",
-        "performance",
-        "opportunities",
-        "teams",
-        "corrective"
-      ],
-      "data": [
-        "weeklyRetail",
-        "weeklyReferral",
-        "qa",
-        "documentedCoaching",
-        "checklist"
-      ],
+      "keywords": ["coach", "performance", "opportunities", "teams", "corrective"],
+      "data": ["weeklyRetail", "weeklyReferral", "qa", "documentedCoaching", "checklist"],
       "favorite": false,
       "featured": false,
       "preload": false,
@@ -162,17 +101,8 @@
       "icon": "icons/coach-timeline.png",
       "initials": "CT",
       "category": "Coaching",
-      "keywords": [
-        "timeline",
-        "checklist",
-        "coaching",
-        "speed",
-        "coordinator"
-      ],
-      "data": [
-        "documentedCoaching",
-        "checklist"
-      ],
+      "keywords": ["timeline", "checklist", "coaching", "speed", "coordinator"],
+      "data": ["documentedCoaching", "checklist"],
       "favorite": false,
       "featured": false,
       "preload": false,
@@ -188,23 +118,29 @@
       "icon": "icons/kpi-impact.png",
       "initials": "KI",
       "category": "Performance",
-      "keywords": [
-        "kpi",
-        "impact",
-        "retail",
-        "referral",
-        "coaching",
-        "trend"
-      ],
-      "data": [
-        "weeklyRetail",
-        "weeklyReferral",
-        "documentedCoaching"
-      ],
+      "keywords": ["kpi", "impact", "retail", "referral", "coaching", "trend"],
+      "data": ["weeklyRetail", "weeklyReferral", "documentedCoaching"],
       "favorite": false,
       "featured": false,
       "preload": false,
       "order": 50,
+      "version": "1.0",
+      "enabled": true
+    },
+    {
+      "id": "weekly-comparison",
+      "name": "Weekly Comparison",
+      "description": "Search Retail representatives and compare configurable metrics across two selected week sets.",
+      "file": "apps/weekly-comparison.html",
+      "icon": "icons/default-app.png",
+      "initials": "WC",
+      "category": "Performance",
+      "keywords": ["weekly", "comparison", "calculator", "retail", "names", "columns", "rate", "volume", "divide", "trend"],
+      "data": ["weeklyRetail"],
+      "favorite": false,
+      "featured": false,
+      "preload": false,
+      "order": 55,
       "version": "1.0",
       "enabled": true
     },
@@ -216,17 +152,8 @@
       "icon": "icons/qa-scores.png",
       "initials": "QA",
       "category": "Quality",
-      "keywords": [
-        "qa",
-        "quality",
-        "monitor",
-        "reviewer",
-        "coaching"
-      ],
-      "data": [
-        "qa",
-        "documentedCoaching"
-      ],
+      "keywords": ["qa", "quality", "monitor", "reviewer", "coaching"],
+      "data": ["qa", "documentedCoaching"],
       "favorite": false,
       "featured": false,
       "preload": false,
@@ -242,17 +169,8 @@
       "icon": "icons/audit-checklist.png",
       "initials": "AC",
       "category": "Quality",
-      "keywords": [
-        "audit",
-        "checklist",
-        "correctives",
-        "addressed",
-        "speed"
-      ],
-      "data": [
-        "documentedCoaching",
-        "checklist"
-      ],
+      "keywords": ["audit", "checklist", "correctives", "addressed", "speed"],
+      "data": ["documentedCoaching", "checklist"],
       "favorite": false,
       "featured": false,
       "preload": false,
@@ -268,12 +186,7 @@
       "icon": "icons/checklist-and-documentation.png",
       "initials": "CC",
       "category": "Quality",
-      "keywords": [
-        "checklist",
-        "documentation",
-        "dynamics",
-        "contact center"
-      ],
+      "keywords": ["checklist", "documentation", "dynamics", "contact center"],
       "data": [],
       "favorite": false,
       "featured": false,
@@ -290,13 +203,7 @@
       "icon": "icons/video-player.png",
       "initials": "TV",
       "category": "Training",
-      "keywords": [
-        "video",
-        "training",
-        "coaching",
-        "mp4",
-        "library"
-      ],
+      "keywords": ["video", "training", "coaching", "mp4", "library"],
       "data": [],
       "favorite": false,
       "featured": false,
