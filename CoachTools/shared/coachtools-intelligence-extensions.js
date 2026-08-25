@@ -17,5 +17,8 @@
   write(from('coachtools-calculation-alignment-post.js'));
 
   const appId = document.querySelector('meta[name="coachtools-id"]')?.content || '';
-  if (appId === 'coaching-gaps') append(from('coaching-gaps-list-analysis.js'));
+  if (appId === 'coaching-gaps') {
+    append(from('coaching-gaps-list-analysis.js'));
+    append(from('coaching-gaps-timeline-enhancements.js'));
+  }
 })();
