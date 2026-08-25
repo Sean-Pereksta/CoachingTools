@@ -209,6 +209,36 @@
       "enabled": true
     },
     {
+      "id": "weekly-comparison",
+      "name": "Weekly Comparison",
+      "description": "Search Retail representatives and compare configurable metrics across two selected week sets.",
+      "file": "apps/weekly-comparison.html",
+      "icon": "icons/default-app.png",
+      "initials": "WC",
+      "category": "Performance",
+      "keywords": [
+        "weekly",
+        "comparison",
+        "calculator",
+        "retail",
+        "names",
+        "columns",
+        "rate",
+        "volume",
+        "divide",
+        "trend"
+      ],
+      "data": [
+        "weeklyRetail"
+      ],
+      "favorite": false,
+      "featured": false,
+      "preload": false,
+      "order": 55,
+      "version": "1.0",
+      "enabled": true
+    },
+    {
       "id": "qa-scores",
       "name": "QA Scores",
       "description": "Review QA performance, reviewer alignment, and Call Quality coaching.",
