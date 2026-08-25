@@ -4,41 +4,135 @@
   const HANDLE_DB = 'coachtools.desktop.directory.v1';
   const HANDLE_STORE = 'handles';
   const HANDLE_KEY = 'storage-directory';
-  const FILE_SIGNATURES_KEY = 'coachtools.desktop.rememberedFolderFiles.v2';
+  const BASELINE_KEY = 'coachtools.desktop.cleanUploadBaseline.v1';
+  const SOURCE_NAMES_KEY = 'coachtools.desktop.updateSourceNames.v1';
   const SUPPORTED_EXTENSIONS = new Set(['.xlsx', '.xls', '.csv']);
+  const MAX_NAME_HISTORY = 4;
 
   let cachedDirectoryHandle = null;
   let handleLoaded = false;
   let updateRunning = false;
 
   function $(id) { return root.document && root.document.getElementById(id); }
-
+  function clone(value) {
+    try { return value == null ? value : JSON.parse(JSON.stringify(value)); }
+    catch (_) { return value; }
+  }
+  function readJson(key, fallback) {
+    try {
+      const raw = root.localStorage && root.localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (_) { return fallback; }
+  }
+  function writeJson(key, value) {
+    try { root.localStorage && root.localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+  }
   function extensionOf(name) {
     const match = String(name || '').toLowerCase().match(/(\.[a-z0-9]+)$/);
     return match ? match[1] : '';
   }
-
   function isSupported(name) {
     const importer = root.CoachToolsImport;
     if (importer && typeof importer.isSupportedFile === 'function') return importer.isSupportedFile(name);
     return SUPPORTED_EXTENSIONS.has(extensionOf(name));
   }
-
-  function readJson(key, fallback) {
-    try {
-      const raw = root.localStorage && root.localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : fallback;
-    } catch (_) {
-      return fallback;
+  function display(value) { return String(value == null ? '' : value).trim().replace(/\s+/g, ' '); }
+  function normalizeFamily(name) {
+    return display(name)
+      .toLowerCase()
+      .replace(/\.[a-z0-9]+$/i, ' ')
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/[_\-./]+/g, ' ')
+      .replace(/\b(?:final|copy|download|export|new|updated|current)\b/g, ' ')
+      .replace(/\b\d+\b/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  function familyTokens(name) {
+    return normalizeFamily(name).split(' ').filter(token => token.length > 1);
+  }
+  function nameMatchScore(candidateName, templateName) {
+    const candidate = normalizeFamily(candidateName);
+    const template = normalizeFamily(templateName);
+    if (!candidate || !template) return 0;
+    if (candidate === template) return 100;
+    const a = new Set(familyTokens(candidateName));
+    const b = new Set(familyTokens(templateName));
+    if (!a.size || !b.size) return 0;
+    let intersection = 0;
+    for (const token of a) if (b.has(token)) intersection += 1;
+    if (!intersection) return 0;
+    const union = new Set([...a, ...b]).size;
+    const jaccard = intersection / Math.max(1, union);
+    const coverage = intersection / Math.max(1, Math.min(a.size, b.size));
+    return Math.round((jaccard * 70 + coverage * 30) * 100) / 100;
+  }
+  function candidateTemplates(baseline, rememberedNames) {
+    const names = [];
+    for (const file of baseline && Array.isArray(baseline.files) ? baseline.files : []) {
+      if (file && file.name) names.push(file.name);
     }
+    for (const values of Object.values(rememberedNames || {})) {
+      if (Array.isArray(values)) names.push(...values);
+    }
+    return Array.from(new Set(names.map(display).filter(Boolean)));
   }
+  function selectBaselineCandidates(records, baseline, rememberedNames) {
+    const templates = candidateTemplates(baseline, rememberedNames);
+    if (!templates.length) return [];
+    const selected = new Map();
+    for (const template of templates) {
+      const ranked = records
+        .map(record => ({ record, score: nameMatchScore(record.file && record.file.name, template) }))
+        .filter(item => item.score >= 60)
+        .sort((left, right) =>
+          right.score - left.score
+          || (Number(right.record.file && right.record.file.lastModified) || 0) - (Number(left.record.file && left.record.file.lastModified) || 0)
+          || (Number(right.record.file && right.record.file.size) || 0) - (Number(left.record.file && left.record.file.size) || 0)
+          || String(left.record.path || '').localeCompare(String(right.record.path || ''))
+        );
+      if (!ranked.length) continue;
 
-  function writeJson(key, value) {
-    try { root.localStorage && root.localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+      // Files with the same normalized family are the same export family. Prefer
+      // the newest one rather than clinging to the exact old Clean Upload filename.
+      const bestScore = ranked[0].score;
+      const closeMatches = ranked.filter(item => item.score >= Math.max(60, bestScore - 8));
+      closeMatches.sort((left, right) =>
+        (Number(right.record.file && right.record.file.lastModified) || 0) - (Number(left.record.file && left.record.file.lastModified) || 0)
+        || right.score - left.score
+      );
+      const record = closeMatches[0].record;
+      selected.set(record.path, record);
+    }
+    return Array.from(selected.values());
   }
-
-  function scopedFileKey(path, datasetType, scopeHash) {
-    return `${String(scopeHash || 'legacy-unscoped')}|${String(datasetType || 'unknown')}|${String(path || '').replace(/\\/g, '/')}`;
+  function newestEntriesByType(entries) {
+    const selected = new Map();
+    for (const entry of entries || []) {
+      const type = entry && entry.classification && entry.classification.id;
+      if (!type) continue;
+      const existing = selected.get(type);
+      if (!existing) {
+        selected.set(type, entry);
+        continue;
+      }
+      const currentPeriod = String(entry.classification.detectedPeriod && entry.classification.detectedPeriod.sortKey || '');
+      const savedPeriod = String(existing.classification.detectedPeriod && existing.classification.detectedPeriod.sortKey || '');
+      const newer = currentPeriod.localeCompare(savedPeriod)
+        || (Number(entry.file && entry.file.lastModified) || 0) - (Number(existing.file && existing.file.lastModified) || 0)
+        || String(entry.file && entry.file.name || '').localeCompare(String(existing.file && existing.file.name || ''));
+      if (newer > 0) selected.set(type, entry);
+    }
+    return Array.from(selected.values());
+  }
+  function rememberSourceName(datasetType, fileName) {
+    if (!datasetType || !fileName) return;
+    const remembered = readJson(SOURCE_NAMES_KEY, {});
+    const list = Array.isArray(remembered[datasetType]) ? remembered[datasetType] : [];
+    remembered[datasetType] = [fileName, ...list.filter(name => normalizeFamily(name) !== normalizeFamily(fileName))]
+      .slice(0, MAX_NAME_HISTORY);
+    writeJson(SOURCE_NAMES_KEY, remembered);
   }
 
   function openHandleDb() {
@@ -56,7 +150,6 @@
       request.onerror = () => reject(request.error || new Error('Could not open remembered-folder storage.'));
     });
   }
-
   async function loadSavedHandle() {
     try {
       const db = await openHandleDb();
@@ -76,7 +169,6 @@
     }
     return cachedDirectoryHandle;
   }
-
   async function saveHandle(handle) {
     cachedDirectoryHandle = handle || null;
     if (!handle || !root.indexedDB) return;
@@ -91,11 +183,10 @@
       });
       db.close();
     } catch (error) {
-      console.warn('[CoachToolsRememberedData] Folder will work for this session but could not be persisted.', error);
+      console.warn('[CoachToolsRememberedData] Folder works for this session but could not be persisted.', error);
     }
     refreshAvailabilityNote();
   }
-
   async function clearSavedHandle() {
     cachedDirectoryHandle = null;
     try {
@@ -110,7 +201,6 @@
     } catch (_) {}
     refreshAvailabilityNote();
   }
-
   async function permissionGranted(handle, requestIfNeeded) {
     if (!handle) return false;
     const options = { mode: 'read' };
@@ -126,7 +216,6 @@
     } catch (_) {}
     return false;
   }
-
   async function normalizePickedDirectory(handle) {
     if (!handle || handle.kind !== 'directory') return handle;
     if (String(handle.name || '').toLowerCase() === 'storage') return handle;
@@ -136,7 +225,6 @@
     } catch (_) {}
     return handle;
   }
-
   async function chooseDirectory() {
     if (typeof root.showDirectoryPicker !== 'function') return null;
     const picked = await root.showDirectoryPicker({ id: 'coachtools-storage', mode: 'read' });
@@ -144,29 +232,22 @@
     await saveHandle(normalized);
     return normalized;
   }
-
   async function resolveDirectoryForClick() {
     if (cachedDirectoryHandle) {
       if (await permissionGranted(cachedDirectoryHandle, true)) return cachedDirectoryHandle;
       await clearSavedHandle();
     }
-
-    // The handle is loaded during startup so normal clicks do not need to wait on
-    // IndexedDB before asking for permission. If a user clicks immediately during
-    // startup, fall back to the picker rather than losing the user gesture.
     if (!handleLoaded && typeof root.showDirectoryPicker === 'function') return chooseDirectory();
-
     if (typeof root.showDirectoryPicker === 'function') return chooseDirectory();
     return null;
   }
-
   async function walkDirectory(directory, prefix, depth, output) {
     if (!directory || depth > 4) return output;
     for await (const [name, handle] of directory.entries()) {
       const relativePath = prefix ? `${prefix}/${name}` : name;
       if (handle.kind === 'file' && isSupported(name)) {
         const file = await handle.getFile();
-        output.push({ path: relativePath, file, signature: `${Number(file.size) || 0}:${Number(file.lastModified) || 0}` });
+        output.push({ path: relativePath, file });
       } else if (handle.kind === 'directory' && depth < 4) {
         await walkDirectory(handle, relativePath, depth + 1, output);
       }
@@ -180,9 +261,8 @@
     toast.textContent = message;
     toast.hidden = false;
     root.clearTimeout(showToast.timer);
-    showToast.timer = root.setTimeout(() => { toast.hidden = true; }, duration || 4300);
+    showToast.timer = root.setTimeout(() => { toast.hidden = true; }, duration || 4500);
   }
-
   function setProgress(percent, source, fileName, count, summary) {
     const panel = $('importProgress');
     const close = $('importClose');
@@ -205,7 +285,6 @@
     if (countElement && count != null) countElement.textContent = count;
     if (summaryElement && summary != null) summaryElement.textContent = summary;
   }
-
   function setSteps(steps) {
     const list = $('importSteps');
     if (!list) return;
@@ -216,34 +295,34 @@
       return item;
     }));
   }
-
   function finishProgress(summary, options) {
     setProgress(100, options && options.warning ? 'Review needed' : 'Ready', '', options && options.count || '', summary);
     const close = $('importClose');
     if (close) close.hidden = false;
   }
-
   function currentReadyCount() {
     const storage = root.CoachToolsStorage;
     const statuses = storage && typeof storage.getDatasetStatus === 'function' ? storage.getDatasetStatus() : [];
-    return {
-      ready: statuses.filter(item => item.ready).length,
-      total: statuses.length || 8
-    };
+    return { ready: statuses.filter(item => item.ready).length, total: statuses.length || 8 };
   }
-
+  function sourceLabel(type) {
+    const importer = root.CoachToolsImport;
+    return importer && importer.SOURCES && importer.SOURCES[type] ? importer.SOURCES[type].label : type;
+  }
   function refreshAvailabilityNote() {
     const note = $('storageAvailability');
     if (!note || root.location.protocol !== 'file:') return;
-    if (cachedDirectoryHandle) {
-      note.textContent = `Update Data is connected to ${cachedDirectoryHandle.name || 'your saved storage folder'}. Click Update Data to check for changed Excel/CSV files; you do not need to select them again.`;
+    const baseline = readJson(BASELINE_KEY, null);
+    if (cachedDirectoryHandle && baseline && baseline.scope) {
+      note.textContent = `Update Data replays the last successful Clean Upload scope from ${cachedDirectoryHandle.name || 'your saved storage folder'} and automatically finds the matching export names.`;
+    } else if (cachedDirectoryHandle) {
+      note.textContent = 'Folder connected. Run Clean Upload once to establish the authoritative scope and source-name baseline that Update Data should replay.';
     } else if (typeof root.showDirectoryPicker === 'function') {
-      note.textContent = 'Click Update Data once to connect your CoachTools storage folder. CoachTools will remember that folder and reuse it on future updates.';
+      note.textContent = 'Run Clean Upload once, then click Update Data to connect the folder containing those exports. CoachTools will reuse that folder after permission is granted.';
     } else {
-      note.textContent = 'This browser cannot remember a local folder. Use Chrome or Edge for one-click Update Data, or use Data Manager for manual file selection.';
+      note.textContent = 'This browser cannot remember a local folder. Use Chrome or Edge, or use Clean Upload / Data Manager for manual file selection.';
     }
   }
-
   function delegateToLauncherScanner() {
     const proxy = root.document.createElement('button');
     proxy.type = 'button';
@@ -256,131 +335,139 @@
 
   async function updateFromRememberedDirectory() {
     const importer = root.CoachToolsImport;
-    const data = root.CoachToolsData;
-    if (!importer || !data || typeof importer.analyzeFiles !== 'function' || typeof importer.saveRecognizedEntry !== 'function') {
+    const baselineApi = root.CoachToolsCleanUploadBaseline;
+    if (!importer || typeof importer.analyzeFiles !== 'function' || typeof importer.saveRecognizedEntry !== 'function') {
       showToast('CoachTools shared import services are not ready yet. Try Update Data again.', 5600);
+      return;
+    }
+
+    // remembered-scope sees the same Update Data click first. Cancel its older
+    // planning mode so this path can literally replay the Clean Upload contract
+    // instead of resolving a second, potentially conflicting "active" scope.
+    if (baselineApi && typeof baselineApi.cancelPending === 'function') baselineApi.cancelPending();
+
+    const baseline = baselineApi && typeof baselineApi.getBaseline === 'function'
+      ? baselineApi.getBaseline()
+      : readJson(BASELINE_KEY, null);
+    if (!baseline || !baseline.scope || !Array.isArray(baseline.datasetTypes) || !baseline.datasetTypes.length) {
+      finishProgress('Update Data needs one successful Clean Upload first. No existing data was changed.', { warning: true });
+      showToast('Run Clean Upload once first. Update Data will then reuse that exact scope and source set.', 6500);
       return;
     }
 
     const directory = await resolveDirectoryForClick();
     if (!directory) {
       const manualInput = $('quickDataInput');
-      showToast('Remembered folders are not supported here. Opening the manual file picker instead.', 5200);
+      showToast('Remembered folders are not supported here. Opening manual file selection instead.', 5200);
       if (manualInput) manualInput.click();
       return;
     }
 
-    const baseline = root.CoachToolsCleanUploadBaseline && typeof root.CoachToolsCleanUploadBaseline.getBaseline === 'function' ? root.CoachToolsCleanUploadBaseline.getBaseline() : null;
-    const resolution = typeof data.resolveUpdateScope === 'function'
-      ? await data.resolveUpdateScope(baseline && baseline.datasetTypes)
-      : { needsReview: false, scope: root.CoachToolsStorage && root.CoachToolsStorage.getScope ? root.CoachToolsStorage.getScope() : { mode: 'all', label: 'All people' } };
-    if (resolution.needsReview) {
-      finishProgress(resolution.reason || 'Update needs scope review. Existing data was retained.', { warning: true });
-      showToast(resolution.reason || 'Update needs scope review.', 6500);
-      return;
-    }
-    const scope = typeof importer.resolveScopeSnapshot === 'function' ? await importer.resolveScopeSnapshot(resolution.scope) : resolution.scope;
-    const scopeHash = scope && scope.scopeHash || 'legacy-unscoped';
-    const scopeName = scope && (scope.label || scope.mode) || 'All people';
+    const scope = clone(baseline.scope);
+    if (baseline.scopeHash && !scope.scopeHash) scope.scopeHash = baseline.scopeHash;
+    const scopeName = scope.label || scope.mode || 'All people';
+    const allowedTypes = new Set(baseline.datasetTypes);
 
-    setSteps([{ label: 'Checking remembered storage folder', status: 'active' }]);
-    setProgress(4, `Updating scope: ${scopeName}`, directory.name || 'storage', '', 'Looking for changed Excel and CSV files inside the authoritative scope…');
+    // Reassert the Clean Upload scope for the desktop as well as the import.
+    const storage = root.CoachToolsStorage;
+    if (storage && typeof storage.setScope === 'function') storage.setScope(scope);
+    if (storage && typeof storage.setLastCleanScope === 'function') storage.setLastCleanScope(scope);
+
+    setSteps([{ label: 'Finding Clean Upload source files', status: 'active' }]);
+    setProgress(4, `Replaying Clean Upload: ${scopeName}`, directory.name || 'storage', '', 'Scanning for the same export-name families used by the last successful Clean Upload…');
 
     const records = await walkDirectory(directory, '', 0, []);
     if (!records.length) {
-      finishProgress('No XLSX, XLS, or CSV files were found in the remembered storage folder.', { warning: true });
-      showToast('No supported data files were found in the remembered storage folder.', 5200);
+      finishProgress('No XLSX, XLS, or CSV files were found in the remembered folder. Existing data was retained.', { warning: true });
+      showToast('No supported data files were found in the remembered folder.', 5200);
       return;
     }
 
-    const previous = readJson(FILE_SIGNATURES_KEY, {});
-    const changed = records.filter(record => {
-      const saved = Object.values(previous).find(value => value && value.path === record.path && value.scopeHash === scopeHash && value.fileSignature === record.signature);
-      return !saved;
-    });
-    if (!changed.length) {
-      const counts = currentReadyCount();
-      setSteps([
-        { label: 'Checking remembered storage folder', status: 'success' },
-        { label: 'No file changes found', status: 'success' }
-      ]);
-      finishProgress(`Scope preserved: ${scopeName} · ${records.length} file${records.length === 1 ? '' : 's'} unchanged · existing CoachTools data kept.`, { count: `${counts.ready} of ${counts.total}` });
-      showToast(`Update complete · ${records.length} file${records.length === 1 ? '' : 's'} unchanged.`);
-      refreshAvailabilityNote();
+    const rememberedNames = readJson(SOURCE_NAMES_KEY, {});
+    const matched = selectBaselineCandidates(records, baseline, rememberedNames);
+    if (!matched.length) {
+      const expected = candidateTemplates(baseline, rememberedNames).slice(0, 5).join(', ');
+      finishProgress(`No files matched the Clean Upload source names${expected ? ` (${expected})` : ''}. Existing data was retained.`, { warning: true });
+      showToast('No matching Clean Upload exports were found in the selected folder.', 6500);
       return;
     }
 
-    const fileRecords = new WeakMap();
-    changed.forEach(record => fileRecords.set(record.file, record));
     setSteps([
-      { label: 'Checking remembered storage folder', status: 'success' },
-      { label: 'Reading changed files', status: 'active' }
+      { label: 'Finding Clean Upload source files', status: 'success' },
+      { label: 'Reading matched files', status: 'active' }
     ]);
 
-    const analysis = await importer.analyzeFiles(changed.map(record => record.file), {
+    const analysis = await importer.analyzeFiles(matched.map(record => record.file), {
       onProgress(progress) {
         const fileIndex = Math.max(0, Number(progress.fileIndex) || 0);
         const sheetFraction = progress.total ? Number(progress.current || 0) / Number(progress.total) : 0;
-        const fraction = (fileIndex + sheetFraction) / Math.max(1, changed.length);
-        setProgress(10 + fraction * 52, 'Reading changed files', `${progress.fileName || ''}${progress.sheetName ? ` · ${progress.sheetName}` : ''}`, `${Math.min(changed.length, fileIndex + 1)} of ${changed.length}`, `${changed.length} changed file${changed.length === 1 ? '' : 's'} found.`);
+        const fraction = (fileIndex + sheetFraction) / Math.max(1, matched.length);
+        setProgress(
+          10 + fraction * 46,
+          'Reading matched Clean Upload files',
+          `${progress.fileName || ''}${progress.sheetName ? ` · ${progress.sheetName}` : ''}`,
+          `${Math.min(matched.length, fileIndex + 1)} of ${matched.length}`,
+          'Only files matching the Clean Upload source-name families are being analyzed.'
+        );
       }
     });
 
+    const recognizedAllowed = analysis.recognized.filter(entry => allowedTypes.has(entry.classification && entry.classification.id));
+    const entries = newestEntriesByType(recognizedAllowed);
+    const recognizedTypes = new Set(entries.map(entry => entry.classification.id));
+    const missingTypes = baseline.datasetTypes.filter(type => !recognizedTypes.has(type));
+
     setSteps([
-      { label: 'Checking remembered storage folder', status: 'success' },
-      { label: 'Reading changed files', status: analysis.errors.length ? 'warning' : 'success' },
-      { label: 'Saving shared data', status: 'active' }
+      { label: 'Finding Clean Upload source files', status: 'success' },
+      { label: 'Reading matched files', status: analysis.errors.length ? 'warning' : 'success' },
+      { label: 'Saving with Clean Upload scope', status: 'active' }
     ]);
 
     const imported = [];
-    const errors = analysis.errors.map(entry => `${entry.file && entry.file.name || 'File'}: ${entry.error && entry.error.message || entry.error}`);
-    for (let index = 0; index < analysis.recognized.length; index += 1) {
-      const entry = analysis.recognized[index];
-      const record = fileRecords.get(entry.file);
-      const type = entry.classification && entry.classification.id;
+    const errors = analysis.errors.map(item => `${item.file && item.file.name || 'File'}: ${item.error && item.error.message || item.error}`);
+    const ignoredReview = analysis.needsReview.length;
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
+      const type = entry.classification.id;
+      const label = sourceLabel(type);
+      setProgress(
+        62 + ((index + 1) / Math.max(1, entries.length)) * 34,
+        `Saving ${label}`,
+        entry.file.name,
+        `${index + 1} of ${entries.length}`,
+        `Applying the same Clean Upload scope: ${scopeName}.`
+      );
       try {
-        const label = importer.SOURCES && importer.SOURCES[type] ? importer.SOURCES[type].label : type || 'data';
-        setProgress(66 + ((index + 1) / Math.max(1, analysis.recognized.length)) * 30, `Saving ${label}`, entry.file.name, `${index + 1} of ${analysis.recognized.length}`, 'Writing changed data to CoachTools IndexedDB…');
         const result = await importer.saveRecognizedEntry(entry, { scope });
         imported.push({ type, fileName: entry.file.name, status: result && result.status || 'saved' });
-        if (record && !(result && result.skippedByCleanUploadBaseline)) previous[scopedFileKey(record.path, type, scopeHash)] = {
-          path: record.path,
-          filename: entry.file.name,
-          fileSignature: record.signature,
-          datasetType: type,
-          scopeHash,
-          scopedFingerprint: result && result.dataset && (result.dataset.scopedFingerprint || result.dataset.fingerprint) || '',
-          scopedRowCount: result && result.dataset && Number(result.dataset.scopedRowCount) || 0,
-          datasetId: result && result.dataset && (result.dataset.datasetId || result.dataset.id) || '',
-          lastCheckedAt: new Date().toISOString()
-        };
+        rememberSourceName(type, entry.file.name);
       } catch (error) {
         errors.push(`${entry.file.name}: ${error && error.message || error}`);
       }
     }
-    writeJson(FILE_SIGNATURES_KEY, previous);
 
-    const needsReview = analysis.needsReview.length;
     const counts = currentReadyCount();
-    const savedCount = imported.filter(item => item.status !== 'duplicate').length;
-    const duplicateCount = imported.filter(item => item.status === 'duplicate').length;
-    const summaryParts = [
-      `Scope preserved: ${scopeName}`,
+    const savedCount = imported.filter(item => !['duplicate', 'current'].includes(item.status)).length;
+    const currentCount = imported.length - savedCount;
+    const warning = Boolean(errors.length || missingTypes.length || ignoredReview);
+    const parts = [
+      `Clean Upload scope preserved: ${scopeName}`,
       `${counts.ready} of ${counts.total} data sources ready`,
-      savedCount ? `${savedCount} changed file${savedCount === 1 ? '' : 's'} imported` : '',
-      duplicateCount ? `${duplicateCount} already current` : '',
-      needsReview ? `${needsReview} need review in Data Manager` : '',
+      savedCount ? `${savedCount} source${savedCount === 1 ? '' : 's'} refreshed` : '',
+      currentCount ? `${currentCount} already current` : '',
+      missingTypes.length ? `missing: ${missingTypes.map(sourceLabel).join(', ')}` : '',
+      ignoredReview ? `${ignoredReview} matched file${ignoredReview === 1 ? '' : 's'} could not be classified` : '',
       errors.length ? `${errors.length} error${errors.length === 1 ? '' : 's'}` : ''
     ].filter(Boolean);
 
     setSteps([
-      { label: 'Checking remembered storage folder', status: 'success' },
-      { label: 'Reading changed files', status: analysis.errors.length ? 'warning' : 'success' },
-      { label: 'Saving shared data', status: errors.length ? 'warning' : 'success' },
-      { label: 'Ready', status: needsReview || errors.length ? 'warning' : 'success' }
+      { label: 'Finding Clean Upload source files', status: 'success' },
+      { label: 'Reading matched files', status: analysis.errors.length || ignoredReview ? 'warning' : 'success' },
+      { label: 'Saving with Clean Upload scope', status: errors.length ? 'warning' : 'success' },
+      { label: 'Ready', status: warning ? 'warning' : 'success' }
     ]);
-    finishProgress(`${summaryParts.join(' · ')}.`, { warning: Boolean(needsReview || errors.length), count: `${counts.ready} of ${counts.total}` });
-    showToast(needsReview || errors.length ? 'Update finished with items to review.' : 'CoachTools data updated from the remembered folder.', 5200);
+    finishProgress(`${parts.join(' · ')}.`, { warning, count: `${counts.ready} of ${counts.total}` });
+    showToast(warning ? 'Update finished with a source to review.' : 'Update Data replayed the Clean Upload successfully.', 5400);
     refreshAvailabilityNote();
   }
 
@@ -406,7 +493,8 @@
       }
     } finally {
       updateRunning = false;
-      if (root.CoachToolsCleanUploadBaseline && typeof root.CoachToolsCleanUploadBaseline.cancelPending === 'function') root.CoachToolsCleanUploadBaseline.cancelPending();
+      const baselineApi = root.CoachToolsCleanUploadBaseline;
+      if (baselineApi && typeof baselineApi.cancelPending === 'function') baselineApi.cancelPending();
     }
   }
 
@@ -422,16 +510,18 @@
     }, true);
 
     root.addEventListener('coachtools:data-updated', () => root.setTimeout(refreshAvailabilityNote, 0));
+    root.addEventListener('coachtools:clean-upload-baseline', () => root.setTimeout(refreshAvailabilityNote, 0));
     root.addEventListener('focus', refreshAvailabilityNote);
     loadSavedHandle();
     refreshAvailabilityNote();
   }
 
   root.CoachToolsRememberedData = Object.freeze({
-    VERSION: '1.0.0',
+    VERSION: '2.0.0',
     runUpdate,
     refreshAvailabilityNote,
-    clearSavedHandle
+    clearSavedHandle,
+    _test: Object.freeze({ normalizeFamily, nameMatchScore, selectBaselineCandidates, newestEntriesByType })
   });
 
   if (root.document.readyState === 'loading') root.document.addEventListener('DOMContentLoaded', bind, { once: true });
