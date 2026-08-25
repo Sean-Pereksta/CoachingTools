@@ -185,7 +185,7 @@ window.COACHTOOLS_MANIFEST = {
       "id": "kpi-impact",
       "name": "KPI Impact",
       "description": "Measure KPI movement and the coaching associated with performance change.",
-      "file": "apps/kpi-impact.html",
+      "file": "apps/kpi-impact-galactic.html",
       "icon": "icons/kpi-impact.png",
       "initials": "KI",
       "category": "Performance",
@@ -206,7 +206,7 @@ window.COACHTOOLS_MANIFEST = {
       "featured": false,
       "preload": false,
       "order": 50,
-      "version": "1.0",
+      "version": "1.1",
       "enabled": true
     },
     {

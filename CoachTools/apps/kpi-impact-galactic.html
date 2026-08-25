@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="coachtools-id" content="kpi-impact" />
+<meta name="coachtools-name" content="KPI Impact" />
+<meta name="coachtools-description" content="Measure KPI movement and the coaching associated with performance change." />
+<meta name="coachtools-category" content="Performance" />
+<meta name="coachtools-icon" content="icons/kpi-impact.png" />
+<meta name="coachtools-data" content="weeklyRetail, weeklyReferral, documentedCoaching" />
+<title>KPI Impact</title>
+<style>
+html,body{height:100%;margin:0;overflow:hidden;background:#07101f}iframe{width:100%;height:100%;border:0;display:block;background:#fff}
+</style>
+</head>
+<body>
+<iframe id="kpiFrame" src="kpi-impact.html" title="KPI Impact"></iframe>
+<script>
+(() => {
+  const frame = document.getElementById('kpiFrame');
+  const ENHANCEMENT_VERSION = '2026.08.25.1';
+
+  frame.addEventListener('load', () => {
+    const w = frame.contentWindow;
+    const d = frame.contentDocument;
+    if (!w || !d || d.documentElement.dataset.kpiEnhancement === ENHANCEMENT_VERSION) return;
+    d.documentElement.dataset.kpiEnhancement = ENHANCEMENT_VERSION;
+
+    const style = d.createElement('style');
+    style.textContent = `
+      html[data-kpi-theme="galactic"]{
+        --bg:#060b19;--surface:#0b1328;--surface-2:#101a35;--surface-3:#162044;
+        --ink:#f5f7ff;--ink-2:#d7dcff;--muted:#909ac8;--line:#29345f;--line-strong:#43518a;
+        --accent:#a855f7;--accent-dark:#7c3aed;--accent-soft:#24163d;
+        --good:#39e58c;--good-soft:#0c2b25;--bad:#ff5f7f;--bad-soft:#351522;
+        --warn:#f7c85c;--warn-soft:#332812;--info:#54c7ff;--info-soft:#102b43;
+        --shadow-xs:0 1px 2px rgba(0,0,0,.26);--shadow-sm:0 10px 28px rgba(0,0,0,.32);--shadow-md:0 20px 55px rgba(0,0,0,.46)
+      }
+      html[data-kpi-theme="galactic"] body{background:radial-gradient(circle at 18% 8%,rgba(124,58,237,.22),transparent 28%),radial-gradient(circle at 82% 18%,rgba(14,165,233,.12),transparent 24%),linear-gradient(180deg,#050915,#091126 62%,#060a17);color:var(--ink)}
+      html[data-kpi-theme="galactic"] body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.34;background-image:radial-gradient(circle,rgba(255,255,255,.78) 0 1px,transparent 1.2px),radial-gradient(circle,rgba(137,180,255,.65) 0 1px,transparent 1.2px);background-size:43px 43px,71px 71px;background-position:3px 8px,19px 31px}
+      html[data-kpi-theme="galactic"] .app,html[data-kpi-theme="galactic"] header#topbar,html[data-kpi-theme="galactic"] .content{position:relative;z-index:1}
+      html[data-kpi-theme="galactic"] header#topbar{background:rgba(7,12,29,.94);border-color:var(--line);box-shadow:0 10px 32px rgba(0,0,0,.38)}
+      html[data-kpi-theme="galactic"] .brandMark{background:linear-gradient(135deg,#7137da,#af54ff 55%,#27c9ff);box-shadow:0 0 26px rgba(168,85,247,.34)}
+      html[data-kpi-theme="galactic"] main.workspace,html[data-kpi-theme="galactic"] .summaryCard,html[data-kpi-theme="galactic"] .viewTabs,html[data-kpi-theme="galactic"] .tabPanel,html[data-kpi-theme="galactic"] .card,html[data-kpi-theme="galactic"] .box,html[data-kpi-theme="galactic"] .heatmapWrap,html[data-kpi-theme="galactic"] .heatmapMeta,html[data-kpi-theme="galactic"] .heatmapTable th,html[data-kpi-theme="galactic"] .heatmapTable td,html[data-kpi-theme="galactic"] .heatmapStub,html[data-kpi-theme="galactic"] .modalCard,html[data-kpi-theme="galactic"] aside.side.filterDrawer{background:var(--surface);color:var(--ink);border-color:var(--line)}
+      html[data-kpi-theme="galactic"] .tabPanel{background:rgba(7,13,29,.82)}
+      html[data-kpi-theme="galactic"] .viewTabs,html[data-kpi-theme="galactic"] .summaryStrip{background:var(--line)}
+      html[data-kpi-theme="galactic"] .summaryCard{background:linear-gradient(180deg,#101932,#0b1328)}
+      html[data-kpi-theme="galactic"] .controlGroup,html[data-kpi-theme="galactic"] .pill,html[data-kpi-theme="galactic"] .btn,html[data-kpi-theme="galactic"] .quickFilter,html[data-kpi-theme="galactic"] .repSearch,html[data-kpi-theme="galactic"] select,html[data-kpi-theme="galactic"] input{background:var(--surface-2);color:var(--ink);border-color:var(--line)}
+      html[data-kpi-theme="galactic"] .viewTab.active,html[data-kpi-theme="galactic"] .quickFilter.active{background:linear-gradient(135deg,#6d28d9,#9d3cf0);color:white;box-shadow:0 0 20px rgba(168,85,247,.24)}
+      html[data-kpi-theme="galactic"] .heatmapMetaCard{background:linear-gradient(145deg,#111b38,#0c142a);border-color:#344174;box-shadow:inset 0 1px rgba(255,255,255,.025)}
+      html[data-kpi-theme="galactic"] .heatmapMetaCard.kpiDrillCard{cursor:pointer;transition:.14s ease}
+      html[data-kpi-theme="galactic"] .heatmapMetaCard.kpiDrillCard:hover{border-color:#9e64f5;box-shadow:0 0 20px rgba(139,92,246,.18)}
+      html[data-kpi-theme="galactic"] .heatmapTable thead th,html[data-kpi-theme="galactic"] .heatmapTable thead .heatmapStub{background:#0e1730}
+      html[data-kpi-theme="galactic"] .heatCell.strong{background:#0c2d27}.heatCell.info{background:#302813}.heatCell.partial{background:#321a2c}.heatCell.weak{background:#351521}.heatCell.na{background:#11182b}
+      html[data-kpi-theme="galactic"] .heatCell.coached{background-image:repeating-linear-gradient(135deg,rgba(84,199,255,.12) 0 7px,transparent 7px 14px)}
+      html[data-kpi-theme="galactic"] .heatmapStub.summary{background:#231b35}html[data-kpi-theme="galactic"] .heatmapStub.attention{background:#281424}
+      html[data-kpi-theme="galactic"] .attentionSection{background:linear-gradient(135deg,#241a31,#11172c);border-color:#5f407d}
+      html[data-kpi-theme="galactic"] .repCard{background:linear-gradient(145deg,#0f1933,#0a1125);border-color:#2c3968}
+      html[data-kpi-theme="galactic"] .barWrap{background:#202a48}
+      html[data-kpi-theme="galactic"] .modalOverlay{background:rgba(1,4,13,.72)}
+      html[data-kpi-theme="galactic"] .drawerHead{background:rgba(8,14,31,.96)}
+      html[data-kpi-theme="galactic"] ::-webkit-scrollbar-thumb{background:#3b4775!important}
+      .kpiThemeToggle{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+      .kpiThemeDot{width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,#9555ff,#38cfff);box-shadow:0 0 12px rgba(149,85,255,.7)}
+      .kpiOutcomeStrip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 14px}
+      .kpiOutcomeCard{border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:9px 10px}.kpiOutcomeCard .k{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:900}.kpiOutcomeCard .v{font-size:15px;font-weight:950;margin-top:4px}.kpiOutcomeCard .s{font-size:9px;color:var(--muted);font-weight:750;margin-top:3px}
+      .kpiImpactChart{margin-top:12px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);padding:12px;overflow:auto}.kpiImpactChart svg{display:block;width:100%;min-width:560px;height:auto}.kpiImpactChartTitle{font-size:12px;font-weight:950;margin-bottom:2px}.kpiImpactChartSub{font-size:9px;color:var(--muted);font-weight:750;margin-bottom:8px}
+      .kpiImpactAxis{stroke:var(--line-strong);stroke-width:1.4}.kpiImpactPositive{fill:var(--good)}.kpiImpactNegative{fill:var(--bad)}.kpiImpactDate{fill:var(--muted);font-size:9px;font-weight:700}.kpiImpactValue{fill:var(--ink);font-size:8px;font-weight:850}
+      .kpiDrillOverlay{position:fixed;inset:0;z-index:1600;background:rgba(4,7,18,.56);display:none;align-items:center;justify-content:center;padding:18px}.kpiDrillOverlay.show{display:flex}.kpiDrillModal{width:min(780px,96vw);max-height:86vh;overflow:auto;border:1px solid var(--line);border-radius:18px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow-md)}.kpiDrillHead{position:sticky;top:0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 16px;background:var(--surface);border-bottom:1px solid var(--line);z-index:2}.kpiDrillHead h3{margin:0;font-size:16px}.kpiDrillHead p{margin:4px 0 0;color:var(--muted);font-size:10px;font-weight:750}.kpiDrillClose{border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--ink);padding:7px 10px;cursor:pointer;font-weight:900}.kpiDrillBody{padding:12px}.kpiDrillRow{display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(0,2.2fr) auto;gap:10px;align-items:center;padding:10px;border-bottom:1px solid var(--line)}.kpiDrillRow:last-child{border-bottom:0}.kpiDrillName{font-weight:950}.kpiDrillWhy{font-size:10px;line-height:1.4;color:var(--ink-2);font-weight:750}.kpiDrillMeta{font-size:10px;color:var(--muted);font-weight:850;text-align:right}
+      @media(max-width:700px){.kpiOutcomeStrip{grid-template-columns:1fr}.kpiDrillRow{grid-template-columns:1fr}.kpiDrillMeta{text-align:left}}
+    `;
+    d.head.appendChild(style);
+
+    const patch = d.createElement('script');
+    patch.textContent = `(() => {
+      if (window.__KPI_GALACTIC_PATCHED__) return;
+      window.__KPI_GALACTIC_PATCHED__ = true;
+      const THEME_KEY='kpiImpact.theme.v1';
+      let __enhancedHeatmapModel=null;
+
+      function dateLabelFromWeekKey(wk){
+        const m=String(wk||'').match(/^(\\d{4})-W(\\d{1,2})$/);
+        if(!m) return String(wk||'—');
+        const y=Number(m[1]), n=Number(m[2]);
+        const jan4=new Date(Date.UTC(y,0,4));
+        const jan4Day=jan4.getUTCDay()||7;
+        const monday=new Date(jan4); monday.setUTCDate(jan4.getUTCDate()-(jan4Day-1)+((n-1)*7));
+        const sunday=new Date(monday); sunday.setUTCDate(monday.getUTCDate()+6);
+        const f=x=>String(x).padStart(2,'0');
+        return f(monday.getUTCMonth()+1)+'/'+f(monday.getUTCDate())+'–'+f(sunday.getUTCMonth()+1)+'/'+f(sunday.getUTCDate());
+      }
+      function dateLabelForPoint(p){
+        return p?.weekLabel || dateLabelFromWeekKey(p?.weekKey);
+      }
+      function applyTheme(theme){
+        const t=theme==='galactic'?'galactic':'light';
+        document.documentElement.dataset.kpiTheme=t;
+        localStorage.setItem(THEME_KEY,t);
+        const b=document.getElementById('kpiThemeToggle');
+        if(b) b.innerHTML='<span class="kpiThemeDot"></span>'+(t==='galactic'?'Galactic':'Light');
+      }
+      function addThemeToggle(){
+        if(document.getElementById('kpiThemeToggle')) return;
+        const actions=document.querySelector('.commandActions'); if(!actions) return;
+        const b=document.createElement('button');b.type='button';b.id='kpiThemeToggle';b.className='btn kpiThemeToggle';b.title='Switch visual theme without recalculating KPI data';
+        b.addEventListener('click',()=>applyTheme(document.documentElement.dataset.kpiTheme==='galactic'?'light':'galactic'));
+        actions.insertBefore(b,actions.firstChild);
+        applyTheme(localStorage.getItem(THEME_KEY)||'light');
+      }
+
+      looksLikeCoachingRow=function(obj){
+        if(!obj||typeof obj!=='object') return false;
+        const nk=Object.keys(obj).map(normHdr);
+        const hasRep=['associatename','associate','name','rep','representative','representativename','agent','agentname','employeename'].some(k=>nk.includes(k));
+        const hasDate=['date','dt','day','createdon','created','coachingdate','completeddate','modifiedon'].some(k=>nk.includes(k));
+        return hasRep&&hasDate;
+      };
+      canonicalizeDocumentedCoachings=function(dockObj){
+        if(!dockObj) return [];
+        const arrays=extractRowArrays(dockObj,''); const out=[];
+        for(const pack of arrays){for(const r of pack.rows){
+          if(!looksLikeCoachingRow(r)) continue;
+          const repRaw=pickField(r,['associatename','associate','name','rep','representative','representativename','agent','agentname','employeename']);
+          const dateRaw=pickField(r,['date','dt','day','createdon','created','coachingdate','completeddate','modifiedon']);
+          const typeMulti=pickField(r,['coachingtypemulti','coachingtypes','categories','category']);
+          const typeSingle=pickField(r,['coachingtype','type','coachingcategory','topic','focusarea']);
+          const coachRaw=pickField(r,['jobcoach','coach','coachname','sheet','team','manager']);
+          const descRaw=pickField(r,['description','desc','notes','note','details','summary','coachingnotes','comments','comment']);
+          const rep=String(repRaw??'').trim(); const dt=parseAnyDate(dateRaw); if(!rep||!dt) continue;
+          let types=Array.from(new Set([...splitTypes(typeMulti),...splitTypes(typeSingle)]));
+          if(!types.length) types=['Documented Coaching'];
+          out.push({rep,coach:String(coachRaw??'').trim(),date:dt,ymd:dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'),wk:isoWeekKey(dt),types,desc:String(descRaw??'').trim()});
+        }}
+        return out;
+      };
+
+      function outcomeTiming(rep,points){
+        const cs=(coachingByRepKey.get(personKey(rep))||[]).filter(c=>c?.date instanceof Date&&!isNaN(c.date));
+        const ordered=(points||[]).filter(p=>Number.isFinite(p.repRate));
+        if(!cs.length||!ordered.length) return {one:NaN,two:NaN,n:0};
+        const deltas1=[],deltas2=[];
+        for(const c of cs){
+          const wk=isoWeekKey(c.date); const idx=ordered.findIndex(p=>p.weekKey===wk); if(idx<0) continue;
+          if(ordered[idx+1]&&Number.isFinite(ordered[idx].repRate)&&Number.isFinite(ordered[idx+1].repRate)) deltas1.push(ordered[idx+1].repRate-ordered[idx].repRate);
+          if(ordered[idx+2]&&Number.isFinite(ordered[idx].repRate)&&Number.isFinite(ordered[idx+2].repRate)) deltas2.push(ordered[idx+2].repRate-ordered[idx].repRate);
+        }
+        const avg=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:NaN;
+        return {one:avg(deltas1),two:avg(deltas2),n:Math.max(deltas1.length,deltas2.length)};
+      }
+      function impactBarChart(points){
+        const vals=(points||[]).map(p=>Number.isFinite(p.impact)?p.impact:0); const max=Math.max(.0001,...vals.map(Math.abs));
+        const W=860,H=280,padL=34,padR=18,padT=24,padB=48,zeroY=(H-padB+padT)/2,avail=(zeroY-padT-8),n=Math.max(1,points.length),slot=(W-padL-padR)/n,bw=Math.max(10,Math.min(52,slot*.58));
+        const bars=(points||[]).map((p,i)=>{const v=Number.isFinite(p.impact)?p.impact:0;const h=Math.max(v===0?2:4,Math.abs(v)/max*avail);const x=padL+i*slot+(slot-bw)/2;const y=v>=0?zeroY-h:zeroY;const cls=v>=0?'kpiImpactPositive':'kpiImpactNegative';const label=(v>=0?'+':'')+fmtPct2(v);return '<g><rect class="'+cls+'" x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="4"><title>'+dateLabelForPoint(p)+': '+label+'</title></rect><text class="kpiImpactValue" x="'+(x+bw/2).toFixed(1)+'" y="'+(v>=0?Math.max(10,y-5):Math.min(H-padB+15,y+h+12)).toFixed(1)+'" text-anchor="middle">'+label+'</text><text class="kpiImpactDate" x="'+(x+bw/2).toFixed(1)+'" y="'+(H-18)+'" text-anchor="middle">'+dateLabelForPoint(p)+'</text></g>';}).join('');
+        return '<div class="kpiImpactChart"><div class="kpiImpactChartTitle">Weekly impact timeline</div><div class="kpiImpactChartSub">Zero is centered. Positive impact rises above the line in green; negative impact falls below it in red. Bar length shows impact size.</div><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Weekly KPI impact bars"><line class="kpiImpactAxis" x1="'+padL+'" y1="'+zeroY+'" x2="'+(W-padR)+'" y2="'+zeroY+'"></line>'+bars+'</svg></div>';
+      }
+
+      const originalRepTrendMarkup=repTrendMarkup;
+      repTrendMarkup=function(rep){
+        const summary=buildRepTrendSummary(rep); const points=summary.points||[]; const timing=outcomeTiming(rep,points);
+        const trajectory=Number.isFinite(timing.two)?(timing.two>.002?'Improving':timing.two<-.002?'Declining':'Flat'):(Number.isFinite(timing.one)?(timing.one>.002?'Improving':timing.one<-.002?'Declining':'Flat'):'Insufficient data');
+        const fmt=v=>Number.isFinite(v)?((v>=0?'+':'')+fmtPct2(v)):'—';
+        return '<div class="repTrendWrap"><div class="kpiOutcomeStrip"><div class="kpiOutcomeCard"><div class="k">Next week after coaching</div><div class="v '+(Number.isFinite(timing.one)?timing.one>=0?'good':'bad':'')+'">'+fmt(timing.one)+'</div><div class="s">Average KPI movement after a coaching week.</div></div><div class="kpiOutcomeCard"><div class="k">Two weeks after coaching</div><div class="v '+(Number.isFinite(timing.two)?timing.two>=0?'good':'bad':'')+'">'+fmt(timing.two)+'</div><div class="s">Average KPI movement two weeks later.</div></div><div class="kpiOutcomeCard"><div class="k">After-coaching trajectory</div><div class="v">'+trajectory+'</div><div class="s">'+timing.n+' usable coaching follow-up sample'+(timing.n===1?'':'s')+'.</div></div></div>'+impactBarChart(points)+'</div>';
+      };
+
+      function reasonForConcern(r){
+        const misses=(r.entries||[]).filter(e=>e.isPriorityMiss); const dates=misses.map(e=>dateLabelFromWeekKey(e.weekKey));
+        const coached=r.coachedWhenNeeded||0,need=r.neededCount||0;
+        return r.redXCount+' below-goal week'+(r.redXCount===1?'':'s')+' without coaching'+(dates.length?' ('+dates.join(', ')+')':'')+'. Coaching covered '+coached+' of '+need+' below-goal week'+(need===1?'':'s')+'.';
+      }
+      function ensureDrillModal(){
+        let ov=document.getElementById('kpiDrillOverlay'); if(ov) return ov;
+        ov=document.createElement('div');ov.id='kpiDrillOverlay';ov.className='kpiDrillOverlay';ov.setAttribute('aria-hidden','true');ov.innerHTML='<div class="kpiDrillModal" role="dialog" aria-modal="true"><div class="kpiDrillHead"><div><h3 id="kpiDrillTitle"></h3><p id="kpiDrillSub"></p></div><button type="button" class="kpiDrillClose">Close</button></div><div class="kpiDrillBody" id="kpiDrillBody"></div></div>';
+        document.body.appendChild(ov); const close=()=>{ov.classList.remove('show');ov.setAttribute('aria-hidden','true')};ov.querySelector('.kpiDrillClose').addEventListener('click',close);ov.addEventListener('click',e=>{if(e.target===ov)close()});return ov;
+      }
+      function openDrill(kind,model){
+        const ov=ensureDrillModal(),title=ov.querySelector('#kpiDrillTitle'),sub=ov.querySelector('#kpiDrillSub'),body=ov.querySelector('#kpiDrillBody'); let rows=[];
+        if(kind==='coverage'){
+          title.textContent='Below-goal coaching coverage';sub.textContent='Every representative who generated a below-goal coaching need in this table.';
+          rows=model.repSummaries.filter(r=>r.neededCount>0).map(r=>({name:r.rep,why:'Coached '+r.coachedWhenNeeded+' of '+r.neededCount+' below-goal week'+(r.neededCount===1?'':'s')+'. '+(r.redXCount?reasonForConcern(r):'No missed coaching weeks.'),meta:r.redXCount+' missed'}));
+        }else if(kind==='weakest'){
+          title.textContent='Most missed week'; const wk=model.weakestWeek;sub.textContent=wk?'Details for '+dateLabelFromWeekKey(wk.weekKey)+'.':'No missed week available.';
+          rows=wk?(wk.rows||[]).filter(e=>e.isPriorityMiss).map(e=>({name:e.rep,why:'Below goal at '+(Number.isFinite(e.repRate)?fmtPct1(e.repRate):'—')+' and no qualifying coaching was found for this week.',meta:Number.isFinite(e.impact)?'Impact '+fmtPct2(e.impact):'No impact'})):[];
+        }else if(kind==='below'){
+          title.textContent='Below-goal representatives';sub.textContent='People who fell below the selected KPI goal at least once.';
+          rows=model.repSummaries.filter(r=>r.neededCount>0).map(r=>({name:r.rep,why:r.neededCount+' below-goal week'+(r.neededCount===1?'':'s')+', '+r.coachedWhenNeeded+' coached, '+r.redXCount+' missed.',meta:r.hasCoachingOpportunity?'Concern':'Tracked'}));
+        }else{
+          title.textContent='Concern representatives';sub.textContent='Concern = more than one below-goal week without matching coaching.';
+          rows=model.repSummaries.filter(r=>r.hasCoachingOpportunity).map(r=>({name:r.rep,why:reasonForConcern(r),meta:r.redXCount+' red Xs'}));
+        }
+        body.innerHTML=rows.length?rows.map(r=>'<div class="kpiDrillRow"><div class="kpiDrillName">'+r.name+'</div><div class="kpiDrillWhy">'+r.why+'</div><div class="kpiDrillMeta">'+r.meta+'</div></div>').join(''):'<div class="heatmapEmpty">No representatives triggered this item.</div>';
+        ov.classList.add('show');ov.setAttribute('aria-hidden','false');
+      }
+
+      const originalPaintHeatmap=paintHeatmap;
+      paintHeatmap=function(model){
+        __enhancedHeatmapModel=model; originalPaintHeatmap(model);
+        const cards=[...document.querySelectorAll('#heatmapMeta .heatmapMetaCard')]; const kinds=['coverage','weakest','below','concern'];
+        cards.forEach((el,i)=>{el.classList.add('kpiDrillCard');el.setAttribute('role','button');el.tabIndex=0;el.title='Click to see who triggered this summary';const go=()=>openDrill(kinds[i],model);el.addEventListener('click',go);el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}})});
+        document.querySelectorAll('.heatmapWeekBtn').forEach((btn,i)=>{const wk=model.weekly?.[i];if(!wk)return;const a=btn.querySelector('.heatmapWeekLabel'),b=btn.querySelector('.heatmapWeekSub');if(a)a.textContent=dateLabelFromWeekKey(wk.weekKey);if(b)b.textContent='Team '+(Number.isFinite(wk.teamRate)?fmtPct1(wk.teamRate):'—')});
+        const weakest=cards[1]?.querySelector('.heatmapMetaValue');if(weakest&&model.weakestWeek)weakest.textContent=dateLabelFromWeekKey(model.weakestWeek.weekKey);
+      };
+
+      const originalRenderAll=renderAll;
+      renderAll=function(){originalRenderAll();const hint=document.getElementById('contextHint');if(hint)hint.textContent=hint.textContent.replace(/(\\d{4}-W\\d{2})/g,m=>dateLabelFromWeekKey(m));};
+
+      addThemeToggle();
+      applyTheme(localStorage.getItem(THEME_KEY)||'light');
+      setTimeout(()=>{try{refreshFromCache()}catch(e){console.error('[KPI Impact enhancement] refresh failed',e)}},0);
+    })();`;
+    d.body.appendChild(patch);
+  });
+})();
+</script>
+</body>
+</html>
