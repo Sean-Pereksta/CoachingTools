@@ -214,7 +214,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Weekly Comparison",
       "description": "Search Retail representatives and compare configurable metrics across two selected week sets.",
       "file": "apps/weekly-comparison.html",
-      "icon": "icons/default-app.png",
+      "icon": "icons/calculator.png",
       "initials": "WC",
       "category": "Performance",
       "keywords": [
