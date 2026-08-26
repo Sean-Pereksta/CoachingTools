@@ -1,7 +1,7 @@
 (function attachCoachToolsWeeklyIndex(root) {
   'use strict';
 
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const DATE_FIELDS = Object.freeze([
     'Date', 'Business Date', 'Reporting Date', 'Report Date', 'Day',
     'Week', 'Week Start', 'Week Starting', 'Week Beginning',
@@ -77,9 +77,9 @@
   function weekStartKey(value, fallbackParser) {
     const date = parseBusinessDate(value, fallbackParser);
     if (!date) return '';
-    const monday = new Date(date);
-    monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
-    return isoDate(monday);
+    const sunday = new Date(date);
+    sunday.setUTCDate(sunday.getUTCDate() - sunday.getUTCDay());
+    return isoDate(sunday);
   }
   function recordFallbackWeek(record, fallbackParser) {
     const period = record && record.detectedPeriod || {};
