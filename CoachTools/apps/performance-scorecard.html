@@ -157,6 +157,10 @@ const state = {
   people:[], byId:new Map(), records:{}, histories:{weeklyRetail:[],weeklyReferral:[]}, weeklyByRep:new Map(), qaByRep:new Map(), coachingByRep:new Map(), checklistByRep:new Map(), scopeByRep:new Map(),
   config:null, sort:{key:'representative',dir:1}, quickFilter:'all', charts:[], selectedId:'', topicSuggestions:[], checklistSuggestions:[], calcCache:new Map(), cohortCache:new Map()
 };
+const rowLookupCache = new WeakMap();
+const extractedRowsCache = new WeakMap();
+const peopleNameIndex = new Map();
+const DATA_LOAD_OPTIONS = Object.freeze({includeRecord:true,continueOnError:true,progressUi:false,appId:'performance-scorecard'});
 function clean(v){return String(v==null?'':v).trim().replace(/\s+/g,' ')}
 function norm(v){return window.CoachToolsIdentity?.normalizeName ? CoachToolsIdentity.normalizeName(v) : clean(v).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()}
 function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;')}
@@ -175,10 +179,18 @@ function loadPrefs(){const p=safePrefs();state.config={theme:p.theme==='light'?'
 function loadingStep(step,pct,label){const steps=[['roster','Identity & roster'],['current','Current performance'],['activity','QA · coaching · checklist'],['history','Weekly history & trends']];$('loadSteps').innerHTML=steps.map(([id,name],i)=>`<div class="loadStep ${i<step?'done':i===step?'active':''}"><span class="dot">${i<step?'✓':i+1}</span><b>${name}</b><small>${i<step?'Ready':i===step?'Loading':'Waiting'}</small></div>`).join('');$('loadFill').style.width=`${pct}%`;$('loadPct').textContent=`${Math.round(pct)}%`;$('loadLabel').textContent=label}
 function parseNum(v){if(window.CoachToolsProfiles?._test?.parseNumber)return CoachToolsProfiles._test.parseNumber(v);if(v==null||v==='')return NaN;const raw=clean(v),n=Number(raw.replace(/[$,%]/g,'').replace(/,/g,''));return Number.isFinite(n)?(raw.includes('%')?n/100:n):NaN}
 function normHeader(v){return clean(v).toLowerCase().replace(/[^a-z0-9%]/g,'')}
-function pick(row,names,patterns=[]){const map=new Map(Object.keys(row||{}).map(k=>[normHeader(k),k]));for(const n of names||[]){const k=map.get(normHeader(n));if(k!=null)return row[k]}for(const k of Object.keys(row||{}))if(patterns.some(p=>p.test(k)))return row[k];return undefined}
-function extract(record){const fn=window.CoachToolsProfiles?._test?.extractRows;return fn&&record?.data?fn(record.data):[]}
+function rowLookup(row){
+  if(!row||typeof row!=='object')return{map:new Map(),keys:[]};
+  let cached=rowLookupCache.get(row);
+  if(cached)return cached;
+  const keys=Object.keys(row),map=new Map(keys.map(k=>[normHeader(k),k]));
+  cached={map,keys};rowLookupCache.set(row,cached);return cached;
+}
+function pick(row,names,patterns=[]){const lookup=rowLookup(row);for(const n of names||[]){const k=lookup.map.get(normHeader(n));if(k!=null)return row[k]}for(const k of lookup.keys)if(patterns.some(p=>p.test(k)))return row[k];return undefined}
+function extract(record){if(!record||typeof record!=='object')return[];if(extractedRowsCache.has(record))return extractedRowsCache.get(record);const fn=window.CoachToolsProfiles?._test?.extractRows,rows=fn&&record?.data?fn(record.data):[];extractedRowsCache.set(record,rows);return rows}
 function recordMeta(record){const p=record?.detectedPeriod||{};const label=p.label||p.periodKey||record?.periodKey||'';const sort=record?.periodSort||p.periodKey||record?.importedAt||label;const d=new Date(p.end||p.start||sort);return{label,sort,date:Number.isNaN(d.getTime())?null:d}}
-function candidatesFor(raw,role){const key=norm(raw);return state.people.filter(p=>(!role||p.role===role)&&[p.normalizedName,p.displayName,...(p.aliases||[]),...Object.values(p.sourceNames||{}).flat()].some(x=>norm(x)===key))}
+function rebuildPeopleNameIndex(){peopleNameIndex.clear();for(const p of state.people){const values=[p.normalizedName,p.displayName,...(p.aliases||[]),...Object.values(p.sourceNames||{}).flat()].map(norm).filter(Boolean);for(const name of new Set(values)){if(!peopleNameIndex.has(name))peopleNameIndex.set(name,[]);peopleNameIndex.get(name).push(p)}}}
+function candidatesFor(raw,role){const candidates=peopleNameIndex.get(norm(raw))||[];return role?candidates.filter(p=>p.role===role):candidates.slice()}
 function resolveCoach(raw,department){let c=candidatesFor(raw,'coach');if(c.length===1)return c[0];const key=norm(raw);if(key&&!key.includes(' ')){c=state.people.filter(p=>p.role==='coach'&&(!department||p.department===department)&&norm(p.displayName).split(' ').pop()===key);if(c.length===1)return c[0]}return null}
 function resolveRep(raw,coachId,department){let c=candidatesFor(raw,'representative');if(c.length===1)return c[0];if(coachId){const byCoach=c.filter(p=>p.currentCoachId===coachId);if(byCoach.length===1)return byCoach[0]}if(department){const byDept=c.filter(p=>p.department===department);if(byDept.length===1)return byDept[0]}return null}
 function push(map,key,value){if(!key)return;if(!map.has(key))map.set(key,[]);map.get(key).push(value)}
@@ -198,8 +210,10 @@ function indexCurrentScope(){
       state.scopeByRep.set(rep.personId,{...current,department,coachName:clean(coachRaw),coachKey:norm(coachRaw)});
     }
   }
-  const qa=state.records.qa,parseDate=window.CoachToolsProfiles?._test?.parseDate,latestTeam=new Map();
-  if(qa)for(const pack of extract(qa))for(const row of pack.rows||[]){
+}
+function indexLatestQaTeams(record){
+  const parseDate=window.CoachToolsProfiles?._test?.parseDate,latestTeam=new Map();
+  if(record)for(const pack of extract(record))for(const row of pack.rows||[]){
     const repRaw=pick(row,['Agent Name','Agent','CSR','Associate','Representative','Rep','Name']);const team=clean(pick(row,['Team']));if(!clean(repRaw)||!team)continue;
     const c=candidatesFor(repRaw,'representative');if(c.length!==1)continue;
     const date=parseDate?parseDate(pick(row,['Interaction Start Time','Interaction Start','Start Time','Interaction Time'])):null;
@@ -215,13 +229,29 @@ function personCoachKey(rep){return scopeFor(rep).coachKey}
 function indexQA(record){const fn=window.CoachToolsProfiles?._test?.canonicalizeQA;if(!fn||!record)return;const resolve=raw=>{const c=candidatesFor(raw,'representative');return c.length===1?c[0].personId:''};for(const q of fn(record,resolve)||[]){if(!q.representativeId)continue;push(state.qaByRep,q.representativeId,q)}}
 function indexCoaching(record){const fn=window.CoachToolsProfiles?._test?.canonicalizeCoaching;if(!fn||!record)return;const resolve=raw=>{const c=candidatesFor(raw);return c.length===1?c[0].personId:''};for(const x of fn(record,resolve)||[]){if(!x.representativeId)continue;push(state.coachingByRep,x.representativeId,x)}}
 function indexChecklist(record){const fn=window.CoachToolsProfiles?._test?.canonicalizeChecklist;if(!fn||!record)return;const resolve=raw=>{const c=candidatesFor(raw);return c.length===1?c[0].personId:''};for(const x of fn(record,resolve)||[]){if(!x.representativeId)continue;push(state.checklistByRep,x.representativeId,x)}}
+async function loadRecordTypes(types,step,startPct,endPct,labels={}){
+  const result={},getter=typeof CoachToolsAppData.getManyProgressive==='function'?CoachToolsAppData.getManyProgressive.bind(CoachToolsAppData):CoachToolsAppData.getMany.bind(CoachToolsAppData);
+  for(let i=0;i<types.length;i++){
+    const type=types[i],pct=startPct+((endPct-startPct)*i/Math.max(1,types.length));
+    loadingStep(step,pct,labels[type]||`Loading ${type}…`);await nextPaint();
+    const batch=await getter([type],{...DATA_LOAD_OPTIONS});
+    if(batch&&Object.prototype.hasOwnProperty.call(batch,type))result[type]=batch[type];
+    await nextPaint();
+  }
+  return result;
+}
 async function loadData(){
-  loadPrefs();loadingStep(0,5,'Loading identity registry…');await CoachToolsIdentity.ready();state.people=(await CoachToolsIdentity.getAllPeople()).filter(p=>p.role==='representative'||p.role==='coach');state.byId=new Map(state.people.map(p=>[p.personId,p]));loadingStep(1,20,'Pulling current stats first…');await nextPaint();
-  state.records=await CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','qa','documentedCoaching','checklist'],{includeRecord:true,continueOnError:true,progressUi:false,appId:'performance-scorecard'});loadingStep(2,42,'Indexing current QA, coaching and checklist…');await nextPaint();
-  indexCurrentScope();indexQA(state.records.qa);indexCoaching(state.records.documentedCoaching);indexChecklist(state.records.checklist);state.topicSuggestions=[...new Set([...state.coachingByRep.values()].flat().flatMap(x=>x.topics||[]).map(clean).filter(Boolean))].sort();state.checklistSuggestions=[...new Set([...state.checklistByRep.values()].flat().map(x=>clean(x.incident)).filter(Boolean))].sort();
-  loadingStep(3,58,'Loading weekly history…');await nextPaint();
-  for(const type of ['weeklyRetail','weeklyReferral']){try{state.histories[type]=window.CoachToolsData?.getHistory?await CoachToolsData.getHistory(type,{activeOnly:true,limit:13}):[]}catch(e){console.warn('[Performance Scorecard] history load failed',type,e);state.histories[type]=[]}const seen=new Set();for(const record of [...state.histories[type],state.records[type]].filter(Boolean)){const id=record.id||record.fingerprint||`${type}:${record.periodSort||record.importedAt||''}`;if(seen.has(id))continue;seen.add(id);indexWeeklyRecord(type,record);await nextPaint()}}
-  resetCalcCache();loadingStep(4,92,'Building team scorecard…');populateFilters();syncConfigUi();render();$('loading').classList.add('hide');
+  loadPrefs();loadingStep(0,5,'Loading identity registry…');await nextPaint();await CoachToolsIdentity.ready();state.people=(await CoachToolsIdentity.getAllPeople()).filter(p=>p.role==='representative'||p.role==='coach');state.byId=new Map(state.people.map(p=>[p.personId,p]));rebuildPeopleNameIndex();
+  state.records=await loadRecordTypes(['weeklyRetail','weeklyReferral'],1,18,36,{weeklyRetail:'Loading current Retail performance…',weeklyReferral:'Loading current Referral performance…'});
+  loadingStep(1,39,'Indexing current performance…');await nextPaint();indexCurrentScope();await nextPaint();
+  Object.assign(state.records,await loadRecordTypes(['qa','documentedCoaching','checklist'],2,44,61,{qa:'Loading QA activity…',documentedCoaching:'Loading documented coaching…',checklist:'Loading checklist activity…'}));
+  loadingStep(2,63,'Indexing QA…');await nextPaint();indexLatestQaTeams(state.records.qa);indexQA(state.records.qa);await nextPaint();
+  loadingStep(2,67,'Indexing documented coaching…');await nextPaint();indexCoaching(state.records.documentedCoaching);await nextPaint();
+  loadingStep(2,70,'Indexing checklist activity…');await nextPaint();indexChecklist(state.records.checklist);await nextPaint();
+  state.topicSuggestions=[...new Set([...state.coachingByRep.values()].flat().flatMap(x=>x.topics||[]).map(clean).filter(Boolean))].sort();state.checklistSuggestions=[...new Set([...state.checklistByRep.values()].flat().map(x=>clean(x.incident)).filter(Boolean))].sort();
+  loadingStep(3,74,'Loading weekly history…');await nextPaint();
+  for(const type of ['weeklyRetail','weeklyReferral']){loadingStep(3,type==='weeklyRetail'?76:84,type==='weeklyRetail'?'Loading Retail history…':'Loading Referral history…');await nextPaint();try{state.histories[type]=window.CoachToolsData?.getHistory?await CoachToolsData.getHistory(type,{activeOnly:true,limit:13}):[]}catch(e){console.warn('[Performance Scorecard] history load failed',type,e);state.histories[type]=[]}const seen=new Set();for(const record of [...state.histories[type],state.records[type]].filter(Boolean)){const id=record.id||record.fingerprint||`${type}:${record.periodSort||record.importedAt||''}`;if(seen.has(id))continue;seen.add(id);indexWeeklyRecord(type,record);await nextPaint()}}
+  resetCalcCache();loadingStep(4,92,'Building team scorecard…');await nextPaint();populateFilters();syncConfigUi();render();$('loading').classList.add('hide');
 }
 function personCoach(rep){const s=scopeFor(rep);return s.coachName?{personId:`scope:${s.coachKey}`,displayName:s.coachName}:null}
 function selectedWindow(){return Number($('windowSel').value)||8}
