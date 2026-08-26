@@ -13,9 +13,15 @@ assert.match(enhanced, /coachtools-hidden[^>]+true/i, 'enhanced scorecard should
 assert.ok(enhanced.includes("function teamCohortFor(){return scopedReps()}"), 'percentiles should use the exact selected representative scope');
 assert.ok(enhanced.includes('if(v.length===1)return 100'), 'single-representative scopes should report the top percentile');
 assert.ok(enhanced.includes('position/(v.length-1)'), 'percentiles should span the full 0–100 range');
+assert.ok(enhanced.includes('scorecardWindowMemo'), 'selected scorecard windows should be memoized during row construction');
+assert.ok(enhanced.includes('latestBusinessWeekMemo'), 'latest business week scans should be memoized per department');
+assert.ok(enhanced.includes('function buildMetricPools(reps)'), 'scope percentile metric pools should be built once per render');
+assert.ok(enhanced.includes('Boolean(pooled)'), 'row percentiles should reuse sorted scope metric pools');
 assert.ok(enhanced.includes("{id:'consumer-rate',higher:true}"), 'Consumer AR should be a default ranking metric');
 assert.ok(enhanced.includes("{id:'wiper-rate',higher:true}"), 'Wipers should be a default ranking metric');
 assert.ok(enhanced.includes("{id:'call-quality',higher:true}"), 'Call Quality should be a default ranking metric');
+assert.ok(enhanced.includes('function buildRankMap(values,higher)'), 'ranking should precompute rank maps instead of rescanning every row');
+assert.ok(!enhanced.includes('values.filter(v=>higher?v>value:v<value).length'), 'ranking should not use quadratic rank-position scans');
 assert.ok(enhanced.includes('details.reduce((sum,d)=>sum+d.rank,0)'), 'rank score should sum metric rank positions');
 assert.ok(enhanced.includes('Lowest is best'), 'ranking rules should support lower-is-better measures');
 assert.ok(enhanced.includes('rankClearBtn'), 'ranking rules should be clearable');
