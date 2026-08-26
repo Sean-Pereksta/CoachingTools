@@ -214,7 +214,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Performance Scorecard",
       "description": "Fast team scorecards with configurable KPIs, coaching, checklist stats, and representative performance briefs.",
       "file": "apps/performance-scorecard.html",
-      "icon": "icons/default-app.png",
+      "icon": "icons/scorecard.png",
       "initials": "PS",
       "category": "Performance",
       "keywords": [
