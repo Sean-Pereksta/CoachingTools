@@ -1,0 +1,100 @@
+'use strict';
+
+const assert = require('assert');
+const path = require('path');
+
+require(path.join(__dirname, '..', 'shared', 'performance-scorecard-upload-mode.js'));
+
+const api = globalThis.CoachToolsPerformanceScorecardUploadMode;
+assert(api, 'upload mode API should be exposed');
+const t = api._test;
+
+assert.strictEqual(t.normalizeHeader('Cash Opps'), 'cashopps');
+assert.strictEqual(t.normalizeHeader('AGENT_SURNAME'), 'agentsurname');
+assert.strictEqual(t.classifySheet('Phone Data'), 'phone');
+assert.strictEqual(t.classifySheet('SV2'), 'sv2');
+assert.strictEqual(t.classifySheet('SV2 Wiper'), 'wiper');
+assert.strictEqual(t.classifySheet('Referral SV2 Wipers'), 'wiper');
+
+assert.strictEqual(t.nameFromRow({ Agent_Name: 'Doe, Jane' }), 'Jane Doe');
+assert.strictEqual(t.nameFromRow({ FIRST_NAME: 'Jane', LAST_NAME: 'Doe' }), 'Jane Doe');
+assert.strictEqual(t.nameFromRow({ Agent_FirstName: 'Jane', Agent_surname: 'Doe' }), 'Jane Doe');
+assert.strictEqual(t.nameFromRow({ 'agent firstname': 'Jane', 'AGENT_LASTNAME': 'Doe' }), 'Jane Doe');
+
+const retail = t.appointmentMetrics({
+  'CASH OPPS': 100,
+  'cash apps': 48,
+  'Insurance Opps': 50,
+  'INSURANCE APPS': 45,
+  'commercial opps': 20,
+  'Commercial Apps': 17
+}, 'Retail');
+assert.strictEqual(retail.consumer.num, 48);
+assert.strictEqual(retail.consumer.den, 100);
+assert.strictEqual(retail.consumer.value, 0.48);
+assert.strictEqual(retail.insurance.value, 0.9);
+assert.strictEqual(retail.commercial.value, 0.85);
+
+const referral = t.appointmentMetrics({ 'Referral Opps': 40, 'REFERRAL APPS': 30 }, 'Referral');
+assert.strictEqual(referral.referral.value, 0.75);
+
+const referralWipers = t.wiperMetric({ Accepted: 30, Declined: 10 }, 'Referral');
+assert.strictEqual(referralWipers.num, 30);
+assert.strictEqual(referralWipers.den, 40);
+assert.strictEqual(referralWipers.value, 0.75);
+
+const retailWipers = t.wiperMetric({ 'Wiper Count': 12, 'Wiper Jobs': 40, Accepted: 35, Declined: 5 }, 'Retail');
+assert.strictEqual(retailWipers.num, 12);
+assert.strictEqual(retailWipers.den, 40);
+assert.strictEqual(retailWipers.value, 0.3);
+
+const windowSpec = t.threeWeekWindow(new Date(2026, 7, 26));
+assert.strictEqual(t.dayKey(windowSpec.start), '2026-08-09');
+assert.strictEqual(t.dayKey(windowSpec.end), '2026-08-29');
+
+const matrix = [
+  ['Export generated', '', ''],
+  ['Agent_surname', 'Agent_FirstName', 'Cash Opps', 'Cash Apps', 'Date'],
+  ['Doe', 'Jane', 10, 5, '8/23/2026']
+];
+assert.strictEqual(t.findHeaderRow(matrix, 'sv2'), 1);
+const converted = t.rowsFromMatrix(matrix, 1);
+assert.strictEqual(converted.rows.length, 1);
+assert.strictEqual(t.nameFromRow(converted.rows[0]), 'Jane Doe');
+
+const sheets = [
+  {
+    name: 'SV2', kind: 'sv2', hasDates: true,
+    rows: [
+      { Agent_Name: 'Jane Doe', Coach: 'Coach One', Date: '8/9/2026', 'Cash Opps': 10, 'Cash Apps': 4 },
+      { Agent_Name: 'Jane Doe', Coach: 'Coach One', Date: '8/16/2026', 'Cash Opps': 20, 'Cash Apps': 10 },
+      { Agent_Name: 'Jane Doe', Coach: 'Coach One', Date: '8/23/2026', 'Cash Opps': 30, 'Cash Apps': 18 },
+      { Agent_Name: 'Other Rep', Coach: 'Coach Two', Date: '8/23/2026', 'Cash Opps': 10, 'Cash Apps': 9 }
+    ]
+  },
+  {
+    name: 'SV2 Wiper', kind: 'wiper', hasDates: true,
+    rows: [
+      { FIRST_NAME: 'Jane', LAST_NAME: 'Doe', Date: '8/9/2026', Accepted: 6, Declined: 4 },
+      { FIRST_NAME: 'Jane', LAST_NAME: 'Doe', Date: '8/16/2026', Accepted: 7, Declined: 3 },
+      { FIRST_NAME: 'Jane', LAST_NAME: 'Doe', Date: '8/23/2026', Accepted: 8, Declined: 2 }
+    ]
+  }
+];
+for (const sheet of sheets) for (const row of sheet.rows) {
+  row.__name = t.nameFromRow(row);
+  row.__coach = t.coachFromRow(row);
+  row.__date = t.dateFromRow(row);
+}
+const agg = t.aggregateWorkbook(sheets, 'Retail', 'Coach One', windowSpec, []);
+assert.strictEqual(agg.rows.length, 1);
+assert.strictEqual(agg.rows[0].name, 'Jane Doe');
+assert.strictEqual(agg.rows[0].metrics.consumer.num, 32);
+assert.strictEqual(agg.rows[0].metrics.consumer.den, 60);
+assert(Math.abs(agg.rows[0].metrics.consumer.value - (32 / 60)) < 1e-12);
+assert.strictEqual(agg.rows[0].metrics.wiper.num, 21);
+assert.strictEqual(agg.rows[0].metrics.wiper.den, 30);
+assert.strictEqual(agg.rows[0].weeks.size, 3);
+assert.strictEqual(agg.diagnostics.rosterNames, 1);
+
+console.log('performance-scorecard-upload-mode.test.js passed');
