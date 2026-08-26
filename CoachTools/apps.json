@@ -212,8 +212,8 @@
       "id": "performance-scorecard",
       "name": "Performance Scorecard",
       "description": "Fast team scorecards with configurable KPIs, coaching, checklist stats, and representative performance briefs.",
-      "file": "apps/performance-scorecard.html",
-      "icon": "icons/default-app.png",
+      "file": "apps/performance-scorecard-enhanced.html",
+      "icon": "icons/scorecard.png",
       "initials": "PS",
       "category": "Performance",
       "keywords": [
@@ -248,7 +248,7 @@
       "name": "Weekly Comparison",
       "description": "Search Retail representatives and compare configurable metrics across two selected week sets.",
       "file": "apps/weekly-comparison.html",
-      "icon": "icons/default-app.png",
+      "icon": "icons/calculator.png",
       "initials": "WC",
       "category": "Performance",
       "keywords": [

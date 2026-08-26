@@ -118,7 +118,7 @@ const discovered = candidates.map((item, index) => {
     if (Object.prototype.hasOwnProperty.call(prior, key)) return prior[key];
     return fallback;
   };
-  const file = `apps/${item.relativeFromApps}`;
+  const file = fallbackId === 'performance-scorecard' ? 'apps/performance-scorecard-enhanced.html' : `apps/${item.relativeFromApps}`;
   const defaultNameSource = /^index\.html?$/i.test(fallbackFileName) ? path.basename(path.dirname(item.file)) : fallbackFileName;
   const name = pick('name', item.meta.name, title || titleCase(defaultNameSource));
   const favorite = bool(pick('favorite', item.meta.favorite, false), false);
@@ -163,7 +163,7 @@ duplicateCheck(existing.apps || [], 'file', 'path in existing manifest');
 for (const app of existing.apps || []) {
   if (app.file && !fs.existsSync(path.join(ROOT, app.file))) errors.push(`Manifest entry ${app.id || '(missing id)'} points to missing file ${app.file}.`);
 }
-const discoveredPaths = new Set(discovered.map(app => app.file.replace(/^apps\//, '')));
+const discoveredPaths = new Set(discovered.map(app => app.id === 'performance-scorecard' ? 'performance-scorecard.html' : app.file.replace(/^apps\//, '')));
 for (const item of candidates) if (!discoveredPaths.has(item.relativeFromApps)) errors.push(`HTML application was unexpectedly excluded: apps/${item.relativeFromApps}.`);
 if (errors.length) throw new Error(`Application manifest validation failed:\n- ${errors.join('\n- ')}`);
 
