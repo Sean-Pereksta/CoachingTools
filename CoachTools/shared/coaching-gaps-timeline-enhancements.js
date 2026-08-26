@@ -34,6 +34,36 @@
     return null;
   }
 
+  function formatInteractionDuration(value) {
+    const text = clean(value);
+    if (!text) return '—';
+
+    const clockMatch = /^(\d+):(\d{1,2})(?::(\d{1,2})(?:\.\d+)?)?$/.exec(text);
+    if (clockMatch) {
+      const first = Number(clockMatch[1]);
+      const second = Number(clockMatch[2]);
+      const third = clockMatch[3] == null ? null : Number(clockMatch[3]);
+      if ([first, second].every(Number.isFinite) && (third == null || Number.isFinite(third))) {
+        const totalSeconds = third == null
+          ? Math.round((first * 60) + second)
+          : Math.round((first * 3600) + (second * 60) + third);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${minutes}:${String(seconds).padStart(2, '0')}`;
+      }
+    }
+
+    const numeric = Number(text);
+    if (Number.isFinite(numeric) && numeric >= 0 && numeric < 1) {
+      const totalSeconds = Math.round(numeric * 86400);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return `${minutes}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    return text;
+  }
+
   function sundayForIsoWeekKey(weekKey) {
     const match = /^(\d{4})-W(\d{1,2})$/i.exec(clean(weekKey));
     if (!match) return null;
@@ -188,7 +218,8 @@
         const review = flag === 1 ? 'Reviewed' : (flag === 0 ? 'Not reviewed' : 'Review status unknown');
         const score = Number.isFinite(Number(row.score)) ? `${(Number(row.score) * 100).toFixed(1)}%` : '—';
         const queue = row.queueName || clean(pick(row, ['Queue Name', 'queue_name', 'queue'])) || '—';
-        const duration = row.interactionDuration || clean(pick(row, ['Interaction Duration', 'duration'])) || '—';
+        const durationRaw = row.interactionDuration || clean(pick(row, ['Interaction Duration', 'duration'])) || '—';
+        const duration = formatInteractionDuration(durationRaw);
         orb.title = `${review} • Score ${score} • Duration ${duration} • Queue ${queue}`;
       }
     });
@@ -243,7 +274,8 @@
     if (!body) return;
 
     const score = Number.isFinite(Number(row.score)) ? `${(Number(row.score) * 100).toFixed(1)}%` : '—';
-    const duration = row.interactionDuration || clean(pick(row, ['Interaction Duration', 'duration'])) || '—';
+    const durationRaw = row.interactionDuration || clean(pick(row, ['Interaction Duration', 'duration'])) || '—';
+    const duration = formatInteractionDuration(durationRaw);
     const evaluator = row.evaluator || clean(pick(row, ['Evaluator Name', 'evaluatorname', 'evaluator'])) || '—';
     const conversationId = (typeof root.qaConversationId === 'function' ? root.qaConversationId(row) : '') || '—';
     const queueName = row.queueName || clean(pick(row, ['Queue Name', 'queue_name', 'queue'])) || '—';
