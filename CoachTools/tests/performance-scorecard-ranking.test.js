@@ -9,7 +9,7 @@ const enhanced = fs.readFileSync(path.join(root, 'apps', 'performance-scorecard-
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'apps.json'), 'utf8'));
 const generator = fs.readFileSync(path.join(root, 'build', 'generate-app-manifest.js'), 'utf8');
 
-assert.match(enhanced, /coachtools-hidden[^>]+true/i, 'enhanced loader should stay hidden from app discovery');
+assert.match(enhanced, /coachtools-hidden[^>]+true/i, 'enhanced scorecard should stay hidden from app discovery');
 assert.ok(enhanced.includes("function teamCohortFor(){return scopedReps()}"), 'percentiles should use the exact selected representative scope');
 assert.ok(enhanced.includes('if(v.length===1)return 100'), 'single-representative scopes should report the top percentile');
 assert.ok(enhanced.includes('position/(v.length-1)'), 'percentiles should span the full 0–100 range');
@@ -21,6 +21,8 @@ assert.ok(enhanced.includes('Lowest is best'), 'ranking rules should support low
 assert.ok(enhanced.includes('rankClearBtn'), 'ranking rules should be clearable');
 assert.ok(enhanced.includes('rankAddMetric'), 'ranking rules should allow additional scorecard columns');
 assert.ok(enhanced.includes('Correctives'), 'custom corrective counts should be documented as a lower-is-better ranking use case');
+assert.ok(!enhanced.includes("fetch(SOURCE"), 'enhanced scorecard must not fetch the base HTML at runtime');
+assert.ok(!enhanced.includes('new XMLHttpRequest'), 'enhanced scorecard must not use XHR to load local HTML');
 
 const scorecard = manifest.apps.find(app => app.id === 'performance-scorecard');
 assert.ok(scorecard, 'Performance Scorecard must remain registered');
