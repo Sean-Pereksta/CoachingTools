@@ -59,6 +59,8 @@ assert.ok(enhanced.includes('data-scorecard-extras="true"'), 'enhanced scorecard
 assert.ok(!enhanced.includes("fetch(SOURCE"), 'enhanced scorecard must not fetch the base HTML at runtime');
 assert.ok(!enhanced.includes('new XMLHttpRequest'), 'enhanced scorecard must not use XHR to load local HTML');
 assert.ok(enhanced.includes('function installExportSafeCloneStyles(doc)'), 'scorecard export should sanitize unsupported CSS color functions in the clone');
+assert.ok(enhanced.includes('installExportSafeCloneStyles(document)'), 'scorecard export should apply safe colors before html2canvas starts cloning');
+assert.ok(enhanced.includes('finally{restoreExportStyles()}'), 'live export-safe styles should always be restored after capture');
 assert.ok(enhanced.includes('scorecardExportSafe .main .summary.metric:after'), 'export clone should disable unsupported color-mix radial pseudo gradients');
 assert.ok(!enhanced.includes("link.href='../shared/performance-scorecard-extras.css'"), 'enhanced scorecard should not reload local enhanced CSS inside html2canvas clones');
 
