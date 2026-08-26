@@ -210,6 +210,41 @@ window.COACHTOOLS_MANIFEST = {
       "enabled": true
     },
     {
+      "id": "performance-scorecard",
+      "name": "Performance Scorecard",
+      "description": "Fast team scorecards with configurable KPIs, coaching, checklist stats, and representative performance briefs.",
+      "file": "apps/performance-scorecard.html",
+      "icon": "icons/default-app.png",
+      "initials": "PS",
+      "category": "Performance",
+      "keywords": [
+        "scorecard",
+        "team",
+        "representative",
+        "kpi",
+        "appointment",
+        "wiper",
+        "qa",
+        "call quality",
+        "coaching",
+        "checklist",
+        "profile"
+      ],
+      "data": [
+        "weeklyRetail",
+        "weeklyReferral",
+        "qa",
+        "documentedCoaching",
+        "checklist"
+      ],
+      "favorite": false,
+      "featured": false,
+      "preload": false,
+      "order": 52,
+      "version": "1.0",
+      "enabled": true
+    },
+    {
       "id": "weekly-comparison",
       "name": "Weekly Comparison",
       "description": "Search Retail representatives and compare configurable metrics across two selected week sets.",
