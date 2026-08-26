@@ -47,9 +47,14 @@ build = build.replace(anchor, injection, 1)
 build_path.write_text(build, encoding='utf-8')
 
 test = test_path.read_text(encoding='utf-8')
+old_link_assert = "assert.ok(enhanced.includes('../shared/performance-scorecard-extras.css'), 'enhanced scorecard should load the theme/control stylesheet');"
+inline_assert = "assert.ok(enhanced.includes('data-scorecard-extras=\"true\"'), 'enhanced scorecard should inline the theme/control stylesheet for file:// safety');"
+if old_link_assert not in test:
+    raise SystemExit('Could not migrate linked stylesheet assertion')
+test = test.replace(old_link_assert, inline_assert, 1)
+
 anchor = "assert.ok(!enhanced.includes('new XMLHttpRequest'), 'enhanced scorecard must not use XHR to load local HTML');"
-additions = """assert.ok(enhanced.includes('data-scorecard-extras=\"true\"'), 'enhanced scorecard should inline enhanced-only styles for file:// safety');
-assert.ok(enhanced.includes('function installExportSafeCloneStyles(doc)'), 'scorecard export should sanitize unsupported CSS color functions in the clone');
+additions = """assert.ok(enhanced.includes('function installExportSafeCloneStyles(doc)'), 'scorecard export should sanitize unsupported CSS color functions in the clone');
 assert.ok(enhanced.includes('scorecardExportSafe .main .summary.metric:after'), 'export clone should disable unsupported color-mix radial pseudo gradients');
 assert.ok(!enhanced.includes(\"link.href='../shared/performance-scorecard-extras.css'\"), 'enhanced scorecard should not reload local enhanced CSS inside html2canvas clones');"""
 if anchor not in test:
