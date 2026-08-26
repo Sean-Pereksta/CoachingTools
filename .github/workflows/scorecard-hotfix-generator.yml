@@ -4,12 +4,16 @@ on:
   push:
     branches:
       - hotfix/scorecard-file-launch
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   generate:
+    if: github.head_ref == 'hotfix/scorecard-file-launch' || github.ref_name == 'hotfix/scorecard-file-launch'
     runs-on: ubuntu-latest
     steps:
       - name: Check out hotfix branch
