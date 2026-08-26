@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/scorecard-load-performance
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -13,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: fix/scorecard-load-performance
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -23,6 +28,7 @@ jobs:
         working-directory: CoachTools
         run: node tests/performance-scorecard-ranking.test.js
       - name: Commit generated scorecard
+        if: github.event_name == 'push'
         shell: bash
         run: |
           if git diff --quiet -- CoachTools/apps/performance-scorecard-enhanced.html; then
