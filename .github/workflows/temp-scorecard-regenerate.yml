@@ -1,0 +1,34 @@
+name: Temporary Scorecard Regenerate
+
+on:
+  push:
+    branches:
+      - feature/performance-scorecard-display-export-themes-20260826
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate-scorecard:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Regenerate enhanced scorecard
+        run: node CoachTools/build/build-performance-scorecard-enhanced.js
+      - name: Run scorecard contracts
+        run: node CoachTools/tests/performance-scorecard-ranking.test.js
+      - name: Commit generated scorecard
+        shell: bash
+        run: |
+          if git diff --quiet -- CoachTools/apps/performance-scorecard-enhanced.html; then
+            echo "Enhanced scorecard already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CoachTools/apps/performance-scorecard-enhanced.html
+          git commit -m "Regenerate Performance Scorecard export-safe styles"
+          git push origin HEAD:${GITHUB_REF_NAME}
