@@ -6,6 +6,7 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const enhanced = fs.readFileSync(path.join(root, 'apps', 'performance-scorecard-enhanced.html'), 'utf8');
+const extraCss = fs.readFileSync(path.join(root, 'shared', 'performance-scorecard-extras.css'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'apps.json'), 'utf8'));
 const generator = fs.readFileSync(path.join(root, 'build', 'generate-app-manifest.js'), 'utf8');
 
@@ -27,6 +28,34 @@ assert.ok(enhanced.includes('Lowest is best'), 'ranking rules should support low
 assert.ok(enhanced.includes('rankClearBtn'), 'ranking rules should be clearable');
 assert.ok(enhanced.includes('rankAddMetric'), 'ranking rules should allow additional scorecard columns');
 assert.ok(enhanced.includes('Correctives'), 'custom corrective counts should be documented as a lower-is-better ranking use case');
+
+assert.ok(enhanced.includes('data-normal-rank-sort'), 'normal scorecard should expose the Overall Rank column');
+assert.ok(enhanced.includes('function normalOverallRankCell(row)'), 'normal scorecard should reuse the ranking score for its Overall Rank cell');
+assert.ok(enhanced.includes("options.push(['rank-overall','Overall Rank'])"), 'Overall Rank should be available in the normal sort dropdown');
+assert.ok(enhanced.includes('displayModeSel'), 'scorecard should expose the display mode selector next to sorting');
+assert.ok(enhanced.includes('<option value="normal">Normal</option>'), 'display selector should include Normal');
+assert.ok(enhanced.includes('<option value="basic">Basic</option>'), 'display selector should include Basic');
+assert.ok(enhanced.includes('<option value="advanced">Advanced</option>'), 'display selector should include Advanced');
+assert.ok(enhanced.includes('metricMainBasic'), 'Basic mode should use the large-number KPI presentation');
+assert.ok(enhanced.includes('metricRankInfo(p)'), 'Advanced mode should include ordinal KPI rank information');
+assert.ok(enhanced.includes('metricOrdinal'), 'Advanced mode should render KPI rank in the metric box');
+
+for (const theme of ['Nova Violet','Emerald Circuit','Copper Forge','Ice Prism','Monochrome Luxe']) {
+  assert.ok(enhanced.includes(theme), `${theme} should be registered in the scorecard theme selector`);
+}
+for (const id of ['nova','circuit','copper','prism','mono']) {
+  assert.ok(extraCss.includes(`body[data-theme="${id}"]`), `${id} should have a complete theme definition`);
+}
+
+assert.ok(enhanced.includes('../vendor/html2canvas.min.js'), 'PNG/PDF scorecard snips should use the vendored html2canvas dependency');
+assert.ok(enhanced.includes('../vendor/jspdf.umd.min.js'), 'PDF scorecard snips should use the vendored jsPDF dependency');
+assert.ok(enhanced.includes('data-scorecard-export="png"'), 'scorecard should provide PNG snipping');
+assert.ok(enhanced.includes('data-scorecard-export="pdf"'), 'scorecard should provide PDF snipping');
+assert.ok(enhanced.includes("cloneWrap.style.maxHeight='none'"), 'full-scorecard export should remove the viewport height clip');
+assert.ok(enhanced.includes('pixelBudget=28000000'), 'scorecard export should cap raster work to avoid large-capture freezes');
+assert.ok(enhanced.includes('for(let y=0;y<canvas.height;y+=slicePx)'), 'PDF export should paginate long scorecards instead of shrinking everything to one page');
+assert.ok(enhanced.includes('../shared/performance-scorecard-extras.css'), 'enhanced scorecard should load the theme/control stylesheet');
+
 assert.ok(!enhanced.includes("fetch(SOURCE"), 'enhanced scorecard must not fetch the base HTML at runtime');
 assert.ok(!enhanced.includes('new XMLHttpRequest'), 'enhanced scorecard must not use XHR to load local HTML');
 
@@ -35,4 +64,4 @@ assert.ok(scorecard, 'Performance Scorecard must remain registered');
 assert.strictEqual(scorecard.file, 'apps/performance-scorecard-enhanced.html', 'desktop should launch the enhanced scorecard');
 assert.ok(generator.includes("fallbackId === 'performance-scorecard' ? 'apps/performance-scorecard-enhanced.html'"), 'manifest regeneration should preserve the enhanced route');
 
-console.log('Performance Scorecard percentile/ranking contracts passed.');
+console.log('Performance Scorecard percentile/ranking/display/export contracts passed.');
