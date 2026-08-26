@@ -7,6 +7,7 @@ const ROOT = path.resolve(__dirname, '..');
 const SOURCE_PATH = path.join(ROOT, 'apps', 'performance-scorecard.html');
 const ENHANCED_PATH = path.join(ROOT, 'apps', 'performance-scorecard-enhanced.html');
 const PATCH_PATH = path.join(__dirname, 'performance-scorecard-ranking-patch.txt');
+const EXTRA_STYLE_PATH = path.join(ROOT, 'shared', 'performance-scorecard-extras.css');
 
 function requiredReplace(source, pattern, replacement, label) {
   const next = source.replace(pattern, replacement);
@@ -30,6 +31,7 @@ function rankingPatch() {
 
 let source = fs.readFileSync(SOURCE_PATH, 'utf8');
 const patch = rankingPatch();
+const extrasStyle = fs.readFileSync(EXTRA_STYLE_PATH, 'utf8').trim();
 
 source = requiredReplace(
   source,
@@ -105,6 +107,13 @@ source = source
   .split('team percentile').join('scope percentile')
   .split('Insufficient team cohort').join('Insufficient scope cohort')
   .split('P${p.percentile} on team').join('P${p.percentile} in scope');
+
+source = requiredReplace(
+  source,
+  '</head>',
+  `<style data-scorecard-extras=\"true\">\n${extrasStyle}\n</style>\n</head>`,
+  'enhanced scorecard styles'
+);
 
 const marker = "window.addEventListener('error',e=>console.error('[Performance Scorecard]',e.error||e.message));";
 source = requiredReplace(source, marker, `${patch}\n${marker}`, 'ranking scorecard');

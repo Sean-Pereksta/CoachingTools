@@ -54,10 +54,13 @@ assert.ok(enhanced.includes('data-scorecard-export="pdf"'), 'scorecard should pr
 assert.ok(enhanced.includes("cloneWrap.style.maxHeight='none'"), 'full-scorecard export should remove the viewport height clip');
 assert.ok(enhanced.includes('pixelBudget=28000000'), 'scorecard export should cap raster work to avoid large-capture freezes');
 assert.ok(enhanced.includes('for(let y=0;y<canvas.height;y+=slicePx)'), 'PDF export should paginate long scorecards instead of shrinking everything to one page');
-assert.ok(enhanced.includes('../shared/performance-scorecard-extras.css'), 'enhanced scorecard should load the theme/control stylesheet');
+assert.ok(enhanced.includes('data-scorecard-extras="true"'), 'enhanced scorecard should inline the theme/control stylesheet for file:// safety');
 
 assert.ok(!enhanced.includes("fetch(SOURCE"), 'enhanced scorecard must not fetch the base HTML at runtime');
 assert.ok(!enhanced.includes('new XMLHttpRequest'), 'enhanced scorecard must not use XHR to load local HTML');
+assert.ok(enhanced.includes('function installExportSafeCloneStyles(doc)'), 'scorecard export should sanitize unsupported CSS color functions in the clone');
+assert.ok(enhanced.includes('scorecardExportSafe .main .summary.metric:after'), 'export clone should disable unsupported color-mix radial pseudo gradients');
+assert.ok(!enhanced.includes("link.href='../shared/performance-scorecard-extras.css'"), 'enhanced scorecard should not reload local enhanced CSS inside html2canvas clones');
 
 const scorecard = manifest.apps.find(app => app.id === 'performance-scorecard');
 assert.ok(scorecard, 'Performance Scorecard must remain registered');

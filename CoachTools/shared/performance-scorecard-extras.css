@@ -19,3 +19,11 @@ th[data-rank-sort]:hover,th[data-normal-rank-sort]:hover{color:var(--ink)}
 .scorecardExportMenu>summary::-webkit-details-marker{display:none}
 .scorecardExportMenuList{position:absolute;right:0;top:calc(100% + 6px);z-index:60;min-width:128px;padding:6px;display:grid;gap:5px;border:1px solid var(--line);border-radius:11px;background:var(--panel);box-shadow:var(--shadow)}
 .scorecardExportMenuList .btn{text-align:left;white-space:nowrap}
+
+/* html2canvas does not understand CSS Color 4 color-mix()/color() output. These only apply to its cloned export document. */
+body.scorecardExportSafe.theme-dark .main select{background:var(--panel)!important;color:var(--ink)!important;border-color:var(--line)!important}
+body.scorecardExportSafe .main .btn:hover{background:var(--panel)!important;border-color:var(--line)!important;transform:none!important}
+body.scorecardExportSafe .main .quickFilter:hover{background:var(--panel)!important;border-color:var(--line)!important;color:var(--muted)!important}
+body.scorecardExportSafe .main .quickFilter.active,body.scorecardExportSafe .main .quickFilter.active:hover{background:var(--panel2)!important;border-color:var(--accent)!important;color:var(--accent)!important}
+body.scorecardExportSafe .main tbody tr:hover td{background:var(--panel)!important}
+body.scorecardExportSafe .main tbody tr:hover td.repSticky{background:var(--panel)!important}
