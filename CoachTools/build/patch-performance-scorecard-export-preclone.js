@@ -26,8 +26,7 @@ capture = capture.replace(
   'return window.html2canvas(target,',
   'const restoreExportStyles=installExportSafeCloneStyles(document);try{return await window.html2canvas(target,'
 );
-if (!capture.endsWith(')}})}')) throw new Error('Unexpected scorecard capture tail.');
-capture = `${capture.slice(0, -1)}finally{restoreExportStyles()}}`;
+capture += 'finally{restoreExportStyles()}}';
 patch = patch.replace(capturePattern, capture);
 
 fs.writeFileSync(patchPath, patch, 'utf8');
