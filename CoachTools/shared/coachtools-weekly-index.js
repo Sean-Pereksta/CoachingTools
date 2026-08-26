@@ -1,7 +1,7 @@
 (function attachCoachToolsWeeklyIndex(root) {
   'use strict';
 
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const DATE_FIELDS = Object.freeze([
     'Date', 'Business Date', 'Reporting Date', 'Report Date', 'Day',
     'Week', 'Week Start', 'Week Starting', 'Week Beginning',
@@ -250,4 +250,22 @@
     parseBusinessDate, weekStartKey, recordFallbackWeek, aggregateMetric, build,
     _test: Object.freeze({ candidateWins, isoWeekDate })
   });
+
+  function loadPerformanceScorecardUploadMode() {
+    if (!root.document) return;
+    const meta = root.document.querySelector('meta[name="coachtools-id"]');
+    if (!meta || meta.content !== 'performance-scorecard' || root.CoachToolsPerformanceScorecardUploadMode) return;
+    const current = root.document.currentScript;
+    let source = 'performance-scorecard-upload-mode.js';
+    try { if (current && current.src) source = new URL('performance-scorecard-upload-mode.js', current.src).href; } catch (_) {}
+    if ([...root.document.scripts].some(script => script.src === source || script.dataset.scorecardWorkbookMode === 'true')) return;
+    const script = root.document.createElement('script');
+    script.src = source;
+    script.async = true;
+    script.dataset.scorecardWorkbookMode = 'true';
+    script.addEventListener('error', () => console.error('[Performance Scorecard] workbook upload mode failed to load.'), { once: true });
+    root.document.head.appendChild(script);
+  }
+
+  loadPerformanceScorecardUploadMode();
 })(typeof window !== 'undefined' ? window : globalThis);
