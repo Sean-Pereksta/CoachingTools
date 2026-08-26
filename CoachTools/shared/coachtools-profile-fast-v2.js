@@ -3,6 +3,7 @@
 
   const Profiles = root.CoachToolsProfiles;
   if (!Profiles || !Profiles._test) return;
+  const Alignment = root.CoachToolsCoachingAlignment;
   const test = Profiles._test;
   const METRICS = Profiles.METRICS || [];
   const WEEKLY_TYPES = ['weeklyRetail', 'weeklyReferral'];
@@ -11,7 +12,9 @@
   const WIPER_METRIC = METRICS.find(metric => metric.id === 'wiper-rate') || null;
   const DAY = 86400000;
   const COVERAGE_KEY = 'coachtools.minKpiCoverage.v1';
+  const QUALITY_COVERAGE_KEY = 'coachtools.minQualityCoverage.v1';
   const DEFAULT_COVERAGE = 0.5;
+  const DEFAULT_QUALITY_COVERAGE = 0.25;
   const profileCacheByHistory = new WeakMap();
   const rankingCacheByHistory = new WeakMap();
   const uiProfiles = new Map();
@@ -30,23 +33,50 @@
   };
   const fmtPct = value => Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : '—';
   const fmtDays = value => Number.isFinite(value) ? `${value.toFixed(1)} days` : '—';
-  const cutoff = days => new Date(Date.now() - days * DAY);
+  const cutoff = (days, asOf) => new Date(((asOf instanceof Date && !Number.isNaN(asOf.getTime())) ? asOf.getTime() : Date.now()) - days * DAY);
   const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+  const stableTextCompare = (left, right) => { const a = clean(left), b = clean(right); return a < b ? -1 : a > b ? 1 : 0; };
 
   function coverageThreshold() {
+    if (Alignment && Alignment.kpiCoverageThreshold) return Alignment.kpiCoverageThreshold();
     if (Number.isFinite(root.__CoachToolsMinKpiCoverage)) return clamp(root.__CoachToolsMinKpiCoverage, 0, 1);
     try {
-      const saved = Number(root.localStorage && root.localStorage.getItem(COVERAGE_KEY));
+      const raw = root.localStorage && root.localStorage.getItem(COVERAGE_KEY);
+      const saved = raw == null || raw === '' ? NaN : Number(raw);
       if (Number.isFinite(saved) && saved >= 0 && saved <= 1) return saved;
     } catch (_) {}
     return DEFAULT_COVERAGE;
   }
 
   function setCoverageThreshold(value) {
+    if (Alignment && Alignment.setKpiCoverageThreshold) return Alignment.setKpiCoverageThreshold(value);
     const next = clamp(Number(value) || 0, 0, 1);
     root.__CoachToolsMinKpiCoverage = next;
     try { if (root.localStorage) root.localStorage.setItem(COVERAGE_KEY, String(next)); } catch (_) {}
     return next;
+  }
+
+  function qualityCoverageThreshold() {
+    if (Alignment && Alignment.qualityCoverageThreshold) return Alignment.qualityCoverageThreshold();
+    if (Number.isFinite(root.__CoachToolsMinQualityCoverage)) return clamp(root.__CoachToolsMinQualityCoverage, 0, 1);
+    try {
+      const raw = root.localStorage && root.localStorage.getItem(QUALITY_COVERAGE_KEY);
+      const saved = raw == null || raw === '' ? NaN : Number(raw);
+      if (Number.isFinite(saved) && saved >= 0 && saved <= 1) return saved;
+    } catch (_) {}
+    return DEFAULT_QUALITY_COVERAGE;
+  }
+
+  function setQualityCoverageThreshold(value) {
+    if (Alignment && Alignment.setQualityCoverageThreshold) return Alignment.setQualityCoverageThreshold(value);
+    const next = clamp(Number(value) || 0, 0, 1);
+    root.__CoachToolsMinQualityCoverage = next;
+    try { if (root.localStorage) root.localStorage.setItem(QUALITY_COVERAGE_KEY, String(next)); } catch (_) {}
+    return next;
+  }
+
+  function thresholdForMetric(metricId) {
+    return /^(qa-score|call-quality)$/.test(clean(metricId)) ? qualityCoverageThreshold() : coverageThreshold();
   }
 
   function applyPeopleProfilesViewportFix() {
@@ -278,7 +308,8 @@
       qa: [], qaByRep: new Map(), qaByCoach: new Map(),
       performanceBySource: { weeklyRetail: [], weeklyReferral: [] },
       currentMetricAgg: new Map(), currentMetricValues: new Map(),
-      sourcePresenceByPerson: new Map()
+      sourcePresenceByPerson: new Map(),
+      snapshotKey: '', asOf: null
     };
     for (const person of list) {
       const deptMap = person.role === 'coach' ? prepared.departmentCoaches : prepared.departmentReps;
@@ -336,6 +367,7 @@
 
   async function prepareWeeklyAsync(people, records, options) {
     const prepared = createPreparedSkeleton(people, records), opts = options || {};
+    prepared.snapshotKey = clean(opts.snapshotKey);
     const steps = [
       ['weeklyRetail', 'Indexing current Weekly Retail KPIs', () => indexPerformance(prepared, 'weeklyRetail', records && records.weeklyRetail)],
       ['weeklyReferral', 'Indexing current Weekly Referral KPIs', () => indexPerformance(prepared, 'weeklyReferral', records && records.weeklyReferral)],
@@ -350,6 +382,17 @@
       run();
     }
     prepared.currentMetricValues = finishAggregates(prepared.currentMetricAgg);
+    if (Alignment && Alignment.reportingCutoff) {
+      prepared.asOf = Alignment.reportingCutoff({
+        qa: prepared.qa,
+        coaching: prepared.coaching,
+        performance: [...(prepared.performanceBySource.weeklyRetail || []), ...(prepared.performanceBySource.weeklyReferral || [])],
+        asOf: opts.asOf
+      });
+    } else {
+      const dates = [...prepared.qa.map(row => row.date), ...prepared.coaching.map(row => row.date)].filter(date => date instanceof Date && !Number.isNaN(date.getTime()));
+      prepared.asOf = dates.length ? new Date(Math.max(...dates.map(date => date.getTime()))) : new Date();
+    }
     if (opts.onProgress) opts.onProgress(1, 'Weekly profile index ready', 'done');
     if (opts.yieldFn) await opts.yieldFn();
     return prepared;
@@ -437,7 +480,7 @@
     const available = expectedHistoryPeriods(index, person, metricId);
     const measured = periods.size || points.length;
     const rate = available > 0 ? Math.min(1, measured / available) : measured ? 1 : 0;
-    const minimum = Number.isFinite(threshold) ? threshold : coverageThreshold();
+    const minimum = Number.isFinite(threshold) ? threshold : thresholdForMetric(metricId);
     return { measured, available, rate, minimum, eligible: available > 0 && rate + 1e-9 >= minimum };
   }
 
@@ -490,10 +533,11 @@
   function representativeProfile(person, prepared, historyIndex) {
     const id = person.personId, coaching = [...(prepared.coachingByRep.get(id) || [])], checklist = [...(prepared.checklistByRep.get(id) || [])], qa = [...(prepared.qaByRep.get(id) || [])];
     const cohort = prepared.departmentReps.get(person.department || '') || [];
-    const details = [], threshold = coverageThreshold();
+    const details = [];
     for (const metric of METRICS) {
       const own = prepared.currentMetricValues.get(metricKey(id, metric.id));
       if (!own) continue;
+      const threshold = thresholdForMetric(metric.id);
       const coverage = metricCoverage(historyIndex, person, metric.id, threshold);
       if (historyIndex && !coverage.eligible) continue;
       const values = cohort.filter(candidate => !historyIndex || metricCoverage(historyIndex, candidate, metric.id, threshold).eligible)
@@ -512,22 +556,23 @@
       const rows = details.filter(detail => detail.category === category && Number.isFinite(detail.score));
       return { name: category, score: rows.length ? Math.round(mean(rows.map(row => row.score)) * 10) / 10 : null, metrics: rows };
     });
-    const recent30 = coaching.filter(event => event.date >= cutoff(30));
-    const topics = topicBreakdown(coaching.filter(event => event.date >= cutoff(90)));
+    const recent30 = coaching.filter(event => event.date >= cutoff(30, prepared.asOf));
+    const topics = topicBreakdown(coaching.filter(event => event.date >= cutoff(90, prepared.asOf)));
     const sources = sourcePresence(prepared, id);
     return {
       mode: 'representative', person,
       relationships: { coach: person.currentCoachId ? prepared.byId.get(person.currentCoachId) || null : null, representatives: [] },
       sources, currentDataThrough: latestWeeklyLabel(prepared.records, sources), categories, metricDetails: details,
       qa: { evaluations: qa.length, average: mean(qa.map(row => row.score)), rows: qa.sort((a, b) => b.date - a.date) },
-      coaching: { last30: recent30.length, last90: coaching.filter(event => event.date >= cutoff(90)).length, averagePerDay: recent30.length / 30, daysSinceLast: coaching.length ? Math.floor((Date.now() - Math.max(...coaching.map(event => event.date.getTime()))) / DAY) : null, topics, topSix: coachingTopSix(topics), events: coaching.sort((a, b) => b.date - a.date) },
+      coaching: { last30: recent30.length, last90: coaching.filter(event => event.date >= cutoff(90, prepared.asOf)).length, averagePerDay: recent30.length / 30, daysSinceLast: coaching.length ? Math.floor(((prepared.asOf || new Date()).getTime() - Math.max(...coaching.map(event => event.date.getTime()))) / DAY) : null, topics, topSix: coachingTopSix(topics), events: coaching.sort((a, b) => b.date - a.date) },
       checklist: { total: checklist.length, open: checklist.filter(item => !item.served).length, completed: checklist.filter(item => item.served).length, themes: frequency(checklist, 'incident'), items: checklist.sort((a, b) => b.created - a.created) }
     };
   }
 
   function coachOperationalRankings(person, prepared) {
-    const coaches = prepared.departmentCoaches.get(person.department || '') || [];
-    const recent = cutoff(30), coachingValues = new Map(), checklistValues = new Map(), qaValues = new Map();
+    const coaches = (prepared.departmentCoaches.get(person.department || '') || [])
+      .filter(coach => currentCoach(coach, prepared) && (prepared.repsByCoach.get(coach.personId) || []).length > 0);
+    const recent = cutoff(30, prepared.asOf), coachingValues = new Map(), checklistValues = new Map(), qaValues = new Map();
     for (const coach of coaches) {
       const coaching = (prepared.coachingByCoach.get(coach.personId) || []).filter(row => row.date >= recent);
       coachingValues.set(coach.personId, coaching.length);
@@ -535,12 +580,14 @@
       checklistValues.set(coach.personId, mean(checklist.map(row => row.days)));
       const team = prepared.repsByCoach.get(coach.personId) || [];
       const qaRows = team.flatMap(rep => prepared.qaByRep.get(rep.personId) || []).filter(row => row.date >= recent);
-      qaValues.set(coach.personId, mean(qaRows.map(row => row.score)));
+      const evaluatedReps = new Set(qaRows.map(row => row.representativeId).filter(Boolean)).size;
+      const qualityCoverage = team.length ? evaluatedReps / team.length : 0;
+      qaValues.set(coach.personId, qualityCoverage + 1e-9 >= qualityCoverageThreshold() ? mean(qaRows.map(row => row.score)) : NaN);
     }
     const defs = [
       { id: 'coaching-activity', name: 'Documented Coachings', values: coachingValues, higher: true, display: value => Number.isFinite(value) ? Math.round(value).toLocaleString() : '—', source: 'Documented Coaching · last 30 days' },
       { id: 'checklist-speed', name: 'Checklist Response Speed', values: checklistValues, higher: false, display: fmtDays, source: 'Checklist · last 30 days' },
-      { id: 'qa-quality', name: 'Team QA Performance', values: qaValues, higher: true, display: fmtPct, source: 'QA · current team · last 30 days' }
+      { id: 'qa-quality', name: 'Team QA Performance', values: qaValues, higher: true, display: fmtPct, source: `QA · current team · last 30 days · ≥${Math.round(qualityCoverageThreshold() * 100)}% Quality coverage` }
     ];
     return defs.map(def => ({ ...def, ...Profiles.rankMetric(person.personId, def.values, def.higher, Profiles.MIN_COACH_COHORT), displayValue: def.display(def.values.get(person.personId)) })).map(({ values, display, ...row }) => row);
   }
@@ -551,13 +598,13 @@
   }
 
   function coachProfile(person, prepared) {
-    const id = person.personId, reps = prepared.repsByCoach.get(id) || [], recent = cutoff(30);
+    const id = person.personId, reps = prepared.repsByCoach.get(id) || [], recent = cutoff(30, prepared.asOf);
     const coaching = [...(prepared.coachingByCoach.get(id) || [])], checklist = [...(prepared.checklistByCoach.get(id) || [])];
     const teamQa = reps.flatMap(rep => prepared.qaByRep.get(rep.personId) || []);
     const recentCoaching = coaching.filter(row => row.date >= recent), recentChecklist = checklist.filter(row => row.created >= recent), recentQA = teamQa.filter(row => row.date >= recent);
     const completed = recentChecklist.filter(item => Number.isFinite(item.days) && /addressed/i.test(item.action));
     const weekly = new Map();
-    for (let index = 7; index >= 0; index -= 1) { const date = new Date(Date.now() - index * 7 * DAY); weekly.set(weekKey(date), { week: weekKey(date), coaching: 0, checklistTotal: 0, checklistCompleted: 0 }); }
+    for (let index = 7; index >= 0; index -= 1) { const date = new Date((prepared.asOf || new Date()).getTime() - index * 7 * DAY); weekly.set(weekKey(date), { week: weekKey(date), coaching: 0, checklistTotal: 0, checklistCompleted: 0 }); }
     for (const event of coaching) { const row = weekly.get(weekKey(event.date)); if (row) row.coaching += 1; }
     for (const item of checklist) { const row = weekly.get(weekKey(item.created)); if (row) { row.checklistTotal += 1; if (item.served) row.checklistCompleted += 1; } }
     const timeline = [...weekly.values()].map(row => ({ ...row, checklistResponse: row.checklistTotal ? row.checklistCompleted / row.checklistTotal : NaN }));
@@ -596,9 +643,9 @@
   function buildProfile(personId, prepared, historyIndex) {
     const person = prepared && prepared.byId.get(personId);
     if (!person) throw new Error('Person was not found in the weekly profile index.');
-    const threshold = coverageThreshold();
+    const threshold = coverageThreshold(), qualityThreshold = qualityCoverageThreshold();
     const cache = cacheFor(profileCacheByHistory, historyIndex);
-    const key = `${personId}|${Math.round(threshold * 1000)}`;
+    const key = `${personId}|${Math.round(threshold * 1000)}|${Math.round(qualityThreshold * 1000)}|${prepared.snapshotKey || ''}`;
     if (cache && cache.has(key)) return cache.get(key);
     const profile = person.role === 'coach' ? coachProfile(person, prepared) : representativeProfile(person, prepared, historyIndex);
     if (cache) cache.set(key, profile);
@@ -607,47 +654,128 @@
     return profile;
   }
 
+  function deterministicRank(personId, cohort, higherBetter) {
+    const ordered = (cohort || []).slice().sort((left, right) => {
+      const delta = higherBetter === false ? left.value - right.value : right.value - left.value;
+      return Math.abs(delta) > 1e-12 ? delta : stableTextCompare(stableCoachKey(left.coach || left.person), stableCoachKey(right.coach || right.person));
+    });
+    const index = ordered.findIndex(row => (row.coach || row.person).personId === personId);
+    if (index < 0) return { rank: null, total: ordered.length, percentile: null, performancePercentile: null, score: null };
+    const rank = index + 1, total = ordered.length;
+    const percentile = total > 1 ? Math.round((total - rank) / (total - 1) * 100) : 100;
+    return { rank, total, percentile, performancePercentile: percentile, score: Math.round((1 + 9 * percentile / 100) * 10) / 10 };
+  }
+
+  function stableCoachKey(person) { return `${normalizeName(person && person.displayName)}|${clean(person && person.personId)}`; }
+
+  function coachMetricCoverage(historyIndex, reps, metricId) {
+    if (!reps.length) return { measured: 0, available: 0, rate: 0, minimum: thresholdForMetric(metricId), eligible: false };
+    const coverages = reps.map(rep => metricCoverage(historyIndex, rep, metricId, thresholdForMetric(metricId)));
+    const measured = coverages.reduce((sum, row) => sum + row.measured, 0);
+    const available = coverages.reduce((sum, row) => sum + row.available, 0);
+    const rate = available ? Math.min(1, measured / available) : 0, minimum = thresholdForMetric(metricId);
+    return { measured, available, rate, minimum, eligible: available > 0 && rate + 1e-9 >= minimum };
+  }
+
+  function currentCoach(person, prepared) {
+    if (!person || person.role !== 'coach' || !clean(person.displayName)) return false;
+    if (person.active === false || person.current === false || /inactive|historical|former|terminated/i.test(clean(person.status))) return false;
+    const reps = prepared.repsByCoach.get(person.personId) || [];
+    return Boolean(clean(person.currentTeam || person.team) || reps.some(rep => rep.currentCoachId === person.personId));
+  }
+
+  function coachMetricCohort(prepared, historyIndex, metric, department) {
+    const values = historyValueMap(historyIndex), wantedDepartment = clean(department);
+    if (Alignment && Alignment.eligibleCoachCohort) {
+      const cohort = Alignment.eligibleCoachCohort({
+        people: prepared.people || [], department: wantedDepartment,
+        rosterForCoach: coach => prepared.repsByCoach.get(coach.personId) || [],
+        buildMetric(coach, reps) {
+          const entries = reps.map(rep => values.get(metricKey(rep.personId, metric.id))).filter(entry => entry && Number.isFinite(entry.value));
+          const coverage = coachMetricCoverage(historyIndex, reps, metric.id), value = weightedEntryValue(entries);
+          const totalVolume = entries.reduce((sum, entry) => sum + (Number(entry.weight) || 0), 0);
+          const sourcePeriods = Math.max(1, expectedHistoryPeriods(historyIndex, coach, metric.id));
+          return { reps, entries, coverage, value, totalVolume, averageVolumePerWeek: totalVolume / sourcePeriods };
+        },
+        hasMetric: row => Number.isFinite(row.value),
+        meetsCoverage: row => row.coverage.eligible,
+        meetsVolume: row => metric.id !== 'cash-appointment-rate' || row.averageVolumePerWeek > 100
+      });
+      cohort.diagnostics.coachesOver100OpportunitiesPerWeek = metric.id === 'cash-appointment-rate' ? cohort.rows.length : null;
+      cohort.rows.sort((left, right) => stableTextCompare(stableCoachKey(left.coach), stableCoachKey(right.coach)));
+      return cohort;
+    }
+    const identities = (prepared.people || []).filter(person => person && person.role === 'coach' && (!wantedDepartment || clean(person.department) === wantedDepartment));
+    const current = identities.filter(coach => currentCoach(coach, prepared));
+    const withTeams = current.filter(coach => (prepared.repsByCoach.get(coach.personId) || []).length > 0);
+    const metricRows = withTeams.map(coach => {
+      const reps = prepared.repsByCoach.get(coach.personId) || [];
+      const entries = reps.map(rep => values.get(metricKey(rep.personId, metric.id))).filter(entry => entry && Number.isFinite(entry.value));
+      const coverage = coachMetricCoverage(historyIndex, reps, metric.id), value = weightedEntryValue(entries);
+      const totalVolume = entries.reduce((sum, entry) => sum + (Number(entry.weight) || 0), 0);
+      const sourcePeriods = Math.max(1, expectedHistoryPeriods(historyIndex, coach, metric.id));
+      const averageVolumePerWeek = totalVolume / sourcePeriods;
+      return { coach, reps, entries, coverage, value, totalVolume, averageVolumePerWeek };
+    }).filter(row => Number.isFinite(row.value));
+    const meetingCoverage = metricRows.filter(row => row.coverage.eligible);
+    const overVolume = metric.id === 'cash-appointment-rate' ? meetingCoverage.filter(row => row.averageVolumePerWeek > 100) : meetingCoverage;
+    const diagnostics = {
+      totalCoachIdentities: identities.length,
+      currentCoaches: current.length,
+      coachesWithCurrentTeams: withTeams.length,
+      coachesMeetingCoverage: meetingCoverage.length,
+      coachesOver100OpportunitiesPerWeek: metric.id === 'cash-appointment-rate' ? overVolume.length : null,
+      finalRankedCohort: overVolume.length,
+      excludedForLowVolume: metric.id === 'cash-appointment-rate' ? Math.max(0, meetingCoverage.length - overVolume.length) : 0,
+      excludedForInsufficientCoverage: Math.max(0, metricRows.length - meetingCoverage.length)
+    };
+    return { rows: overVolume.sort((left, right) => stableTextCompare(stableCoachKey(left.coach), stableCoachKey(right.coach))), diagnostics };
+  }
+
   function buildWindowRankings(personId, prepared, historyIndex, weeks) {
     const person = prepared && prepared.byId.get(personId), values = historyValueMap(historyIndex), windowWeeks = Math.max(1, Number(weeks) || 8), rankings = [];
     if (!person) return { mode: '', weeks: windowWeeks, rankings };
-    const threshold = coverageThreshold();
+    const threshold = coverageThreshold(), qualityThreshold = qualityCoverageThreshold();
     const cache = cacheFor(rankingCacheByHistory, historyIndex);
-    const cacheKey = `${personId}|${windowWeeks}|${Math.round(threshold * 1000)}`;
+    const cacheKey = `${personId}|${windowWeeks}|${Math.round(threshold * 1000)}|${Math.round(qualityThreshold * 1000)}|${prepared.snapshotKey || ''}`;
     if (cache && cache.has(cacheKey)) return cache.get(cacheKey);
     let result;
     if (person.role === 'coach') {
-      const coaches = prepared.departmentCoaches.get(person.department || '') || [];
       for (const metric of METRICS) {
-        const valuesByCoach = new Map();
-        for (const coach of coaches) {
-          const reps = prepared.repsByCoach.get(coach.personId) || [];
-          const eligibleEntries = reps.filter(rep => metricCoverage(historyIndex, rep, metric.id, threshold).eligible)
-            .map(rep => values.get(metricKey(rep.personId, metric.id))).filter(Boolean);
-          const teamValue = weightedEntryValue(eligibleEntries);
-          if (Number.isFinite(teamValue)) valuesByCoach.set(coach.personId, teamValue);
-        }
-        if (!valuesByCoach.has(person.personId)) continue;
-        const ranked = Profiles.rankMetric(person.personId, valuesByCoach, metric.higher, Profiles.MIN_COACH_COHORT);
-        rankings.push({ id: metric.id, name: metric.name, category: metric.category, displayValue: metric.percent ? fmtPct(valuesByCoach.get(person.personId)) : String(valuesByCoach.get(person.personId)), source: `Last ${windowWeeks} weekly periods · ≥${Math.round(threshold * 100)}% KPI coverage`, ...ranked });
+        const cohort = coachMetricCohort(prepared, historyIndex, metric, person.department), own = cohort.rows.find(row => row.coach.personId === person.personId);
+        if (!own) continue;
+        const activeThreshold = thresholdForMetric(metric.id), coverageLabel = metric.id === 'qa-score' ? 'Quality' : 'KPI';
+        const ranked = deterministicRank(person.personId, cohort.rows, metric.higher);
+        const cashRequirement = metric.id === 'cash-appointment-rate' ? ' · >100 avg Consumer Opportunities/week' : '';
+        rankings.push({
+          id: metric.id, name: metric.name, category: metric.category, value: own.value,
+          displayValue: metric.percent ? fmtPct(own.value) : String(own.value),
+          source: `Last ${windowWeeks} weekly periods · ≥${Math.round(activeThreshold * 100)}% ${coverageLabel} coverage${cashRequirement}`,
+          coverage: own.coverage, averageOpportunitiesPerWeek: metric.id === 'cash-appointment-rate' ? own.averageVolumePerWeek : null,
+          sampleConfidence: Alignment && Alignment.confidenceFor ? Alignment.confidenceFor(metric.id, own.coverage.measured, own.averageVolumePerWeek) : '',
+          eligibilityRequirement: metric.id === 'cash-appointment-rate' ? '>100 average Consumer Opportunities/week' : `≥${Math.round(activeThreshold * 100)}% ${coverageLabel} coverage`,
+          diagnostics: cohort.diagnostics, ...ranked
+        });
       }
-      result = { mode: 'coach', weeks: windowWeeks, coverageThreshold: threshold, rankings };
+      result = { mode: 'coach', weeks: windowWeeks, coverageThreshold: threshold, qualityCoverageThreshold: qualityThreshold, rankings, snapshotKey: prepared.snapshotKey || '' };
     } else {
       const cohort = prepared.departmentReps.get(person.department || '') || [];
       for (const metric of METRICS) {
-        const ownCoverage = metricCoverage(historyIndex, person, metric.id, threshold);
+        const activeThreshold = thresholdForMetric(metric.id), ownCoverage = metricCoverage(historyIndex, person, metric.id, activeThreshold);
         if (!ownCoverage.eligible) continue;
         const valuesByPerson = new Map();
         for (const candidate of cohort) {
-          if (!metricCoverage(historyIndex, candidate, metric.id, threshold).eligible) continue;
+          if (!metricCoverage(historyIndex, candidate, metric.id, activeThreshold).eligible) continue;
           const value = values.get(metricKey(candidate.personId, metric.id))?.value;
           if (Number.isFinite(value)) valuesByPerson.set(candidate.personId, value);
         }
         if (!valuesByPerson.has(person.personId)) continue;
-        const ranked = Profiles.rankMetric(person.personId, valuesByPerson, metric.higher, Profiles.MIN_REP_COHORT);
+        const ranked = deterministicRank(person.personId, [...valuesByPerson].map(([id, value]) => ({ person: prepared.byId.get(id), value })), metric.higher);
         const relative = Profiles.percentileScore(valuesByPerson.get(person.personId), [...valuesByPerson.values()], metric.higher, Profiles.MIN_REP_COHORT);
-        rankings.push({ id: metric.id, name: metric.name, category: metric.category, coverage: ownCoverage, displayValue: metric.percent ? fmtPct(valuesByPerson.get(person.personId)) : String(valuesByPerson.get(person.personId)), source: `Last ${windowWeeks} weekly periods · ≥${Math.round(threshold * 100)}% KPI coverage`, score: relative.score, performancePercentile: relative.percentile, ...ranked });
+        const coverageLabel = metric.id === 'qa-score' ? 'Quality' : 'KPI';
+        rankings.push({ id: metric.id, name: metric.name, category: metric.category, coverage: ownCoverage, displayValue: metric.percent ? fmtPct(valuesByPerson.get(person.personId)) : String(valuesByPerson.get(person.personId)), source: `Last ${windowWeeks} weekly periods · ≥${Math.round(activeThreshold * 100)}% ${coverageLabel} coverage`, score: relative.score, performancePercentile: relative.percentile, ...ranked });
       }
-      result = { mode: 'representative', weeks: windowWeeks, coverageThreshold: threshold, rankings };
+      result = { mode: 'representative', weeks: windowWeeks, coverageThreshold: threshold, qualityCoverageThreshold: qualityThreshold, rankings, snapshotKey: prepared.snapshotKey || '' };
     }
     if (cache) cache.set(cacheKey, result);
     return result;
@@ -701,6 +829,20 @@
             const input = label.querySelector('input');
             input.addEventListener('change', () => {
               const threshold = setCoverageThreshold(Number(input.value) / 100);
+              input.value = String(Math.round(threshold * 100));
+              const windowSelect = root.document.getElementById('weekWindow');
+              if (windowSelect) windowSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+          }
+          if (headerActions && !root.document.getElementById('ctMinQualityCoverage')) {
+            const label = root.document.createElement('label');
+            label.className = 'ctCoverageControl';
+            label.innerHTML = `Min Quality Coverage <input id="ctMinQualityCoverage" type="number" min="0" max="100" step="5" value="${Math.round(qualityCoverageThreshold() * 100)}"><span>%</span>`;
+            const kpi = root.document.getElementById('ctMinKpiCoverage')?.closest('label');
+            if (kpi) kpi.insertAdjacentElement('afterend', label); else headerActions.insertBefore(label, headerActions.firstChild);
+            const input = label.querySelector('input');
+            input.addEventListener('change', () => {
+              const threshold = setQualityCoverageThreshold(Number(input.value) / 100);
               input.value = String(Math.round(threshold * 100));
               const windowSelect = root.document.getElementById('weekWindow');
               if (windowSelect) windowSelect.dispatchEvent(new Event('change', { bubbles: true }));
@@ -827,8 +969,8 @@
 
   const nativeApi = Object.freeze({
     VERSION: '1.1.0', WEEKLY_TYPES, prepareWeeklyAsync, createHistoryIndex, addHistoryRecord, buildProfile, buildWindowRankings,
-    coverageThreshold, setCoverageThreshold, metricCoverage,
-    _test: Object.freeze({ trendStatus, historyValueMap, metricKey, resolveWeeklyCoach, profilePerformanceRows, derivedPerformanceRows, summarizeMetricRows, metricCoverage, coachingTopSix })
+    coverageThreshold, setCoverageThreshold, qualityCoverageThreshold, setQualityCoverageThreshold, thresholdForMetric, metricCoverage, eligibleCoachCohort: coachMetricCohort,
+    _test: Object.freeze({ trendStatus, historyValueMap, metricKey, resolveWeeklyCoach, profilePerformanceRows, derivedPerformanceRows, summarizeMetricRows, metricCoverage, coachingTopSix, deterministicRank, coachMetricCoverage, coachMetricCohort, currentCoach })
   });
   root.CoachToolsProfileFast = nativeApi;
 

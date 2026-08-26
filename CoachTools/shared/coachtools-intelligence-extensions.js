@@ -12,6 +12,7 @@
     script.async = false;
     (document.head || document.documentElement).appendChild(script);
   };
+  write(from('coachtools-coaching-alignment.js'));
   write(from('coachtools-calculation-alignment.js'));
   write(from('coachtools-intelligence-extensions-v2.js'));
   write(from('coachtools-calculation-alignment-post.js'));

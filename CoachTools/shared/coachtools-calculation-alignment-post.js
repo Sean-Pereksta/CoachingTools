@@ -24,7 +24,7 @@
     return (rows[Math.floor(index)] + rows[Math.ceil(index)]) / 2;
   };
   const daysBetween = (start, end) => start instanceof Date && end instanceof Date ? Math.max(0, (end.getTime() - start.getTime()) / DAY) : NaN;
-  const daysSince = date => date instanceof Date ? Math.max(0, (Date.now() - date.getTime()) / DAY) : NaN;
+  const daysSince = (date, asOf) => date instanceof Date ? Math.max(0, (((asOf instanceof Date && !Number.isNaN(asOf.getTime())) ? asOf.getTime() : Date.now()) - date.getTime()) / DAY) : NaN;
 
   function pointDate(point) {
     return parseDate(point && (point.sort || point.date || point.label));
@@ -49,7 +49,7 @@
   }
 
   function recentQaRows(prepared, personId) {
-    const cutoff = Date.now() - C.QA_WINDOW_DAYS * DAY;
+    const cutoff = ((prepared && prepared.asOf instanceof Date) ? prepared.asOf.getTime() : Date.now()) - C.QA_WINDOW_DAYS * DAY;
     return [...(prepared && prepared.qaByRep && prepared.qaByRep.get(personId) || [])]
       .filter(row => row.date instanceof Date && row.date.getTime() >= cutoff && Number.isFinite(row.score))
       .sort((a, b) => a.date - b.date);
@@ -154,12 +154,13 @@
       if (matching.length > 1 && status !== 'Improved') status = 'Recurred';
       episodes.push({
         personId: profile.person.personId, personName: profile.person.displayName, metricId: metric.id, metric: metric.name,
+        asOf: prepared && prepared.asOf instanceof Date ? new Date(prepared.asOf) : null,
         current: metric.value, benchmark, goal, teamImpact: teamImpactFor(metric, profile, prepared, historyIndex),
         problemStart: start, firstCoaching: first && first.date || null, responseDays: first && start ? daysBetween(start, first.date) : NaN,
         status, before: outcome.before, after: outcome.after, coachingCount: matching.length
       });
     }
-    return episodes.sort((a, b) => (Number.isFinite(b.teamImpact) ? b.teamImpact : 0) - (Number.isFinite(a.teamImpact) ? a.teamImpact : 0) || (Number.isFinite(b.responseDays) ? b.responseDays : daysSince(b.problemStart)) - (Number.isFinite(a.responseDays) ? a.responseDays : daysSince(a.problemStart)));
+    return episodes.sort((a, b) => (Number.isFinite(b.teamImpact) ? b.teamImpact : 0) - (Number.isFinite(a.teamImpact) ? a.teamImpact : 0) || (Number.isFinite(b.responseDays) ? b.responseDays : daysSince(b.problemStart, b.asOf)) - (Number.isFinite(a.responseDays) ? a.responseDays : daysSince(a.problemStart, a.asOf)));
   }
 
   function wrapProfileFast() {
@@ -182,7 +183,7 @@
 
   function contextMetricSamples(context, personId, metricId) {
     if (metricId === 'qa-score' || metricId === 'call-quality') {
-      const cutoff = Date.now() - C.QA_WINDOW_DAYS * DAY;
+      const cutoff = ((context && context.asOf instanceof Date) ? context.asOf.getTime() : Date.now()) - C.QA_WINDOW_DAYS * DAY;
       return (context.qa || []).filter(row => row.representativeId === personId && row.date instanceof Date && row.date.getTime() >= cutoff && Number.isFinite(row.score)).map(row => ({ date: row.date, value: row.score, weight: 1 })).sort((a, b) => a.date - b.date);
     }
     const wanted = canonicalContextIds(metricId);
@@ -220,6 +221,7 @@
       let status = outcome.status; if (matching.length > 1 && status !== 'Improved') status = 'Recurred';
       episodes.push({
         personId: item.personId, personName: item.personName || (context.byId.get(item.personId) || {}).displayName || '', metricId: item.metricId, metric: item.metric || item.topic || metric.name,
+        asOf: context.asOf instanceof Date ? new Date(context.asOf) : null,
         current: current.value, benchmark, goal, teamImpact: Number.isFinite(item.evidence && item.evidence.teamImpact) ? item.evidence.teamImpact : Number.isFinite(item.impactScore) ? item.impactScore : NaN,
         problemStart: start, firstCoaching: first && first.date || null, responseDays: first && start ? daysBetween(start, first.date) : NaN,
         status, before: outcome.before, after: outcome.after, coachingCount: matching.length, severity: item.severity || 0
@@ -240,13 +242,13 @@
       total: episodes.length, reach: episodes.length ? coached.length / episodes.length : NaN, medianResponse: median(response),
       within3: response.length ? response.filter(value => value <= 3).length / response.length : NaN,
       improved: episodes.filter(row => row.status === 'Improved').length,
-      oldestOpen: Math.max(0, ...episodes.filter(row => !row.firstCoaching).map(row => daysSince(row.problemStart)).filter(Number.isFinite))
+      oldestOpen: Math.max(0, ...episodes.filter(row => !row.firstCoaching).map(row => daysSince(row.problemStart, row.asOf)).filter(Number.isFinite))
     };
   }
 
   function timelineTable(episodes, includePerson) {
     if (!episodes.length) return '<div class="ctAlignEmpty">No active KPI/QA issue episodes in this view.</div>';
-    return `<div class="ctAlignTableWrap"><table class="ctAlignTable"><thead><tr>${includePerson ? '<th>Representative</th>' : ''}<th>Problem</th><th>Current</th><th>Goal / benchmark</th><th>Team impact</th><th>Problem start</th><th>First relevant coaching</th><th>Response</th><th>Outcome</th></tr></thead><tbody>${episodes.map(row => `<tr>${includePerson ? `<td><b>${escapeHtml(row.personName)}</b></td>` : ''}<td><b>${escapeHtml(row.metric)}</b></td><td>${formatCurrent(row)}</td><td>${formatBenchmark(row)}</td><td>${formatImpact(row)}</td><td>${fmtDate(row.problemStart)}</td><td>${fmtDate(row.firstCoaching)}</td><td>${row.firstCoaching ? fmtDays(row.responseDays) : `<span class="ctAlignOpen">${fmtDays(daysSince(row.problemStart))} open</span>`}</td><td><span class="ctAlignStatus ${outcomeClass(row.status)}">${escapeHtml(row.status)}</span></td></tr>`).join('')}</tbody></table></div>`;
+    return `<div class="ctAlignTableWrap"><table class="ctAlignTable"><thead><tr>${includePerson ? '<th>Representative</th>' : ''}<th>Problem</th><th>Current</th><th>Goal / benchmark</th><th>Team impact</th><th>Problem start</th><th>First relevant coaching</th><th>Response</th><th>Outcome</th></tr></thead><tbody>${episodes.map(row => `<tr>${includePerson ? `<td><b>${escapeHtml(row.personName)}</b></td>` : ''}<td><b>${escapeHtml(row.metric)}</b></td><td>${formatCurrent(row)}</td><td>${formatBenchmark(row)}</td><td>${formatImpact(row)}</td><td>${fmtDate(row.problemStart)}</td><td>${fmtDate(row.firstCoaching)}</td><td>${row.firstCoaching ? fmtDays(row.responseDays) : `<span class="ctAlignOpen">${fmtDays(daysSince(row.problemStart, row.asOf))} open</span>`}</td><td><span class="ctAlignStatus ${outcomeClass(row.status)}">${escapeHtml(row.status)}</span></td></tr>`).join('')}</tbody></table></div>`;
   }
 
   function escapeHtml(value) { return String(value == null ? '' : value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])); }
