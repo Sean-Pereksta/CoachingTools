@@ -15,14 +15,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            CoachTools/apps/performance-scorecard.html
+            CoachTools/apps/performance-scorecard-enhanced.html
+            CoachTools/apps.json
+            CoachTools/build/build-performance-scorecard-enhanced.js
+            CoachTools/build/performance-scorecard-ranking-patch.txt
+            CoachTools/build/generate-app-manifest.js
+            CoachTools/tests/performance-scorecard-ranking.test.js
+            CoachTools/shared/performance-scorecard-extras.css
       - name: Regenerate enhanced scorecard
         run: node CoachTools/build/build-performance-scorecard-enhanced.js
       - name: Run scorecard contracts
         run: node CoachTools/tests/performance-scorecard-ranking.test.js
-      - name: Validate CoachTools suite (report existing repo issues)
-        continue-on-error: true
-        run: node CoachTools/build/validate-suite.js
       - name: Commit generated scorecard
         shell: bash
         run: |
