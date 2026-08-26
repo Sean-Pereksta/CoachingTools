@@ -274,12 +274,18 @@ function allStarCloseReply(requestId,dirtySaveQueued){
   try{ window.parent?.postMessage({type:'coachtools:close-ready',requestId,dirtySaveQueued:!!dirtySaveQueued},'*'); }catch(_){}
 }
 function prepareAllStarClose(requestId=''){
+  const started=performance.now();
   if(state.lifecycle.closing){ allStarCloseReply(requestId,state.lifecycleSaveQueued); return; }
   state.lifecycle.closing=true; state.lifecycle.hidden=true;
   cancelAllStarBackgroundWork('close preparation');
-  const canQueue=importCacheHasDirty() && !state.centralSyncStageActive && !state.importCacheSaving && !state.importCacheLoading;
+  const dirty=importCacheHasDirty(),saveAlreadyRunning=!!state.importCacheSaving;
+  const closePlan=window.CoachToolsClosePolicy?.allStarPersistencePlan({dirty,saveAlreadyRunning,centralSyncActive:state.centralSyncStageActive,importCacheLoading:state.importCacheLoading});
+  const canQueue=closePlan?closePlan.shouldQueueDirtySave:dirty && !state.centralSyncStageActive && !saveAlreadyRunning && !state.importCacheLoading;
   state.lifecycleSaveQueued=!!canQueue;
   if(canQueue) flushImportCacheSave('close preparation',{dirtyOnly:true,noRender:true,noCompaction:true,lifecycleSave:true}).catch(error=>console.warn('[Import Cache] Close preparation save failed',error));
+  state.lifecycle.closeDiagnostics={durationMs:Math.round(performance.now()-started),dirty,dirtySaveQueued:canQueue,saveAlreadyRunning,centralSyncActive:!!state.centralSyncStageActive,startupRunning:!!state.startup?.running};
+  if(state.lifecycle.closeDiagnostics.durationMs>25) console.warn('[All-Star Close] Slow preparation',state.lifecycle.closeDiagnostics);
+  else console.info('[All-Star Close]',state.lifecycle.closeDiagnostics);
   allStarCloseReply(requestId,canQueue);
 }
 async function startAllStar(){

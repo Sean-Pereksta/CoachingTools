@@ -6,6 +6,7 @@
     ? current.src.replace(/coachtools-profile-fast\.js(?:\?.*)?$/i, name)
     : `../shared/${name}`;
   const write = source => document.write('<script src="' + String(source).replace(/"/g, '&quot;') + '"><\/script>');
+  write(from('coachtools-coaching-alignment.js'));
   write(from('coachtools-calculation-alignment.js'));
   write(from('coachtools-profile-fast-v2.js'));
   write(from('coachtools-calculation-alignment-post.js'));

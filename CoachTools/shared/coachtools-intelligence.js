@@ -33,7 +33,8 @@
   function mean(values){ const valid=(values||[]).filter(Number.isFinite); return valid.length ? valid.reduce((a,b)=>a+b,0)/valid.length : NaN; }
   function median(values){ const valid=(values||[]).filter(Number.isFinite).sort((a,b)=>a-b); if(!valid.length) return NaN; const i=(valid.length-1)/2; return (valid[Math.floor(i)]+valid[Math.ceil(i)])/2; }
   function clamp(value,low,high){ return Math.max(low,Math.min(high,value)); }
-  function daysSince(date){ return date instanceof Date ? Math.max(0,(Date.now()-date.getTime())/DAY) : NaN; }
+  function calculationNow(){ const value=root.__CoachToolsIntelligenceAsOf; return value instanceof Date&&!Number.isNaN(value.getTime())?value.getTime():Date.now(); }
+  function daysSince(date){ return date instanceof Date ? Math.max(0,(calculationNow()-date.getTime())/DAY) : NaN; }
   function formatPercent(value){ return Number.isFinite(value) ? `${(value*100).toFixed(Math.abs(value)<0.1?1:0)}%` : '—'; }
   function formatDays(value){ return Number.isFinite(value) ? `${value.toFixed(value<10?1:0)} days` : '—'; }
 
@@ -214,12 +215,14 @@
   async function loadContext(options){
     await ready();
     const types=options&&options.types||['weeklyRetail','weeklyReferral','qa','documentedCoaching','checklist'];
-    const records=await root.CoachToolsAppData.getMany(types,{includeRecord:true,continueOnError:true,progressUi:false,appId:'coaching-intelligence'});
-    const people=root.CoachToolsIdentity&&root.CoachToolsIdentity.getAllPeople?await root.CoachToolsIdentity.getAllPeople():[];
+    const historyTypes=(!options||options.history!==false)?types.filter(type=>/^weekly|^monthly/.test(type)):[];
+    const [records,people,historyRows]=await Promise.all([
+      root.CoachToolsAppData.getMany(types,{includeRecord:true,continueOnError:true,progressUi:false,appId:'coaching-intelligence'}),
+      root.CoachToolsIdentity&&root.CoachToolsIdentity.getAllPeople?root.CoachToolsIdentity.getAllPeople():Promise.resolve([]),
+      Promise.all(historyTypes.map(type=>loadHistory(type,13)))
+    ]);
     const resolve=resolverFor(people), histories={};
-    if(!options || options.history!==false){
-      for(const type of types.filter(type=>/^weekly|^monthly/.test(type))) histories[type]=await loadHistory(type,13);
-    }
+    historyTypes.forEach((type,index)=>{histories[type]=historyRows[index]||[];});
     const context={records:records||{},histories,people,resolve,scope:currentScope()};
     context.byId=new Map(people.map(person=>[person.personId,person]));
     context.coaching=canonicalizeCoaching(records&&records.documentedCoaching,resolve);
@@ -234,6 +237,7 @@
         context.performance.push(...canonicalizePerformance(record,resolve,type));
       }
     }
+    context.asOf=root.CoachToolsCoachingAlignment&&root.CoachToolsCoachingAlignment.reportingCutoff?root.CoachToolsCoachingAlignment.reportingCutoff(context):new Date();
     return context;
   }
 
@@ -250,7 +254,7 @@
   }
 
   function coachingForMetric(context,personId,metric,days){
-    const cutoff=Date.now()-(days||60)*DAY;
+    const cutoff=(context.asOf instanceof Date?context.asOf.getTime():calculationNow())-(days||60)*DAY;
     return (context.coaching||[]).filter(event=>event.representativeId===personId && event.date.getTime()>=cutoff && event.topics.some(topic=>topicMatchesMetric(topic,metric))).sort((a,b)=>b.date-a.date);
   }
 
@@ -321,7 +325,7 @@
   }
 
   function supportSummary(context){
-    const cutoff=Date.now()-30*DAY, grouped=new Map();
+    const cutoff=(context.asOf instanceof Date?context.asOf.getTime():calculationNow())-30*DAY, grouped=new Map();
     for(const item of context.checklist||[]){
       if(item.created.getTime()<cutoff) continue;
       const key=item.coachId||normalizeName(item.coach); if(!key) continue;
@@ -344,7 +348,7 @@
       if(summary.overThreeDays) reasons.push(`${summary.overThreeDays} checklist item${summary.overThreeDays===1?'':'s'} have been waiting more than 3 days.`);
       if(Number.isFinite(summary.averageDays)&&summary.averageDays>3.25) reasons.push(`Average time to serve is ${summary.averageDays.toFixed(1)} days.`);
       if(summary.open) reasons.push(`${summary.open} checklist item${summary.open===1?' is':'s are'} currently open.`);
-      result.push({id:`support:${summary.coachId||normalizeName(summary.coachName)}`,personId:summary.coachId,coachId:summary.coachId,personName:summary.coachName,coachName:summary.coachName,topic:'Checklist Support',metric:'Time to Serve',metricId:'checklist-support',openedAt:new Date(Date.now()-summary.oldestOpenDays*DAY),status:'open',severity:Math.round(clamp(45+summary.overThreeDays*8+Math.max(0,(summary.averageDays||0)-3)*8,1,100)),confidence:summary.total>=8?'strong':summary.total>=4?'moderate':'low',recurrenceCount:0,lastCoachedAt:null,evidence:{checklistItems:summary.total,open:summary.open,overThreeDays:summary.overThreeDays,averageDays:summary.averageDays,oldestOpenDays:summary.oldestOpenDays},attentionReasons:reasons});
+      result.push({id:`support:${summary.coachId||normalizeName(summary.coachName)}`,personId:summary.coachId,coachId:summary.coachId,personName:summary.coachName,coachName:summary.coachName,topic:'Checklist Support',metric:'Time to Serve',metricId:'checklist-support',openedAt:new Date((context.asOf instanceof Date?context.asOf.getTime():calculationNow())-summary.oldestOpenDays*DAY),status:'open',severity:Math.round(clamp(45+summary.overThreeDays*8+Math.max(0,(summary.averageDays||0)-3)*8,1,100)),confidence:summary.total>=8?'strong':summary.total>=4?'moderate':'low',recurrenceCount:0,lastCoachedAt:null,evidence:{checklistItems:summary.total,open:summary.open,overThreeDays:summary.overThreeDays,averageDays:summary.averageDays,oldestOpenDays:summary.oldestOpenDays},attentionReasons:reasons});
     }
     return result;
   }
@@ -416,6 +420,7 @@
   }
 
   function buildSummary(context){
+    if(context){ if(!context.asOf&&root.CoachToolsCoachingAlignment&&root.CoachToolsCoachingAlignment.reportingCutoff)context.asOf=root.CoachToolsCoachingAlignment.reportingCutoff(context); root.__CoachToolsIntelligenceAsOf=context.asOf||null; }
     const opportunities=buildOpportunities(context), performance=summarizeOutcomes(performanceOutcomes(context)), qa=summarizeOutcomes(qaOutcomes(context)), support=supportSummary(context), recognition=buildRecognition(context);
     const followUp=opportunities.filter(row=>row.status==='coached-watching'||row.status==='recurred');
     return {context,opportunities,needCoaching:opportunities.filter(row=>row.status==='open'&&row.metricId!=='checklist-support'),followUp,supportDelays:opportunities.filter(row=>row.metricId==='checklist-support'),recognition,performanceOutcomes:performance,qaOutcomes:qa,coachEffectiveness:coachEffectiveness([...performance.rows,...qa.rows]),support};
@@ -423,11 +428,15 @@
 
   function cacheKey(kind){
     const versions=['weeklyRetail','weeklyReferral','qa','documentedCoaching','checklist'].map(type=>{try{const v=root.CoachToolsAppData&&root.CoachToolsAppData.getVersion?root.CoachToolsAppData.getVersion(type):null;return `${type}:${v&&v.version||0}:${v&&v.fingerprint||''}`;}catch(_){return `${type}:0`;}}).join('|');
-    const scope=currentScope()||{}; return `${kind}|${versions}|${scope.mode||'all'}:${scope.personId||scope.label||''}`;
+    const scope=currentScope()||{};
+    const identityVersion=Number(root.CoachToolsIdentity&&root.CoachToolsIdentity.getIdentityVersion&&root.CoachToolsIdentity.getIdentityVersion())||0;
+    const kpi=root.CoachToolsCoachingAlignment&&root.CoachToolsCoachingAlignment.kpiCoverageThreshold?root.CoachToolsCoachingAlignment.kpiCoverageThreshold():.5;
+    const quality=root.CoachToolsCoachingAlignment&&root.CoachToolsCoachingAlignment.qualityCoverageThreshold?root.CoachToolsCoachingAlignment.qualityCoverageThreshold():.25;
+    return `${kind}|${versions}|identity:${identityVersion}|coverage:${kpi}:${quality}|${scope.mode||'all'}:${scope.personId||scope.label||''}`;
   }
   async function commandCenter(options){
     const key=cacheKey('command'),existing=cache.get(key); if(existing&&Date.now()-existing.at<CACHE_MS)return existing.value;
-    const context=await loadContext({types:['weeklyRetail','weeklyReferral','qa','documentedCoaching','checklist'],history:true,...(options||{})}), value=buildSummary(context); cache.clear(); cache.set(key,{at:Date.now(),value}); return value;
+    const context=await loadContext({types:['weeklyRetail','weeklyReferral','qa','documentedCoaching','checklist'],history:true,...(options||{})}), value=buildSummary(context); cache.set(key,{at:Date.now(),value}); while(cache.size>8)cache.delete(cache.keys().next().value); return value;
   }
 
   async function insightForApp(appId,options){

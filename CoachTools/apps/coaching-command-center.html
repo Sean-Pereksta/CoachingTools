@@ -14,7 +14,7 @@
   <meta name="coachtools-data" content="weeklyRetail, weeklyReferral, qa, documentedCoaching, checklist">
   <meta name="coachtools-favorite" content="true">
   <meta name="coachtools-order" content="27">
-  <meta name="coachtools-version" content="2.2">
+  <meta name="coachtools-version" content="2.3">
 
   <script src="../vendor/lz-string.min.js"></script>
   <script src="../shared/coachtools-sync.js"></script>
@@ -53,6 +53,7 @@
     .teamStrip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.mini{border:1px solid var(--line);border-radius:11px;padding:9px;background:#fbfdfe}.mini small{display:block;color:var(--muted);font-size:8px}.mini b{display:block;margin-top:3px;font-size:13px}.mini span{display:block;margin-top:2px;color:var(--muted);font-size:8px}
     .tableWrap{overflow:auto}.table{width:100%;border-collapse:separate;border-spacing:0;font-size:9px;min-width:900px}.table th{position:sticky;top:0;background:#f8fafb;color:#5f7281;text-align:left;padding:8px;border-bottom:1px solid var(--line);font-size:8px;text-transform:uppercase;letter-spacing:.04em}.table td{padding:8px;border-bottom:1px solid #edf1f4;vertical-align:middle}.table tr:last-child td{border-bottom:0}.table .name{font-weight:900;font-size:10px}.flag{display:inline-flex;margin:1px 3px 1px 0;padding:3px 5px;border-radius:999px;background:#fff0ef;color:#9f3735;font-size:7px;font-weight:900}.muted{color:var(--muted)}
     .recognition{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.recognition .item{grid-template-columns:1fr auto}.empty{padding:25px 14px;text-align:center;color:var(--muted);font-size:10px}
+    .alignmentList{display:grid;gap:7px}.alignmentLine{display:grid;grid-template-columns:105px minmax(0,1fr) 95px;gap:8px;align-items:center}.dualBars{display:grid;gap:3px}.dualBar{display:grid;grid-template-columns:48px minmax(0,1fr) 34px;gap:5px;align-items:center;font-size:8px;color:var(--muted);font-weight:850}.dualTrack{height:7px;border-radius:999px;background:#e7edf2;overflow:hidden}.dualTrack i{display:block;height:100%;background:var(--red)}.dualBar.coaching .dualTrack i{background:var(--blue)}.contextStamp{font-size:8px;color:var(--muted);font-weight:800}
     .loadingShade{position:fixed;inset:0;z-index:100;background:rgba(7,18,30,.35);backdrop-filter:blur(2px);display:none;place-items:center}.loadingShade.open{display:grid}.loadingCard{width:min(560px,calc(100vw - 28px));border:1px solid rgba(160,194,218,.55);border-radius:18px;background:#0d2031;color:#eef8ff;padding:17px;box-shadow:0 28px 80px rgba(0,0,0,.35)}.loadingCard h2{margin:0;font-size:15px}.loadingCard p{margin:5px 0 10px;color:#b7ccdc;font-size:10px}.progressMeta{display:flex;justify-content:space-between;font-size:9px;color:#d8e8f4;margin-bottom:5px}.track{height:10px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden}.fill{height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#50a9e2,#39c0d8);transition:width .12s ease}.loadDetail{margin-top:9px;color:#a9c2d4;font-size:9px;min-height:15px}
     .modalShade{position:fixed;inset:0;z-index:110;background:rgba(8,18,28,.4);display:none;place-items:center;padding:16px}.modalShade.open{display:grid}.modal{width:min(760px,100%);max-height:min(760px,92vh);overflow:hidden;border-radius:18px;background:#fff;box-shadow:0 30px 100px rgba(0,0,0,.35);display:grid;grid-template-rows:auto minmax(0,1fr)}.modalHead{display:flex;gap:10px;align-items:flex-start;padding:13px;border-bottom:1px solid var(--line)}.modalHead div{min-width:0}.modalHead h2{margin:0;font-size:15px}.modalHead p{margin:3px 0 0;color:var(--muted);font-size:9px}.modalClose{margin-left:auto;width:32px;height:32px;border:1px solid var(--line);border-radius:9px;background:#fff;cursor:pointer}.modalBody{overflow:auto;padding:10px}.outcomeRow{display:grid;grid-template-columns:minmax(0,1fr) 90px 90px 90px;gap:7px;align-items:center;padding:8px;border-bottom:1px solid #edf1f4;font-size:9px}.outcomeRow b{font-size:10px}.outcomeRow small{display:block;color:var(--muted);margin-top:2px}.outcomeValue{font-weight:900;text-align:right}
     @media(max-width:1120px){.layout{grid-template-columns:1fr}.sidebar{position:static}.reminders{max-height:260px}.summary{grid-template-columns:repeat(3,1fr)}}
@@ -113,6 +114,7 @@
   'use strict';
 
   const I = window.CoachToolsIntelligence;
+  const Alignment = window.CoachToolsCoachingAlignment;
   const DAY = 86400000;
   const ORG_KEY = 'allStarOrgBuilder.v1';
   const REMINDER_KEY = 'coachtools.commandCenter.reminders.v1';
@@ -133,6 +135,8 @@
     repRows: [],
     alerts: [],
     impact: {},
+    runCache: new Map(),
+    snapshot: null,
     reminders: [],
     scopeLoading: false,
     scopeRefreshTimer: 0,
@@ -155,7 +159,8 @@
     return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : NaN;
   }
   function daysSince(date) {
-    return date instanceof Date ? Math.max(0, (Date.now() - date.getTime()) / DAY) : NaN;
+    const asOf = state.context && state.context.asOf instanceof Date ? state.context.asOf.getTime() : Date.now();
+    return date instanceof Date ? Math.max(0, (asOf - date.getTime()) / DAY) : NaN;
   }
   function fmtPct(value) { return I && I.formatPercent ? I.formatPercent(value) : (Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : '—'); }
   function fmtDays(value) { return I && I.formatDays ? I.formatDays(value) : (Number.isFinite(value) ? `${value.toFixed(1)} days` : '—'); }
@@ -294,6 +299,9 @@
   }
 
   function deriveCoaches(people) {
+    if (Alignment && Alignment.eligibleCoachCohort) {
+      return Alignment.eligibleCoachCohort({ people }).rows.map(row => row.coach).sort((a, b) => clean(a.displayName).localeCompare(clean(b.displayName)));
+    }
     const coachIds = new Set();
     for (const person of people || []) {
       if (!person) continue;
@@ -316,7 +324,7 @@
     }
 
     let coaches = deriveCoaches(people);
-    if (!coaches.length && typeof identity.getCoaches === 'function') {
+    if (!people.length && !coaches.length && typeof identity.getCoaches === 'function') {
       try { coaches = await identity.getCoaches(); }
       catch (error) { console.warn('[Coaching Command Center] cached coach snapshot unavailable', error); }
     }
@@ -602,16 +610,12 @@
 
     setProgress(26, 'History', 'Reading recent weekly snapshots for coaching impact.');
     const histories = { weeklyRetail: [], weeklyReferral: [] };
-    for (const type of ['weeklyRetail', 'weeklyReferral']) {
-      try {
-        histories[type] = (window.CoachToolsData && typeof window.CoachToolsData.getHistory === 'function'
-          ? await window.CoachToolsData.getHistory(type, { activeOnly: true, limit: 12 })
-          : []);
-      } catch (_) {
-        histories[type] = [];
-      }
-      await yieldBrowser();
-    }
+    const historyRows = await Promise.all(['weeklyRetail', 'weeklyReferral'].map(async type => {
+      try { return window.CoachToolsData && typeof window.CoachToolsData.getHistory === 'function' ? await window.CoachToolsData.getHistory(type, { activeOnly: true, limit: 12 }) : []; }
+      catch (_) { return []; }
+    }));
+    histories.weeklyRetail = historyRows[0] || [];
+    histories.weeklyReferral = historyRows[1] || [];
 
     const context = {
       records: records || {}, histories, people: state.people, resolve,
@@ -642,6 +646,8 @@
       const partial = await processRecordInChunks(entry.record, 'performance', resolve, entry.type, base, span, `Performance snapshot ${index + 1}/${perfRecords.length}`);
       context.performance.push(...partial);
     }
+    context.asOf = Alignment && Alignment.reportingCutoff ? Alignment.reportingCutoff(context) : new Date();
+    context.snapshotKey = Alignment && Alignment.snapshotFingerprint ? Alignment.snapshotFingerprint(records, histories, window.CoachToolsIdentity?.getIdentityVersion?.() || 0, scope.value) : '';
 
     setProgress(91, 'Scoring', 'Applying Coaching Intelligence rules to the selected team.', 'Ranking team issues, outcomes, and individual risk.');
     await yieldBrowser();
@@ -829,14 +835,28 @@
   function renderIssue(item) {
     const custom = item.kind === 'corrective' || item.kind === 'serve-risk';
     const title = item.personName || item.coachName || 'Team issue';
-    const topic = item.topic || 'Coaching opportunity';
-    const why = custom ? item.why : (item.attentionReasons && item.attentionReasons[0] || 'Review this coaching signal.');
+    const topic = item.topic || item.category || item.metricName || 'Coaching opportunity';
+    const numericEvidence = Number.isFinite(item.current) ? `${item.metricName || item.metric || topic}: ${fmtPct(item.current)}${Number.isFinite(item.prior) ? ` · Prior ${fmtPct(item.prior)} · ${item.delta >= 0 ? '▲' : '▼'} ${Math.abs(item.delta * 100).toFixed(1)} pts` : ''}${Number.isFinite(item.percentile) ? ` · ${item.percentile}th percentile` : ''} · ${item.sampleSize || 0} samples${item.coverage ? ` · ${Math.round(item.coverage.rate * 100)}% coverage` : ''}${item.lastCoachedAt ? ` · last related coaching ${Math.round(daysSince(item.lastCoachedAt))}d ago` : ' · no related coaching found'}` : '';
+    const why = custom ? item.why : [numericEvidence, item.reason || item.attentionReasons && item.attentionReasons[0] || 'Review this coaching signal.'].filter(Boolean).join(' — ');
     const severity = Number(item.severity) || 50;
     const tone = severity >= 85 ? 'hot' : severity >= 65 ? 'warn' : 'info';
     return `<article class="item ${tone}">
       <div><div class="itemName">${esc(title)}</div><div class="itemFocus">${esc(topic)}</div><div class="itemWhy">${esc(why)}</div></div>
       <div class="itemSide">${statusPill(item)}${reminderButton(custom ? item.kind : 'opportunity', item.id, `${title} — ${topic}`, why)}</div>
     </article>`;
+  }
+
+  function alignmentMarkup() {
+    const alignment = state.summary.alignment;
+    if (!alignment) return '<div class="empty">Insufficient data for coaching alignment.</div>';
+    const rows = alignment.rows.filter(row => row.score || row.events.length);
+    return `<div class="alignmentList">${rows.map(row => `<div class="alignmentLine"><b>${esc(row.category)}</b><div class="dualBars"><div class="dualBar"><span>NEED</span><div class="dualTrack"><i style="width:${row.score}%"></i></div><b>${row.score}%</b></div><div class="dualBar coaching"><span>COACHING</span><div class="dualTrack"><i style="width:${row.focus}%"></i></div><b>${row.focus}%</b></div><small>${esc(row.reasons.join(' · '))}${Number.isFinite(row.coverage) ? ` · ${row.coverage}% affected-rep coverage` : ''}</small></div><span class="pill ${row.status === 'Aligned' ? 'good' : row.status === 'Under-coached' || row.status === 'No recent coaching' ? 'bad' : 'info'}">${esc(row.status)}</span></div>`).join('') || '<div class="empty">No measurable need or categorized coaching in this scope.</div>'}</div>`;
+  }
+
+  function coachingMixMarkup() {
+    const activity = state.summary.coachingActivity;
+    if (!activity) return '<div class="empty">No categorized coaching data.</div>';
+    return (activity.categories || []).map(row => `<details><summary>${esc(row.category)} — ${row.count}</summary><div class="itemWhy">${row.topics.map(topic => `${esc(topic.topic)} — ${topic.count}`).join('<br>') || 'Original topics retained on each event.'}</div></details>`).join('') || '<div class="empty">No categorized coaching in the last 7 days.</div>';
   }
   function renderRecognition(item) {
     const detail = item.message || `${item.topic} is moving positively.`;
@@ -848,7 +868,7 @@
 
   function renderDashboard() {
     const summary = summaryValues();
-    const issues = [...state.alerts, ...state.summary.opportunities].sort((a, b) => (b.severity || 0) - (a.severity || 0)).slice(0, 30);
+    const issues = [...state.alerts, ...(state.summary.attention || state.summary.opportunities)].sort((a, b) => (b.severity || 0) - (a.severity || 0) || clean(a.personName).localeCompare(clean(b.personName))).slice(0, 30);
     const recognition = state.summary.recognition.filter(item => inSelectedScope(state.byId.get(item.personId))).slice(0, 10);
     const delayed = state.correctives.filter(item => item.waitDays >= 5).sort((a, b) => b.waitDays - a.waitDays).slice(0, 20);
 
@@ -858,9 +878,19 @@
       <section class="summary">
         <div class="metricCard"><small>Representatives</small><strong>${summary.reps}</strong><span>${esc(state.scope.label)}</span></div>
         <div class="metricCard bad"><small>Open attention</small><strong>${summary.open}</strong><span>Coaching + custom risk signals</span></div>
-        <div class="metricCard"><small>Coaching · 30d</small><strong>${summary.coaching30}</strong><span>Documented coaching events</span></div>
+        <div class="metricCard"><small>Coaching · 7d</small><strong>${state.summary.coachingActivity?.last7.total ?? 0}</strong><span>${state.summary.coachingActivity?.last7.uniqueRepresentatives ?? 0} unique reps · ${fmtPct(state.summary.coachingActivity?.last7.rosterCoverage)} roster</span></div>
         <div class="metricCard ${Number.isFinite(summary.qa) && summary.qa < .85 ? 'warn' : 'good'}"><small>Team QA · 30d</small><strong>${fmtPct(summary.qa)}</strong><span>Recent QA average</span></div>
-        <div class="metricCard ${summary.delayedCorrectives ? 'bad' : 'good'}"><small>Open 5d+ correctives</small><strong>${summary.delayedCorrectives}</strong><span>Open or served late</span></div>
+        <div class="metricCard ${summary.delayedCorrectives ? 'bad' : 'good'}"><small>Coaching Alignment</small><strong>${Number.isFinite(state.summary.alignment?.score)?`${state.summary.alignment.score}%`:'—'}</strong><span>${state.summary.alignment?.coveredMajorNeeds ?? 0} of ${state.summary.alignment?.majorNeeds ?? 0} major needs covered</span></div>
+      </section>
+
+      <section class="panel" style="margin-bottom:10px">
+        <div class="panelHead"><div><h2>Need vs Coaching · Last 7 Days</h2><p>Team need combines affected reps, severity, trend, sample size and data coverage. Coaching focus uses the shared topic categorizer.</p></div><span class="meta">Biggest uncovered: ${esc(state.summary.alignment?.biggestUncovered?.category || 'none')} · Data through ${esc(fmtDate(state.context.asOf))} · Snapshot ${esc(state.context.snapshotKey || '—')}</span></div>
+        <div class="panelBody">${alignmentMarkup()}</div>
+      </section>
+
+      <section class="grid2">
+        <article class="panel"><div class="panelHead"><div><h2>What was coached this week</h2><p>Broad categories preserve each specific documented topic.</p></div><span class="meta">${state.summary.coachingActivity?.last7.total ?? 0} events</span></div><div class="panelBody">${coachingMixMarkup()}</div></article>
+        <article class="panel"><div class="panelHead"><div><h2>Alignment summary</h2><p>This measures whether coaching is directed toward current need—not who coaches the most.</p></div></div><div class="panelBody"><div class="teamStrip"><div class="mini"><small>Alignment</small><b>${Number.isFinite(state.summary.alignment?.score)?`${state.summary.alignment.score}%`:'—'}</b><span>${state.summary.alignment?.coveredMajorNeeds ?? 0}/${state.summary.alignment?.majorNeeds ?? 0} major needs covered</span></div><div class="mini"><small>High-priority reps coached</small><b>${fmtPct(state.summary.alignment?.priorityCoverage)}</b><span>Last 7 days</span></div><div class="mini"><small>Biggest uncovered need</small><b>${esc(state.summary.alignment?.biggestUncovered?.category || 'None')}</b><span>Current measured need</span></div><div class="mini"><small>Most coached</small><b>${esc(state.summary.alignment?.mostCoached?.category || 'None')}</b><span>May be deliberate reinforcement</span></div></div></div></article>
       </section>
 
       <section class="grid2">
@@ -933,6 +963,12 @@
     $('modalShade').classList.add('open');
   }
 
+  function runFingerprint(scope) {
+    const version = Alignment && Alignment.currentVersionFingerprint ? Alignment.currentVersionFingerprint(window.CoachToolsAppData, window.CoachToolsIdentity, ['weeklyRetail', 'weeklyReferral', 'qa', 'documentedCoaching', 'checklist']) : { key: 'uncached' };
+    const kpi = I.coverageThreshold ? I.coverageThreshold() : .5, quality = I.qualityCoverageThreshold ? I.qualityCoverageThreshold() : .25;
+    return `${version.key}|${scope.value}|${Math.round(kpi * 1000)}|${Math.round(quality * 1000)}`;
+  }
+
   async function runSelected() {
     const scope = scopeFromValue($('scopeSelect').value);
     if (!scope) return;
@@ -943,9 +979,27 @@
     saveScope({ value: scope.value, label: scope.label });
 
     try {
-      const built = await buildContextChunked(scope);
+      const started = performance.now(), initialCacheKey = runFingerprint(scope), cached = state.runCache.get(initialCacheKey);
+      if (cached) {
+        Object.assign(state, cached);
+        renderDashboard();
+        closeLoader();
+        console.info('[Coaching Command Center Timing]', { cached: true, durationMs: Math.round(performance.now() - started), snapshot: state.snapshot && state.snapshot.id });
+        return;
+      }
+      let built = null, cacheKey = initialCacheKey, stableSnapshot = false;
+      for (let attempt = 0; attempt < 3 && !stableSnapshot; attempt += 1) {
+        const before = runFingerprint(scope);
+        built = await buildContextChunked(scope);
+        const after = runFingerprint(scope);
+        stableSnapshot = before === after;
+        cacheKey = after;
+        if (!stableSnapshot) setProgress(12, 'Source update detected', 'Restarting once the import and identity versions settle so snapshots are never mixed.');
+      }
+      if (!stableSnapshot) throw new Error('Source data kept changing while the report was building. Wait for the import to finish, then run the report again.');
       state.context = built.context;
       state.correctives = built.correctives;
+      state.snapshot = { id: built.context.snapshotKey, asOf: built.context.asOf };
 
       setProgress(93, 'Intelligence', 'Building Coaching Intelligence summary.');
       state.summary = I.buildSummary(state.context);
@@ -960,9 +1014,13 @@
         cash: impactSummary('cash')
       };
 
+      state.runCache.set(cacheKey, { context: state.context, correctives: state.correctives, summary: state.summary, repRows: state.repRows, alerts: state.alerts, impact: state.impact, snapshot: state.snapshot });
+      while (state.runCache.size > 10) state.runCache.delete(state.runCache.keys().next().value);
+
       setProgress(99, 'Rendering', 'Putting the highest-value items first.');
       renderDashboard();
       closeLoader();
+      console.info('[Coaching Command Center Timing]', { cached: false, durationMs: Math.round(performance.now() - started), snapshot: state.snapshot && state.snapshot.id });
     } catch (error) {
       console.error('[Coaching Command Center]', error);
       $('loadingStage').textContent = 'Could not finish this run.';

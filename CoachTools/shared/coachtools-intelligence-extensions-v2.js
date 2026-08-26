@@ -3,6 +3,7 @@
 
   const base = root.CoachToolsIntelligence;
   if (!base) return;
+  const Alignment = root.CoachToolsCoachingAlignment;
 
   const DAY = 86400000;
   const COVERAGE_KEY = 'coachtools.minKpiCoverage.v1';
@@ -12,7 +13,8 @@
   const augmentedCache = new WeakMap();
   const clean = value => String(value == null ? '' : value).trim().replace(/\s+/g, ' ');
   const normHeader = value => clean(value).toLowerCase().replace(/[^a-z0-9%]/g, '');
-  const daysSince = date => date instanceof Date ? Math.max(0, (Date.now() - date.getTime()) / DAY) : NaN;
+  const calculationNow = () => root.__CoachToolsIntelligenceAsOf instanceof Date && !Number.isNaN(root.__CoachToolsIntelligenceAsOf.getTime()) ? root.__CoachToolsIntelligenceAsOf.getTime() : Date.now();
+  const daysSince = date => date instanceof Date ? Math.max(0, (calculationNow() - date.getTime()) / DAY) : NaN;
   const mean = values => {
     const valid = (values || []).filter(Number.isFinite);
     return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : NaN;
@@ -20,20 +22,26 @@
   const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
   function coverageThreshold() {
+    if (Alignment && Alignment.kpiCoverageThreshold) return Alignment.kpiCoverageThreshold();
     if (Number.isFinite(root.__CoachToolsMinKpiCoverage)) return clamp(root.__CoachToolsMinKpiCoverage, 0, 1);
     try {
-      const saved = Number(root.localStorage && root.localStorage.getItem(COVERAGE_KEY));
+      const raw = root.localStorage && root.localStorage.getItem(COVERAGE_KEY);
+      const saved = raw == null || raw === '' ? NaN : Number(raw);
       if (Number.isFinite(saved) && saved >= 0 && saved <= 1) return saved;
     } catch (_) {}
     return DEFAULT_COVERAGE;
   }
 
   function setCoverageThreshold(value) {
+    if (Alignment && Alignment.setKpiCoverageThreshold) return Alignment.setKpiCoverageThreshold(value);
     const next = clamp(Number(value) || 0, 0, 1);
     root.__CoachToolsMinKpiCoverage = next;
     try { if (root.localStorage) root.localStorage.setItem(COVERAGE_KEY, String(next)); } catch (_) {}
     return next;
   }
+
+  function qualityCoverageThreshold() { return Alignment && Alignment.qualityCoverageThreshold ? Alignment.qualityCoverageThreshold() : 0.25; }
+  function setQualityCoverageThreshold(value) { return Alignment && Alignment.setQualityCoverageThreshold ? Alignment.setQualityCoverageThreshold(value) : clamp(Number(value) || 0, 0, 1); }
 
   function quietCommandCenterIdentityStartup() {
     const appId = typeof document !== 'undefined' ? clean(document.querySelector('meta[name="coachtools-id"]')?.content) : '';
@@ -138,12 +146,13 @@
       for (const point of points) if (point.date instanceof Date) available.add(point.date.toISOString().slice(0, 10));
     }
     const measured = new Set(rows.filter(row => row.date instanceof Date).map(row => row.date.toISOString().slice(0, 10))).size;
-    const expected = available.size, rate = expected ? Math.min(1, measured / expected) : measured ? 1 : 0, minimum = coverageThreshold();
+    const expected = available.size, rate = expected ? Math.min(1, measured / expected) : measured ? 1 : 0;
+    const minimum = /^(qa-score|call-quality)$/.test(metricId) ? qualityCoverageThreshold() : coverageThreshold();
     return { measured, available: expected, rate, minimum, eligible: expected > 0 && rate + 1e-9 >= minimum };
   }
 
   function matchingCoaching(context, personId, metric, days) {
-    const cutoff = Date.now() - (days || 90) * DAY;
+    const cutoff = (context.asOf instanceof Date ? context.asOf.getTime() : Date.now()) - (days || 90) * DAY;
     return (context.coaching || []).filter(event => event.representativeId === personId && event.date instanceof Date && event.date.getTime() >= cutoff && (event.topics || []).some(topic => topicMatchesMetric(topic, metric))).sort((left, right) => right.date - left.date);
   }
 
@@ -172,7 +181,7 @@
   function statsCacheFor(context) { let cache = recentStatsCache.get(context); if (!cache) { cache = new Map(); recentStatsCache.set(context, cache); } return cache; }
 
   function recentMetricStats(context, metricId, limit) {
-    const key = `${metricId}|${Math.max(1, limit || 4)}|${Math.round(coverageThreshold() * 1000)}`, cache = statsCacheFor(context); if (cache.has(key)) return cache.get(key);
+    const key = `${metricId}|${Math.max(1, limit || 4)}|${Math.round(coverageThreshold() * 1000)}|${Math.round(qualityCoverageThreshold() * 1000)}`, cache = statsCacheFor(context); if (cache.has(key)) return cache.get(key);
     const grouped = new Map();
     for (const row of context.performance || []) {
       if (row.role !== 'representative' || !row.metric || row.metric.id !== metricId || !Number.isFinite(row.value)) continue;
@@ -200,24 +209,24 @@
     return scoped.map(([personId, row]) => {
       const drag = Math.max(0, teamValue - row.value) * row.weight / totalWeight; if (!(drag > 0)) return null;
       const person = context.byId.get(personId), rank = ranks.get(personId), difference = teamValue - row.value;
-      return { id: `impact:${metricId}:${personId}`, kind: 'team-driver', personId, personName: person && person.displayName || personId, coachId: person && person.currentCoachId || '', topic: `${label}${rank ? ` · #${rank.rank}/${rank.total}` : ''}`, metric: label, metricId, openedAt: new Date(), status: 'open', severity: Math.round(Math.min(99, 62 + Math.min(24, difference / .05 * 18) + Math.min(13, row.weight / totalWeight * 100))), impactScore: drag, attentionReasons: [`Estimated team drag: ${(drag * 100).toFixed(2)} percentage points. Rep ${(row.value * 100).toFixed(1)}% vs team ${(teamValue * 100).toFixed(1)}%, weighted by ${Math.round(row.weight)} opportunities${rank ? ` · global rank #${rank.rank}/${rank.total}` : ''}.`], evidence: { current: row.value, teamValue, weight: row.weight, teamWeight: totalWeight, teamImpact: drag, globalRank: rank && rank.rank, globalTotal: rank && rank.total, coverage: row.coverage } };
+      return { id: `impact:${metricId}:${personId}`, kind: 'team-driver', personId, personName: person && person.displayName || personId, coachId: person && person.currentCoachId || '', topic: `${label}${rank ? ` · #${rank.rank}/${rank.total}` : ''}`, metric: label, metricId, openedAt: context.asOf instanceof Date ? new Date(context.asOf) : new Date(), status: 'open', severity: Math.round(Math.min(99, 62 + Math.min(24, difference / .05 * 18) + Math.min(13, row.weight / totalWeight * 100))), impactScore: drag, attentionReasons: [`Estimated team drag: ${(drag * 100).toFixed(2)} percentage points. Rep ${(row.value * 100).toFixed(1)}% vs team ${(teamValue * 100).toFixed(1)}%, weighted by ${Math.round(row.weight)} opportunities${rank ? ` · global rank #${rank.rank}/${rank.total}` : ''}.`], evidence: { current: row.value, teamValue, weight: row.weight, teamWeight: totalWeight, teamImpact: drag, globalRank: rank && rank.rank, globalTotal: rank && rank.total, coverage: row.coverage } };
     }).filter(Boolean).sort((left, right) => right.impactScore - left.impactScore);
   }
 
   function qaDrivers(context) {
-    const grouped = new Map(), cutoff = Date.now() - 30 * DAY;
+    const grouped = new Map(), cutoff = (context.asOf instanceof Date ? context.asOf.getTime() : Date.now()) - 30 * DAY;
     for (const row of context.qa || []) { if (!row.representativeId || !Number.isFinite(row.score) || !(row.date instanceof Date) || row.date.getTime() < cutoff || !scopedRepresentative(context, row.representativeId)) continue; if (!grouped.has(row.representativeId)) grouped.set(row.representativeId, []); grouped.get(row.representativeId).push(row.score); }
     const stats = Array.from(grouped.entries()).map(([personId, scores]) => ({ personId, value: mean(scores), weight: scores.length })).filter(row => Number.isFinite(row.value)), totalWeight = stats.reduce((sum, row) => sum + row.weight, 0); if (!totalWeight) return [];
     const teamValue = stats.reduce((sum, row) => sum + row.value * row.weight, 0) / totalWeight;
-    return stats.map(row => { const drag = Math.max(0, teamValue - row.value) * row.weight / totalWeight; if (!(drag > 0)) return null; const person = context.byId.get(row.personId), difference = teamValue - row.value; return { id: `impact:qa-score:${row.personId}`, kind: 'team-driver', personId: row.personId, personName: person && person.displayName || row.personId, coachId: person && person.currentCoachId || '', topic: 'Call Quality / QA', metric: 'Call Quality / QA', metricId: 'qa-score', openedAt: new Date(), status: 'open', severity: Math.round(Math.min(99, 62 + Math.min(25, difference / .05 * 18) + Math.min(12, row.weight / totalWeight * 100))), impactScore: drag, attentionReasons: [`Estimated team QA drag: ${(drag * 100).toFixed(2)} percentage points. Rep ${(row.value * 100).toFixed(1)}% vs team ${(teamValue * 100).toFixed(1)}% across ${row.weight} recent QA evaluation${row.weight === 1 ? '' : 's'}.`], evidence: { current: row.value, teamValue, weight: row.weight, teamWeight: totalWeight, teamImpact: drag } }; }).filter(Boolean).sort((left, right) => right.impactScore - left.impactScore);
+    return stats.map(row => { const drag = Math.max(0, teamValue - row.value) * row.weight / totalWeight; if (!(drag > 0)) return null; const person = context.byId.get(row.personId), difference = teamValue - row.value; return { id: `impact:qa-score:${row.personId}`, kind: 'team-driver', personId: row.personId, personName: person && person.displayName || row.personId, coachId: person && person.currentCoachId || '', topic: 'Call Quality / QA', metric: 'Call Quality / QA', metricId: 'qa-score', openedAt: context.asOf instanceof Date ? new Date(context.asOf) : new Date(calculationNow()), status: 'open', severity: Math.round(Math.min(99, 62 + Math.min(25, difference / .05 * 18) + Math.min(12, row.weight / totalWeight * 100))), impactScore: drag, attentionReasons: [`Estimated team QA drag: ${(drag * 100).toFixed(2)} percentage points. Rep ${(row.value * 100).toFixed(1)}% vs team ${(teamValue * 100).toFixed(1)}% across ${row.weight} recent QA evaluation${row.weight === 1 ? '' : 's'}.`], evidence: { current: row.value, teamValue, weight: row.weight, teamWeight: totalWeight, teamImpact: drag } }; }).filter(Boolean).sort((left, right) => right.impactScore - left.impactScore);
   }
 
   function serveTimeDrivers(context) {
-    const grouped = new Map(), cutoff = Date.now() - 45 * DAY;
+    const grouped = new Map(), cutoff = (context.asOf instanceof Date ? context.asOf.getTime() : Date.now()) - 45 * DAY;
     for (const row of context.checklist || []) { if (!row.representativeId || !Number.isFinite(row.days) || !(row.created instanceof Date) || row.created.getTime() < cutoff || !scopedRepresentative(context, row.representativeId)) continue; if (!grouped.has(row.representativeId)) grouped.set(row.representativeId, []); grouped.get(row.representativeId).push(row.days); }
     const stats = Array.from(grouped.entries()).map(([personId, values]) => ({ personId, value: mean(values), weight: values.length })).filter(row => Number.isFinite(row.value)), totalWeight = stats.reduce((sum, row) => sum + row.weight, 0); if (!totalWeight) return [];
     const teamValue = stats.reduce((sum, row) => sum + row.value * row.weight, 0) / totalWeight;
-    return stats.map(row => { const drag = Math.max(0, row.value - teamValue) * row.weight / totalWeight; if (!(drag > 0)) return null; const person = context.byId.get(row.personId), difference = row.value - teamValue; return { id: `impact:checklist-support:${row.personId}`, kind: 'team-driver', personId: row.personId, personName: person && person.displayName || row.personId, coachId: person && person.currentCoachId || '', topic: 'Average Time to Serve', metric: 'Average Time to Serve', metricId: 'checklist-support', openedAt: new Date(), status: 'open', severity: Math.round(Math.min(99, 62 + Math.min(25, difference / 3 * 18) + Math.min(12, row.weight / totalWeight * 100))), impactScore: drag / 10, attentionReasons: [`Estimated contribution to team serve-time average: +${drag.toFixed(2)} days. Rep average ${row.value.toFixed(1)} days vs team ${teamValue.toFixed(1)} days across ${row.weight} recently served checklist item${row.weight === 1 ? '' : 's'}.`], evidence: { current: row.value, teamValue, weight: row.weight, teamWeight: totalWeight, teamImpactDays: drag } }; }).filter(Boolean).sort((left, right) => right.impactScore - left.impactScore);
+    return stats.map(row => { const drag = Math.max(0, row.value - teamValue) * row.weight / totalWeight; if (!(drag > 0)) return null; const person = context.byId.get(row.personId), difference = row.value - teamValue; return { id: `impact:checklist-support:${row.personId}`, kind: 'team-driver', personId: row.personId, personName: person && person.displayName || row.personId, coachId: person && person.currentCoachId || '', topic: 'Average Time to Serve', metric: 'Average Time to Serve', metricId: 'checklist-support', openedAt: context.asOf instanceof Date ? new Date(context.asOf) : new Date(calculationNow()), status: 'open', severity: Math.round(Math.min(99, 62 + Math.min(25, difference / 3 * 18) + Math.min(12, row.weight / totalWeight * 100))), impactScore: drag / 10, attentionReasons: [`Estimated contribution to team serve-time average: +${drag.toFixed(2)} days. Rep average ${row.value.toFixed(1)} days vs team ${teamValue.toFixed(1)} days across ${row.weight} recently served checklist item${row.weight === 1 ? '' : 's'}.`], evidence: { current: row.value, teamValue, weight: row.weight, teamWeight: totalWeight, teamImpactDays: drag } }; }).filter(Boolean).sort((left, right) => right.impactScore - left.impactScore);
   }
 
   function balancedPriorityDrivers(context) {
@@ -270,7 +279,13 @@
     for (const item of resolved) { const key = `${item.personId}|${item.metricId}`; if (recognitionKeys.has(key)) continue; recognition.push({ kind: 'resolved', personId: item.personId, personName: item.personName, coachId: item.coachId, coachName: item.coachName, topic: item.topic, metric: item.metric, metricId: item.metricId, change: item.evidence.outcomeChange, orientedChange: Math.abs(item.evidence.outcomeChange || 0), current: item.evidence.current, message: `${item.topic} has remained improved after coaching and appears resolved.` }); }
     const addSpark = item => ({ ...item, coverage: item.metricId && item.personId ? metricCoverage(summary.context, item.personId, item.metricId) : null, sparkline: item.metricId && item.personId ? seriesPoints(summary.context, item.personId, item.metricId) : [] });
     const effectiveness = summary.coachEffectiveness || [], globalRankings = { consumerAppointmentRate: globalRanking(summary.context, 'consumer-appointment-rate'), wiperRate: globalRanking(summary.context, 'wiper-rate') };
-    const augmented = { ...summary, opportunities: opportunities.map(addSpark), allOpportunities: originalOpportunities.map(addSpark), priorityDrivers: priorityDrivers.map(addSpark), globalRankings, needCoaching: opportunities.filter(item => item.status === 'open' && item.metricId !== 'checklist-support').map(addSpark), followUp: originalOpportunities.filter(item => item.status === 'coached-watching' || item.status === 'recurred').map(addSpark), supportDelays: opportunities.filter(item => item.metricId === 'checklist-support').map(addSpark), resolved: resolved.map(addSpark), lifecycle: [...originalOpportunities, ...resolved].map(addSpark), recognition: recognition.map(addSpark).sort((left, right) => (right.orientedChange || 0) - (left.orientedChange || 0)).slice(0, 30), coachingBalance: coachingBalance(summary.context), coachingExperts: coachingExperts(effectiveness), coachingOverview: coachingOverview(summary.context), coverageThreshold: coverageThreshold() };
+    const attention = Alignment && Alignment.attentionFromSummary ? Alignment.attentionFromSummary({ ...summary, opportunities: originalOpportunities }) : [];
+    const scopedReps = (summary.context.people || []).filter(person => person && person.role === 'representative' && base._test.personInScope(person, summary.context.scope, summary.context.byId));
+    const scopedIds = new Set(scopedReps.map(person => person.personId)), scopedCoachIds = new Set(scopedReps.map(person => person.currentCoachId).filter(Boolean));
+    const scopedCoaching = (summary.context.coaching || []).filter(event => scopedIds.has(event.representativeId) || scopedCoachIds.has(event.coachId));
+    const alignment = Alignment && Alignment.buildAlignment ? Alignment.buildAlignment({ attention, coaching: scopedCoaching, roster: scopedReps, asOf: summary.context.asOf }) : null;
+    const coachingActivity = Alignment && Alignment.coachingActivity ? Alignment.coachingActivity({ coaching: scopedCoaching, roster: scopedReps, asOf: summary.context.asOf }) : null;
+    const augmented = { ...summary, opportunities: opportunities.map(addSpark), allOpportunities: originalOpportunities.map(addSpark), priorityDrivers: priorityDrivers.map(addSpark), globalRankings, needCoaching: opportunities.filter(item => item.status === 'open' && item.metricId !== 'checklist-support').map(addSpark), followUp: originalOpportunities.filter(item => item.status === 'coached-watching' || item.status === 'recurred').map(addSpark), supportDelays: opportunities.filter(item => item.metricId === 'checklist-support').map(addSpark), resolved: resolved.map(addSpark), lifecycle: [...originalOpportunities, ...resolved].map(addSpark), recognition: recognition.map(addSpark).sort((left, right) => (right.orientedChange || 0) - (left.orientedChange || 0)).slice(0, 30), coachingBalance: coachingBalance(summary.context), coachingExperts: coachingExperts(effectiveness), coachingOverview: coachingOverview(summary.context), coverageThreshold: coverageThreshold(), qualityCoverageThreshold: qualityCoverageThreshold(), attention, alignment, coachingActivity };
     root.__CoachToolsCommandCenterPriority = { priorityDrivers: augmented.priorityDrivers, globalRankings }; root.__CoachToolsCommandCenterSummary = augmented; augmentedCache.set(summary, augmented); return augmented;
   }
 
@@ -296,6 +311,10 @@
     if (scopeBar && !document.getElementById('ccMinKpiCoverage')) {
       const label = document.createElement('label'); label.className = 'ccCoverageControl'; label.innerHTML = `Min KPI Coverage <input id="ccMinKpiCoverage" type="number" min="0" max="100" step="5" value="${Math.round(coverageThreshold() * 100)}"><span>%</span>`; scopeBar.insertBefore(label, document.getElementById('runBtn'));
       label.querySelector('input').addEventListener('change', event => { const threshold = setCoverageThreshold(Number(event.target.value) / 100); event.target.value = String(Math.round(threshold * 100)); recentStatsCache.delete(root.__CoachToolsCommandCenterSummary?.context); const run = document.getElementById('runBtn'); if (run && !run.disabled && document.getElementById('scopeSelect')?.value) run.click(); });
+    }
+    if (scopeBar && !document.getElementById('ccMinQualityCoverage')) {
+      const label = document.createElement('label'); label.className = 'ccCoverageControl'; label.innerHTML = `Min Quality Coverage <input id="ccMinQualityCoverage" type="number" min="0" max="100" step="5" value="${Math.round(qualityCoverageThreshold() * 100)}"><span>%</span>`; scopeBar.insertBefore(label, document.getElementById('runBtn'));
+      label.querySelector('input').addEventListener('change', event => { const threshold = setQualityCoverageThreshold(Number(event.target.value) / 100); event.target.value = String(Math.round(threshold * 100)); const run = document.getElementById('runBtn'); if (run && !run.disabled && document.getElementById('scopeSelect')?.value) run.click(); });
     }
     const content = document.getElementById('content'); if (!content) return;
     for (const heading of content.querySelectorAll('.panelHead h2')) if (clean(heading.textContent) === 'Highest-priority coaching work') { heading.textContent = 'Priority impact ranking'; const copy = heading.parentElement && heading.parentElement.querySelector('p'); if (copy) copy.textContent = `Balanced by estimated impact on Consumer Appointment Rate, Wiper Rate, Call Quality, and Average Time to Serve · ≥${Math.round(coverageThreshold() * 100)}% KPI coverage.`; }
@@ -336,6 +355,6 @@
     return null;
   }
 
-  root.CoachToolsIntelligence = Object.freeze({ ...base, VERSION: '1.3.0', commandCenter, insightForApp, personStory, buildSummary, buildResolvedOpportunities, coachingBalance, coachingExperts, coverageThreshold, setCoverageThreshold, metricCoverage, _test: Object.freeze({ ...base._test, canonicalizePerformance, derivedKpiRows, classifyCoachingBalance, metricCoverage, topCoachingTypes, recentMetricStats }) });
+  root.CoachToolsIntelligence = Object.freeze({ ...base, VERSION: '1.4.0', commandCenter, insightForApp, personStory, buildSummary, buildResolvedOpportunities, coachingBalance, coachingExperts, coverageThreshold, setCoverageThreshold, qualityCoverageThreshold, setQualityCoverageThreshold, metricCoverage, _test: Object.freeze({ ...base._test, canonicalizePerformance, derivedKpiRows, classifyCoachingBalance, metricCoverage, topCoachingTypes, recentMetricStats }) });
   installCommandCenterEnhancer();
 })(typeof window !== 'undefined' ? window : globalThis);

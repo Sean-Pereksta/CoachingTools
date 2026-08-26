@@ -795,12 +795,15 @@
     minimizeWindow(state.activeAppId);
   }
 
-  const APP_CLOSE_DEADLINE_MS = 800;
+  const APP_CLOSE_DEADLINE_MS = root.CoachToolsClosePolicy?.allStarDeadlineMs || 160;
+  const APP_CLOSE_RELEASE_MS = root.CoachToolsClosePolicy?.allStarReleaseMs || 48;
+  const APP_CLOSE_SLOW_MS = root.CoachToolsClosePolicy?.slowCloseMs || 50;
 
   function finalizeWindowClose(id, windowState) {
     if (!windowState || windowState.closeFinalized) return;
     windowState.closeFinalized = true;
     clearTimeout(windowState.closeDeadlineTimer);
+    clearTimeout(windowState.closeReleaseTimer);
     if (windowState.pane) windowState.pane.remove();
     if (openWindows.get(id) === windowState) openWindows.delete(id);
     if (state.activeAppId === id) {
@@ -810,6 +813,12 @@
     }
     renderTaskbar();
     persistOpenWindows();
+    if (windowState.closeStartedAt != null) {
+      const durationMs = Math.round(performance.now() - windowState.closeStartedAt);
+      const detail = { appId: id, durationMs, closeReady: Boolean(windowState.closeReadyReceived), release: windowState.closeReleaseReason || 'direct' };
+      if (durationMs > APP_CLOSE_SLOW_MS) console.warn('[CoachTools Close] Slow application release', detail);
+      else console.info('[CoachTools Close]', detail);
+    }
   }
 
   function closeWindow(appId) {
@@ -820,6 +829,7 @@
     if (!windowState.deferred && !windowState.usefulRenderMeasured && root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end(`First useful app render · ${windowState.app.id}`, { cancelled: true });
     if (!windowState.deferred && windowState.app.id === 'allstar' && windowState.iframe) {
       windowState.closeRequested = true;
+      windowState.closeStartedAt = performance.now();
       windowState.closeRequestId = `close-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       if (windowState.pane) windowState.pane.hidden = true;
       if (state.activeAppId === id) {
@@ -828,9 +838,20 @@
         elements.desktop.hidden = false;
       }
       renderTaskbar();
-      try { windowState.iframe.contentWindow.postMessage({ type: 'coachtools:prepare-close', requestId: windowState.closeRequestId }, '*'); }
+      persistOpenWindows();
+      try {
+        windowState.iframe.contentWindow.postMessage({ type: 'coachtools:cancel-data-loads' }, '*');
+        windowState.iframe.contentWindow.postMessage({ type: 'coachtools:prepare-close', requestId: windowState.closeRequestId }, '*');
+      }
       catch (_) { finalizeWindowClose(id, windowState); return; }
-      windowState.closeDeadlineTimer = setTimeout(() => finalizeWindowClose(id, windowState), APP_CLOSE_DEADLINE_MS);
+      windowState.closeReleaseTimer = setTimeout(() => {
+        windowState.closeReleaseReason = 'nonblocking-release';
+        finalizeWindowClose(id, windowState);
+      }, APP_CLOSE_RELEASE_MS);
+      windowState.closeDeadlineTimer = setTimeout(() => {
+        windowState.closeReleaseReason = 'deadline';
+        finalizeWindowClose(id, windowState);
+      }, APP_CLOSE_DEADLINE_MS);
       return;
     }
     try { if (windowState.iframe) windowState.iframe.contentWindow.postMessage({ type: 'coachtools:cancel-data-loads' }, '*'); } catch (_) {}
@@ -1624,6 +1645,8 @@
         deliverPendingStageFiles(windowState);
       }
       if (type === 'coachtools:close-ready' && windowState && windowState.closeRequested && event.data.requestId === windowState.closeRequestId) {
+        windowState.closeReadyReceived = true;
+        windowState.closeReleaseReason = 'close-ready';
         finalizeWindowClose(windowState.app.id, windowState);
       }
       if (type === 'coachtools:show-desktop' && windowState) minimizeWindow(windowState.app.id);
