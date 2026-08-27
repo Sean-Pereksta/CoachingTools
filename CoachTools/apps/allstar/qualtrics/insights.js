@@ -134,6 +134,17 @@
     return 'Stable';
   }
   function normalizeConcernIdentity(value){ return String(value??'').trim().toLowerCase().replace(/\s+/g,' '); }
+  function normalizeConcernName(value){ return String(value??'').replace(/\([^)]*\)/g,' ').replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,' ').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+  function summarizeConcernNameCounts(rows){
+    const counts=new Map(), labels=new Map(); let total=0;
+    for(const row of rows||[]){
+      const value=row&&typeof row==='object'?(row.repName??row.Representative??row['Representative Name']??row['Agent Name']??row['Associate Name']??row.Rep??row.Name):row;
+      const label=String(value??'').replace(/\([^)]*\)/g,' ').replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,' ').replace(/\s*[—–-]+\s*$/,'').replace(/\s+/g,' ').trim(), key=normalizeConcernName(label);
+      if(!key) continue;
+      counts.set(key,(counts.get(key)||0)+1); if(!labels.has(key)) labels.set(key,label); total++;
+    }
+    return {counts,labels,total,uniqueNames:counts.size};
+  }
   function concernOccurrenceKey(raw){
     const input=raw||{}, rep=normalizeConcernIdentity(input.repKey), rule=normalizeConcernIdentity(input.ruleId), run=normalizeConcernIdentity(input.runId||input.reportPeriod||input.reportDate);
     return rep&&rule&&run?`${rep}\u001f${rule}\u001f${run}`:'';
@@ -155,5 +166,5 @@
     }
     return {occurrences,byRepRule};
   }
-  return {normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,formatDisplayText,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel,normalizeConcernIdentity,concernOccurrenceKey,classifyConcernHistory,summarizeConcernHistory};
+  return {normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,formatDisplayText,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel,normalizeConcernIdentity,normalizeConcernName,summarizeConcernNameCounts,concernOccurrenceKey,classifyConcernHistory,summarizeConcernHistory};
 });
