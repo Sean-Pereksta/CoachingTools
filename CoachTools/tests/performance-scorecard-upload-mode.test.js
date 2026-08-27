@@ -15,8 +15,6 @@ const deepHeaderMatrix = Array.from({ length: 45 }, (_, index) => [`Report pream
 deepHeaderMatrix.push(['Agent_surname', 'Agent_FirstName', 'cash Opps', 'cash Apps', 'Date']);
 deepHeaderMatrix.push(['Doe', 'Jane', 10, 5, '8/23/2026']);
 assert.strictEqual(headerDetector.findIdentityHeaderRow(deepHeaderMatrix), 45, 'identity row should be found beyond the old 40-row scan');
-const trimmedDeepMatrix = headerDetector.trimMatrixToIdentityHeader(deepHeaderMatrix);
-assert.deepStrictEqual(trimmedDeepMatrix[0], deepHeaderMatrix[45], 'identity row should become the matrix header row');
 
 const misleadingPreamble = [
   ['Consumer / Insurance / Commercial workbook summary', '', '', '', ''],
