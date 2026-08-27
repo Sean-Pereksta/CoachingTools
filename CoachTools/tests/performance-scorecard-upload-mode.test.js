@@ -9,6 +9,7 @@ const headerDetector = globalThis.CoachToolsPerformanceScorecardHeaderDetector;
 assert(headerDetector, 'identity-aware header detector should be exposed');
 assert.strictEqual(headerDetector.normalizeHeader('Agent_surname'), 'agentsurname');
 assert.strictEqual(headerDetector.normalizeHeader('FIRST_NAME'), 'firstname');
+assert.strictEqual(headerDetector.normalizePersonDisplay('Doe, Jane'), 'Jane Doe');
 
 const deepHeaderMatrix = Array.from({ length: 45 }, (_, index) => [`Report preamble ${index + 1}`, '', '', '', '']);
 deepHeaderMatrix.push(['Agent_surname', 'Agent_FirstName', 'cash Opps', 'cash Apps', 'Date']);
