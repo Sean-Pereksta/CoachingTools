@@ -48,6 +48,7 @@ Qualtrics generator IndexedDB
   - rules (keyPath: id)
   - problemHistory (keyPath: id)
   - settings (keyPath: key)
+    - concernHistoryLoadedFile.v1 (latest loaded filename, timestamp, and representative-name counts)
 
 Compatibility policy
 Existing names and stored object structures remain compatible. Schema version 8 adds compound history/scope indexes and persistent identity lookup indexes on top of chunked central datasets, shared people, and identity-review stores. `CoachToolsData.storageContract` is authoritative for the shared database name, version, and store list; Allstar keeps a version-8 fallback for standalone execution. The modular Qualtrics carrier uses srcdoc so its saved data remains on the same parent-document storage origin used by the previous embedded generator.
