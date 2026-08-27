@@ -6,7 +6,7 @@ const path = require('path');
 require(path.join(__dirname, '..', 'shared', 'performance-scorecard-upload-mode.js'));
 
 const headerDetector = globalThis.CoachToolsPerformanceScorecardHeaderDetector;
-assert(headerDetector, 'identity-aware header detector should be exposed');
+assert(headerDetector, 'workbook header and identity detector should be exposed');
 assert.strictEqual(headerDetector.normalizeHeader('Agent_surname'), 'agentsurname');
 assert.strictEqual(headerDetector.normalizeHeader('FIRST_NAME'), 'firstname');
 assert.strictEqual(headerDetector.normalizePersonDisplay('Doe, Jane'), 'Jane Doe');
