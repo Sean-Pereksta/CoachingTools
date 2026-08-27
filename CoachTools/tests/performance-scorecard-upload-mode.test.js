@@ -35,17 +35,24 @@ const identityMatrices = {
     ['Phone report', '', '', ''],
     ['Avaya_ID', 'FIRST_NAME', 'Surname', 'Team'],
     ['1001', 'Jane', 'Doe', 'Coach One']
+  ],
+  'Roster': [
+    ['Roster export', '', ''],
+    ['EMPL_ID', 'Agent_Name', 'Coach'],
+    ['E124', 'Smith, John', 'Coach Two']
   ]
 };
 const workbookIdentity = headerDetector.buildIdentityFromMatrices(identityMatrices);
 assert.strictEqual(workbookIdentity.phone.get('1001'), 'Jane Doe', 'Phone Data should provide a workbook-wide name lookup');
+assert.strictEqual(workbookIdentity.employee.get('e124'), 'John Smith', 'EMPL_ID should provide a workbook-wide name lookup and normalize LAST, FIRST display');
 
 const rawSv2RowFour = [
   ['Retail Sales View export', '', '', '', '', '', '', '', ''],
   ['Generated 8/27/2026', '', '', '', '', '', '', '', ''],
   ['', '', '', '', '', '', '', '', ''],
   ['Phone_ID', 'EMPL_ID', 'Team_Name', 'cash Opps', 'cash Appts', 'insurance Opps', 'insurance Appts', 'commercial Opps', 'commercial Appts'],
-  ['1001', 'E123', 'Team A', 100, 48, 50, 45, 20, 17]
+  ['1001', 'E123', 'Team A', 100, 48, 50, 45, 20, 17],
+  ['', 'E124', 'Team B', 80, 40, 40, 36, 10, 8]
 ];
 assert.strictEqual(headerDetector.findWorkbookHeaderRow(rawSv2RowFour, 'SV2'), 3, 'raw SV2 KPI header should be detected on workbook row 4 even without a name column');
 const enrichedSv2 = headerDetector.enrichMatrixWithIdentity(rawSv2RowFour, 'SV2', workbookIdentity);
@@ -57,6 +64,7 @@ assert(enrichedSv2[3].includes('Commercial Apps'), 'commercial Appts should expo
 const joinedNameIndex = enrichedSv2[3].indexOf('Representative Name');
 assert(joinedNameIndex >= 0, 'SV2 should receive a synthetic Representative Name column from workbook IDs');
 assert.strictEqual(enrichedSv2[4][joinedNameIndex], 'Jane Doe', 'Phone_ID should join the raw SV2 KPI row to the representative name');
+assert.strictEqual(enrichedSv2[5][joinedNameIndex], 'John Smith', 'EMPL_ID should join when Phone_ID is unavailable');
 
 const enrichedHeaderIndex = t.findHeaderRow(enrichedSv2, 'sv2');
 assert.strictEqual(enrichedHeaderIndex, 3, 'the existing parser should keep using the real row-four SV2 header');
