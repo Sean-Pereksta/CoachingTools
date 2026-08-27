@@ -96,11 +96,13 @@
         else (card.querySelector('.repTop > div') || card).appendChild(tag);
       }
 
-      tag.textContent = zeroCount === 1 ? '0 score call' : `0 score calls ×${zeroCount}`;
-      tag.title = zeroCount === 1
+      const label = zeroCount === 1 ? '0 score call' : `0 score calls ×${zeroCount}`;
+      const description = zeroCount === 1
         ? 'This representative had a QA call scored 0 in the current time period.'
         : `This representative had ${zeroCount} QA calls scored 0 in the current time period.`;
-      tag.setAttribute('aria-label', tag.title);
+      if (tag.textContent !== label) tag.textContent = label;
+      if (tag.title !== description) tag.title = description;
+      if (tag.getAttribute('aria-label') !== description) tag.setAttribute('aria-label', description);
     });
   }
 
