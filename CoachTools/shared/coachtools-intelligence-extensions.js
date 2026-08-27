@@ -24,5 +24,6 @@
   }
   if (appId === 'qa-scores') {
     append(from('qa-scores-kpi-drilldowns.js'));
+    append(from('qa-scores-zero-score-tags.js'));
   }
 })();
