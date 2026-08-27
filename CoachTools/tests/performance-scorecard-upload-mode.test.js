@@ -47,17 +47,17 @@ assert.strictEqual(workbookIdentity.phone.get('1001'), 'Jane Doe', 'Phone Data s
 assert.strictEqual(workbookIdentity.employee.get('e124'), 'John Smith', 'EMPL_ID should provide a workbook-wide name lookup and normalize LAST, FIRST display');
 
 const rawSv2RowFour = [
-  ['Retail Sales View export', '', '', '', '', '', '', '', ''],
-  ['Generated 8/27/2026', '', '', '', '', '', '', '', ''],
-  ['', '', '', '', '', '', '', '', ''],
-  ['Phone_ID', 'EMPL_ID', 'Team_Name', 'cash Opps', 'cash Appts', 'insurance Opps', 'insurance Appts', 'commercial Opps', 'commercial Appts'],
-  ['1001', 'E123', 'Team A', 100, 48, 50, 45, 20, 17],
-  ['', 'E124', 'Team B', 80, 40, 40, 36, 10, 8]
+  ['Retail Sales View export', '', '', '', '', '', '', '', '', '', ''],
+  ['Generated 8/27/2026', '', '', '', '', '', '', '', '', '', ''],
+  ['', '', '', '', '', '', '', '', '', '', ''],
+  ['Phone_ID', 'EMPL_ID', 'Team_Name', 'Total Opps', 'Total Apps', 'cash Opps', 'cash Appts', 'insurance Opps', 'insurance Appts', 'commercial Opps', 'commercial Appts'],
+  ['1001', 'E123', 'Team A', 170, 110, 100, 48, 50, 45, 20, 17],
+  ['', 'E124', 'Team B', 130, 84, 80, 40, 40, 36, 10, 8]
 ];
 assert.strictEqual(headerDetector.findWorkbookHeaderRow(rawSv2RowFour, 'SV2'), 3, 'raw SV2 KPI header should be detected on workbook row 4 even without a name column');
 const enrichedSv2 = headerDetector.enrichMatrixWithIdentity(rawSv2RowFour, 'SV2', workbookIdentity);
-assert.strictEqual(enrichedSv2[3][0], 'Phone_ID', 'the original row-four header and its columns should be preserved');
-assert.strictEqual(enrichedSv2[3][3], 'cash Opps');
+const originalSv2Headers = rawSv2RowFour[3];
+assert.deepStrictEqual(enrichedSv2[3].slice(0, originalSv2Headers.length), originalSv2Headers, 'every original row-four SV2 column should remain intact and in the same order');
 assert(enrichedSv2[3].includes('Cash Apps'), 'cash Appts should expose the canonical Cash Apps alias');
 assert(enrichedSv2[3].includes('Insurance Apps'), 'insurance Appts should expose the canonical Insurance Apps alias');
 assert(enrichedSv2[3].includes('Commercial Apps'), 'commercial Appts should expose the canonical Commercial Apps alias');
