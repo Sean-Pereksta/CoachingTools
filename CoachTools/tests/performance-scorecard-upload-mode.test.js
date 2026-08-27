@@ -29,6 +29,43 @@ const api = globalThis.CoachToolsPerformanceScorecardUploadMode;
 assert(api, 'upload mode API should be exposed');
 const t = api._test;
 
+const identityMatrices = {
+  'Phone Data': [
+    ['Phone report', '', '', ''],
+    ['Avaya_ID', 'FIRST_NAME', 'Surname', 'Team'],
+    ['1001', 'Jane', 'Doe', 'Coach One']
+  ]
+};
+const workbookIdentity = headerDetector.buildIdentityFromMatrices(identityMatrices);
+assert.strictEqual(workbookIdentity.phone.get('1001'), 'Jane Doe', 'Phone Data should provide a workbook-wide name lookup');
+
+const rawSv2RowFour = [
+  ['Retail Sales View export', '', '', '', '', '', '', '', ''],
+  ['Generated 8/27/2026', '', '', '', '', '', '', '', ''],
+  ['', '', '', '', '', '', '', '', ''],
+  ['Phone_ID', 'EMPL_ID', 'Team_Name', 'cash Opps', 'cash Appts', 'insurance Opps', 'insurance Appts', 'commercial Opps', 'commercial Appts'],
+  ['1001', 'E123', 'Team A', 100, 48, 50, 45, 20, 17]
+];
+assert.strictEqual(headerDetector.findWorkbookHeaderRow(rawSv2RowFour, 'SV2'), 3, 'raw SV2 KPI header should be detected on workbook row 4 even without a name column');
+const enrichedSv2 = headerDetector.enrichMatrixWithIdentity(rawSv2RowFour, 'SV2', workbookIdentity);
+assert.strictEqual(enrichedSv2[3][0], 'Phone_ID', 'the original row-four header and its columns should be preserved');
+assert.strictEqual(enrichedSv2[3][3], 'cash Opps');
+assert(enrichedSv2[3].includes('Cash Apps'), 'cash Appts should expose the canonical Cash Apps alias');
+assert(enrichedSv2[3].includes('Insurance Apps'), 'insurance Appts should expose the canonical Insurance Apps alias');
+assert(enrichedSv2[3].includes('Commercial Apps'), 'commercial Appts should expose the canonical Commercial Apps alias');
+const joinedNameIndex = enrichedSv2[3].indexOf('Representative Name');
+assert(joinedNameIndex >= 0, 'SV2 should receive a synthetic Representative Name column from workbook IDs');
+assert.strictEqual(enrichedSv2[4][joinedNameIndex], 'Jane Doe', 'Phone_ID should join the raw SV2 KPI row to the representative name');
+
+const enrichedHeaderIndex = t.findHeaderRow(enrichedSv2, 'sv2');
+assert.strictEqual(enrichedHeaderIndex, 3, 'the existing parser should keep using the real row-four SV2 header');
+const enrichedRows = t.rowsFromMatrix(enrichedSv2, enrichedHeaderIndex);
+assert.strictEqual(t.nameFromRow(enrichedRows.rows[0]), 'Jane Doe');
+const enrichedRetail = t.appointmentMetrics(enrichedRows.rows[0], 'Retail');
+assert.strictEqual(enrichedRetail.consumer.value, 0.48, 'Consumer AR should calculate from cash Appts / cash Opps');
+assert.strictEqual(enrichedRetail.insurance.value, 0.9, 'Insurance AR should calculate from insurance Appts / insurance Opps');
+assert.strictEqual(enrichedRetail.commercial.value, 0.85, 'Commercial AR should calculate from commercial Appts / commercial Opps');
+
 assert.strictEqual(t.normalizeHeader('Cash Opps'), 'cashopps');
 assert.strictEqual(t.normalizeHeader('AGENT_SURNAME'), 'agentsurname');
 assert.strictEqual(t.classifySheet('Phone Data'), 'phone');
