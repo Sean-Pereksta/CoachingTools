@@ -26,7 +26,7 @@ WORKFLOW MODERNIZATION
 - Import now includes cached Source Health metadata.
 - Recognized multi-file imports and shared CoachTools IndexedDB updates refresh normalized source rows only. They preserve the last categorized Dated and Non-Date databases, mark them Data Changed — Categorize, and require the user to press Categorize Data before reports that depend on them can run.
 - Manual categorization reuses unchanged normalized source fragments when their source, header map, and team/identity signatures remain safe; changed fragments rebuild in responsive browser slices.
-- The Qualtrics workspace stores concern appearances by stable representative key, rule, and report period; its Excel backup contains Appearance History and Summary sheets and safely upserts repeated imports.
+- The Qualtrics workspace keeps its detailed concern rows by stable representative key, rule, and report period, while the visible 1X/2X/3X email history is the direct frequency of each representative name in the currently loaded Concern History name column. The loaded-name viewer shows the first 50 names and can expand to all names.
 - Workbook imports inspect only a small worksheet prefix while detecting headers, materialize only the selected/required tabs, and build normalized row objects once.
 - Package Imported Data now writes All_Star_Data_Package.json. Loading that JSON validates the versioned package and hydrates normalized rows directly; legacy .xlsx/.xls packages remain supported.
 - Run uses shared Preflight diagnostics; only blocking errors stop execution.
