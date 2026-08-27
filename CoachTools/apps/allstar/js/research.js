@@ -480,7 +480,13 @@ function normalizeResearchItem(item={}){
 }
 
 function researchItemForLocalStorage(item){ const copy=clonePlain(item||{}); if(copy.renderedResult){ copy.renderedResult={version:2,outputType:copy.outputType,renderedAt:copy.renderedResult.renderedAt||'',id:copy.id,storedIn:'indexedDB'}; } return copy; }
-function loadResearchItems(){ try{ state.researchItems=(JSON.parse(localStorage.getItem(RESEARCH_KEY)||'[]')||[]).map(normalizeResearchItem); }catch(_){ state.researchItems=[]; } loadResearchResultCache(); migrateLegacyResearchRenderedResults(); }
+function loadResearchItems(options={}){
+  try{ state.researchItems=(JSON.parse(localStorage.getItem(RESEARCH_KEY)||'[]')||[]).map(normalizeResearchItem); }catch(_){ state.researchItems=[]; }
+  if(options.definitionsOnly){ state.researchDefinitionsOnly=true; return; }
+  state.researchDefinitionsOnly=false;
+  loadResearchResultCache();
+  migrateLegacyResearchRenderedResults();
+}
 function persistResearchItemsToLocalStorage(){ try{ localStorage.setItem(RESEARCH_KEY, JSON.stringify((state.researchItems||[]).map(researchItemForLocalStorage))); }catch(e){ console.warn('[Research Builder] Saving definitions only after storage error',e); localStorage.setItem(RESEARCH_KEY, JSON.stringify((state.researchItems||[]).map(x=>{ const y=researchItemForLocalStorage(x); delete y.renderedResult; return y; }))); } updateResearchCacheBadge(); }
 function saveResearchItems(){ bumpVersion('researchDefinitions'); selectiveResearchInvalidation({reason:'research changed',researchDefinitions:true}); persistResearchItemsToLocalStorage(); }
 

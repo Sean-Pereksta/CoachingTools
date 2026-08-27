@@ -29,20 +29,20 @@
 </head>
 <body>
 <div class="toolbar">
-  <select id="categoriesDrop" class="toolbarSelect"><option value="">Categories</option><option value="models">Create/Modify</option><option value="massHeaders">Mass Header Check</option><option value="metrics">Metrics</option></select>
-  <select id="importDrop" class="toolbarSelect"><option value="">Import</option><option value="data">Import Data</option><option value="roster">Roster Reassignment</option><option value="teams">Teams Imported</option><option value="orgs">Org Builder</option></select>
-  <button id="runBtn" class="toolbarBtn">Run</button>
+  <select id="categoriesDrop" class="toolbarSelect toolbarControlSecondary"><option value="">Categories</option><option value="models">Create/Modify</option><option value="massHeaders">Mass Header Check</option><option value="metrics">Metrics</option></select>
+  <select id="importDrop" class="toolbarSelect toolbarControlSecondary"><option value="">Import</option><option value="data">Import Data</option><option value="roster">Roster Reassignment</option><option value="teams">Teams Imported</option><option value="orgs">Org Builder</option></select>
+  <button id="runBtn" class="toolbarBtn toolbarBtnPrimary">Run</button>
   <select id="researchBtn" class="toolbarSelect"><option value="">Research</option><option value="listTester">List Tester</option><option value="open">Open Research</option><option value="clear">Clear Research</option></select>
   <select id="pdfDrop" class="toolbarSelect"><option value="">PDF</option><option value="export">Export</option><option value="options">Options</option></select>
   <button id="qualtricsEmailBtn" class="toolbarBtn">Qualtrics Email</button>
-  <button id="clearOutputBtn" class="toolbarBtn">Clear</button>
+  <button id="clearOutputBtn" class="toolbarBtn toolbarClear">Clear</button>
   <div class="toolbarSpacer"></div>
-  <div id="topStatus" class="statusLine"></div>
+  <div id="topStatus" class="statusLine" aria-live="polite"><span class="statusPill">Opening All-Star</span></div>
 </div>
 <div id="workArea"><div class="empty"></div></div>
 <div id="loadingOverlay" class="loadingOverlay" aria-hidden="true">
   <div class="loadingCard" role="status" aria-live="polite">
-    <div class="loadingTitle">Working…</div>
+    <div id="loadingTitle" class="loadingTitle">Working…</div>
     <div id="loadingText" class="loadingText">Preparing...</div>
     <div class="loadingBarTrack"><div id="loadingBarFill" class="loadingBarFill"></div></div>
     <div id="loadingPct" class="loadingPct">0%</div>
@@ -99,30 +99,56 @@
   <div class="modal">
     <div class="modalHead"><div class="modalTitle">Import Data</div><button class="dark" data-close="importModal">Close</button></div>
     <div class="modalBody">
-      <div class="panel workflowSourceHealthPanel"><div id="sourceHealthOverview"><div class="hint">Source health will appear when Import opens.</div></div></div>
-      <div class="panel">
-        <div class="panelTitle">Import CoachTools Data Once</div>
-        <div class="row">
-          <input id="coachtoolsFiles" type="file" accept=".xlsx,.xls,.csv" multiple data-coachtools-auto-import="false">
-          <button id="coachtoolsImportAllBtn" class="green" type="button" disabled>Import All Recognized</button>
+      <section class="panel importSection currentDataSection">
+        <div class="panelTitle">Current CoachingTools Data</div>
+        <div id="sourceHealthOverview"><div class="hint">Connected source metadata will appear when Import opens.</div></div>
+        <details class="importDetails"><summary>Shared data details</summary><div data-coachtools-data-status></div></details>
+      </section>
+
+      <section class="panel importSection updateDataSection">
+        <div class="panelTitle">Update Data</div>
+        <div class="updateDataPrimary">
+          <label class="fileAction" for="coachtoolsFiles">Choose CoachingTools Files</label>
+          <input id="coachtoolsFiles" class="visuallyHiddenFile" type="file" accept=".xlsx,.xls,.csv" multiple data-coachtools-auto-import="false">
+          <button id="coachtoolsImportAllBtn" class="green primaryDataAction" type="button" disabled>Update CoachingTools Data</button>
           <span id="coachtoolsImportSummary" class="checkResultMeta">Choose weekly, monthly, QA, MyOne, Checklist, and Comp Coaching files together.</span>
         </div>
         <div id="coachtoolsImportReview" class="checkResultList"></div>
-      </div>
-      <div class="panel">
-        <div class="panelTitle">CoachTools Data Status</div>
-        <div data-coachtools-data-status></div>
-      </div>
-      <div class="panel">
-        <div class="panelTitle">Troubleshoot / Categorize Imports</div>
-        <div class="row">
-          <button id="openTroubleshootBtn" class="dark" type="button">Troubleshoot / Update Sheet + Headers</button>
+        <details class="importDetails advancedUploads">
+          <summary>Advanced individual uploads</summary>
+          <div class="grid2 importUploadGrid">
+            <div class="panel"><div class="panelTitle">Retail Stats</div><input id="retailFile" type="file" accept=".xlsx,.xls,.csv"><div id="retailFileName" class="fileName"></div></div>
+            <div class="panel"><div class="panelTitle">Referral Stats</div><input id="referralFile" type="file" accept=".xlsx,.xls,.csv"><div id="referralFileName" class="fileName"></div></div>
+            <div class="panel"><div class="panelTitle">QA Stats</div><input id="qaFile" type="file" accept=".xlsx,.xls,.csv"><div id="qaFileName" class="fileName"></div></div>
+            <div class="panel"><div class="panelTitle">Direct QA Team Score Override</div><input id="qaDirectFile" type="file" accept=".xlsx,.xls,.csv"><div id="qaDirectFileName" class="fileName"></div><div class="row"><button id="clearQADirectFileBtn" class="gray smallBtn" type="button">Clear Direct Override</button></div><div class="checkResultMeta">Optional. Direct QA team-score mode uses this upload first, then falls back to QA Stats. It never uses the categorized dated database.</div></div>
+            <div class="panel"><div class="panelTitle">Checklist Items</div><input id="checklistFile" type="file" accept=".xlsx,.xls,.csv"><div id="checklistFileName" class="fileName"></div></div>
+            <div class="panel"><div class="panelTitle">Documented Coaching</div><input id="documentedCoachingFile" type="file" accept=".xlsx,.xls,.csv"><div id="documentedCoachingFileName" class="fileName"></div></div>
+            <div class="panel"><div class="panelTitle">Comp Calls</div><input id="compCallsFile" type="file" accept=".xlsx,.xls,.csv"><div id="compCallsFileName" class="fileName"></div></div>
+            <div class="panel"><div class="panelTitle">Packaged All Star Data</div><input id="packagedFile" type="file" accept=".json,.xlsx,.xls"><div class="hint">JSON packages hydrate normalized data directly. Existing All_Star_Packaged_Data.xlsx files remain supported.</div><div id="packagedFileName" class="fileName"></div></div>
+          </div>
+          <div class="panel customSourcePanel">
+            <div class="panelTitle">Custom Sources</div>
+            <div class="row">
+              <button id="addCustomSourceBtn" class="green" type="button">Add Custom Source</button>
+              <input id="customSourceFile" type="file" accept=".xlsx,.xls,.csv" style="display:none">
+              <span class="checkResultMeta">Import extra CSV/Excel sources, then use Troubleshoot Headers to select the sheet, header row, columns, representative, coach, and date fields.</span>
+            </div>
+            <div id="customSourcesList" class="checkResultList"></div>
+          </div>
+        </details>
+      </section>
+
+      <section class="panel importSection dataToolsSection">
+        <div class="panelTitle">Data Tools</div>
+        <div class="dataToolGrid">
+          <button id="openTroubleshootBtn" class="dark" type="button">Troubleshoot Headers</button>
           <button id="fixTeamsBtn" class="dark" type="button">Fix Teams</button>
           <button id="categorizeDataBtn" class="green" type="button">Categorize Data</button>
           <button id="viewSpreadsheetDataBtn" class="dark" type="button">View Spreadsheet Data</button>
-          <button id="packageDataBtn" class="green" type="button">Package Imported Data</button>
-          <span class="checkResultMeta">Imports and shared data refreshes update source data only. Categorization never runs automatically. Press Categorize Data when you want to rebuild the Non-Date and Dated databases.</span>
+          <button id="packageDataBtn" class="dark" type="button">Package Data</button>
         </div>
+        <div id="categorizedDataSummary" class="checkResultMeta">Categorized database not built yet.</div>
+        <div class="checkResultMeta">Imports update source data only. Categorization never runs automatically; use Categorize Data when you deliberately want to rebuild the Dated and Non-Date databases.</div>
         <div id="fixTeamsPanel" class="fixTeamsPanel hidden">
           <div class="panelTitle">Coach / Team Name Matches</div>
           <div id="fixTeamsSummary" class="checkResultMeta">Team fix review has not been built yet.</div>
@@ -133,44 +159,22 @@
           <div id="fixTeamsReview" class="fixTeamsReview"></div>
           <div class="panelTitle">Representative Name Matches</div>
           <div id="fixRepSummary" class="checkResultMeta">Representative fix review has not been built yet.</div>
-          <div class="row">
-            <button id="applyFixRepMatchesBtn" class="green" type="button">Apply Selected Representative Mappings</button>
-          </div>
+          <div class="row"><button id="applyFixRepMatchesBtn" class="green" type="button">Apply Selected Representative Mappings</button></div>
           <div id="fixRepReview" class="fixTeamsReview"></div>
         </div>
-        <div id="categorizedDataSummary" class="checkResultMeta">Categorized database not built yet.</div><div id="teamTotalsImportControls" class="checkResultList"></div>
+        <div id="teamTotalsImportControls" class="checkResultList"></div>
         <div id="spreadsheetDataPreview" class="checkResultList hidden"></div>
-      </div>
-      <div class="panel">
-        <div class="panelTitle">Local IndexedDB Import Cache</div>
-        <div class="row">
-          <button id="saveImportCacheBtn" class="green" type="button">Save Imported Data Locally</button>
-          <button id="loadImportCacheBtn" class="dark" type="button">Load Local Data</button>
-          <button id="persistImportCacheBtn" class="dark" type="button">Protect Local Storage</button>
-          <button id="clearImportCacheBtn" class="red" type="button">Clear All-Star Cache</button>
-          <span class="checkResultMeta">Uploads now save to IndexedDB automatically. This lets the report reopen with the last imported workbooks, rows, teams, headers, categorized data, and custom sources already loaded.</span>
-        </div>
-        <div id="importCacheStatus" class="checkResultMeta">Checking local cache...</div>
-      </div>
-      <div class="grid2">
-        <div class="panel"><div class="panelTitle">Retail Stats</div><input id="retailFile" type="file" accept=".xlsx,.xls,.csv"><div id="retailFileName" class="fileName"></div></div>
-        <div class="panel"><div class="panelTitle">Referral Stats</div><input id="referralFile" type="file" accept=".xlsx,.xls,.csv"><div id="referralFileName" class="fileName"></div></div>
-        <div class="panel"><div class="panelTitle">QA Stats</div><input id="qaFile" type="file" accept=".xlsx,.xls,.csv"><div id="qaFileName" class="fileName"></div></div>
-        <div class="panel"><div class="panelTitle">Direct QA Team Score Override</div><input id="qaDirectFile" type="file" accept=".xlsx,.xls,.csv"><div id="qaDirectFileName" class="fileName"></div><div class="row"><button id="clearQADirectFileBtn" class="gray smallBtn" type="button">Clear Direct Override</button></div><div class="checkResultMeta">Optional. Direct QA team-score mode uses this upload first, then falls back to QA Stats. It never uses the categorized dated database.</div></div>
-        <div class="panel"><div class="panelTitle">Checklist Items</div><input id="checklistFile" type="file" accept=".xlsx,.xls,.csv"><div id="checklistFileName" class="fileName"></div></div>
-        <div class="panel"><div class="panelTitle">Documented Coaching</div><input id="documentedCoachingFile" type="file" accept=".xlsx,.xls,.csv"><div id="documentedCoachingFileName" class="fileName"></div></div>
-        <div class="panel"><div class="panelTitle">Comp Calls</div><input id="compCallsFile" type="file" accept=".xlsx,.xls,.csv"><div id="compCallsFileName" class="fileName"></div></div>
-        <div class="panel"><div class="panelTitle">Packaged All Star Data</div><input id="packagedFile" type="file" accept=".json,.xlsx,.xls"><div class="hint">JSON packages hydrate normalized data directly. Existing All_Star_Packaged_Data.xlsx files remain supported.</div><div id="packagedFileName" class="fileName"></div></div>
-      </div>
-      <div class="panel">
-        <div class="panelTitle">Custom Sources</div>
-        <div class="row">
-          <button id="addCustomSourceBtn" class="green" type="button">Add Custom Source</button>
-          <input id="customSourceFile" type="file" accept=".xlsx,.xls,.csv" style="display:none">
-          <span class="checkResultMeta">Import extra CSV/Excel sources, then use Troubleshoot / Update Sheet + Headers to choose sheet, header row, start column, preview, declare missing headers, and map representative/coach/date fields.</span>
-        </div>
-        <div id="customSourcesList" class="checkResultList"></div>
-      </div>
+        <details id="localCacheTools" class="importDetails localCacheDetails">
+          <summary>Local Cache</summary>
+          <div class="row">
+            <button id="saveImportCacheBtn" class="green" type="button">Save Imported Data Locally</button>
+            <button id="loadImportCacheBtn" class="dark" type="button">Load Local Data</button>
+            <button id="persistImportCacheBtn" class="dark" type="button">Protect Local Storage</button>
+            <button id="clearImportCacheBtn" class="red" type="button">Clear All-Star Cache</button>
+          </div>
+          <div id="importCacheStatus" class="checkResultMeta">Cache status loads when this window opens.</div>
+        </details>
+      </section>
     </div>
     <div class="modalFoot"><button class="dark" data-close="importModal">Done</button></div>
   </div>

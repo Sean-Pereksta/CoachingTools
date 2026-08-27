@@ -32,7 +32,7 @@ function wire(){
   ['troubleNameMode','troubleFullNameColumn','troubleFirstNameColumn','troubleLastNameColumn','troubleConvertLastFirst','troubleTeamColumn','troubleSkipTeamBuild','troubleDateColumn'].forEach(id=>{ if(els[id]) els[id].onchange=renderTroubleshootHeaderPreview; });
   if(els.troubleUseDateColumn) els.troubleUseDateColumn.onchange=()=>{ if(els.troubleDateColumn) els.troubleDateColumn.disabled=!els.troubleUseDateColumn.checked; };
   els.categoriesDrop.onchange=()=>{ if(els.categoriesDrop.value==='models'){ renderModelList(); openModal('modelsModal'); } if(els.categoriesDrop.value==='massHeaders') openMassHeaderCheck(); if(els.categoriesDrop.value==='metrics') openMetricsPage(); els.categoriesDrop.value=''; };
-  els.importDrop.onchange=()=>{ if(els.importDrop.value==='data'){ renderTeamTotalsImportControls(); openModal('importModal'); } if(els.importDrop.value==='roster') openRosterReassignment(); if(els.importDrop.value==='teams') openTeamsImported(); if(els.importDrop.value==='orgs') openOrgBuilder(); els.importDrop.value=''; };
+  els.importDrop.onchange=()=>{ if(els.importDrop.value==='data') openModal('importModal'); if(els.importDrop.value==='roster') openRosterReassignment(); if(els.importDrop.value==='teams') openTeamsImported(); if(els.importDrop.value==='orgs') openOrgBuilder(); els.importDrop.value=''; };
   if(els.qualtricsEmailBtn) els.qualtricsEmailBtn.onclick=openQualtricsEmailWorkspace;
   if(els.refreshQualtricsDataBtn) els.refreshQualtricsDataBtn.onclick=()=>sendQualtricsCoreFiles(true);
   if(els.clearQualtricsDataBtn) els.clearQualtricsDataBtn.onclick=clearQualtricsEmailData;
@@ -288,50 +288,61 @@ function prepareAllStarClose(requestId=''){
   else console.info('[All-Star Close]',state.lifecycle.closeDiagnostics);
   allStarCloseReply(requestId,canQueue);
 }
+async function measureAllStarStartupStep(label,task){
+  const started=performance.now();
+  try{ return await task(); }
+  finally{
+    const durationMs=Math.round(performance.now()-started), diagnostics=state.startup.diagnostics||(state.startup.diagnostics={});
+    diagnostics.steps={...(diagnostics.steps||{}),[label]:durationMs};
+    if(durationMs>100){ diagnostics.slowOperations=[...(diagnostics.slowOperations||[]),{label,durationMs}]; console.warn('[All-Star Startup] Slow operation',{label,durationMs}); }
+  }
+}
 async function startAllStar(){
   if(state.startup.running || state.lifecycle.closing) return false;
-  state.startup.running=true; state.startup.completed=false; state.startup.diagnostics={startupSource:'defaults',centralCompared:0,centralRefreshed:0,cachedSourcesReused:0,indexedDbWrites:0,fullRenders:0,progressRegressions:0};
+  state.startup.running=true; state.startup.completed=false; state.startup.diagnostics={startupSource:'defaults',sourceDatasetsLoaded:0,centralCompared:0,centralRefreshed:0,cachedSourcesReused:0,indexesReused:0,indexesRebuilt:0,indexesDeferred:0,indexedDbWrites:0,fullRenders:0,lightweightStartupRenders:0,categorizedDataTouched:false,workbookSheetsExpanded:0,progressRegressions:0,slowOperations:[],steps:{}};
   const generation=++state.lifecycle.generation; state.startup.generation=generation;
-  const job=createAllStarStartupJob('Opening Allstar…');
+  const job=createAllStarStartupJob('Loading settings…');
   const started=performance.now();
   try{
-    setAllStarStartupPhase(job,0,10,'Loading settings and model metadata…');
-    if(!state.startup.initialized){
-      loadModels(); loadRepAliases(); loadResearchItems(); loadPdfOptions(); loadOrgs(); wire();
-      window.addEventListener('coachtools:data-updated',event=>scheduleAllStarCentralSync(event.detail||{}));
-      state.startup.initialized=true;
-      await loadMetrics().then(()=>refreshMetricDatalist()).catch(error=>console.warn('[Research Metrics] Startup load failed',error));
-    }
-    updateAllStarStartupProgress(job,'Settings ready.',10);
+    setAllStarStartupPhase(job,0,20,'Loading settings…');
+    await measureAllStarStartupStep('settings',async()=>{
+      if(!state.startup.initialized){
+        loadModels(); loadRepAliases(); loadResearchItems({definitionsOnly:true}); loadPdfOptions(); loadOrgs(); wire();
+        window.addEventListener('coachtools:data-updated',event=>scheduleAllStarCentralSync(event.detail||{}));
+        state.startup.initialized=true;
+        await loadMetrics().catch(error=>console.warn('[Research Metrics] Startup load failed',error));
+      }
+    });
+    updateAllStarStartupProgress(job,'Settings loaded.',20);
     if(state.lifecycle.closing || generation!==state.lifecycle.generation) return false;
 
-    setAllStarStartupPhase(job,10,45,'Restoring local report data…');
-    state.importCacheStartupPromise=loadImportCacheOnStartup({showProgress:false,deferRender:true,generation});
+    setAllStarStartupPhase(job,20,85,'Connecting CoachingTools data…');
+    state.importCacheStartupPromise=measureAllStarStartupStep('local cache restore',()=>loadImportCacheOnStartup({showProgress:false,deferRender:true,generation}));
     const localLoaded=await state.importCacheStartupPromise;
     state.startup.diagnostics.startupSource=localLoaded?'local cache':'defaults';
-    updateAllStarStartupProgress(job,localLoaded?'Local report data restored.':'No local report cache found.',45);
+    updateAllStarStartupProgress(job,localLoaded?'CoachingTools data connected.':'Ready for CoachingTools data.',55);
     if(state.lifecycle.closing || generation!==state.lifecycle.generation) return false;
 
-    const reconciliation=await syncAllStarFromCoachToolsData({reason:'startup IndexedDB synchronization',generation,job,render:false});
+    const reconciliation=await measureAllStarStartupStep('shared data reconciliation',()=>syncAllStarFromCoachToolsData({reason:'startup IndexedDB synchronization',generation,render:false,deferTeamRebuild:true,deferIndexes:true,allowLegacyBackfill:false}));
     if(reconciliation?.cancelled || state.lifecycle.closing || generation!==state.lifecycle.generation) return false;
+    updateAllStarStartupProgress(job,'CoachingTools data ready.',85);
     if(importCacheHasDirty()){
-      setAllStarStartupPhase(job,96,98,'Committing local cache updates…');
-      const saved=await flushImportCacheSave('Allstar startup batch complete',{dirtyOnly:true,noCompaction:true,noRender:true});
+      const saved=await measureAllStarStartupStep('incremental cache commit',()=>flushImportCacheSave('Allstar startup batch complete',{dirtyOnly:true,noCompaction:true,noRender:true,deferIndexes:true}));
       if(saved) state.startup.diagnostics.indexedDbWrites=Number(state.startup.diagnostics.indexedDbWrites||0)+1;
     }
     const reconciliationWarning=reconciliation?.error ? 'Shared refresh needs retry; the previous valid state was retained.' : '';
-    setAllStarStartupPhase(job,98,100,reconciliationWarning|| (reconciliation?.changed?'Finalizing refreshed report data…':'Central data already current.'));
+    setAllStarStartupPhase(job,85,100,reconciliationWarning||'Preparing interface…');
     const changedSources=reconciliation?.changedSources||[];
-    renderAllStarAfterDataBatch({sourcesChanged:localLoaded?allSourceKeys():changedSources,teamsChanged:!!localLoaded||changedSources.some(source=>source.startsWith('retail')||source.startsWith('referral')),aliasesChanged:true,reason:'Allstar startup final render'});
-    await renderImportCacheStatus(reconciliationWarning || (reconciliation?.changed?`${reconciliation.centralRefreshed} shared source${reconciliation.centralRefreshed===1?'':'s'} refreshed.`:'Central data already current.'));
+    await measureAllStarStartupStep('interface render',()=>Promise.resolve(renderAllStarAfterDataBatch({sourcesChanged:localLoaded?allSourceKeys():changedSources,teamsChanged:false,aliasesChanged:false,reason:'Allstar startup lightweight render',startup:true})));
     state.startup.completed=true;
-    state.startup.diagnostics={...(state.startup.diagnostics||{}),durationMs:Math.round(performance.now()-started)};
+    const sourceGroups=typeof currentCoachToolsDataGroups==='function'?currentCoachToolsDataGroups():[];
+    state.startup.diagnostics={...(state.startup.diagnostics||{}),sourceDatasetsLoaded:sourceGroups.filter(group=>group.ready).length,durationMs:Math.round(performance.now()-started),categorizedDataTouched:false};
     console.info('[All-Star Startup]',state.startup.diagnostics);
     finishAllStarStartupProgress(job,'Ready.');
     return true;
   }catch(error){
     console.warn('[All-Star] Startup retained the last valid state.',error);
-    if(!state.lifecycle.closing){ renderAllStarAfterDataBatch({sourcesChanged:[],reason:'startup recovery'}); finishAllStarStartupProgress(job,'Ready with a startup warning.'); }
+    if(!state.lifecycle.closing){ renderAllStarAfterDataBatch({sourcesChanged:[],reason:'startup recovery',startup:true}); finishAllStarStartupProgress(job,'Ready with a startup warning.'); }
     return false;
   }finally{ state.startup.running=false; }
 }

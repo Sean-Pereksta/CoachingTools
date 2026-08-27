@@ -342,7 +342,7 @@ async function saveImportedDataToIndexedDB(reason='manual save', opts={}){
     Object.keys(state.books||{}).forEach(k=>markBookCacheDirty(k,reason));
     ['categorized','customSources','teamIndex','sourceMeta','sourceSettings','aliases','manifest'].forEach(k=>markImportCacheDirty('misc',k,reason));
   }
-  if(!opts.lifecycleSave && (dirty.sources.size || dirty.misc.has('categorized') || dirty.misc.has('aliases') || dirty.misc.has('customSources'))) dirty.misc.add('teamIndex');
+  if(!opts.lifecycleSave && !opts.deferIndexes && (dirty.sources.size || dirty.misc.has('categorized') || dirty.misc.has('aliases') || dirty.misc.has('customSources'))) dirty.misc.add('teamIndex');
   if(!importCacheHasDirty(dirty) && !opts.force){ if(!opts.noRender) await renderImportCacheStatus('Local cache already up to date.'); return true; }
   state.importCacheSaving=true; state.importCache.status='saving'; state.importCacheSavePromise=null;
   let snapshot=null;
@@ -419,9 +419,14 @@ function restoreImportFileLabels(){
   set(els.rosterReassignmentFileName, areaData.rosterFileName ? `${areaData.rosterFileName} · active roster override · ${(areaData.controlRoster||[]).length.toLocaleString()} representatives` : '');
 }
 
-function renderAllStarAfterDataBatch({sourcesChanged=[],teamsChanged=false,aliasesChanged=false,reason='data batch'}={}){
+function renderAllStarAfterDataBatch({sourcesChanged=[],teamsChanged=false,aliasesChanged=false,reason='data batch',startup=false}={}){
   if(state.lifecycle?.closing) return false;
   const changed=new Set(sourcesChanged||[]);
+  if(startup){
+    setStatus();
+    state.startup.diagnostics={...(state.startup.diagnostics||{}),lightweightStartupRenders:Number(state.startup.diagnostics?.lightweightStartupRenders||0)+1,lastRenderReason:reason};
+    return true;
+  }
   restoreImportFileLabels();
   if(changed.size || aliasesChanged) renderCustomSourcesList();
   if(changed.size) renderCategorizedSummary();
@@ -434,14 +439,22 @@ function renderAllStarAfterDataBatch({sourcesChanged=[],teamsChanged=false,alias
 function afterImportedDataRestored(reason='local cache loaded', opts={}){
   state.data={...defaultImportedDataState(),...(state.data||{})};
   state.books={...defaultImportedBooksState(),...(state.books||{})};
-  state.data.retail.teamTotals=rebuildTeamTotalsIndex(state.data.retail.teamTotals||emptyTeamTotalsDataset('retail'));
-  state.data.referral.teamTotals=rebuildTeamTotalsIndex(state.data.referral.teamTotals||emptyTeamTotalsDataset('referral'));
   state.categorized=state.categorized||{nondated:{headers:['Representative','Coach'],rows:[],builtAt:'',sourceStats:[]},dated:{headers:['Representative','Coach','Date'],rows:[],builtAt:'',sourceStats:[]},warnings:[]};
   state.categorized={...state.categorized,stale:!!state.categorized.stale,staleReason:state.categorized.staleReason||'',changedSources:state.categorized.changedSources||[],sourceSignatures:state.categorized.sourceSignatures||{},fragments:state.categorized.fragments||{}};
   state.categorizedFragments=state.categorized.fragments;
   state.categorizationPending=!!state.categorized.stale;
   state.categorizationPendingReason=state.categorized.staleReason||'';
-  applyRepAliasMappingsToAllRows(); markDataIndexDirty(reason); state.teamIndexCache=buildCompactTeamIndexFromRows(reason); selectiveResearchInvalidation({reason,aliases:true,teams:true,mappings:true,silent:!!opts.deferRender});
+  // Restored rows are already normalized. Startup validates the compact index by
+  // metadata signature and leaves every row-level fallback for the feature that
+  // requests it instead of reapplying aliases or rebuilding global indexes here.
+  const cachedTeamIndex=state.teamIndexCache, teamIndexValid=!!(cachedTeamIndex?.signature&&cachedTeamIndex.signature===dataIndexSignature());
+  state.teamIndexCache=teamIndexValid?cachedTeamIndex:null;
+  state.dataIndex={dirty:true,reason:`${reason}; full index deferred`,version:Number(state.dataIndex?.version||0),sources:{},reps:[],teamCounts:[],repsByTeam:new Map(),dateRanges:{qa:{interaction:null,assigned:null},date:new Map(),checklist:new Map(),documented_coaching:new Map(),comp_calls:new Map()},lastBuiltAt:0};
+  state.indexes=null; state.runIndexes=new Map(); state.runPreparationJobs=new Map(); state.runPrep={generation:0,jobs:new Map(),ready:new Map(),dateRangeCache:new Map(),lastRequired:[],lastModelId:''};
+  state.researchSourceIndexes=new Map(); state.researchSourceIndexJobs=new Map(); state.researchBuildingRowMeta=new WeakMap();
+  state.rosterIndex=emptyRosterIndex(''); state.repTeams=new Map(); state.teams=teamIndexValid?(cachedTeamIndex.teamCounts||[]).map(item=>item.team).filter(Boolean):[];
+  state.teamDetailsCache?.clear?.(); state.repSuggestionCache?.clear?.(); state._controlRosterCache=null;
+  state.startup.diagnostics={...(state.startup.diagnostics||{}),indexesReused:Number(state.startup.diagnostics?.indexesReused||0)+(teamIndexValid?1:0),indexesRebuilt:Number(state.startup.diagnostics?.indexesRebuilt||0),indexesDeferred:Number(state.startup.diagnostics?.indexesDeferred||0)+(teamIndexValid?0:1),categorizedDataTouched:false};
   if(!opts.deferRender) renderAllStarAfterDataBatch({sourcesChanged:allSourceKeys(),teamsChanged:true,aliasesChanged:true,reason});
 }
 async function loadImportedDataFromIndexedDB(opts={}){
@@ -462,7 +475,9 @@ async function loadImportedDataFromIndexedDB(opts={}){
     const sourceRecords=await idbReq(sourceStore.getAll());
     if(!stillActive()) return false;
     if(opts.showProgress) updateProgress('Loading cached workbook metadata...',54);
-    const bookRecords=await idbReq(bookStore.getAll());
+    const metadataOnly=Number(meta.version||0)>=IMPORT_CACHE_SCHEMA_VERSION && typeof IDBKeyRange!=='undefined';
+    const bookRecords=await idbReq(metadataOnly?bookStore.getAll(IDBKeyRange.bound('book:','book:\uffff')):bookStore.getAll());
+    state.startup.diagnostics={...(state.startup.diagnostics||{}),workbookMetadataRecords:bookRecords.length,workbookSheetsExpanded:0};
     if(!stillActive()) return false;
     if(opts.showProgress) updateProgress('Restoring categorized/custom sources...',76);
     const categorized=await idbReq(miscStore.get('categorized'));
