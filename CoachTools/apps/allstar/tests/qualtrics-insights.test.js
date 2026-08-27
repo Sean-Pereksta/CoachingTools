@@ -42,6 +42,17 @@ const concernSummary=insights.summarizeConcernHistory([
 ]);
 assert.equal(concernSummary.occurrences.size,2,'Duplicate report regeneration/import must not inflate appearance history.');
 assert.equal(concernSummary.byRepRule.get('emp-42\u001fsave-sale'),2);
+const nameSummary=insights.summarizeConcernNameCounts([
+  {Representative:'Jordan Smith'},
+  {Representative:' jordan  smith '},
+  {'Agent Name':'Jordan Smith — jordan.smith@example.com'},
+  {Representative:'Avery Jones'}
+]);
+assert.equal(nameSummary.counts.get('jordan smith'),3,'Concern history must count every matching name row regardless of rule or period.');
+assert.equal(nameSummary.labels.get('jordan smith'),'Jordan Smith');
+assert.equal(nameSummary.counts.get('avery jones'),1);
+assert.equal(nameSummary.total,4);
+assert.equal(nameSummary.uniqueNames,2);
 assert.deepEqual(insights.classifyConcernHistory({appearances:1,relatedCoachingLast21:0}),{key:'new',label:'New'});
 assert.deepEqual(insights.classifyConcernHistory({appearances:2,relatedCoachingLast21:0}),{key:'undercoached',label:'Undercoached'});
 assert.deepEqual(insights.classifyConcernHistory({appearances:3,relatedCoachingLast21:1}),{key:'undercoached',label:'Undercoached'});
