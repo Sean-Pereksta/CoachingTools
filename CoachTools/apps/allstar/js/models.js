@@ -413,6 +413,11 @@ function loadRepAliases(){
     state.repAliases=map; state.quarantinedRepAliases=quarantined;
   }catch(_){ state.repAliases=new Map(); state.quarantinedRepAliases=[]; }
 }
+function repAliasCacheSignature(){
+  const active=[...(state.repAliases||new Map()).values()].map(rec=>[rec.sourceArea||'global',fullNameIdentityKey(rec.aliasName||rec.alias||''),fullNameIdentityKey(rec.canonical||'')]).sort((a,b)=>a.join('|').localeCompare(b.join('|')));
+  const quarantined=(state.quarantinedRepAliases||[]).map(rec=>[rec.sourceArea||'global',fullNameIdentityKey(rec.aliasName||rec.alias||''),fullNameIdentityKey(rec.canonical||''),String(rec.reason||'')]).sort((a,b)=>a.join('|').localeCompare(b.join('|')));
+  return JSON.stringify({active,quarantined});
+}
 function revalidateRepAliases(){
   const active=new Map(), quarantine=[...(state.quarantinedRepAliases||[])];
   (state.repAliases||new Map()).forEach((rec,k)=>{
@@ -560,7 +565,17 @@ function renderColumnPreviewValues(){
 function closeColumnPreview(){ closeModal('columnPreviewModal'); }
 function setStatus(){
   if(state.lifecycle?.closing) return;
-  els.topStatus.textContent = 'Allstar Report';
+  if(!els.topStatus) return;
+  const groups=[
+    ['retail_sv2','retail_wiper','retail_team_totals'],
+    ['referral_sv2','referral_wiper','referral_team_totals'],
+    ['qa'],['checklist'],['documented_coaching'],['comp_calls']
+  ];
+  const loaded=groups.filter(sources=>sources.some(source=>Number(state.sourceMeta?.[source]?.rowCount||0)>0 || (getRowsRaw(source)||[]).length>0)).length;
+  const categorizedRows=Number(state.categorized?.nondated?.rows?.length||0)+Number(state.categorized?.dated?.rows?.length||0);
+  const stale=typeof categorizationIsStale==='function'&&categorizationIsStale();
+  const categorizedText=stale?'Categorized: Update Needed':categorizedRows?'Categorized: Ready':'Categorized: Not Built';
+  els.topStatus.innerHTML=`<span class="statusPill ${loaded?'good':'warn'}">${loaded?'Data Ready':'No Data'}</span><span class="statusPill">${loaded} Source${loaded===1?'':'s'} Loaded</span><span class="statusPill ${stale?'warn':categorizedRows?'good':''}">${categorizedText}</span>`;
 }
 function clampPct(p){ return Math.max(0,Math.min(100,Math.round(Number(p)||0))); }
 function activeAllStarProgressJob(){
@@ -579,6 +594,7 @@ function createAllStarStartupJob(label='Opening Allstar…'){
   const previous=activeAllStarProgressJob(); if(previous) previous.cancelled=true;
   const job={id:`startup-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,kind:'startup',label,lastPct:0,phaseStart:0,phaseEnd:100,regressions:0,preventedRegressions:0,updates:[],cancelled:false,complete:false};
   state.progressJob=job; state.startup.job=job;
+  if(els.loadingTitle) els.loadingTitle.textContent='Opening All-Star';
   renderProgressValue(label,0);
   return job;
 }
@@ -608,6 +624,7 @@ function cancelAllStarProgressJob(reason='cancelled'){
 }
 function showProgress(text='Working...', pct=0, opts={}){
   if(state.lifecycle?.closing || !els.loadingOverlay) return;
+  if(els.loadingTitle && !activeAllStarProgressJob()) els.loadingTitle.textContent=opts.title||'Working…';
   els.loadingOverlay.classList.add('open');
   els.loadingOverlay.setAttribute('aria-hidden','false');
   updateProgress(text,pct,{...opts,force:true});
@@ -736,7 +753,8 @@ function loadModels(){
   try{ const raw=localStorage.getItem(MODEL_KEY); state.models=raw?JSON.parse(raw):[]; }catch(e){ state.models=[]; }
   state.models=(state.models||[]).map(normalizeModelForStorage);
   if(!state.models.length){
-    state.models=[defaultQAModel()]; saveModels();
+    state.models=[defaultQAModel()];
+    localStorage.setItem(MODEL_KEY,JSON.stringify(state.models));
   }
 }
 function saveModels(){ bumpVersion('models'); state.models=(state.models||[]).map(normalizeModelForStorage); localStorage.setItem(MODEL_KEY, JSON.stringify(state.models)); markImportCacheDirty('misc','sourceSettings','source settings changed'); scheduleImportedDataSave('source settings changed',{delay:700}); selectiveResearchInvalidation({reason:'model setup changed',models:true}); renderModelList(); populateRunModels(); }
@@ -807,9 +825,10 @@ function dataIndexSignature(){
   const sourceSig=allSourceKeys().map(src=>{
     const rows=getRowsRaw(src)||[], headers=getHeaders(src)||[], cs=isCustomSource(src)?customSource(src):null;
     const fn=cs?.fileName || (src.startsWith('retail')?state.data.retail.fileName:src.startsWith('referral')?state.data.referral.fileName:(state.data[src]?.fileName||''));
-    return [src,rows.length,headers.length,headers.join('\u001f'),fn].join('\u001e');
+    const sourceVersion=Number(state.sourceMeta?.[src]?.sourceVersion||state.sourceMeta?.[src]?.version||0);
+    return [src,sourceVersion,rows.length,headers.length,headers.join('\u001f'),fn].join('\u001e');
   }).join('\u001d');
-  return `${sourceSig}\u001dcontrolRoster:${controlRosterSignature()}`;
+  return `${sourceSig}\u001dcontrolRoster:${controlRosterSignature()}\u001daliases:${repAliasCacheSignature()}`;
 }
 
 function bumpVersion(key){
@@ -902,21 +921,31 @@ function ensureRosterIndex(){
   state.identityConflicts=idx.conflicts; state.rosterIndex=idx; return idx;
 }
 
-function markDataIndexDirty(reason='data changed'){
+function markDataIndexDirty(reason='data changed',options={}){
+  const affectedSources=[...new Set((options.sources||[]).filter(Boolean))];
   bumpVersion('data');
-  if(/retail/i.test(reason)) bumpVersion('retail');
-  if(/referral/i.test(reason)) bumpVersion('referral');
+  if(/retail/i.test(reason)||affectedSources.some(source=>source.startsWith('retail'))) bumpVersion('retail');
+  if(/referral/i.test(reason)||affectedSources.some(source=>source.startsWith('referral'))) bumpVersion('referral');
   if(/roster|team assignment|team|mapping/i.test(reason)) bumpVersion(/mapping/i.test(reason)?'mappings':'teams');
-  invalidateRosterIndex(reason);
+  if(!affectedSources.length || options.identityChanged || /roster|team assignment|mapping/i.test(reason)) invalidateRosterIndex(reason);
   if(!state.dataIndex) state.dataIndex={dirty:true,reason,sources:{},reps:[],teamCounts:[],repsByTeam:new Map(),dateRanges:{qa:{interaction:null,assigned:null},date:new Map(),checklist:new Map(),documented_coaching:new Map(),comp_calls:new Map()},version:0,lastBuiltAt:0};
   state.dataIndex.dirty=true;
   state.dataIndex.reason=reason;
-  state.researchSourceIndexes=new Map();
-  state.researchSourceIndexJobs=new Map();
+  if(affectedSources.length){
+    affectedSources.forEach(source=>{
+      if(state.dataIndex?.sources) delete state.dataIndex.sources[source];
+      if(state.indexes&&typeof state.indexes==='object') delete state.indexes[source];
+      state.researchSourceIndexes?.delete?.(source); state.researchSourceIndexJobs?.delete?.(source);
+      if(typeof invalidateRunSourceIndex==='function') invalidateRunSourceIndex(source,reason);
+    });
+  }else{
+    state.researchSourceIndexes=new Map();
+    state.researchSourceIndexJobs=new Map();
+    state.indexes=null;
+  }
   state.researchBuildingRowMeta=new WeakMap();
   if(state.researchEntityTable) state.researchEntityTable.signature='';
-  selectiveResearchInvalidation({reason:'data changed',source:reason});
-  state.indexes=null;
+  selectiveResearchInvalidation({reason:'data changed',source:affectedSources.join(',')||reason});
   state.teamIndexCache=null;
   state._controlRosterCache=null;
 }

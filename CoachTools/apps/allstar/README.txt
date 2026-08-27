@@ -23,7 +23,10 @@ QUALTRICS SOURCE
 qualtrics/generator.html is the only maintained Qualtrics source. generator-source.js is generated from it and is loaded only when the Qualtrics workspace opens. This carrier avoids fetch() restrictions and preserves the original srcdoc storage origin for existing saved rules/settings when running from file://. If the carrier is unavailable, the app falls back to opening generator.html directly.
 
 WORKFLOW MODERNIZATION
-- Import now includes cached Source Health metadata.
+- Normal startup restores settings, normalized source rows, categorized rows, and workbook metadata only. It does not fetch saved worksheet AOAs, reapply aliases across every row, rebuild categorized databases, warm Research, or populate hidden modal UI.
+- The compact team index is reused only when its source/roster/alias signature still matches. A missing or stale index is rebuilt when a team-dependent screen is actually opened, then saved for the next session.
+- Import is grouped into Current CoachingTools Data, Update Data, and Data Tools. Its six source cards use cached filenames and row counts; detailed representative/team/date metadata is rescanned only when Refresh Detailed Metadata is pressed.
+- The toolbar reports Data Ready, loaded source count, and Categorized Ready/Update Needed status without running calculations.
 - Recognized multi-file imports and shared CoachTools IndexedDB updates refresh normalized source rows only. They preserve the last categorized Dated and Non-Date databases, mark them Data Changed — Categorize, and require the user to press Categorize Data before reports that depend on them can run.
 - Manual categorization reuses unchanged normalized source fragments when their source, header map, and team/identity signatures remain safe; changed fragments rebuild in responsive browser slices.
 - The Qualtrics workspace keeps its detailed concern rows by stable representative key, rule, and report period, while the visible 1X/2X/3X email history is the direct frequency of each representative name in the currently loaded Concern History name column. The loaded-name viewer shows the first 50 names and can expand to all names.
@@ -34,6 +37,8 @@ WORKFLOW MODERNIZATION
 - Display fields can target Representatives, Teams, or Coaches; match an explicit entity column in any source; select among duplicate records; derive count or date-tenure values; and apply ordered text/badge color rules without affecting points or rank.
 - Coach display values are rendered on the coach's Team row. The Model Builder labels the explicit coach match column as "Coach Name Expected In".
 - Research filter and metric caches are keyed by dataset/model/mapping/roster versions and reuse indexed row positions, with cache/scanning diagnostics in the performance panel.
+- Research definitions load with application settings, but saved result caches, rendered-result migration, source indexes, and result rendering wait until Research is opened.
+- Startup logs total duration, loaded dataset count, index reuse/rebuild/defer counts, worksheet expansion count, categorizedDataTouched, and operations exceeding 100 ms.
 - Named presets support fixed and dynamic date behavior.
 - The 15 most recent report snapshots are stored in IndexedDB with schema version 1, optional notes, reopen, re-export, delete, and two-run comparison.
 - Existing report calculation traces remain the source for Explain This Number auditing.

@@ -598,7 +598,7 @@ async function finishSingleSourceIntake(source, reason, timing, counts, options=
   if(options.batch){
     state.dataIndex=state.dataIndex||{dirty:true,reason,sources:{}};
     state.dataIndex.dirty=true; state.dataIndex.reason=reason;
-  }else markDataIndexDirty(reason);
+  }else markDataIndexDirty(reason,{sources:[source]});
   // Non-roster imports should invalidate derived indexes but not rebuild Retail/Referral Control rosters or full team membership.
   if(!options.batch) selectiveResearchInvalidation({reason,source});
   if(options.render!==false){ setStatus(); renderEditModelSafe(); if(isCustomSource(source)) renderCustomSourcesList(); updateResearchCacheBadge(); counts.render++; }
@@ -752,7 +752,7 @@ function beginAllStarCentralStage(){
 function allStarSourcesForDataset(datasetType){
   return ({monthlyRetail:['retail_sv2','retail_wiper','retail_team_totals'],monthlyReferral:['referral_sv2','referral_wiper','referral_team_totals'],qa:['qa'],documentedCoaching:['documented_coaching'],checklist:['checklist'],compCoaching:['comp_calls']})[datasetType]||[];
 }
-function invalidateAllStarCentralBatch(changedDatasets){
+function invalidateAllStarCentralBatch(changedDatasets,options={}){
   const sources=[...new Set((changedDatasets||[]).flatMap(allStarSourcesForDataset))];
   bumpVersion('data');
   if(sources.some(source=>source.startsWith('retail'))) bumpVersion('retail');
@@ -765,7 +765,10 @@ function invalidateAllStarCentralBatch(changedDatasets){
   });
   const teamsChanged=changedDatasets.some(type=>type==='monthlyRetail'||type==='monthlyReferral'||type==='documentedCoaching'||type==='checklist'||type==='compCoaching');
   if(changedDatasets.some(type=>type==='monthlyRetail'||type==='monthlyReferral')){ bumpVersion('roster'); invalidateRosterIndex('central monthly source changed'); }
-  if(teamsChanged) rebuildTeams({mutateRows:false});
+  if(teamsChanged){
+    if(options.deferTeamRebuild){ const invalidatedCachedIndex=!!state.teamIndexCache; state.repTeams=new Map(); state.teams=[]; state.teamIndexCache=null; state.startup.diagnostics={...(state.startup.diagnostics||{}),indexesReused:Math.max(0,Number(state.startup.diagnostics?.indexesReused||0)-(invalidatedCachedIndex?1:0)),indexesDeferred:Number(state.startup.diagnostics?.indexesDeferred||0)+1}; }
+    else rebuildTeams({mutateRows:false});
+  }
   selectiveResearchInvalidation({reason:'central CoachTools batch',source:sources.join(','),silent:true});
   return {sources,teamsChanged};
 }
@@ -786,7 +789,9 @@ async function syncAllStarFromCoachToolsData(options={}){
   ];
   if(job) setAllStarStartupPhase(job,45,70,'Checking shared CoachTools data…');
   const synced=readAllStarCentralSyncMap();
-  Object.assign(synced,await backfillCoachToolsDataFromAllStar());
+  // Legacy backfill can hydrate workbook sheets. Keep it available only to an
+  // explicit migration action; normal startup remains metadata-first and lazy.
+  if(options.allowLegacyBackfill===true) Object.assign(synced,await backfillCoachToolsDataFromAllStar());
   const changed=[], nextSync={...synced}; let compared=0,reused=0;
   for(let index=0;index<mappings.length;index++){
     if(!active()) return {changed:false,cancelled:true,compared,reused};
@@ -821,14 +826,14 @@ async function syncAllStarFromCoachToolsData(options={}){
       applied.push(change.datasetType); nextSync[change.datasetType]=change.identity;
     }
     if(!active()) throw Object.assign(new Error('Central synchronization cancelled.'),{cancelled:true});
-    const invalidation=invalidateAllStarCentralBatch(applied);
+    const invalidation=invalidateAllStarCentralBatch(applied,{deferTeamRebuild:!!job||!!options.deferTeamRebuild});
     const categorizable=applied.some(type=>['monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist','compCoaching'].includes(type));
     if(categorizable){
       if(job) setAllStarStartupPhase(job,90,96,'Source data refreshed — categorization is waiting for the button…');
       markCategorizationNeeded(options.reason||'central IndexedDB synchronization',invalidation.sources);
     }
     if(!active()) throw Object.assign(new Error('Central synchronization cancelled.'),{cancelled:true});
-    const saved=options.persist===false?true:await flushImportCacheSave('central CoachTools batch complete',{dirtyOnly:true,noCompaction:true,noRender:true,mutateRows:false});
+    const saved=options.persist===false?true:await flushImportCacheSave('central CoachTools batch complete',{dirtyOnly:true,noCompaction:true,noRender:true,mutateRows:false,deferIndexes:!!job||!!options.deferIndexes});
     if(!saved) throw new Error('The refreshed Allstar data could not be committed to IndexedDB.');
     try{ localStorage.setItem(ALLSTAR_SYNC_KEY,JSON.stringify(nextSync)); }catch(_){}
     if(options.render!==false) renderAllStarAfterDataBatch({sourcesChanged:invalidation.sources,teamsChanged:invalidation.teamsChanged,reason:'central CoachTools batch'});
@@ -915,7 +920,7 @@ function setSourceRowsAndHeaders(source, headers, rows, model){
   if(source==='comp_calls'){ const c=getSourceSetting(model,'comp_calls').columns||{}; state.data.comp_calls.headers=headers; state.data.comp_calls.rows=rows.map(r=>normalizeChecklistRow(r,headers,c,'comp_calls')).filter(r=>r._repKey||r._team); }
   if(categorizationSourceAffects(source)){ noteCategorizationSourceVersion(source,getRowsRaw(source)||[],getHeaders(source)||[]); markCategorizationNeeded(`${labelSource(source)} rows updated`,source); }
   markSourceCacheDirty(source,`${labelSource(source)} rows updated`);
-  markDataIndexDirty(`${labelSource(source)} rows updated`);
+  markDataIndexDirty(`${labelSource(source)} rows updated`,{sources:[source]});
 }
 
 async function setSourceRowsAndHeadersAsync(source, headers, rows, model, label='Normalizing rows', start=40, end=55){
@@ -932,7 +937,7 @@ async function setSourceRowsAndHeadersAsync(source, headers, rows, model, label=
     setSourceRowsAndHeaders(source,headers,rows,model);
   }
   markSourceCacheDirty(source,`${labelSource(source)} rows updated`);
-  markDataIndexDirty(`${labelSource(source)} rows updated`);
+  markDataIndexDirty(`${labelSource(source)} rows updated`,{sources:[source]});
 }
 
 function categorizedIdentityColumn(headers, kind){
@@ -1890,8 +1895,14 @@ function restoreTeamIndex(record){
 }
 function currentTeamIndex(){
   if(dataIndexReady()) return state.dataIndex;
-  if(state.teamIndexCache?.teamCounts && state.teamIndexCache?.repsByTeam) return state.teamIndexCache;
+  const signature=dataIndexSignature();
+  if(state.teamIndexCache?.teamCounts && state.teamIndexCache?.repsByTeam && state.teamIndexCache.signature===signature){
+    return state.teamIndexCache;
+  }
   state.teamIndexCache=buildCompactTeamIndexFromRows('on-demand team index');
+  state.startup.diagnostics={...(state.startup.diagnostics||{}),indexesRebuilt:Number(state.startup.diagnostics?.indexesRebuilt||0)+1};
+  markImportCacheDirty('misc','teamIndex','on-demand team index rebuilt');
+  if(!state.startup?.running && !state.lifecycle?.closing) scheduleImportedDataSave('on-demand team index rebuilt',{delay:900});
   return state.teamIndexCache;
 }
 function runTeamNames(){

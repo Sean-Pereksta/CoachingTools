@@ -53,6 +53,12 @@ Qualtrics generator IndexedDB
 Compatibility policy
 Existing names and stored object structures remain compatible. Schema version 8 adds compound history/scope indexes and persistent identity lookup indexes on top of chunked central datasets, shared people, and identity-review stores. `CoachToolsData.storageContract` is authoritative for the shared database name, version, and store list; Allstar keeps a version-8 fallback for standalone execution. The modular Qualtrics carrier uses srcdoc so its saved data remains on the same parent-document storage origin used by the previous embedded generator.
 
+Startup cache policy (no schema change)
+- Current schema loads query only `book:*` metadata records from the books store. `sheet:*` AOA records remain in IndexedDB until `ensureSheetLoaded()` is called by Troubleshoot, Spreadsheet Preview, header inspection, roster reassignment, or packaging.
+- Legacy pre-v8 book records still take the existing one-time migration path and are rewritten into separate metadata/sheet records.
+- The compact team index stores a source-version, header, roster, and alias signature. Matching indexes are restored; mismatches are retained safely in IndexedDB but ignored until an on-demand rebuild replaces them.
+- Categorized Dated and Non-Date rows remain persisted and compatible, but startup never rebuilds them. Source refreshes persist the stale marker and manual Categorize Data clears it after a successful rebuild.
+
 Portable imported-data package
 - Preferred filename: All_Star_Data_Package.json
 - packageType: allstar-data-package

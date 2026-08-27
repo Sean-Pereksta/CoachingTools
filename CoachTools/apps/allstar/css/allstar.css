@@ -147,12 +147,50 @@ input[type="file"]{background:#fff}
 
 
 /* Red polished toolbar + imported teams manager */
-.toolbar{background:linear-gradient(90deg,#7f1d1d 0%,#b91c1c 45%,#dc2626 100%);border-bottom:4px solid #450a0a;box-shadow:0 4px 18px rgba(69,10,10,.35)}
+.toolbar{background:linear-gradient(90deg,#7f1d1d 0%,#b91c1c 45%,#dc2626 100%);border-bottom:4px solid #450a0a;box-shadow:0 4px 18px rgba(69,10,10,.35);gap:7px;padding:9px 10px}
 select.toolbarSelect,button.toolbarBtn{border-radius:10px;border:2px solid rgba(255,255,255,.85);background:#fff;color:#7f1d1d;box-shadow:0 2px 0 rgba(69,10,10,.35);transition:transform .12s ease,box-shadow .12s ease,filter .12s ease}
 select.toolbarSelect:hover,button.toolbarBtn:hover{transform:translateY(-1px);box-shadow:0 5px 12px rgba(69,10,10,.25);filter:brightness(1.02)}
+button.toolbarBtn.toolbarBtnPrimary{min-width:148px;background:#111827;color:#fff;border-color:#fff;box-shadow:0 4px 14px rgba(17,24,39,.45);font-size:15px;letter-spacing:.03em}
+select.toolbarControlSecondary{background:rgba(255,255,255,.9);color:#7f1d1d;box-shadow:none}
+button.toolbarBtn.toolbarClear{min-width:78px;background:rgba(69,10,10,.28);color:#fff;border-color:rgba(255,255,255,.45);box-shadow:none}
 button.green,button.dark,button.red,button.gray{border-radius:8px;transition:transform .12s ease,box-shadow .12s ease,filter .12s ease}
 button.green:hover,button.dark:hover,button.red:hover,button.gray:hover{transform:translateY(-1px);box-shadow:0 4px 10px rgba(17,24,39,.18)}
-.statusLine{font-size:18px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+.statusLine{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap;font-size:12px;font-weight:800;letter-spacing:0;text-transform:none;color:#fff;text-shadow:none;padding:0}
+.statusPill{display:inline-flex;align-items:center;min-height:26px;padding:4px 8px;border:1px solid rgba(255,255,255,.38);border-radius:999px;background:rgba(69,10,10,.28);color:#fff;white-space:nowrap}
+.statusPill.good{background:rgba(20,83,45,.78);border-color:rgba(220,252,231,.72)}
+.statusPill.warn{background:rgba(146,64,14,.82);border-color:rgba(254,243,199,.72)}
+.modal{border-radius:12px}
+.modalHead{padding:11px 14px}
+.modalBody{padding:14px;gap:12px}
+.modalFoot{padding:10px 14px}
+.hint,.checkResultMeta{font-size:12px;line-height:1.35}
+
+#importModal .modal{width:min(1040px,96vw)}
+#importModal .modalBody{background:#f8fafc;align-content:start}
+.importSection{border:1px solid #cbd5e1;border-radius:12px;padding:12px;box-shadow:0 1px 5px rgba(15,23,42,.06)}
+.importSection>.panelTitle{border-color:#e2e8f0;color:#7f1d1d}
+.updateDataPrimary{display:grid;grid-template-columns:auto auto minmax(260px,1fr);gap:8px;align-items:center}
+.fileAction{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:8px 12px;border:1px solid #111827;border-radius:8px;background:#fff;color:#111827;font-size:13px;font-weight:800;cursor:pointer}
+.fileAction:hover{background:#f1f5f9}
+.visuallyHiddenFile{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.primaryDataAction{min-height:38px;padding-inline:16px}
+.importDetails{border:1px solid #cbd5e1;border-radius:9px;background:#fff;overflow:hidden}
+.importDetails>summary{padding:9px 11px;background:#f1f5f9;color:#334155;font-size:13px;font-weight:900;cursor:pointer}
+.importDetails[open]>summary{border-bottom:1px solid #cbd5e1}
+.importDetails>*:not(summary){margin:10px}
+.importUploadGrid{padding:0}
+.importUploadGrid>.panel,.customSourcePanel{border:1px solid #d1d5db;border-radius:9px;background:#fff}
+.dataToolGrid{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:8px}
+.currentDataGrid{display:grid;grid-template-columns:repeat(3,minmax(190px,1fr));gap:8px}
+.currentDataCard{display:grid;gap:4px;min-height:88px;padding:9px 10px;border:1px solid #d1d5db;border-radius:9px;background:#fff}
+.currentDataCard strong{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#111827}
+.currentDataCard span,.currentDataCard small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#475569}
+.currentDataCard small{font-size:11px}
+.sourceStatusDot{display:block;width:8px;height:8px;border-radius:50%;background:#9ca3af;flex:0 0 auto}
+.sourceStatusDot.good{background:#16a34a;box-shadow:0 0 0 3px #dcfce7}
+.localCacheDetails{margin-top:2px}
+@media(max-width:1050px){.dataToolGrid{grid-template-columns:repeat(3,1fr)}.currentDataGrid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:760px){.updateDataPrimary,.dataToolGrid,.currentDataGrid{grid-template-columns:1fr}.updateDataPrimary>*{width:100%}.statusLine{width:100%;justify-content:flex-start}.toolbarSpacer{display:none}}
 .teamManagerLayout{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(420px,1.4fr);gap:12px}
 .teamManagerList,.teamRepList{display:grid;gap:7px;max-height:520px;overflow:auto;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;padding:8px}
 .teamCard{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;border:1px solid #d1d5db;border-radius:10px;background:#fff;padding:9px 10px;text-align:left;font-weight:800;cursor:pointer}

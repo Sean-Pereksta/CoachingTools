@@ -375,6 +375,7 @@ window.runLookupPackagePerformanceRegressionTests=function(){
 window.runAllStarStartupLifecycleRegressionTests=function(){
   const results=[], check=(name,pass,detail='')=>results.push({name,pass:!!pass,detail});
   const previousJob=state.progressJob, previousStartupJob=state.startup?.job, previousJobCancelled=previousJob?.cancelled;
+  const previousDiagnostics=state.startup?.diagnostics, previousTeamIndex=state.teamIndexCache, previousDataIndex=state.dataIndex, previousTopStatus=els.topStatus?.innerHTML||'';
   const previousClosing=state.lifecycle?.closing, previousProgress={at:lastProgressUpdateAt,text:lastProgressText,pct:lastProgressPct};
   const overlay=els.loadingOverlay, overlayState=overlay?{open:overlay.classList.contains('open'),aria:overlay.getAttribute('aria-hidden'),text:els.loadingText?.textContent||'',width:els.loadingBarFill?.style.width||'',pct:els.loadingPct?.textContent||''}:null;
   try{
@@ -385,10 +386,27 @@ window.runAllStarStartupLifecycleRegressionTests=function(){
     check('Visible startup progress never moves backward',percentages.every((nextPercent,index)=>!index || nextPercent>=percentages[index-1]),percentages.join(' → '));
     check('Backward requests are clamped before they become visible',job.preventedRegressions===2,job.preventedRegressions);
     check('One startup job owns every instrumented update',job.updates.length===6&&activeAllStarProgressJob()===job,job.updates.length);
+    const originalBuilder=buildCompactTeamIndexFromRows, originalModelRender=renderModelList, originalRunModels=populateRunModels, originalTeamRender=renderTeamSelect, originalCustomRender=renderCustomSourcesList, originalCategorizedRender=renderCategorizedSummary;
+    let indexBuilds=0, hiddenRenders=0;
+    try{
+      state.dataIndex={...(state.dataIndex||{}),dirty:true,sources:{}};
+      state.teamIndexCache={signature:dataIndexSignature(),teamCounts:[],repsByTeam:new Map(),teamSummaries:new Map(),reps:[]};
+      buildCompactTeamIndexFromRows=(...args)=>{ indexBuilds++; return originalBuilder(...args); };
+      currentTeamIndex();
+      check('A valid persisted compact team index is reused without rebuilding',indexBuilds===0,indexBuilds);
+      renderModelList=()=>{hiddenRenders++;}; populateRunModels=()=>{hiddenRenders++;}; renderTeamSelect=()=>{hiddenRenders++;}; renderCustomSourcesList=()=>{hiddenRenders++;}; renderCategorizedSummary=()=>{hiddenRenders++;};
+      renderAllStarAfterDataBatch({startup:true,reason:'startup regression'});
+      check('The lightweight startup render does not populate hidden modal UI',hiddenRenders===0,hiddenRenders);
+    }finally{
+      buildCompactTeamIndexFromRows=originalBuilder; renderModelList=originalModelRender; populateRunModels=originalRunModels; renderTeamSelect=originalTeamRender; renderCustomSourcesList=originalCustomRender; renderCategorizedSummary=originalCategorizedRender;
+    }
     job.complete=true; state.progressJob=null;
   }finally{
     state.progressJob=previousJob;
     if(state.startup) state.startup.job=previousStartupJob;
+    if(state.startup) state.startup.diagnostics=previousDiagnostics;
+    state.teamIndexCache=previousTeamIndex; state.dataIndex=previousDataIndex;
+    if(els.topStatus) els.topStatus.innerHTML=previousTopStatus;
     if(previousJob) previousJob.cancelled=previousJobCancelled;
     if(state.lifecycle) state.lifecycle.closing=previousClosing;
     lastProgressUpdateAt=previousProgress.at; lastProgressText=previousProgress.text; lastProgressPct=previousProgress.pct;

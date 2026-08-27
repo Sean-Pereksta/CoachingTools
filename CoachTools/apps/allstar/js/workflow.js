@@ -55,13 +55,36 @@ function workflowImportedSources(){
 }
 function workflowDateText(value){ const d=value?new Date(value):null; return d&&!isNaN(d)?ymd(d):'—'; }
 function workflowImportedTime(value){ const d=value?new Date(value):null; return d&&!isNaN(d)?d.toLocaleString():'—'; }
+function currentCoachToolsDataGroups(){
+  return [
+    {label:'Retail',sources:['retail_sv2','retail_wiper','retail_team_totals'],fileName:state.data?.retail?.fileName||state.books?.retail?.fileName||''},
+    {label:'Referral',sources:['referral_sv2','referral_wiper','referral_team_totals'],fileName:state.data?.referral?.fileName||state.books?.referral?.fileName||''},
+    {label:'QA',sources:['qa'],fileName:state.data?.qa?.fileName||state.books?.qa?.fileName||''},
+    {label:'Checklist',sources:['checklist'],fileName:state.data?.checklist?.fileName||state.books?.checklist?.fileName||''},
+    {label:'Documented Coaching',sources:['documented_coaching'],fileName:state.data?.documented_coaching?.fileName||state.books?.documented_coaching?.fileName||''},
+    {label:'Comp Calls',sources:['comp_calls'],fileName:state.data?.comp_calls?.fileName||state.books?.comp_calls?.fileName||''}
+  ].map(group=>{
+    const rowCount=group.sources.reduce((sum,source)=>{ const raw=state.sourceMeta?.[source]?.rowCount, cached=Number(raw); return sum+(raw!==null&&raw!==''&&Number.isFinite(cached)?cached:(getRowsRaw(source)||[]).length); },0);
+    const fileName=group.fileName||group.sources.map(source=>state.sourceMeta?.[source]?.fileName).find(Boolean)||'';
+    return {...group,fileName,rowCount,ready:rowCount>0||!!fileName};
+  });
+}
 function renderSourceHealthOverview(){
   const host=el('sourceHealthOverview'); if(!host) return;
-  const sources=workflowImportedSources();
-  if(!sources.length){ host.innerHTML='<div class="hint">Import a source to see reusable row, representative, team, date-range, file, worksheet, and import-time metadata.</div>'; return; }
-  const rows=sources.map(source=>{ const m=workflowSourceMetadata(source), latest=m.latestDate?workflowDateText(m.latestDate):'—'; return `<tr><td><strong>${esc(labelSource(source))}</strong><small>${esc(m.fileName||'Imported data')}${m.selectedWorksheet?` · ${esc(m.selectedWorksheet)}`:''}</small></td><td>${Number(m.rowCount||0).toLocaleString()}</td><td>${Number(m.representativeCount||0).toLocaleString()}</td><td>${Number(m.teamCount||0).toLocaleString()}</td><td>${latest}</td><td><span class="badge good">Ready</span></td></tr>`; }).join('');
-  host.innerHTML=`<div class="sourceHealthHead"><div><strong>Source Health</strong><div class="hint">Metadata is cached by source version; unchanged large datasets are not rescanned.</div></div><button id="refreshSourceHealthBtn" class="smallBtn dark" type="button">Refresh</button></div><div class="tableWrap"><table class="sourceHealthTable"><thead><tr><th>Source</th><th>Rows</th><th>Reps</th><th>Teams</th><th>Latest</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div><details><summary>Import details</summary><div class="sourceMetaCards">${sources.map(source=>{ const m=workflowSourceMetadata(source); return `<div class="sourceMetaCard"><strong>${esc(labelSource(source))}</strong><span>${Number(m.rowCount||0).toLocaleString()} rows · ${Number(m.representativeCount||0).toLocaleString()} representatives · ${Number(m.teamCount||0).toLocaleString()} teams</span><span>Data: ${workflowDateText(m.earliestDate)} → ${workflowDateText(m.latestDate)}</span><span>Imported: ${esc(workflowImportedTime(m.importedAt))}</span><span>${esc(m.fileName||'No filename')}${m.selectedWorksheet?` · Worksheet: ${esc(m.selectedWorksheet)}`:''}</span></div>`; }).join('')}</div></details>`;
-  el('refreshSourceHealthBtn').onclick=()=>{ sources.forEach(source=>workflowSourceMetadata(source,{force:true})); renderSourceHealthOverview(); };
+  const groups=currentCoachToolsDataGroups(), loaded=groups.filter(group=>group.ready).length;
+  const cards=groups.map(group=>`<div class="currentDataCard"><strong>${esc(group.label)}<i class="sourceStatusDot ${group.ready?'good':''}" aria-hidden="true"></i></strong><span>${group.rowCount.toLocaleString()} rows</span><small title="${esc(group.fileName||'No file connected')}">${esc(group.fileName||'No file connected')}</small><span class="badge ${group.ready?'good':''}">${group.ready?'Ready':'Not loaded'}</span></div>`).join('');
+  const imported=workflowImportedSources(), details=state.sourceHealthExpanded?`<div class="sourceMetaCards">${imported.map(source=>{ const m=state.sourceMeta?.[source]||{}; return `<div class="sourceMetaCard"><strong>${esc(labelSource(source))}</strong><span>${Number(m.rowCount||0).toLocaleString()} rows · ${Number(m.representativeCount||0).toLocaleString()} representatives · ${Number(m.teamCount||0).toLocaleString()} teams</span><span>Data: ${workflowDateText(m.earliestDate)} → ${workflowDateText(m.latestDate)}</span><span>${esc(m.selectedWorksheet||m.selectedSheet||'No worksheet selected')}</span></div>`; }).join('')}</div>`:'';
+  host.innerHTML=`<div class="sourceHealthHead"><div><strong>${loaded} of 6 connected</strong><div class="hint">Filenames, row counts, and status come from saved source metadata; opening Import does not rescan rows.</div></div><button id="refreshSourceHealthBtn" class="smallBtn dark" type="button">Refresh Detailed Metadata</button></div><div class="currentDataGrid">${cards}</div>${details}`;
+  el('refreshSourceHealthBtn').onclick=()=>{ imported.forEach(source=>workflowSourceMetadata(source,{force:true})); state.sourceHealthExpanded=true; renderSourceHealthOverview(); };
+}
+
+function renderImportWorkspace(){
+  restoreImportFileLabels();
+  renderSourceHealthOverview();
+  renderCategorizedSummary();
+  renderTeamTotalsImportControls();
+  renderCustomSourcesList();
+  renderImportCacheStatus();
 }
 
 function modelDependencySummary(model,opts={}){
@@ -212,7 +235,7 @@ function workflowBindUi(){
 }
 
 const workflowBaseOpenModal=openModal;
-openModal=function(modalId){ const value=workflowBaseOpenModal(modalId); if(modalId==='importModal') renderSourceHealthOverview(); if(modalId==='runModal'){ renderRunPresetOptions(); setTimeout(()=>renderRunWorkflow(),0); } return value; };
+openModal=function(modalId){ const value=workflowBaseOpenModal(modalId); if(modalId==='importModal') renderImportWorkspace(); if(modalId==='runModal'){ renderRunPresetOptions(); setTimeout(()=>renderRunWorkflow(),0); } return value; };
 const workflowBaseReadiness=updateRunReadiness;
 updateRunReadiness=function(...args){ const value=workflowBaseReadiness(...args); renderRunWorkflow(); return value; };
 const workflowBaseColumnCheck=runModelColumnCheck;
