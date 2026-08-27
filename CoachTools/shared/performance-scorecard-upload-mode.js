@@ -27,6 +27,13 @@
   function normalizeId(value) {
     return clean(value).toLowerCase().replace(/\.0+$/, '').replace(/[^a-z0-9]/g, '');
   }
+  function normalizePersonDisplay(value) {
+    const raw = clean(value);
+    if (!raw) return '';
+    const noEmail = raw.includes('@') && !raw.includes(' ') ? raw.split('@')[0].replace(/[._-]+/g, ' ') : raw;
+    const comma = noEmail.match(/^\s*([^,]+),\s*(.+?)\s*$/);
+    return clean(comma ? `${comma[2]} ${comma[1]}` : noEmail);
+  }
   function headerIndexes(values) {
     const normalized = (values || []).map(normalizeHeader);
     const indexes = new Map();
@@ -46,8 +53,8 @@
   }
   function nameFromCells(headers, values) {
     const cols = nameColumns(headers);
-    if (cols.direct >= 0) return clean(values && values[cols.direct]);
-    if (cols.first >= 0 && cols.last >= 0) return clean([values && values[cols.first], values && values[cols.last]].filter(value => clean(value)).join(' '));
+    if (cols.direct >= 0) return normalizePersonDisplay(values && values[cols.direct]);
+    if (cols.first >= 0 && cols.last >= 0) return normalizePersonDisplay(clean([values && values[cols.first], values && values[cols.last]].filter(value => clean(value)).join(' ')));
     return '';
   }
   function idColumns(values) {
@@ -257,6 +264,7 @@
   root.CoachToolsPerformanceScorecardHeaderDetector = Object.freeze({
     normalizeHeader,
     normalizeId,
+    normalizePersonDisplay,
     identityHeaderScore,
     workbookHeaderScore,
     findIdentityHeaderRow,
