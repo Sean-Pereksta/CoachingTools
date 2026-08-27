@@ -81,11 +81,27 @@ assert.strictEqual(t.classifySheet('Phone Data'), 'phone');
 assert.strictEqual(t.classifySheet('SV2'), 'sv2');
 assert.strictEqual(t.classifySheet('SV2 Wiper'), 'wiper');
 assert.strictEqual(t.classifySheet('Referral SV2 Wipers'), 'wiper');
+assert.strictEqual(t.classifySheet('Retail Weekly'), 'sv2', 'Retail Weekly should be accepted as a KPI source without requiring SV2 in the tab name');
+assert.strictEqual(t.classifySheet('Referral Weekly'), 'sv2', 'Referral Weekly should be accepted as a KPI source without requiring SV2 in the tab name');
 
 assert.strictEqual(t.nameFromRow({ Agent_Name: 'Doe, Jane' }), 'Jane Doe');
 assert.strictEqual(t.nameFromRow({ FIRST_NAME: 'Jane', LAST_NAME: 'Doe' }), 'Jane Doe');
 assert.strictEqual(t.nameFromRow({ Agent_FirstName: 'Jane', Agent_surname: 'Doe' }), 'Jane Doe');
 assert.strictEqual(t.nameFromRow({ 'agent firstname': 'Jane', 'AGENT_LASTNAME': 'Doe' }), 'Jane Doe');
+assert.strictEqual(t.coachFromRow({ Team_Name: 'Coach One' }), 'Coach One', 'Team_Name should be the workbook coach/team field');
+assert.strictEqual(t.coachFromRow({ 'TEAM NAME': 'Coach Two' }), 'Coach Two', 'Team Name matching should be case and punctuation insensitive');
+
+const retailHeaderOnRowFour = [
+  ['Retail scorecard export', '', '', '', '', '', '', '', ''],
+  ['Generated 8/27/2026', '', '', '', '', '', '', '', ''],
+  ['', '', '', '', '', '', '', '', ''],
+  ['Agent_Surname', 'Agent_Firstname', 'Team_Name', 'cash Opps', 'cash Apps', 'insurance Opps', 'insurance Apps', 'commercial Opps', 'commercial Apps'],
+  ['Doe', 'Jane', 'Coach One', 100, 48, 50, 45, 20, 17]
+];
+assert.strictEqual(t.classifySheetFromMatrix('Retail', retailHeaderOnRowFour), 'sv2', 'a plain Retail tab should be recognized from its actual KPI headers');
+assert.strictEqual(t.findHeaderRow(retailHeaderOnRowFour, 'sv2'), 3, 'Retail row-four headers should be detected directly');
+assert.strictEqual(t.inferSheetDepartment('Retail', retailHeaderOnRowFour[3], 'sv2'), 'Retail');
+assert.strictEqual(t.inferSheetDepartment('Referral Weekly', ['Agent_Surname', 'Agent_Firstname', 'Team_Name', 'Referral Opps', 'Referral Apps'], 'sv2'), 'Referral');
 
 const retail = t.appointmentMetrics({
   'CASH OPPS': 100,
@@ -100,6 +116,9 @@ assert.strictEqual(retail.consumer.den, 100);
 assert.strictEqual(retail.consumer.value, 0.48);
 assert.strictEqual(retail.insurance.value, 0.9);
 assert.strictEqual(retail.commercial.value, 0.85);
+
+const retailAppts = t.appointmentMetrics({ 'cash Opps': 10, 'cash Appts': 6 }, 'Retail');
+assert.strictEqual(retailAppts.consumer.value, 0.6, 'raw Appts spelling should work even before canonical aliasing');
 
 const referral = t.appointmentMetrics({ 'Referral Opps': 40, 'REFERRAL APPS': 30 }, 'Referral');
 assert.strictEqual(referral.referral.value, 0.75);
@@ -130,20 +149,26 @@ assert.strictEqual(t.nameFromRow(converted.rows[0]), 'Jane Doe');
 
 const sheets = [
   {
-    name: 'SV2', kind: 'sv2', hasDates: true,
+    name: 'Retail Weekly', kind: 'sv2', department: 'Retail', hasDates: true,
     rows: [
-      { Agent_Name: 'Jane Doe', Coach: 'Coach One', Date: '8/9/2026', 'Cash Opps': 10, 'Cash Apps': 4 },
-      { Agent_Name: 'Jane Doe', Coach: 'Coach One', Date: '8/16/2026', 'Cash Opps': 20, 'Cash Apps': 10 },
-      { Agent_Name: 'Jane Doe', Coach: 'Coach One', Date: '8/23/2026', 'Cash Opps': 30, 'Cash Apps': 18 },
-      { Agent_Name: 'Other Rep', Coach: 'Coach Two', Date: '8/23/2026', 'Cash Opps': 10, 'Cash Apps': 9 }
+      { Agent_Name: 'Jane Doe', Team_Name: 'Coach One', Date: '8/9/2026', 'Cash Opps': 10, 'Cash Apps': 4 },
+      { Agent_Name: 'Jane Doe', Team_Name: 'Coach One', Date: '8/16/2026', 'Cash Opps': 20, 'Cash Apps': 10 },
+      { Agent_Name: 'Jane Doe', Team_Name: 'Coach One', Date: '8/23/2026', 'Cash Opps': 30, 'Cash Apps': 18 },
+      { Agent_Name: 'Other Rep', Team_Name: 'Coach Two', Date: '8/23/2026', 'Cash Opps': 10, 'Cash Apps': 9 }
     ]
   },
   {
-    name: 'SV2 Wiper', kind: 'wiper', hasDates: true,
+    name: 'SV2 Wiper', kind: 'wiper', department: 'Retail', hasDates: true,
     rows: [
-      { FIRST_NAME: 'Jane', LAST_NAME: 'Doe', Date: '8/9/2026', Accepted: 6, Declined: 4 },
-      { FIRST_NAME: 'Jane', LAST_NAME: 'Doe', Date: '8/16/2026', Accepted: 7, Declined: 3 },
-      { FIRST_NAME: 'Jane', LAST_NAME: 'Doe', Date: '8/23/2026', Accepted: 8, Declined: 2 }
+      { FIRST_NAME: 'Jane', LAST_NAME: 'Doe', Team_Name: 'Coach One', Date: '8/9/2026', Accepted: 6, Declined: 4 },
+      { FIRST_NAME: 'Jane', LAST_NAME: 'Doe', Team_Name: 'Coach One', Date: '8/16/2026', Accepted: 7, Declined: 3 },
+      { FIRST_NAME: 'Jane', LAST_NAME: 'Doe', Team_Name: 'Coach One', Date: '8/23/2026', Accepted: 8, Declined: 2 }
+    ]
+  },
+  {
+    name: 'Referral Weekly', kind: 'sv2', department: 'Referral', hasDates: true,
+    rows: [
+      { Agent_Name: 'Referral Only', Team_Name: 'Coach One', Date: '8/23/2026', 'Referral Opps': 10, 'Referral Apps': 10 }
     ]
   }
 ];
@@ -153,7 +178,7 @@ for (const sheet of sheets) for (const row of sheet.rows) {
   row.__date = t.dateFromRow(row);
 }
 const agg = t.aggregateWorkbook(sheets, 'Retail', 'Coach One', windowSpec, []);
-assert.strictEqual(agg.rows.length, 1);
+assert.strictEqual(agg.rows.length, 1, 'Referral-only names should not leak into the Retail live workbook page');
 assert.strictEqual(agg.rows[0].name, 'Jane Doe');
 assert.strictEqual(agg.rows[0].metrics.consumer.num, 32);
 assert.strictEqual(agg.rows[0].metrics.consumer.den, 60);
