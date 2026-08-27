@@ -5,6 +5,26 @@ const path = require('path');
 
 require(path.join(__dirname, '..', 'shared', 'performance-scorecard-upload-mode.js'));
 
+const headerDetector = globalThis.CoachToolsPerformanceScorecardHeaderDetector;
+assert(headerDetector, 'identity-aware header detector should be exposed');
+assert.strictEqual(headerDetector.normalizeHeader('Agent_surname'), 'agentsurname');
+assert.strictEqual(headerDetector.normalizeHeader('FIRST_NAME'), 'firstname');
+
+const deepHeaderMatrix = Array.from({ length: 45 }, (_, index) => [`Report preamble ${index + 1}`, '', '', '', '']);
+deepHeaderMatrix.push(['Agent_surname', 'Agent_FirstName', 'cash Opps', 'cash Apps', 'Date']);
+deepHeaderMatrix.push(['Doe', 'Jane', 10, 5, '8/23/2026']);
+assert.strictEqual(headerDetector.findIdentityHeaderRow(deepHeaderMatrix), 45, 'identity row should be found beyond the old 40-row scan');
+const trimmedDeepMatrix = headerDetector.trimMatrixToIdentityHeader(deepHeaderMatrix);
+assert.deepStrictEqual(trimmedDeepMatrix[0], deepHeaderMatrix[45], 'identity row should become the matrix header row');
+
+const misleadingPreamble = [
+  ['Consumer / Insurance / Commercial workbook summary', '', '', '', ''],
+  ['Generated export', 'Cash', 'Insurance', 'Commercial', ''],
+  ['FIRST_NAME', 'Surname', 'Cash Opps', 'Cash Apps', 'Date'],
+  ['Jane', 'Doe', 10, 5, '8/23/2026']
+];
+assert.strictEqual(headerDetector.findIdentityHeaderRow(misleadingPreamble), 2, 'first-name + surname identity row should beat KPI-looking preamble rows');
+
 const api = globalThis.CoachToolsPerformanceScorecardUploadMode;
 assert(api, 'upload mode API should be exposed');
 const t = api._test;
