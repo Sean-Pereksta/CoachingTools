@@ -66,28 +66,32 @@
     XLSX.utils.sheet_to_json = headerAwareSheetToJson;
     return true;
   }
-  function watchForLazyXlsx() {
-    if (root.XLSX) {
-      patchXlsx(root.XLSX);
-      return;
-    }
-    const descriptor = Object.getOwnPropertyDescriptor(root, 'XLSX');
-    if (descriptor && !descriptor.configurable) return;
-    let stored = descriptor && Object.prototype.hasOwnProperty.call(descriptor, 'value') ? descriptor.value : undefined;
-    try {
-      Object.defineProperty(root, 'XLSX', {
-        configurable: true,
-        enumerable: true,
-        get() { return stored; },
-        set(value) {
-          stored = value;
-          patchXlsx(value);
-          try {
-            Object.defineProperty(root, 'XLSX', { configurable: true, enumerable: true, writable: true, value });
-          } catch (_) {}
-        }
-      });
-    } catch (_) {}
+  function watchForWorkbookReader() {
+    if (root.XLSX && patchXlsx(root.XLSX)) return;
+    if (!doc || typeof root.MutationObserver !== 'function') return;
+
+    let observer = null;
+    const watchScript = script => {
+      if (!script || String(script.tagName || '').toUpperCase() !== 'SCRIPT') return;
+      const isWorkbookReader = script.dataset?.scorecardWorkbookDependency === 'xlsx' || /xlsx(?:\.full)?\.min\.js(?:$|[?#])/i.test(script.src || '');
+      if (!isWorkbookReader) return;
+      if (root.XLSX && patchXlsx(root.XLSX)) {
+        observer?.disconnect();
+        return;
+      }
+      script.addEventListener('load', () => {
+        if (patchXlsx(root.XLSX)) observer?.disconnect();
+      }, { once: true });
+    };
+
+    [...doc.scripts].forEach(watchScript);
+    observer = new root.MutationObserver(records => {
+      for (const record of records) for (const node of record.addedNodes || []) {
+        watchScript(node);
+        if (node && typeof node.querySelectorAll === 'function') node.querySelectorAll('script').forEach(watchScript);
+      }
+    });
+    observer.observe(doc.head || doc.documentElement, { childList: true, subtree: true });
   }
   function coreSource() {
     if (!doc) return '';
@@ -122,6 +126,6 @@
     patchXlsx
   });
 
-  watchForLazyXlsx();
+  watchForWorkbookReader();
   loadCore();
 })(typeof window !== 'undefined' ? window : globalThis);
