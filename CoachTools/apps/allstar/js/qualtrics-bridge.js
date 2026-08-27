@@ -177,3 +177,46 @@ function handleQualtricsMessage(event){
   if(data.type==='qualtrics-data-cleared'){ if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent='Qualtrics-side data cleared. Saved rules and settings were kept. Press Refresh Auto-Connected Sources when you want to load the KPI, coaching, and checklist rows again.'; return; }
   if(data.type==='qualtrics-key-files-error'&&els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=`Could not connect the All-Star key files: ${data.message||'unknown error'}`;
 }
+
+/*
+ * Shared-data-first startup policy.
+ *
+ * All-Star's normal startup should behave like the other CoachingTools apps: if
+ * the shared CoachTools dataset store already has usable data, use that store and
+ * do not hydrate All-Star's private IndexedDB import cache first. Hydrating that
+ * cache restores the saved categorized databases and immediately performs broad
+ * alias/team work before the shared-data reconciliation even starts.
+ *
+ * The existing local cache remains fully available from Import > Load Local Data,
+ * and it still acts as the automatic fallback when no shared CoachTools dataset is
+ * available. Categorize Data remains an explicit user action.
+ */
+const allStarLegacyStartupCacheLoader=loadImportCacheOnStartup;
+const ALLSTAR_SHARED_STARTUP_DATASETS=['monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist','compCoaching'];
+function allStarHasSharedStartupData(){
+  if(typeof window.CoachToolsData?.getDatasetVersion!=='function') return false;
+  return ALLSTAR_SHARED_STARTUP_DATASETS.some(type=>{
+    try{ return !!window.CoachToolsData.getDatasetVersion(type); }
+    catch(_){ return false; }
+  });
+}
+loadImportCacheOnStartup=async function(opts={}){
+  const startupRequest=!!(opts?.deferRender && state.startup?.running);
+  if(startupRequest && allStarHasSharedStartupData()){
+    state.importCacheStartupMode='shared-data-first';
+    state.startup.diagnostics={...(state.startup.diagnostics||{}),localCacheAutoLoaded:false,categorizationDeferred:true};
+    console.info('[All-Star Startup] Shared CoachTools data found; skipping automatic All-Star cache hydration. Categorization remains manual.');
+    return false;
+  }
+  state.importCacheStartupMode=startupRequest?'local-cache-fallback':'manual';
+  return allStarLegacyStartupCacheLoader(opts);
+};
+
+const allStarLegacyCentralSync=syncAllStarFromCoachToolsData;
+syncAllStarFromCoachToolsData=async function(options={}){
+  const result=await allStarLegacyCentralSync(options);
+  if(state.importCacheStartupMode==='shared-data-first' && String(options?.reason||'').toLowerCase().includes('startup')){
+    state.startup.diagnostics={...(state.startup.diagnostics||{}),startupSource:'shared CoachTools data',localCacheAutoLoaded:false,categorizationDeferred:true};
+  }
+  return result;
+};
