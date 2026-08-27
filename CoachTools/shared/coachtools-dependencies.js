@@ -41,10 +41,25 @@
     return promise;
   }
 
+  function loadDataManagerControls() {
+    if (!root.document) return;
+    const appId = root.document.querySelector('meta[name="coachtools-id"]')?.content || '';
+    if (appId !== 'weekly-data') return;
+    const source = localUrl('coachtools-data-manager-controls.js');
+    if (Array.from(root.document.scripts).some(script => script.src === source)) return;
+    const script = root.document.createElement('script');
+    script.src = source;
+    script.async = true;
+    script.dataset.coachtoolsDependency = 'DataManagerControls';
+    root.document.head.appendChild(script);
+  }
+
   root.CoachToolsDependencies = Object.freeze({
     VERSION,
     ensureXlsx: () => ensure('XLSX', '../vendor/xlsx.full.min.js', 'SheetJS'),
     ensureLzString: () => ensure('LZString', '../vendor/lz-string.min.js', 'LZ-String'),
     ensureJsZip: () => ensure('JSZip', '../vendor/jszip.min.js', 'JSZip')
   });
+
+  loadDataManagerControls();
 })(window);
