@@ -251,20 +251,42 @@
     _test: Object.freeze({ candidateWins, isoWeekDate })
   });
 
-  function loadPerformanceScorecardUploadMode() {
+  function performanceScorecardSharedSource(fileName) {
+    const current = root.document && root.document.currentScript;
+    let source = fileName;
+    try { if (current && current.src) source = new URL(fileName, current.src).href; } catch (_) {}
+    return source;
+  }
+  function loadPerformanceScorecardWorkbookVisuals() {
     if (!root.document) return;
     const meta = root.document.querySelector('meta[name="coachtools-id"]');
-    if (!meta || meta.content !== 'performance-scorecard' || root.CoachToolsPerformanceScorecardUploadMode) return;
-    const current = root.document.currentScript;
-    let source = 'performance-scorecard-upload-mode.js';
-    try { if (current && current.src) source = new URL('performance-scorecard-upload-mode.js', current.src).href; } catch (_) {}
-    if ([...root.document.scripts].some(script => script.src === source || script.dataset.scorecardWorkbookMode === 'true')) return;
+    if (!meta || meta.content !== 'performance-scorecard' || root.CoachToolsPerformanceScorecardWorkbookVisuals) return;
+    const source = performanceScorecardSharedSource('performance-scorecard-workbook-visuals.js');
+    if ([...root.document.scripts].some(script => script.src === source || script.dataset.scorecardWorkbookVisuals === 'true')) return;
     const script = root.document.createElement('script');
     script.src = source;
     script.async = true;
-    script.dataset.scorecardWorkbookMode = 'true';
-    script.addEventListener('error', () => console.error('[Performance Scorecard] workbook upload mode failed to load.'), { once: true });
+    script.dataset.scorecardWorkbookVisuals = 'true';
+    script.addEventListener('error', () => console.error('[Performance Scorecard] workbook visual enhancements failed to load.'), { once: true });
     root.document.head.appendChild(script);
+  }
+  function loadPerformanceScorecardUploadMode() {
+    if (!root.document) return;
+    const meta = root.document.querySelector('meta[name="coachtools-id"]');
+    if (!meta || meta.content !== 'performance-scorecard') return;
+    if (!root.CoachToolsPerformanceScorecardUploadMode) {
+      const source = performanceScorecardSharedSource('performance-scorecard-upload-mode.js');
+      if (![...root.document.scripts].some(script => script.src === source || script.dataset.scorecardWorkbookMode === 'true')) {
+        const script = root.document.createElement('script');
+        script.src = source;
+        script.async = true;
+        script.dataset.scorecardWorkbookMode = 'true';
+        script.addEventListener('load', loadPerformanceScorecardWorkbookVisuals, { once: true });
+        script.addEventListener('error', () => console.error('[Performance Scorecard] workbook upload mode failed to load.'), { once: true });
+        root.document.head.appendChild(script);
+      }
+    }
+    loadPerformanceScorecardWorkbookVisuals();
   }
 
   loadPerformanceScorecardUploadMode();
