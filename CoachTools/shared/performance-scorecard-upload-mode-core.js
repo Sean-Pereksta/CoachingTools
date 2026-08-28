@@ -68,6 +68,28 @@
   const lookupCache = new WeakMap();
   const scriptPromises = new Map();
 
+  function goalService() { return root.CoachToolsPerformanceScorecardGoals || null; }
+  function goalDefinition(metric) { return goalService()?.definition(metric) || null; }
+  function goalEvaluation(metric, value) { return goalService()?.evaluate(metric, value) || 'neutral'; }
+  function goalClass(metric, value) {
+    const result = goalEvaluation(metric, value);
+    return result === 'success' ? 'psGoalMet' : result === 'opportunity' ? 'psGoalMiss' : '';
+  }
+  function goalGap(metric, value) {
+    const config = goalDefinition(metric);
+    if (!config || !Number.isFinite(config.goal) || !Number.isFinite(Number(value))) return 'No goal';
+    const delta = Number(value) - config.goal;
+    if (config.format === 'percent') return `${delta >= 0 ? '+' : ''}${(delta * 100).toFixed(1)} pp`;
+    const amount = Math.round(delta * 100) / 100;
+    return `${amount >= 0 ? '+' : ''}${amount}`;
+  }
+  function goalEditor(metric) {
+    const service = goalService(), config = goalDefinition(metric);
+    if (!service || !config) return '';
+    const unit = config.format === 'percent' ? '%' : config.format === 'duration' ? 'days' : config.format;
+    return `<div class="psUploadGoalEditor"><label>Goal <span>${escapeHtml(unit)}</span><input type="number" data-ps-goal="${metric}" value="${escapeHtml(service.inputValue(metric))}" step="${config.step || 1}" placeholder="No goal"></label><select data-ps-goal-direction="${metric}" aria-label="${escapeHtml(config.label)} direction"><option value="higher" ${config.direction === 'higher' ? 'selected' : ''}>Higher is Better</option><option value="lower" ${config.direction === 'lower' ? 'selected' : ''}>Lower is Better</option></select><button type="button" data-ps-goal-reset="${metric}" title="Reset goal">↺</button></div>`;
+  }
+
   function clean(value) {
     return String(value == null ? '' : value).trim().replace(/\s+/g, ' ');
   }
@@ -600,13 +622,14 @@
     box.textContent = message || '';
     box.classList.toggle('hide', !message);
   }
-  function metricCell(metric) {
+  function metricCell(metric, metricId) {
     if (!metric || !Number.isFinite(metric.value)) return '<span class="psUploadMuted">—</span>';
     const volume = Number.isFinite(metric.num) && Number.isFinite(metric.den) ? `${formatInt(metric.num)} / ${formatInt(metric.den)}` : 'direct rate';
     const trend = Number.isFinite(metric.trend) ? `${metric.trend >= 0 ? '▲' : '▼'} ${Math.abs(metric.trend * 100).toFixed(1)} pp` : 'No trend';
     const trendClass = Number.isFinite(metric.trend) ? (metric.trend >= 0 ? 'good' : 'bad') : 'psUploadMuted';
     const weeks = metric.points.filter(point => point.week !== 'undated').map(point => `${point.week.slice(5)} ${formatPercent(point.value)}`);
-    return `<div class="psUploadMetricMain">${formatPercent(metric.value)}</div><div class="psUploadMetricSub">${escapeHtml(volume)}</div><div class="psUploadMetricSub ${trendClass}">${escapeHtml(trend)}</div>${weeks.length ? `<div class="psUploadWeeks">${weeks.map(value => `<span>${escapeHtml(value)}</span>`).join('')}</div>` : ''}`;
+    const service = goalService(), goal = service?.format(metricId) || 'No goal', gap = goalGap(metricId, metric.value);
+    return `<div class="psUploadMetricMain">${formatPercent(metric.value)}</div><div class="psUploadMetricSub psUploadVolume">${escapeHtml(volume)}</div><div class="psUploadMetricSub ${trendClass} psUploadTrend">${escapeHtml(trend)}</div><div class="psUploadMetricSub psUploadGoalMeta"><span data-ps-goal-label="${metricId}">Goal ${escapeHtml(goal)}</span> · <span data-ps-goal-gap="${metricId}">${escapeHtml(gap)}</span></div>${weeks.length ? `<div class="psUploadWeeks">${weeks.map(value => `<span>${escapeHtml(value)}</span>`).join('')}</div>` : ''}`;
   }
   function availableMetrics(department, rows) {
     const preferred = department === 'Retail' ? ['consumer', 'insurance', 'commercial', 'wiper'] : ['referral', 'wiper'];
@@ -640,7 +663,7 @@
     if (!menu) return;
     const candidates = department === 'Retail' ? ['consumer', 'insurance', 'commercial', 'wiper'] : ['referral', 'wiper'];
     const available = new Set(availableMetrics(department, rows));
-    const parts = candidates.map(metric => `<label class="psUploadColumnRow"><input type="checkbox" data-ps-column="${metric}" ${state.columns[metric] !== false ? 'checked' : ''} ${available.has(metric) ? '' : 'disabled'}><span>${escapeHtml(METRIC_DEFS[metric].label)}</span><small>${available.has(metric) ? 'Workbook KPI' : 'No data found'}</small></label>`);
+    const parts = candidates.map(metric => `<div class="psUploadColumnRow"><input type="checkbox" data-ps-column="${metric}" ${state.columns[metric] !== false ? 'checked' : ''} ${available.has(metric) ? '' : 'disabled'}><span>${escapeHtml(METRIC_DEFS[metric].label)}</span><small>${available.has(metric) ? 'Workbook KPI' : 'No data found'}</small>${goalEditor(metric)}</div>`);
     parts.push(`<label class="psUploadColumnRow"><input type="checkbox" data-ps-column="coverage" ${state.columns.coverage !== false ? 'checked' : ''}><span>Coverage</span><small>Weeks matched</small></label>`);
     menu.innerHTML = parts.join('');
   }
@@ -653,10 +676,10 @@
       { label: 'Representatives', value: String(rows.length), sub: `${diagnostics.matchedNames} with matched KPI data` },
       ...allMetrics.map(metric => {
         const team = teamMetric(rows, metric);
-        return { label: METRIC_DEFS[metric].label, value: formatPercent(team.value), sub: Number.isFinite(team.den) ? `${formatInt(team.num)} / ${formatInt(team.den)}` : 'Workbook rate average' };
+        return { metric, goalValue: team.value, label: METRIC_DEFS[metric].label, value: formatPercent(team.value), subVolume: Number.isFinite(team.den) ? `${formatInt(team.num)} / ${formatInt(team.den)}` : 'Workbook rate average' };
       })
     ];
-    doc.getElementById('psUploadSummary').innerHTML = cards.map(card => `<div class="psUploadSummaryCard"><div class="psUploadSummaryLabel">${escapeHtml(card.label)}</div><div class="psUploadSummaryValue">${escapeHtml(card.value)}</div><div class="psUploadSummarySub">${escapeHtml(card.sub)}</div></div>`).join('');
+    doc.getElementById('psUploadSummary').innerHTML = cards.map(card => `<div class="psUploadSummaryCard ${card.metric ? goalClass(card.metric, card.goalValue) : ''}" ${card.metric ? `data-ps-goal-metric="${card.metric}" data-ps-goal-value="${card.goalValue}"` : ''}><div class="psUploadSummaryLabel">${escapeHtml(card.label)}</div><div class="psUploadSummaryValue">${escapeHtml(card.value)}</div><div class="psUploadSummarySub">${card.metric ? `${escapeHtml(card.subVolume)} · <span data-ps-goal-label="${card.metric}">Goal ${escapeHtml(goalService()?.format(card.metric) || 'No goal')}</span>` : escapeHtml(card.sub)}</div></div>`).join('');
     const relevantSheets = state.sheets.filter(sheet => sheetMatchesDepartment(sheet, department)), found = relevantSheets.map(sheetSummaryText).join(' · '), windowText = state.window ? `${formatDate(state.window.start)} – ${formatDate(state.window.end)}` : 'No usable dates detected';
     doc.getElementById('psUploadMeta').innerHTML = `<b>${escapeHtml(state.fileName || 'Workbook')}</b> · ${escapeHtml(windowText)} · ${escapeHtml(diagnostics.rosterSource)}<br><span>${escapeHtml(found || 'No department-matched sheets')}</span>`;
     const warning = [];
@@ -666,7 +689,7 @@
     doc.getElementById('psUploadNotice').textContent = warning.join(' ');
     doc.getElementById('psUploadTableHead').innerHTML = `<tr><th data-ps-sort="name">Representative${state.sort.key === 'name' ? (state.sort.dir > 0 ? ' ↑' : ' ↓') : ''}</th>${metrics.map(metric => `<th data-ps-sort="${metric}">${escapeHtml(METRIC_DEFS[metric].label)}${state.sort.key === metric ? (state.sort.dir > 0 ? ' ↑' : ' ↓') : ''}</th>`).join('')}${showCoverage ? `<th data-ps-sort="coverage">Coverage${state.sort.key === 'coverage' ? (state.sort.dir > 0 ? ' ↑' : ' ↓') : ''}</th>` : ''}</tr>`;
     const colspan = 1 + metrics.length + (showCoverage ? 1 : 0);
-    doc.getElementById('psUploadTableBody').innerHTML = filtered.length ? filtered.map(row => `<tr><td><b>${escapeHtml(row.name)}</b></td>${metrics.map(metric => `<td>${metricCell(row.metrics[metric])}</td>`).join('')}${showCoverage ? `<td><b>${row.weeks.size}/3 weeks</b><div class="psUploadMetricSub">${Object.keys(row.metrics).length ? 'Matched' : 'No KPI rows matched'}</div></td>` : ''}</tr>`).join('') : `<tr><td colspan="${colspan}" class="psUploadEmpty">No representatives match this view.</td></tr>`;
+    doc.getElementById('psUploadTableBody').innerHTML = filtered.length ? filtered.map(row => `<tr><td><b>${escapeHtml(row.name)}</b></td>${metrics.map(metric => { const value = row.metrics[metric]?.value; return `<td class="${goalClass(metric, value)}" data-ps-goal-metric="${metric}" data-ps-goal-value="${Number.isFinite(value) ? value : ''}">${metricCell(row.metrics[metric], metric)}</td>`; }).join('')}${showCoverage ? `<td><b>${row.weeks.size}/3 weeks</b><div class="psUploadMetricSub">${Object.keys(row.metrics).length ? 'Matched' : 'No KPI rows matched'}</div></td>` : ''}</tr>`).join('') : `<tr><td colspan="${colspan}" class="psUploadEmpty">No representatives match this view.</td></tr>`;
     doc.getElementById('psUploadIntro')?.classList.add('hide');
     doc.getElementById('psUploadResults').classList.remove('hide');
   }
@@ -775,12 +798,26 @@
     doc.getElementById('psUploadDepartment').addEventListener('change', () => { populateCoachOptions(); recompute(); });
     doc.getElementById('psUploadCoach').addEventListener('change', recompute);
     doc.getElementById('psUploadSearch').addEventListener('input', event => { state.search = event.target.value || ''; if (state.currentRows.length) renderResults(state.currentRows, state.diagnostics); });
+    doc.getElementById('psUploadColumnMenu').addEventListener('input', event => {
+      const input = event.target.closest('[data-ps-goal]'), service = goalService();
+      if (!input || !service) return;
+      const goal = service.fromInput(input.dataset.psGoal, input.value);
+      if (!Number.isNaN(goal)) service.set(input.dataset.psGoal, { goal });
+    });
     doc.getElementById('psUploadColumnMenu').addEventListener('change', event => {
+      const direction = event.target.closest('[data-ps-goal-direction]'), service = goalService();
+      if (direction && service) { service.set(direction.dataset.psGoalDirection, { direction: direction.value }); return; }
       const input = event.target.closest('[data-ps-column]');
       if (!input) return;
       state.columns[input.dataset.psColumn] = Boolean(input.checked);
       saveColumnPrefs(state.columns);
       if (state.currentRows.length) renderResults(state.currentRows, state.diagnostics);
+    });
+    doc.getElementById('psUploadColumnMenu').addEventListener('click', event => {
+      const reset = event.target.closest('[data-ps-goal-reset]'), service = goalService();
+      if (!reset || !service) return;
+      event.preventDefault();
+      service.reset(reset.dataset.psGoalReset);
     });
     doc.getElementById('psUploadTableHead').addEventListener('click', event => {
       const th = event.target.closest('[data-ps-sort]');

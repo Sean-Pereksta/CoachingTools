@@ -21,13 +21,16 @@ test('workbook visuals are loaded by Performance Scorecard only', () => {
   assert.match(loader, /scorecardWorkbookVisuals/);
 });
 
-test('workbook mode exposes theme and Normal Basic Advanced display controls', () => {
+test('workbook mode exposes theme and all six display controls', () => {
   const source = read(visualsPath);
   assert.match(source, /id=\\?"psUploadThemeSel\\?"/);
   assert.match(source, /id=\\?"psUploadDisplayMode\\?"/);
   assert.match(source, /value=\\?"normal\\?"[^>]*>Normal/);
   assert.match(source, /value=\\?"basic\\?"[^>]*>Basic/);
   assert.match(source, /value=\\?"advanced\\?"[^>]*>Advanced/);
+  assert.match(source, /value=\\?"normal-condensed\\?"[^>]*>Normal Condensed/);
+  assert.match(source, /value=\\?"basic-condensed\\?"[^>]*>Basic Condensed/);
+  assert.match(source, /value=\\?"advanced-condensed\\?"[^>]*>Advanced Condensed/);
   assert.match(source, /mainThemeSelect\(\)/);
   assert.match(source, /displayModeSel/);
 });
@@ -43,18 +46,35 @@ test('workbook columns live in a right rail and Coverage is forced off', () => {
   assert.match(source, /removeWorkbookCoverageColumn/);
 });
 
-test('workbook rows are filled and the three views are vertically condensed', () => {
+test('workbook rows are filled and standard versus condensed views are materially distinct', () => {
   const source = read(visualsPath);
   assert.match(source, /\.psUploadTable tbody td\{background:var\(--panel2\)/);
   assert.match(source, /tbody td:first-child>b\{display:block/);
   assert.match(source, /data-ps-view=\\?"basic\\?"/);
-  assert.match(source, /height:27px/);
-  assert.match(source, /psUploadMetricMain\+\.psUploadMetricSub\{display:inline-block!important/);
+  assert.match(source, /height:54px/);
   assert.match(source, /data-ps-view=\\?"normal\\?"/);
-  assert.match(source, /height:34px/);
+  assert.match(source, /height:65px/);
   assert.match(source, /data-ps-view=\\?"advanced\\?"/);
-  assert.match(source, /height:39px/);
-  assert.match(source, /psUploadWeeks\{display:inline-flex/);
+  assert.match(source, /height:82px/);
+  assert.match(source, /data-ps-view\$=\\?"-condensed\\?"/);
+  assert.match(source, /data-ps-view=\\?"basic-condensed\\?"/);
+  assert.match(source, /height:23px/);
+  assert.match(source, /data-ps-view=\\?"advanced-condensed\\?"/);
+  assert.match(source, /height:31px/);
+});
+
+test('workbook uses shared goals and filled success or opportunity cells', () => {
+  const visuals = read(visualsPath);
+  const core = read(corePath);
+  assert.match(core, /CoachToolsPerformanceScorecardGoals/);
+  assert.match(core, /data-ps-goal=/);
+  assert.match(core, /data-ps-goal-direction=/);
+  assert.match(core, /data-ps-goal-reset=/);
+  assert.match(core, /data-ps-goal-metric=/);
+  assert.match(core, /psGoalMet/);
+  assert.match(core, /psGoalMiss/);
+  assert.match(visuals, /refreshWorkbookGoals/);
+  assert.match(visuals, /Columns &amp; Goals/);
 });
 
 test('workbook Snip supports both PNG and paginated PDF export', () => {
