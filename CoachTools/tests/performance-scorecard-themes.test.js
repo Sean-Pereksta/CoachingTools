@@ -8,7 +8,7 @@ const html = fs.readFileSync(path.resolve(__dirname, '..', 'apps', 'performance-
 const selector = html.match(/<select id="themeSel"[\s\S]*?<\/select>/)?.[0] || '';
 const themeIds = Array.from(selector.matchAll(/<option value="([^"]+)"/g), match => match[1]);
 
-assert.deepStrictEqual(themeIds, ['galactic', 'light', 'aurora', 'midnight', 'solar', 'safelite', 'ocean', 'executive', 'obsidian', 'neon', 'forest', 'rose', 'paper', 'contrast', 'royal', 'arctic', 'crimson', 'blueprint', 'candy']);
+assert.deepStrictEqual(themeIds, ['galactic', 'light', 'aurora', 'midnight', 'solar', 'safelite', 'ocean', 'executive', 'obsidian', 'neon', 'forest', 'rose', 'paper', 'contrast', 'royal', 'arctic', 'crimson', 'blueprint', 'candy', 'cybergrid', 'emerald-ledger', 'crimson-steel', 'frost-glass', 'retro-terminal']);
 assert.strictEqual(new Set(themeIds).size, themeIds.length, 'Theme IDs should be unique.');
 assert(!html.includes('id="themeBtn"'), 'The old two-state theme button should be removed.');
 assert(html.includes("document.body.dataset.theme=id"), 'Theme selection should apply through a stable data-theme attribute.');
@@ -39,6 +39,12 @@ assert(solar.includes('--rep-font-family:"Trebuchet MS"'), 'Solar Flare should a
 assert(solar.includes('--rep-font-size:11px'), 'Solar Flare should reduce representative-name size.');
 assert(obsidian.includes('--bg:#000') && obsidian.includes('--panel:#080705'), 'Obsidian Gold should use a substantially darker surface.');
 assert(obsidian.includes('--ink:#fffbd8') && obsidian.includes('--muted:#f2cc68'), 'Obsidian Gold should use brighter primary and supporting lettering.');
+for (const theme of ['cybergrid', 'emerald-ledger', 'crimson-steel', 'frost-glass', 'retro-terminal']) {
+  const treatment = treatmentFor(theme);
+  assert(treatment.includes('--theme-topbar:'), `${theme} should define a distinct topbar treatment.`);
+  assert(treatment.includes('--theme-card:'), `${theme} should define a distinct card treatment.`);
+  assert(treatment.includes('--theme-table-head:'), `${theme} should define a distinct table header treatment.`);
+}
 
 const inlineScripts = Array.from(html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi), match => match[1]).filter(source => source.trim());
 for (const source of inlineScripts) new Function(source);

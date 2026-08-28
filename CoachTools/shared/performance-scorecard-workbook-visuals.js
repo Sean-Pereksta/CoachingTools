@@ -4,10 +4,10 @@
   const doc = root.document || null;
   if (!doc) return;
 
-  const VERSION = '1.0.0';
+  const VERSION = '2.0.0';
   const VIEW_PREF_KEY = 'coachtools.performanceScorecard.workbookView.v1';
   const COLUMN_PREF_KEY = 'coachtools.performanceScorecard.workbookColumns.v1';
-  const VIEW_MODES = new Set(['normal', 'basic', 'advanced']);
+  const VIEW_MODES = new Set(['normal', 'basic', 'advanced', 'normal-condensed', 'basic-condensed', 'advanced-condensed']);
   const scriptPromises = new Map();
   const moduleScriptUrl = (() => {
     try { return doc.currentScript && doc.currentScript.src ? new URL(doc.currentScript.src, root.location.href) : null; }
@@ -126,27 +126,46 @@
 #psUploadOverlay .psWorkbookExportMenu>summary::-webkit-details-marker{display:none}
 #psUploadOverlay .psWorkbookExportMenuList{position:absolute;right:0;top:calc(100% + 5px);z-index:40;min-width:138px;padding:6px;display:grid;gap:5px;border:1px solid var(--line);border-radius:11px;background:var(--panel);box-shadow:var(--shadow)}
 #psUploadOverlay .psWorkbookExportMenuList button{text-align:left;white-space:nowrap}
-#psUploadOverlay[data-ps-view="basic"] .psUploadSummaryCard{padding:6px 8px}
-#psUploadOverlay[data-ps-view="basic"] .psUploadSummaryValue{font-size:17px}
-#psUploadOverlay[data-ps-view="basic"] .psUploadSummarySub{display:none}
-#psUploadOverlay[data-ps-view="basic"] .psUploadWorkspaceHead{padding:5px 8px}
-#psUploadOverlay[data-ps-view="basic"] .psUploadTableWrap{max-height:calc(100vh - 220px)}
-#psUploadOverlay[data-ps-view="basic"] .psUploadTable{border-spacing:0 2px!important}
-#psUploadOverlay[data-ps-view="basic"] .psUploadTable th{padding:4px 6px;font-size:7px}
-#psUploadOverlay[data-ps-view="basic"] .psUploadTable tbody td{padding:2px 6px;height:27px;white-space:nowrap}
-#psUploadOverlay[data-ps-view="basic"] .psUploadTable tbody td:first-child>b{padding:3px 6px;font-size:9px}
-#psUploadOverlay[data-ps-view="basic"] .psUploadMetricMain{display:inline-block;font-size:12px;vertical-align:middle}
-#psUploadOverlay[data-ps-view="basic"] .psUploadMetricSub{display:none!important}
-#psUploadOverlay[data-ps-view="basic"] .psUploadMetricMain+.psUploadMetricSub{display:inline-block!important;margin-left:7px;font-size:7px;color:var(--muted);vertical-align:middle}
-#psUploadOverlay[data-ps-view="basic"] .psUploadWeeks{display:none!important}
-#psUploadOverlay[data-ps-view="normal"] .psUploadTable tbody td{padding:3px 7px;height:34px;white-space:nowrap}
-#psUploadOverlay[data-ps-view="normal"] .psUploadMetricMain{display:inline-block;vertical-align:middle;margin-right:7px}
-#psUploadOverlay[data-ps-view="normal"] .psUploadMetricSub{display:inline-block;margin-right:7px;vertical-align:middle}
-#psUploadOverlay[data-ps-view="normal"] .psUploadWeeks{display:none!important}
-#psUploadOverlay[data-ps-view="advanced"] .psUploadTable tbody td{padding:3px 7px;height:39px;white-space:nowrap}
-#psUploadOverlay[data-ps-view="advanced"] .psUploadMetricMain{display:inline-block;vertical-align:middle;margin-right:6px}
-#psUploadOverlay[data-ps-view="advanced"] .psUploadMetricSub{display:inline-block;margin-right:6px;vertical-align:middle}
-#psUploadOverlay[data-ps-view="advanced"] .psUploadWeeks{display:inline-flex;vertical-align:middle;margin:0 0 0 2px}
+#psUploadOverlay .psUploadWorkspaceHead{background:var(--theme-header,var(--panel2))}
+#psUploadOverlay .psUploadSummaryCard,#psUploadOverlay .psWorkbookColumnRail,#psUploadOverlay .psUploadWorkspace{background:var(--theme-card,var(--panel))}
+#psUploadOverlay .psUploadTable th{background:var(--theme-table-head,var(--panel2))}
+#psUploadOverlay .psUploadTable tbody td.psGoalMet,#psUploadOverlay .psUploadSummaryCard.psGoalMet{background:var(--goal-good-bg);box-shadow:inset 0 0 0 1px var(--good)}
+#psUploadOverlay .psUploadTable tbody td.psGoalMiss,#psUploadOverlay .psUploadSummaryCard.psGoalMiss{background:var(--goal-bad-bg);box-shadow:inset 0 0 0 1px var(--bad)}
+#psUploadOverlay .psUploadColumnRow{grid-template-columns:auto 1fr;align-items:start}
+#psUploadOverlay .psUploadColumnRow>small{grid-column:2}
+#psUploadOverlay .psUploadGoalEditor{grid-column:2;display:grid;grid-template-columns:1fr 1fr 25px;gap:4px;align-items:end;margin-top:4px;padding-top:5px;border-top:1px solid var(--line)}
+#psUploadOverlay .psUploadGoalEditor label{display:grid;grid-template-columns:1fr auto;gap:2px 4px;font-family:var(--font-display);font-size:7px;text-transform:uppercase;color:var(--muted)}
+#psUploadOverlay .psUploadGoalEditor label span{font-family:var(--font-body);font-size:6px;text-transform:none}
+#psUploadOverlay .psUploadGoalEditor input,#psUploadOverlay .psUploadGoalEditor select{width:100%;min-width:0;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--ink);padding:4px;font-family:var(--font-numeric);font-size:7px}
+#psUploadOverlay .psUploadGoalEditor input{grid-column:1/-1}
+#psUploadOverlay .psUploadGoalEditor button{width:25px;height:25px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--accent);font-weight:950}
+#psUploadOverlay[data-ps-view="basic"] .psUploadTable tbody td{height:54px;padding:8px 7px}
+#psUploadOverlay[data-ps-view="basic"] .psUploadMetricMain{font-size:18px}
+#psUploadOverlay[data-ps-view="basic"] .psUploadMetricSub,#psUploadOverlay[data-ps-view="basic"] .psUploadWeeks{display:none!important}
+#psUploadOverlay[data-ps-view="normal"] .psUploadTable tbody td{height:65px;padding:8px 7px}
+#psUploadOverlay[data-ps-view="normal"] .psUploadGoalMeta,#psUploadOverlay[data-ps-view="normal"] .psUploadWeeks{display:none!important}
+#psUploadOverlay[data-ps-view="advanced"] .psUploadTable tbody td{height:82px;padding:8px 7px}
+#psUploadOverlay[data-ps-view="advanced"] .psUploadGoalMeta{display:block;color:var(--ink);margin-top:3px}
+#psUploadOverlay[data-ps-view="advanced"] .psUploadWeeks{display:flex;margin-top:4px}
+#psUploadOverlay[data-ps-view$="-condensed"] .psUploadSummaryCard{padding:5px 7px}
+#psUploadOverlay[data-ps-view$="-condensed"] .psUploadSummaryValue{font-size:16px}
+#psUploadOverlay[data-ps-view$="-condensed"] .psUploadSummarySub{font-size:6px}
+#psUploadOverlay[data-ps-view$="-condensed"] .psUploadWorkspaceHead{padding:4px 7px}
+#psUploadOverlay[data-ps-view$="-condensed"] .psUploadTableWrap{max-height:calc(100vh - 214px)}
+#psUploadOverlay[data-ps-view$="-condensed"] .psUploadTable{border-spacing:0 2px!important}
+#psUploadOverlay[data-ps-view$="-condensed"] .psUploadTable th{padding:3px 5px;font-size:7px}
+#psUploadOverlay[data-ps-view$="-condensed"] .psUploadTable tbody td{height:28px;padding:2px 5px;white-space:nowrap}
+#psUploadOverlay[data-ps-view$="-condensed"] .psUploadTable tbody td:first-child>b{padding:2px 5px;font-size:8px}
+#psUploadOverlay[data-ps-view$="-condensed"] .psUploadMetricMain,#psUploadOverlay[data-ps-view$="-condensed"] .psUploadMetricSub{display:inline-block;margin:0 5px 0 0;vertical-align:middle}
+#psUploadOverlay[data-ps-view$="-condensed"] .psUploadMetricMain{font-size:11px}
+#psUploadOverlay[data-ps-view$="-condensed"] .psUploadMetricSub:before{content:'| ';color:var(--muted)}
+#psUploadOverlay[data-ps-view$="-condensed"] .psUploadWeeks{display:none!important}
+#psUploadOverlay[data-ps-view="basic-condensed"] .psUploadTable tbody td{height:23px;padding-top:1px;padding-bottom:1px}
+#psUploadOverlay[data-ps-view="basic-condensed"] .psUploadMetricSub:not(.psUploadVolume){display:none!important}
+#psUploadOverlay[data-ps-view="normal-condensed"] .psUploadTable tbody td{height:27px}
+#psUploadOverlay[data-ps-view="normal-condensed"] .psUploadGoalMeta{display:none!important}
+#psUploadOverlay[data-ps-view="advanced-condensed"] .psUploadTable tbody td{height:31px}
+#psUploadOverlay[data-ps-view="advanced-condensed"] .psUploadGoalMeta{display:inline-block!important}
 #psUploadOverlay.psWorkbookExportSafe .psUploadTop,#psUploadOverlay.psWorkbookExportSafe .psUploadDrop,#psUploadOverlay.psWorkbookExportSafe .psUploadError,#psUploadOverlay.psWorkbookExportSafe .psUploadNotice{background:var(--panel)!important;border-color:var(--line)!important;backdrop-filter:none!important}
 #psUploadOverlay.psWorkbookExportSafe .psUploadTable tbody tr:hover td{background:var(--panel2)!important}
 #psUploadOverlay.psWorkbookExportSafe .psWorkbookColumnRail{display:none!important}
@@ -160,6 +179,34 @@
 
   function mainThemeSelect() { return doc.getElementById('themeSel'); }
   function workbookThemeSelect() { return doc.getElementById('psUploadThemeSel'); }
+  function goalService() { return root.CoachToolsPerformanceScorecardGoals || null; }
+  function workbookGoalGap(id, value) {
+    const config = goalService()?.definition(id), numeric = Number(value);
+    if (!config || !Number.isFinite(config.goal) || !Number.isFinite(numeric)) return 'No goal';
+    const delta = numeric - config.goal;
+    return config.format === 'percent' ? `${delta >= 0 ? '+' : ''}${(delta * 100).toFixed(1)} pp` : `${delta >= 0 ? '+' : ''}${Math.round(delta * 100) / 100}`;
+  }
+  function refreshWorkbookGoals(changedId = '*') {
+    const service = goalService();
+    if (!service) return;
+    const ids = changedId === '*' ? Object.keys(service.DEFAULTS) : [changedId];
+    for (const id of ids) {
+      for (const cell of doc.querySelectorAll(`[data-ps-goal-metric="${id}"]`)) {
+        const evaluation = service.evaluate(id, Number(cell.dataset.psGoalValue));
+        cell.classList.toggle('psGoalMet', evaluation === 'success');
+        cell.classList.toggle('psGoalMiss', evaluation === 'opportunity');
+      }
+      for (const label of doc.querySelectorAll(`[data-ps-goal-label="${id}"]`)) { const next = `Goal ${service.format(id)}`; if (label.textContent !== next) label.textContent = next; }
+      for (const gap of doc.querySelectorAll(`[data-ps-goal-gap="${id}"]`)) {
+        const cell = gap.closest('[data-ps-goal-value]');
+        const next = workbookGoalGap(id, cell?.dataset.psGoalValue);
+        if (gap.textContent !== next) gap.textContent = next;
+      }
+      const config = service.definition(id);
+      for (const input of doc.querySelectorAll(`[data-ps-goal="${id}"]`)) if (doc.activeElement !== input) input.value = service.inputValue(id);
+      for (const select of doc.querySelectorAll(`[data-ps-goal-direction="${id}"]`)) select.value = config?.direction || 'higher';
+    }
+  }
   function syncThemeOptions() {
     const source = mainThemeSelect(), target = workbookThemeSelect();
     if (!target) return;
@@ -229,7 +276,7 @@
     const control = doc.createElement('div');
     control.className = 'psUploadCtl';
     control.dataset.psWorkbookVisualControl = 'display';
-    control.innerHTML = '<label>Display</label><select id="psUploadDisplayMode" aria-label="Workbook scorecard display mode"><option value="normal">Normal</option><option value="basic">Basic</option><option value="advanced">Advanced</option></select>';
+    control.innerHTML = '<label>Display</label><select id="psUploadDisplayMode" aria-label="Workbook scorecard display mode"><option value="normal">Normal</option><option value="basic">Basic</option><option value="advanced">Advanced</option><option value="normal-condensed">Normal Condensed</option><option value="basic-condensed">Basic Condensed</option><option value="advanced-condensed">Advanced Condensed</option></select>';
     const choose = doc.getElementById('psUploadChoose');
     actions.insertBefore(control, choose || actions.firstChild);
     syncViewFromMain();
@@ -258,13 +305,13 @@
       rail = doc.createElement('aside');
       rail.id = 'psUploadColumnRail';
       rail.className = 'psWorkbookColumnRail';
-      rail.innerHTML = '<div class="psWorkbookRailTitle">Workbook Columns</div><div class="psWorkbookRailHint">Show or hide the live workbook KPI columns. Changes stay editable without affecting stored scorecard data.</div>';
+      rail.innerHTML = '<div class="psWorkbookRailTitle">Columns &amp; Goals</div><div class="psWorkbookRailHint">Choose workbook KPIs and edit the same persistent goals used by the normal Scorecard.</div>';
       layout.appendChild(rail);
     }
     if (columns.parentNode !== rail) rail.appendChild(columns);
     columns.open = true;
     const summary = columns.querySelector('summary');
-    if (summary) summary.textContent = '☰ Workbook Columns';
+    if (summary) summary.textContent = '☰ Columns & Goals';
   }
 
   function persistCoverageOff() {
@@ -417,6 +464,7 @@
     installColumnRail();
     removeWorkbookCoverageColumn();
     syncThemeOptions();
+    refreshWorkbookGoals();
   }
   function scheduleVisualState() {
     if (visualApplyQueued) return;
@@ -448,6 +496,11 @@
     syncViewFromMain();
     removeWorkbookCoverageColumn();
     watchWorkbookRenders();
+    const service = goalService();
+    if (service && doc.documentElement.dataset.psWorkbookGoalListener !== 'true') {
+      doc.documentElement.dataset.psWorkbookGoalListener = 'true';
+      root.addEventListener(service.EVENT_NAME, event => refreshWorkbookGoals(event.detail?.id || '*'));
+    }
     doc.addEventListener('click', event => {
       if (!event.target.closest('#psUploadModeBtn')) return;
       syncThemeOptions();

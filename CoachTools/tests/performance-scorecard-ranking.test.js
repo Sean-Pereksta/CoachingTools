@@ -36,9 +36,16 @@ assert.ok(enhanced.includes('displayModeSel'), 'scorecard should expose the disp
 assert.ok(enhanced.includes('<option value="normal">Normal</option>'), 'display selector should include Normal');
 assert.ok(enhanced.includes('<option value="basic">Basic</option>'), 'display selector should include Basic');
 assert.ok(enhanced.includes('<option value="advanced">Advanced</option>'), 'display selector should include Advanced');
+assert.ok(enhanced.includes('<option value="normal-condensed">Normal Condensed</option>'), 'display selector should include Normal Condensed');
+assert.ok(enhanced.includes('<option value="basic-condensed">Basic Condensed</option>'), 'display selector should include Basic Condensed');
+assert.ok(enhanced.includes('<option value="advanced-condensed">Advanced Condensed</option>'), 'display selector should include Advanced Condensed');
 assert.ok(enhanced.includes('metricMainBasic'), 'Basic mode should use the large-number KPI presentation');
 assert.ok(enhanced.includes('metricRankInfo(p)'), 'Advanced mode should include ordinal KPI rank information');
 assert.ok(enhanced.includes('metricOrdinal'), 'Advanced mode should render KPI rank in the metric box');
+assert.ok(enhanced.includes('zeroMonitorCount'), 'Call Quality aggregation should retain selected-period zero-monitor counts');
+assert.ok(enhanced.includes('const rows=qaRows(personId),zeroMonitorCount=rows.reduce((count,row)=>Number(row.score)===0?count+1:count,0)'), 'zero-monitor counts should use exact zero scores from the already selected-period QA rows');
+assert.ok(enhanced.includes('function zeroMonitorBadge(p)'), 'Advanced display should render the zero-monitor warning');
+assert.ok(enhanced.includes('data-scorecard-density'), 'display state should separate detail from density');
 
 for (const theme of ['Nova Violet','Emerald Circuit','Copper Forge','Ice Prism','Monochrome Luxe']) {
   assert.ok(enhanced.includes(theme), `${theme} should be registered in the scorecard theme selector`);

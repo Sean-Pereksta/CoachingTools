@@ -53,7 +53,7 @@ const state = { weeklyByRep: new Map([['rep', [{ type: 'weeklyRetail', week: '20
 const mainWindowHelpers = ['clean', 'weekKey', 'shiftDayKey', 'latestBusinessWeekKey', 'mainWindowSpec', 'pointInSelectedWindow']
   .map(line)
   .join('\n');
-const windowApi = new Function('window', 'CoachToolsWeeklyIndex', 'state', '$', 'DAY', `${mainWindowHelpers}\nreturn {mainWindowSpec,pointInSelectedWindow};`)(
+const windowApi = new Function('window', 'CoachToolsWeeklyIndex', 'state', '$', 'DAY', `let scorecardWindowMemo=null;const latestBusinessWeekMemo=new Map();\n${mainWindowHelpers}\nreturn {mainWindowSpec,pointInSelectedWindow};`)(
   weeklyContext,
   weeklyContext.CoachToolsWeeklyIndex,
   state,
