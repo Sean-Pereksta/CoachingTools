@@ -174,6 +174,7 @@ function wire(){
   if(els.packagedFile) els.packagedFile.onchange=e=>{const f=e.target.files[0]; if(f) loadPackagedFile(f);};
   els.createModelBtn.onclick=()=>openEditModel(null);
   els.exportModelsBtn.onclick=()=>downloadText('all_star_models.txt', serializeModelsForExport(state.models||[]));
+  els.coachingDiagnosticsBtn.onclick=()=>openCoachingDiagnostics();
   els.importModelsFile.onchange=async e=>{const f=e.target.files[0]; if(!f) return; const text=await f.text(); try{parseModelsImportText(text).forEach(upsertModel); saveModels(); renderEditModelSafe(); renderMassHeaderCheck();}catch(err){console.error(err); alert('Import failed. Make sure this is a model TXT/JSON export.');} e.target.value='';};
   els.addCriterionBtn.onclick=()=>{syncEditModelFields(); state.editModel.criteria.push(emptyCriterion()); renderEditModel();};
   els.cancelModelBtn.onclick=els.cancelModelTopBtn.onclick=()=>closeModal('editModelModal');
