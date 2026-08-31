@@ -124,6 +124,18 @@ function runPreflight(model,settings={}){
     const m=workflowSourceMetadata(source), latest=m.latestDate?new Date(m.latestDate):null;
     if(end&&latest&&!isNaN(latest)&&end.getTime()>latest.getTime()+86400000) diagnostics.push(allStarDiagnostic({severity:'warning',module:'freshness',source,title:`${labelSource(source)} ends before the report`,message:`Latest available date is ${ymd(latest)}; the selected report ends ${ymd(end)}.`}));
   });
+  if(deps.sources.includes('documented_coaching')){
+    const rows=getRowsRaw('documented_coaching')||[], headers=getHeaders('documented_coaching')||[];
+    const repColumn=repColumnForSource('documented_coaching')||findHeader(headers,['Associate name','Associate Name','Associate','Agent Name','Rep']);
+    const coachColumn=teamColumnForSource('documented_coaching')||findHeader(headers,['Job Coach','Coach Assigned','Coach','Team']);
+    const dateColumn=sourceDateHeader('documented_coaching',headers);
+    const validDated=dateColumn?rows.filter(row=>!!parseDateOnly(row[dateColumn]||row._date)).length:0;
+    const inDateRange=dateColumn?rows.filter(row=>inRange(row[dateColumn]||row._date,start,end)).length:0;
+    const runIndex=state.runIndexes?.get?.('documented_coaching');
+    const sourceVersion=sourceVersionSignature('documented_coaching');
+    state.documentedCoachingDiagnostics={centralDataset:readAllStarCentralSyncMap?.().documentedCoaching||null,fileName:sourceFileName('documented_coaching'),rawRows:Number(state.sourceMeta?.documented_coaching?.rawRowCount||rows.length),hydratedRows:rows.length,normalizedRows:rows.length,headers:[...headers],repColumn,coachColumn,dateColumn,validDatedRows:validDated,matchedRepresentatives:new Set(rows.map(row=>row._repKey).filter(Boolean)).size,unmatchedRepresentatives:rows.filter(row=>!row._repKey).length,matchedCoaches:rows.filter(row=>!!row._team).length,unmatchedCoaches:rows.filter(row=>!row._team).length,dateRange:{start:ymd(start),end:ymd(end)},recordsAfterDateFilter:inDateRange,sourceIndexVersion:sourceVersion,runIndexCache:runIndex?.signature===sourceVersion?'reused':'rebuild required'};
+    if(rows.length&&(start||end)&&(!dateColumn||!validDated)) diagnostics.push(allStarDiagnostic({severity:'warning',module:'import',source:'documented_coaching',title:'Documented Coaching date column is unusable',message:`Documented Coaching loaded ${rows.length.toLocaleString()} records but no usable coaching date column was detected for this date-filtered report.`}));
+  }
   const quarantined=(state.quarantinedRepAliases||[]).length;
   if(quarantined) diagnostics.push(allStarDiagnostic({severity:'warning',module:'identity',title:`${quarantined.toLocaleString()} quarantined identit${quarantined===1?'y':'ies'}`,message:'Review uncertain representative matches; they will not be merged automatically.'}));
   const conflicts=(state.rosterIndex?.conflicts||state.identityConflicts||[]).length;

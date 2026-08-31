@@ -134,6 +134,29 @@
     return 'Stable';
   }
   function normalizeConcernIdentity(value){ return String(value??'').trim().toLowerCase().replace(/\s+/g,' '); }
+  function concernReportIdentity(row){
+    row=row||{};
+    const stable=row.ruleId??row.RuleID??row['Rule ID']??row.reportId??row.ReportID??row['Report ID'];
+    if(String(stable??'').trim()) return `id:${normalizeConcernIdentity(stable)}`;
+    const label=row.ruleTitle??row.Rule??row['Rule Name']??row.reportName??row.Report??row.Concern??row.Category??row.Topic;
+    const normalized=normalizeConcernIdentity(label);
+    return normalized?`name:${normalized}`:'';
+  }
+  function concernRepReportKey(row){
+    row=row||{};
+    const rep=normalizeConcernIdentity(row.repKey||row.RepKey)||normalizeConcernName(row.repName??row.Representative??row['Representative Name']??row['Agent Name']??row['Associate Name']??row.Rep??row.Name);
+    const report=concernReportIdentity(row);
+    return rep&&report?`${rep}\u001f${report}`:'';
+  }
+  function summarizeConcernReportCounts(rows){
+    const counts=new Map(), labels=new Map(); let ambiguous=0,total=0;
+    for(const row of rows||[]){
+      const key=concernRepReportKey(row); if(!key){ ambiguous++; continue; }
+      counts.set(key,(counts.get(key)||0)+1); total++;
+      if(!labels.has(key)) labels.set(key,String(row.ruleTitle??row.Rule??row['Rule Name']??row.reportName??row.Report??row.Concern??row.Category??row.Topic??row.ruleId??row.RuleID??'').trim());
+    }
+    return {counts,labels,total,ambiguous};
+  }
   function normalizeConcernName(value){ return String(value??'').replace(/\([^)]*\)/g,' ').replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,' ').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
   function summarizeConcernNameCounts(rows){
     const counts=new Map(), labels=new Map(); let total=0;
@@ -166,5 +189,5 @@
     }
     return {occurrences,byRepRule};
   }
-  return {normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,formatDisplayText,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel,normalizeConcernIdentity,normalizeConcernName,summarizeConcernNameCounts,concernOccurrenceKey,classifyConcernHistory,summarizeConcernHistory};
+  return {normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,formatDisplayText,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel,normalizeConcernIdentity,normalizeConcernName,summarizeConcernNameCounts,concernReportIdentity,concernRepReportKey,summarizeConcernReportCounts,concernOccurrenceKey,classifyConcernHistory,summarizeConcernHistory};
 });

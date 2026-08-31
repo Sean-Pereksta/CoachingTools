@@ -348,6 +348,17 @@ function cleanName(s){ return normalizeFullNameDisplay(s); }
 function titleCase(s){return String(s||'').toLowerCase().replace(/\b[a-z]/g,m=>m.toUpperCase()).replace(/\b([ivx]+|jr|sr)\b/gi,m=>m.toUpperCase()).replace(/\s+/g,' ').trim();}
 function canonicalCoachName(s){ return cleanName(String(s ?? '').trim()); }
 function coachNameKey(s){ return norm(canonicalCoachName(s)); }
+function resolveWeeklyCoachIdentity(value,sourceArea='',candidates=null){
+  const raw=canonicalCoachName(value); if(!raw) return {value:'',method:'unresolved',raw};
+  const rows=candidates||[...(state.data?.retail?.controlRoster||[]),...(state.data?.referral?.controlRoster||[])].filter(row=>!sourceArea||row.sourceArea===sourceArea).map(row=>row._team||row.team).filter(Boolean);
+  const names=[...new Map(rows.map(name=>[coachNameKey(name),canonicalCoachName(name)])).values()];
+  if(!names.length) return {value:raw,method:'source spelling (no canonical roster)',raw};
+  const exact=names.find(name=>String(name).trim()===String(value).trim()); if(exact) return {value:exact,method:'exact full name',raw};
+  const normalized=names.find(name=>coachNameKey(name)===coachNameKey(raw)); if(normalized) return {value:normalized,method:'normalized full name',raw};
+  const parts=fullNameIdentityKey(raw).split(' ').filter(Boolean);
+  if(parts.length===1){ const matches=names.filter(name=>fullNameIdentityKey(name).split(' ').filter(Boolean).at(-1)===parts[0]); if(matches.length===1) return {value:matches[0],method:'unique surname fallback',raw}; if(matches.length>1) return {value:'',method:'ambiguous surname',raw,candidates:matches}; }
+  return {value:'',method:'unresolved',raw};
+}
 function fullNameIdentityKey(s){
   const clean=normalizeFullNameDisplay(s);
   if(!clean) return '';
