@@ -28,7 +28,12 @@ function qualtricsBridgeRow(row,kind,sourceLabel=''){
   const stableRepKey=row?._rosterId||row?._stableRepKey||row?._employeeId||row?._email||'';
   if(stableRepKey&&!out['All-Star Representative Key']) out['All-Star Representative Key']=bridgeValue(stableRepKey);
   if(kind==='qa'){ if(!out['Agent Name']&&rep) out['Agent Name']=rep; if(!out.Team&&team) out.Team=team; if(!out.Coach&&team) out.Coach=team; if(!out['Interaction Start Time']&&date) out['Interaction Start Time']=bridgeValue(date); if(!out['Score %']&&Number.isFinite(row?._score)) out['Score %']=row._score; }
-  if(kind==='coaching'){ if(!out['Associate Name']&&rep) out['Associate Name']=rep; if(!out['Job Coach']&&team) out['Job Coach']=team; if(!out.Date&&date) out.Date=bridgeValue(date); }
+  if(kind==='coaching'){
+    if(!out['Associate Name']&&rep) out['Associate Name']=rep; if(!out['Job Coach']&&team) out['Job Coach']=team;
+    // The normalized bridge Date always represents the coaching event date.
+    const coachingDate=row?.['Coaching Date']||row?.['Documented Coaching Date']||date;
+    if(!out.Date&&coachingDate) out.Date=bridgeValue(coachingDate);
+  }
   if(kind==='checklist'){ if(!out['Associate Name']&&rep) out['Associate Name']=rep; if(!out['Job Coach']&&team) out['Job Coach']=team; if(!out['Incident Date']&&date) out['Incident Date']=bridgeValue(date); }
   if(kind==='stats'){ if(!out['Agent Name']&&rep) out['Agent Name']=rep; if(!out.Team&&team) out.Team=team; if(!out.Coach&&team) out.Coach=team; if(!out['Date Column']&&date) out['Date Column']=bridgeValue(date); if(sourceLabel) out['All-Star Source']=sourceLabel; }
   return out;
@@ -60,10 +65,11 @@ function qualtricsCoreSourceSignature(){
   return `${sourceSignature}|orgs:${orgSignature}|lookup:${lookupSignature}`;
 }
 async function buildQualtricsCorePayload(){
+  const rawCoachingRows=state.data.documented_coaching.rows||[];
   const qaRows=await qualtricsBridgeRowsDeferred(state.data.qa.rows||[],'qa');
-  const coachingRows=await qualtricsBridgeRowsDeferred(state.data.documented_coaching.rows||[],'coaching');
+  const coachingRows=await qualtricsBridgeRowsDeferred(rawCoachingRows,'coaching');
   const checklistRows=await qualtricsBridgeRowsDeferred(state.data.checklist.rows||[],'checklist');
-  return {sentAt:new Date().toISOString(),organizations:(state.orgs||[]).map(o=>({id:o.id,name:o.name,coachNames:[...(o.coachNames||[])]})),lookupSources:qualtricsHireDateSourceCatalog(),files:{
+  return {sentAt:new Date().toISOString(),diagnostics:{documentedCoaching:{rawRows:rawCoachingRows.length,normalizedRows:rawCoachingRows.length,bridgeRows:coachingRows.length}},organizations:(state.orgs||[]).map(o=>({id:o.id,name:o.name,coachNames:[...(o.coachNames||[])]})),lookupSources:qualtricsHireDateSourceCatalog(),files:{
     qa:{fileName:state.data.qa.fileName||'All-Star QA',sheetName:'90-day KPI',headers:qualtricsBridgeHeaders('qa',qaRows,['All-Star Representative Key','Agent Name','Team','Coach','Interaction Start Time','Score %']),rows:qaRows},
     coaching:{fileName:state.data.documented_coaching.fileName||'All-Star Documented Coaching',sheetName:'Documented Coaching',headers:qualtricsBridgeHeaders('documented_coaching',coachingRows,['All-Star Representative Key','Associate Name','Job Coach','Date']),rows:coachingRows},
     checklist:{fileName:state.data.checklist.fileName||'All-Star Checklist',sheetName:'Checklist',headers:qualtricsBridgeHeaders('checklist',checklistRows,['All-Star Representative Key','Associate Name','Job Coach','Incident Date']),rows:checklistRows}

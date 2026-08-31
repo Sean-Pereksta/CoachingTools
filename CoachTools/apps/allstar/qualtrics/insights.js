@@ -9,6 +9,15 @@
   const clamp=(value,min=0,max=1)=>Math.max(min,Math.min(max,Number(value)||0));
   const normalizedHeader=value=>String(value??'').toLowerCase().replace(/[^a-z0-9%]+/g,' ');
   const precision=value=>Math.max(0,Math.min(4,Math.round(Number(value)||0)));
+  function selectDocumentedCoachingDate(row,parseDate){
+    row=row||{}; const candidates=[['Coaching Date',row['Coaching Date']??row['Documented Coaching Date']],['Bridge Date',row.Date],['Created On fallback',row['Created On']??row.Created??row['Create Date']??row['Created Date']]];
+    for(const [source,value] of candidates){ const date=parseDate(value); if(date) return {source,value,date}; }
+    return {source:'none',value:'',date:null};
+  }
+  function descriptionContains(description,phrases){
+    const normalize=value=>String(value??'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(), text=normalize(description);
+    return (phrases||[]).filter(phrase=>{ const value=normalize(phrase); return value&&text.includes(value); });
+  }
   function normalizeFormatConfig(raw,defaultPrecision=1){
     raw=raw||{};
     const format=DISPLAY_FORMATS.has(String(raw.format||'').toLowerCase())?String(raw.format).toLowerCase():'auto';
@@ -189,5 +198,5 @@
     }
     return {occurrences,byRepRule};
   }
-  return {normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,formatDisplayText,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel,normalizeConcernIdentity,normalizeConcernName,summarizeConcernNameCounts,concernReportIdentity,concernRepReportKey,summarizeConcernReportCounts,concernOccurrenceKey,classifyConcernHistory,summarizeConcernHistory};
+  return {selectDocumentedCoachingDate,descriptionContains,normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,formatDisplayText,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel,normalizeConcernIdentity,normalizeConcernName,summarizeConcernNameCounts,concernReportIdentity,concernRepReportKey,summarizeConcernReportCounts,concernOccurrenceKey,classifyConcernHistory,summarizeConcernHistory};
 });
