@@ -2685,6 +2685,8 @@ function normalizeConcernHistoryLoad(raw){
     if(!key||!name||!count) continue;
     const existing=byName.get(key); byName.set(key,{key,name:existing?.name||name,count:(existing?.count||0)+count});
   }
+  const reportCounts=new Map(), reportLabels=new Map();
+  for(const item of raw.reports||[]){ const key=String(item?.key||''), count=Math.max(0,Math.floor(Number(item?.count)||0)); if(key&&count){ reportCounts.set(key,(reportCounts.get(key)||0)+count); reportLabels.set(key,String(item?.report||item?.label||'')); } }
   const names=[...byName.values()].sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name));
   if(!names.length) return null;
   return {
@@ -2693,16 +2695,21 @@ function normalizeConcernHistoryLoad(raw){
     loadedAt:String(raw.loadedAt||''),
     totalAppearances:names.reduce((sum,item)=>sum+item.count,0),
     names,
-    counts:new Map(names.map(item=>[item.key,item.count]))
+    counts:new Map(names.map(item=>[item.key,item.count])),reportCounts,reportLabels
   };
 }
 function activeConcernHistoryNameSummary(){
   if(state.concernHistoryLoad?.counts instanceof Map && state.concernHistoryLoad.counts.size) return state.concernHistoryLoad;
   const index=state.historyIndex?.nameCounts instanceof Map?state.historyIndex:rebuildConcernHistoryIndex();
   const names=[...(index.nameCounts||new Map())].map(([key,count])=>({key,count,name:index.nameLabels?.get(key)||key})).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name));
-  return {fileName:'Saved Concern History',sheetName:'',loadedAt:'',totalAppearances:Number(index.nameTotal||0),names,counts:index.nameCounts||new Map()};
+  return {fileName:'Saved Concern History',sheetName:'',loadedAt:'',totalAppearances:Number(index.nameTotal||0),names,counts:index.nameCounts||new Map(),reportCounts:index.reportCounts||new Map(),reportLabels:index.reportLabels||new Map()};
 }
-function concernHistoryNameCount(name){ return Number(activeConcernHistoryNameSummary().counts.get(QualtricsInsights.normalizeConcernName(name))||0); }
+function concernHistoryReportCount(rec,rule){
+  const summary=activeConcernHistoryNameSummary(), key=QualtricsInsights.concernRepReportKey({repKey:rec.repKey,repName:rec.repName,ruleId:rec.ruleId||rule?.id,ruleTitle:rule?.title||rec.ruleTitle||rec.category});
+  if(summary.reportCounts instanceof Map&&key) return Number(summary.reportCounts.get(key)||0);
+  const index=state.historyIndex?.byRepRule instanceof Map?state.historyIndex:rebuildConcernHistoryIndex();
+  return key?Number(index.reportCounts?.get(key)||0):0;
+}
 function concernHistoryLoadedTimeLabel(value){ const date=new Date(value); return value&&!isNaN(date)?date.toLocaleString():''; }
 function renderConcernHistoryStatus(){
   if(!els.concernHistoryStatusBtn) return;
@@ -2715,8 +2722,8 @@ function renderConcernHistoryStatus(){
   els.concernHistoryViewerMeta.textContent=unique
     ? `${loaded?'Current email source: ':'Stored history: '}${summary.fileName}${summary.sheetName?` • ${summary.sheetName}`:''}${timeLabel?` • loaded ${timeLabel}`:''} • ${summary.totalAppearances.toLocaleString()} name appearance${summary.totalAppearances===1?'':'s'}.`
     : 'Load a Concern History spreadsheet to confirm the names used by generated emails.';
-  els.concernHistoryNameList.innerHTML=shown.length?shown.map(item=>`<div class="concernHistoryNameRow"><span>${esc(item.name)}</span><span class="pill blue">${item.count}X</span></div>`).join(''):'<div class="empty">No representative names are available.</div>';
-  els.concernHistoryViewerCount.textContent=unique?`Showing ${shown.length.toLocaleString()} of ${unique.toLocaleString()} names. Duplicate rows are counted directly from the representative-name column.`:'';
+  els.concernHistoryNameList.innerHTML=shown.length?shown.map(item=>{ const prefix=`${item.key}\u001f`, reports=[...(summary.reportCounts||new Map())].filter(([key])=>key.startsWith(prefix)).map(([key,count])=>({count,report:summary.reportLabels?.get(key)||key.slice(prefix.length).replace(/^(id|name):/,'')})); return `<div class="concernHistoryNameRow"><span><strong>${esc(item.name)}</strong>${reports.length?`<span class="mini muted">${reports.map(report=>`${esc(report.report)} — ${report.count}X`).join('<br>')}</span>`:'<span class="mini muted">No report-specific identity in this legacy row</span>'}</span></div>`; }).join(''):'<div class="empty">No representative names are available.</div>';
+  els.concernHistoryViewerCount.textContent=unique?`Showing ${shown.length.toLocaleString()} of ${unique.toLocaleString()} names. Counts are separated by report; ambiguous name-only legacy rows are not credited to current concerns.`:'';
   els.expandConcernHistoryBtn.classList.toggle('hidden',unique<=50);
   els.expandConcernHistoryBtn.textContent=state.concernHistoryExpanded?'Show first 50':`Show all ${unique.toLocaleString()} names`;
 }
@@ -2733,7 +2740,7 @@ async function loadConcernHistorySnapshot(){
 function rebuildConcernHistoryIndex(){
   const valid=[], warnings=[];
   for(const raw of state.history||[]){ const row=normalizeConcernHistoryRow(raw); if(row) valid.push(row); else warnings.push('Skipped a malformed concern-history row.'); }
-  const summary=QualtricsInsights.summarizeConcernHistory(valid), nameSummary=QualtricsInsights.summarizeConcernNameCounts(valid), rowsByRepRule=new Map();
+  const summary=QualtricsInsights.summarizeConcernHistory(valid), nameSummary=QualtricsInsights.summarizeConcernNameCounts(valid), reportSummary=QualtricsInsights.summarizeConcernReportCounts(valid), rowsByRepRule=new Map();
   for(const row of summary.occurrences.values()){
     const key=`${QualtricsInsights.normalizeConcernIdentity(row.repKey)}\u001f${QualtricsInsights.normalizeConcernIdentity(row.ruleId)}`;
     if(!rowsByRepRule.has(key)) rowsByRepRule.set(key,[]);
@@ -2741,12 +2748,12 @@ function rebuildConcernHistoryIndex(){
   }
   rowsByRepRule.forEach(rows=>rows.sort((a,b)=>String(a.reportDate).localeCompare(String(b.reportDate))));
   state.history=[...summary.occurrences.values()];
-  state.historyIndex={...summary,rowsByRepRule,nameCounts:nameSummary.counts,nameLabels:nameSummary.labels,nameTotal:nameSummary.total}; state.historyWarnings=warnings; return state.historyIndex;
+  state.historyIndex={...summary,rowsByRepRule,nameCounts:nameSummary.counts,nameLabels:nameSummary.labels,nameTotal:nameSummary.total,reportCounts:reportSummary.counts,reportLabels:reportSummary.labels,ambiguousReportRows:reportSummary.ambiguous}; state.historyWarnings=warnings; return state.historyIndex;
 }
 function concernRepRuleIndexKey(repK,ruleId){ return `${QualtricsInsights.normalizeConcernIdentity(repK)}\u001f${QualtricsInsights.normalizeConcernIdentity(ruleId)}`; }
 function concernHistoryForRecord(rec,rule,reportDate){
   const runId=ymd(reportDate), occurrenceKey=QualtricsInsights.concernOccurrenceKey({repKey:rec.repKey,ruleId:rec.ruleId,runId});
-  const appearances=Math.max(1,concernHistoryNameCount(rec.repName));
+  const index=state.historyIndex?.occurrences instanceof Map?state.historyIndex:rebuildConcernHistoryIndex(), prior=concernHistoryReportCount(rec,rule), appearances=Math.max(1,prior+(index.occurrences.has(occurrenceKey)?0:1));
   const related=coachMatch(rec,rule,reportDate,3), relatedCoachingLast21=Number(related.recentMatchCount||related.recentCount||0);
   const status=QualtricsInsights.classifyConcernHistory({appearances,relatedCoachingLast21});
   return {appearanceCount:appearances,appearanceLabel:`${appearances}X`,status:status.label,statusKey:status.key,relatedCoachingLast21,occurrenceKey,runId};
@@ -5366,7 +5373,7 @@ async function importProblemReps(file){
     const parsed=await readFileAsWorkbookRows(file,'Representative'), selected=concernHistoryImportSheet(parsed);
     if(!selected) throw new Error('No Representative, Representative Name, Agent Name, Associate Name, Rep, or Name column was found.');
     const rows=selected.sheet.rows||[], nameRows=rows.map(row=>({Representative:displayName(row[selected.header])})).filter(row=>row.Representative);
-    const nameSummary=QualtricsInsights.summarizeConcernNameCounts(nameRows);
+    const nameSummary=QualtricsInsights.summarizeConcernNameCounts(nameRows), reportSummary=QualtricsInsights.summarizeConcernReportCounts(rows);
     if(!nameSummary.total) throw new Error(`The ${selected.header} column did not contain any representative names.`);
     const snapshot={
       key:CONCERN_HISTORY_LOAD_KEY,
@@ -5374,7 +5381,8 @@ async function importProblemReps(file){
       sheetName:String(selected.sheet.sheetName||''),
       loadedAt:new Date().toISOString(),
       totalAppearances:nameSummary.total,
-      names:[...nameSummary.counts].map(([key,count])=>({key,name:nameSummary.labels.get(key)||key,count}))
+      names:[...nameSummary.counts].map(([key,count])=>({key,name:nameSummary.labels.get(key)||key,count})),
+      reports:[...reportSummary.counts].map(([key,count])=>({key,count,report:reportSummary.labels.get(key)||''}))
     };
     await put(STORES.settings,snapshot); state.concernHistoryLoad=normalizeConcernHistoryLoad(snapshot); state.concernHistoryExpanded=false;
     let count=0; const unique=new Map();

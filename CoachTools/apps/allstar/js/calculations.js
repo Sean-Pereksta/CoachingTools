@@ -221,6 +221,9 @@ function sourceAreaForSource(source){
 function rowMatchesTrustedEntry(row,entry,source=''){
   if(!hasTrustedControlRoster() || !entry || entry.kind!=='rep') return true;
   const key=row?._repKey||repKeyFromAnyRow(row); if(!key || key!==entry.key) return false;
+  // Documented Coaching is person-level event history.  A valid person match
+  // must not be discarded because a weekly/roster coach spelling changed.
+  if(source==='documented_coaching') return true;
   const rt=trustedTeamForRepKey(key,sourceAreaForSource(source)||row?._sourceArea||'');
   return rt ? coachNameKey(rt)===coachNameKey(entry.team||'') : false;
 }

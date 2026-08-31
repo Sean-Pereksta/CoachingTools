@@ -53,6 +53,19 @@ assert.equal(nameSummary.labels.get('jordan smith'),'Jordan Smith');
 assert.equal(nameSummary.counts.get('avery jones'),1);
 assert.equal(nameSummary.total,4);
 assert.equal(nameSummary.uniqueNames,2);
+const reportSummary=insights.summarizeConcernReportCounts([
+  {Representative:'John Smith',Rule:'Insurance Cash'},
+  {Representative:' john smith ',Rule:'insurance   cash'},
+  {Representative:'John Smith',Rule:'Wipers'},
+  {Representative:'Jane Doe',Rule:'Wipers'},
+  {Representative:'John Smith'}
+]);
+assert.equal(reportSummary.counts.get('john smith\u001fname:insurance cash'),2,'Concern history counts must be representative + report specific.');
+assert.equal(reportSummary.counts.get('john smith\u001fname:wipers'),1);
+assert.equal(reportSummary.counts.get('jane doe\u001fname:wipers'),1);
+assert.equal(reportSummary.ambiguous,1,'A name-only legacy row must not be credited to every current concern.');
+const stableReport=insights.summarizeConcernReportCounts([{repKey:'EMP-42',ruleId:'rule-7',Rule:'Old Label'},{repKey:'emp-42',ruleId:'RULE-7',Rule:'Renamed Label'}]);
+assert.equal(stableReport.counts.get('emp-42\u001fid:rule-7'),2,'Stable rule IDs must take precedence over display labels.');
 assert.deepEqual(insights.classifyConcernHistory({appearances:1,relatedCoachingLast21:0}),{key:'new',label:'New'});
 assert.deepEqual(insights.classifyConcernHistory({appearances:2,relatedCoachingLast21:0}),{key:'undercoached',label:'Undercoached'});
 assert.deepEqual(insights.classifyConcernHistory({appearances:3,relatedCoachingLast21:1}),{key:'undercoached',label:'Undercoached'});

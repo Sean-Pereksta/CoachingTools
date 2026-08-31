@@ -539,10 +539,12 @@ function normalizeImportedRowOnce(row, headers, cfg, source, meta, i){
   const c={...defaults,...cols};
   const repFallbacks=source==='comp_calls'?['CSR/SSR Name (This is the person being complimented)','CSR/SSR Name','Representative','Associate Name','Associate','Agent Name','Rep']:(source==='documented_coaching'?['Associate name','Associate Name','Associate','Agent Name','Rep']:['Associate Name','Associate','Agent Name','Rep']);
   const rep=repFromResolvedColumns(row,headers,{...c,nameMode:c.nameMode||'full',fullName:c.fullName||c.rep,convertLastFirst:!!c.convertLastFirst},meta,repFallbacks);
-  const directTeam=canonicalCoachName(row[meta.detectedTeamColumn]??'');
+  const directTeamRaw=canonicalCoachName(row[meta.detectedTeamColumn]??'');
+  const weeklyCoachResolution=/^(retail|referral)_/.test(source)?resolveWeeklyCoachIdentity(directTeamRaw,sourceArea):null;
+  const directTeam=weeklyCoachResolution?weeklyCoachResolution.value:directTeamRaw;
   const team=c.skipTeamBuild?'':directTeam;
   const dateRaw=meta.detectedDateColumn?row[meta.detectedDateColumn]:'';
-  return {...row,_rowId:`${source}:${i+1}`,_source:labelSource(source),_sourceKey:source,_sourceArea:sourceArea,_rawRep:rep,_rawRepKey:fullNameIdentityKey(rep),_rep:rep,_repKey:fullNameIdentityKey(rep),_team:team,_teamKey:coachNameKey(team),_coach:team,_coachKey:coachNameKey(team),_rosterId:safeFallbackRosterIdentity({_rep:rep,_team:team},sourceArea),_date:dateRaw,_dateValue:dateRaw?cachedSourceDateValue(source,meta.detectedDateColumn,dateRaw):NaN,_week:meta.weekColumn?row[meta.weekColumn]:'',_text:meta.textColumn?String(row[meta.textColumn]??''):'',_score:meta.scoreColumn?normalizeScore(row[meta.scoreColumn]):NaN,_aliasApplied:false,_aliasRecord:null};
+  return {...row,_rowId:`${source}:${i+1}`,_source:labelSource(source),_sourceKey:source,_sourceArea:sourceArea,_rawRep:rep,_rawRepKey:fullNameIdentityKey(rep),_rep:rep,_repKey:fullNameIdentityKey(rep),_team:team,_teamKey:coachNameKey(team),_coach:team,_coachKey:coachNameKey(team),_rawWeeklyCoach:weeklyCoachResolution?directTeamRaw:'',_weeklyCoachMatchMethod:weeklyCoachResolution?.method||'',_rosterId:safeFallbackRosterIdentity({_rep:rep,_team:team},sourceArea),_date:dateRaw,_dateValue:dateRaw?cachedSourceDateValue(source,meta.detectedDateColumn,dateRaw):NaN,_week:meta.weekColumn?row[meta.weekColumn]:'',_text:meta.textColumn?String(row[meta.textColumn]??''):'',_score:meta.scoreColumn?normalizeScore(row[meta.scoreColumn]):NaN,_aliasApplied:false,_aliasRecord:null};
 }
 function categorizationSourceAffects(source){
   return !!source && source!==QA_DIRECT_SOURCE && !isCategorizedSource(source) && !TEAM_TOTAL_SOURCE_KEYS.includes(source);
