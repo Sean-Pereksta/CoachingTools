@@ -232,7 +232,16 @@ function rowsForEntry(source, entry, opts={}){
   if(cached) return cached;
   const idx=sourceIndex(source);
   let rows;
-  if(idx && entry.kind==='team'){
+  if(source==='documented_coaching' && entry.kind==='team'){
+    // A team score describes the coaching history of the team's current roster.
+    // Job Coach is historical authorship metadata and must not move that history
+    // to the author's current report team.
+    const repKeys=new Set(repsForTeam(entry.name).map(rep=>rep.key).filter(Boolean));
+    rows=[];
+    if(idx) repKeys.forEach(key=>rows.push(...(idx.byRep?.get(key)||[])));
+    else rows=getRowsRaw(source).filter(row=>repKeys.has(row._repKey));
+    rows=filterRowsForSource(source,rows,opts);
+  }else if(idx && entry.kind==='team'){
     rows=(idx.byTeamKey?.get(coachNameKey(entry.name)) || idx.byTeam?.get(canonicalCoachName(entry.name)) || []).slice();
     if(!rows.length) rows=cachedRowsForSource(source, opts).filter(r=>coachNameKey(rowTeam(r)||state.repTeams.get(r._repKey)||'')===coachNameKey(entry.name));
     else rows=filterRowsForSource(source,rows,opts);

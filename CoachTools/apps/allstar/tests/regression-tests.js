@@ -188,6 +188,33 @@ window.researchSourceFieldRefRegressionCases=researchSourceFieldRefRegressionCas
 window.runPdfExportRegressionTests=runPdfExportRegressionTests;
 window.runTeamQuarantineRegressionTests=runTeamQuarantineRegressionTests;
 window.runRosterAccuracyRegressionTests=runRosterAccuracyRegressionTests;
+function runDocumentedCoachingDescriptionPipelineRegressionTests(){
+  const headers=['(Do Not Modify) Documented Coachings','(Do Not Modify) Row Checksum','(Do Not Modify) Modified On','Associate Name','Job Coach','Open Team','Previous Name','Coaching Date','Coaching Type','Old Incident','Corrective','Description','Coach Initials','Coord Initials','Date Added to Admin','Created By','Created On','Added to Admin','Coaching Type-Multi','Training Class,'];
+  const saved={data:state.data.documented_coaching,retail:state.data.retail.controlRoster,referral:state.data.referral.controlRoster,index:state.dataIndex,indexes:state.indexes,models:state.models};
+  const assert=(ok,message)=>{ if(!ok) throw new Error(message); };
+  const roster=(name,team)=>({_rep:name,_repKey:fullNameIdentityKey(name),representative:name,_team:team,team,sourceArea:'retail',source:'retail',rosterId:`test:${name}`,_isControlRoster:true});
+  const make=(name,coach,date,type,description)=>Object.fromEntries(headers.map(h=>[h,({ 'Associate Name':name,'Job Coach':coach,'Open Team':coach,'Coaching Date':date,'Coaching Type':type,Description:description})[h]||'']));
+  try{
+    state.data.retail.controlRoster=[roster('Test Representative','Current Sarah'),roster('Rep Two','Current Sarah'),roster('Rep Three','Coach Beta'),roster('Rep Four','Coach Beta')]; state.data.referral.controlRoster=[];
+    const raw=[make('Test Representative','Historical David','2026-08-15','Performance','Discussed the UNIQUE_DESCRIPTION_TEST coaching topic.'),make('Rep Two','Current Sarah','2026-08-16','Attendance','Reviewed ATTENDANCE and Final Warning expectations.'),make('Rep Three','Coach Beta','2025-01-01','UNIQUE_DESCRIPTION_TEST','This description does not contain the matching phrase.'),make('Rep Four','Coach Beta','2026-08-17','Quality','No configured topic appears here.')];
+    const columns={rep:'Associate Name',team:'Job Coach',date:'Coaching Date',text:'Description'}, meta=buildHeaderMetadata('documented_coaching',headers,{columns},{headerRow:0,startCol:0});
+    const rows=raw.map((row,i)=>normalizeImportedRowOnce(row,headers,{columns},'documented_coaching',meta,i));
+    state.data.documented_coaching={fileName:'Documented Coaching Fixture.xlsx',headers,rows,aoa:[headers,...raw.map(r=>headers.map(h=>r[h]))]}; state.sourceMeta.documented_coaching=meta;
+    invalidateRosterIndex('coaching description regression'); markDataIndexDirty('documented coaching regression',{sources:['documented_coaching'],identityChanged:true}); buildDataIndex('coaching description regression');
+    const criterion=normalizeCriterionForStorage({...emptyCriterion(),id:'description-regression',name:'Qualifying Coaching',source:'documented_coaching',calcType:'checklistCount',checkDateColumn:'Coaching Date',checkColumn:'Description',checkText:'UNIQUE_DESCRIPTION_TEST',rowPullConditions:[]});
+    const opts={start:parseDateOnly('2026-08-01'),end:parseDateOnly('2026-08-31'),_sourceRowsCache:new Map(),_entryRowsCache:new Map()};
+    const rep={kind:'rep',key:fullNameIdentityKey('Test Representative'),name:'Test Representative',team:'Current Sarah'}, pack=computeEntries({criteria:[criterion]},[rep],'rep',opts);
+    assert(headers.indexOf('Associate Name')===3&&headers.indexOf('Description')===11,'three system columns shifted name-based mappings');
+    assert(meta.detectedNameColumns.fullName==='Associate Name'&&meta.detectedTeamColumn==='Job Coach'&&meta.detectedDateColumn==='Coaching Date'&&meta.textColumn==='Description','required physical headers did not resolve');
+    assert(pack.rows[0].values[criterion.id]===1,'Description match did not reach final report row');
+    assert(criterionValue(criterion,{kind:'team',name:'Current Sarah',team:'Current Sarah'},opts)===1,'current-team history must include a row authored by Historical David');
+    rows[0]['Coaching Type']='UNIQUE_DESCRIPTION_TEST'; rows[0].Description='This description does not contain the matching phrase.';
+    markDataIndexDirty('documented coaching refreshed upload',{sources:['documented_coaching']}); buildDataIndex('documented coaching refreshed upload'); opts._sourceRowsCache=new Map(); opts._entryRowsCache=new Map();
+    assert(criterionValue(criterion,rep,opts)===0,'Description rule incorrectly matched Coaching Type or reused a stale index');
+    console.info('Documented Coaching Description pipeline regression passed'); return true;
+  }finally{ state.data.documented_coaching=saved.data; state.data.retail.controlRoster=saved.retail; state.data.referral.controlRoster=saved.referral; state.dataIndex=saved.index; state.indexes=saved.indexes; state.models=saved.models; invalidateRosterIndex('restore coaching regression'); }
+}
+window.runDocumentedCoachingDescriptionPipelineRegressionTests=runDocumentedCoachingDescriptionPipelineRegressionTests;
 window.runRunIndexRegressionTests=async function(){
   const results=[], assert=(name,pass,detail='')=>results.push({name,pass:!!pass,detail});
   const source=(allSourceKeys().includes('qa')?'qa':allSourceKeys()[0]);
@@ -426,6 +453,7 @@ const allStarRegressionTests=[
   ['runPdfExportRegressionTests',()=>runPdfExportRegressionTests()],
   ['runTeamQuarantineRegressionTests',()=>runTeamQuarantineRegressionTests()],
   ['runRosterAccuracyRegressionTests',()=>runRosterAccuracyRegressionTests()],
+  ['runDocumentedCoachingDescriptionPipelineRegressionTests',()=>runDocumentedCoachingDescriptionPipelineRegressionTests()],
   ['runRunIndexRegressionTests',()=>window.runRunIndexRegressionTests()],
   ['runFinalRunPerformanceRegressionTests',()=>window.runFinalRunPerformanceRegressionTests()],
   ['runImportCachePersistenceRegressionTests',()=>window.runImportCachePersistenceRegressionTests()],

@@ -345,11 +345,23 @@
       <div class="row">
         <button id="createModelBtn" class="green">Create New Model</button>
         <button id="exportModelsBtn" class="dark">Export TXT</button>
+        <button id="coachingDiagnosticsBtn" class="dark">Coaching Rule Tracer</button>
         <input id="importModelsFile" type="file" accept=".txt,.json">
       </div>
       <div id="modelList" class="panel"></div>
     </div>
     <div class="modalFoot"><button class="dark" data-close="modelsModal">Close</button></div>
+  </div>
+</div>
+
+<div id="coachingDiagnosticsModal" class="modalBackdrop">
+  <div class="modal" style="max-width:1400px">
+    <div class="modalHead"><div class="modalTitle">Documented Coaching Rule Diagnostics</div><button class="dark" data-close="coachingDiagnosticsModal">Close</button></div>
+    <div class="modalBody">
+      <div class="row"><button id="testAllCoachingRulesBtn" class="green">Test All Coaching Rules</button><button id="copyCoachingDiagnosticsBtn" class="dark">Copy JSON</button><button id="exportCoachingDiagnosticsBtn" class="dark">Export JSON</button><label>Rule <select id="coachingDiagnosticRule"></select></label><label>Representative <input id="coachingDiagnosticRep" placeholder="optional"></label><label>Coach / team <input id="coachingDiagnosticTeam" placeholder="optional"></label></div>
+      <div id="coachingDiagnosticsBody" class="panel"><div class="hint">Detailed tracing is lazy. Press Test All Coaching Rules to inspect the loaded data and saved rules.</div></div>
+    </div>
+    <div class="modalFoot"><button class="dark" data-close="coachingDiagnosticsModal">Close</button></div>
   </div>
 </div>
 
@@ -741,6 +753,7 @@
 <script src="js/models.js"></script>
 <script src="js/imports.js"></script>
 <script src="js/calculations.js"></script>
+<script src="js/coaching-diagnostics.js"></script>
 <script src="js/reports.js"></script>
 <script src="js/research.js"></script>
 <script src="js/organizations-core.js"></script>
