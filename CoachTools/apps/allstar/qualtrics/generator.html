@@ -419,6 +419,8 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
           <label>4. Weekly Stats<input id="weeklyStatsInput" type="file" accept=".csv,.tsv,.txt,.xlsx,.xls"></label>
         </div>
         <div class="chips" id="coreDataChips" style="margin-top:10px"></div>
+        <div class="row" style="margin-top:10px"><button class="btn blue" id="testDocumentedCoachingBtn">Test Documented Coaching</button><button class="btn" id="testAllCoachingRulesBtn">Test All Coaching Rules</button></div>
+        <div id="coachingDiagnosticPanel" class="note hidden" style="margin-top:10px;max-height:520px;overflow:auto"></div>
       </div>
     </div>
 
@@ -548,6 +550,7 @@ const state = {
   teamMapRows:[],
   coachingRows:[],
   coachingTypeOptions:[],
+  coachingDiagnostics:{source:'none',bridge:{},headers:[],received:0,parsed:0,withName:0,withCoachingDate:0,validDate:0,survived:0},
   checklistRows:[],
   weeklyStatsRows:[],
   weeklyStatsDateHeaders:[],
@@ -1847,25 +1850,34 @@ async function loadTeamMap(file){
 }
 async function loadCoaching(file, options={}){
   if(!file) return;
-  const parsed=await readFileAsWorkbookRows(file,'Associate Name'); const out=[]; let processed=0;
+  const parsed=await readFileAsWorkbookRows(file,'Associate Name'); const out=[]; let processed=0, received=0, withName=0, withCoachingDate=0, validDate=0;
+  const headers=[...new Set((parsed.sheets||[]).flatMap(sh=>sh.headers||[]))];
   for(const sh of parsed.sheets){
     for(const row of sh.rows||[]){
+      received++;
       if(options.yieldEvery&&++processed%options.yieldEvery===0) await allStarBridgeYield();
-      const rawName=rowVal(row,['Associate Name','Agent Name','Representative Name','Representative','Rep Name','Rep','CSR Name','SSR Name','Name']); if(!String(rawName||'').trim()) continue;
+      const rawName=rowVal(row,['Associate Name','Agent Name','Representative Name','Representative','Rep Name','Rep','CSR Name','SSR Name','Name']); if(!String(rawName||'').trim()) continue; withName++;
       const ident=resolveIdentityFromRow(row,rawName);
-      const date=parseDate(rowVal(row,['Created On','Created','Create Date','Created Date','Date','Coaching Date','Documented Coaching Date','Date Completed','Completed Date','Completion Date','Submitted Date','Submit Date','Start Time','Interaction Date','Call Date','Form Date','Modified Date','Last Modified']));
+      const coachingDateRaw=rowVal(row,['Coaching Date','Documented Coaching Date']);
+      const bridgeDateRaw=rowVal(row,['Date']);
+      const createdOnRaw=rowVal(row,['Created On','Created','Create Date','Created Date']);
+      if(String(coachingDateRaw??'').trim()) withCoachingDate++;
+      const candidates=[['Coaching Date',coachingDateRaw],['Bridge Date',bridgeDateRaw],['Created On fallback',createdOnRaw],['Fallback date',rowVal(row,['Date Completed','Completed Date','Completion Date','Submitted Date','Submit Date','Start Time','Interaction Date','Call Date','Form Date','Modified Date','Last Modified'])]];
+      const selected=candidates.map(([source,value])=>({source,value,date:parseDate(value)})).find(item=>item.date)||{source:'none',value:'',date:null};
+      const date=selected.date; if(date) validDate++;
       const type=extractCoachingType(row);
       const typeParts=splitCoachingTypes(type);
       const descParts=extractCoachingDescriptionParts(row);
       const desc=descParts.join(' | ');
       const searchText=buildCoachingSearchText(row,type,desc,descParts);
       const coach=String(rowVal(row,['Job Coach','Coach','Coach Name','Manager','Supervisor','Team Lead','Leader'])||'').trim();
-      out.push({rawName:String(rawName).trim(), name:ident.name, key:ident.key, repKey:ident.key, date, type, typeParts, desc, descParts, searchText, coach, rawCoach:coach, raw:row});
+      out.push({rawName:String(rawName).trim(), name:ident.name, key:ident.key, repKey:ident.key, date, type, typeParts, desc, descParts, searchText, coach, rawCoach:coach, raw:row,dateTrace:{coachingDateRaw,bridgeDateRaw,createdOnRaw,selectedSource:selected.source,selectedValue:selected.value,parsed:!!date}});
     }
   }
   state.masterRows.coaching=out; state.masterFileNames.coaching=file.name;
   invalidateHireDateLookupSource('core:coaching');
   state.coachingRows=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
+  state.coachingDiagnostics=Object.assign({},state.coachingDiagnostics,{source:options.source||'manual upload',headers,received,parsed:out.length,withName,withCoachingDate,validDate,survived:state.coachingRows.length});
   if(!options.deferDerived){ rebuildDerivedMaps(); renderStatCountSelectors(currentRule()); renderStatCountRuleChips(); setStatus(`Loaded ${state.coachingRows.length.toLocaleString()} documented coaching rows, found ${(state.coachingTypeOptions||[]).length.toLocaleString()} unique coaching type option(s), and refreshed name matching.`); }
 }
 async function loadChecklist(file, options={}){
@@ -1977,7 +1989,8 @@ async function importAllStarCoreFiles(payload={}){
     if((files.qa?.rows||[]).length) await loadQA(allStarRowsFile(files.qa,'All-Star QA','90-day KPI'),{deferDerived:true,yieldEvery:1500}); else clearConnectedSource('qa');
     if(state.allStarCoreImportToken!==token) return; await allStarBridgeYield();
     allStarBridgeNotify('qualtrics-key-files-progress',{message:'Connecting Documented Coaching…'});
-    if((files.coaching?.rows||[]).length) await loadCoaching(allStarRowsFile(files.coaching,'All-Star Documented Coaching','Documented Coaching'),{deferDerived:true,yieldEvery:1500}); else clearConnectedSource('coaching');
+    state.coachingDiagnostics={source:'All-Star auto-connect',bridge:payload.diagnostics?.documentedCoaching||{},headers:files.coaching?.headers||[],received:(files.coaching?.rows||[]).length};
+    if((files.coaching?.rows||[]).length) await loadCoaching(allStarRowsFile(files.coaching,'All-Star Documented Coaching','Documented Coaching'),{deferDerived:true,yieldEvery:1500,source:'All-Star auto-connect'}); else clearConnectedSource('coaching');
     if(state.allStarCoreImportToken!==token) return; await allStarBridgeYield();
     allStarBridgeNotify('qualtrics-key-files-progress',{message:'Connecting Checklist / Correctives…'});
     if((files.checklist?.rows||[]).length) await loadChecklist(allStarRowsFile(files.checklist,'All-Star Checklist','Checklist'),{deferDerived:true,yieldEvery:1500}); else clearConnectedSource('checklist');
@@ -2014,7 +2027,27 @@ window.addEventListener('message',event=>{
 function renderCoreChips(){
   if(!els.coreDataChips) return;
   const unresolved=(state.coachAliasIndex?.unresolved||[]).length;
-  els.coreDataChips.innerHTML = `<span class="pill blue">Self-mapped reps: ${state.teamMap.size.toLocaleString()}</span><span class="pill blue">90-day QA: ${state.qaRows.length.toLocaleString()}</span><span class="pill blue">Coachings: ${state.coachingRows.length.toLocaleString()}</span><span class="pill blue">Coaching types: ${(state.coachingTypeOptions||[]).length.toLocaleString()}</span><span class="pill blue">Checklist: ${state.checklistRows.length.toLocaleString()}</span><span class="pill blue">Weekly stats: ${state.weeklyStatsRows.length.toLocaleString()}</span><span class="pill ${state.hireDateByRep.size?'good':'warn'}">Hire dates: ${state.hireDateByRep.size.toLocaleString()}</span><span class="pill ${unresolved?'warn':'good'}">Coach aliases: ${coachAliasAutoCount().toLocaleString()} auto${unresolved?`, ${unresolved} overlap`:''}</span>`;
+  const d=state.coachingDiagnostics||{}, withDesc=state.coachingRows.filter(r=>String(r.desc||'').trim()).length, recognized=new Set(state.coachingRows.map(r=>r.repKey).filter(Boolean)).size, descriptionRules=state.rules.filter(r=>r.coaching?.mode==='descriptionContains').length;
+  els.coreDataChips.innerHTML = `<button class="pill ${(d.received||0)>0&&!state.coachingRows.length?'bad':'good'}" id="coachingDiagnosticStatus"><strong>Documented Coaching</strong> ${(d.received||0).toLocaleString()} received → ${state.coachingRows.length.toLocaleString()} usable • ${withDesc.toLocaleString()} with Description • ${recognized.toLocaleString()} recognized reps • ${descriptionRules} saved Description rules</button><span class="pill blue">Self-mapped reps: ${state.teamMap.size.toLocaleString()}</span><span class="pill blue">90-day QA: ${state.qaRows.length.toLocaleString()}</span><span class="pill blue">Checklist: ${state.checklistRows.length.toLocaleString()}</span><span class="pill blue">Weekly stats: ${state.weeklyStatsRows.length.toLocaleString()}</span><span class="pill ${state.hireDateByRep.size?'good':'warn'}">Hire dates: ${state.hireDateByRep.size.toLocaleString()}</span><span class="pill ${unresolved?'warn':'good'}">Coach aliases: ${coachAliasAutoCount().toLocaleString()} auto${unresolved?`, ${unresolved} overlap`:''}</span>`;
+  $('coachingDiagnosticStatus').onclick=()=>renderCoachingDiagnostics(false);
+}
+function coachingBlocker(d){
+  if(!d.received) return 'NO DOCUMENTED COACHING ROWS REACHED QUALTRICS';
+  if(!d.withName) return 'ASSOCIATE NAME HEADER / VALUES WERE NOT RESOLVED';
+  if(!d.validDate) return 'DATE PARSING / loadCoaching';
+  if(!state.indexes.coachingByRep.size) return 'REPRESENTATIVE INDEX';
+  return '';
+}
+function renderCoachingDiagnostics(allRules=false){
+  const panel=els.coachingDiagnosticPanel,d=state.coachingDiagnostics||{}, raw=state.masterRows.coaching||[], fields=['Associate Name','Job Coach','Coaching Date','Description','Coaching Type','Coaching Type-Multi','Created On'];
+  const actual=field=>findHeader(d.headers||[],[field]);
+  const columns=fields.map(field=>{ const h=actual(field); return `<tr><td>${esc(field)}</td><td>${h?'Yes':'No'}</td><td>${esc(h||'—')}</td><td>${esc(h&&raw[0]?.raw?.[h]!=null?String(raw[0].raw[h]):'—')}</td></tr>`; }).join('');
+  const indexed=[...state.indexes.coachingByRep.values()].reduce((n,rows)=>n+rows.length,0), blocker=coachingBlocker(d);
+  const traces=raw.slice(0,25).map(r=>`<tr><td>${esc(r.rawName)}</td><td>${esc(String(r.dateTrace?.coachingDateRaw??''))}</td><td>${esc(String(r.dateTrace?.createdOnRaw??''))}</td><td>${esc(String(r.dateTrace?.bridgeDateRaw??''))}</td><td>${esc(r.dateTrace?.selectedSource||'none')}</td><td>${r.dateTrace?.parsed?'Yes':'No'}</td><td>${esc(r.desc||'')}</td><td>${r.repKey?'Yes':'No'}</td></tr>`).join('');
+  const reportDate=parseDate(els.reportDate?.value)||new Date();
+  const rules=state.rules.filter(r=>r.coaching?.mode==='descriptionContains');
+  const ruleRows=rules.map(rule=>{ const phrases=phraseListFromRule(rule), described=state.coachingRows.filter(r=>r.desc), matched=described.filter(r=>coachingMatchInfo(r,rule).matches), known=matched.filter(r=>r.repKey&&state.indexes.coachingByRep.has(r.repKey)), from=addDays(reportDate,-7*rule.coachLookbackWeeks), recent=known.filter(r=>r.date>=from&&r.date<=reportDate), final=recent.filter(r=>coachMatch({repKey:r.repKey},rule,reportDate,rule.coachLookbackWeeks).isCoached); let reason=!phrases.length?'Rule has no Description phrases at runtime.':!matched.length?'Description exists but phrase did not match.':!known.length?'Row never entered coachingByRep.':!recent.length?'Coaching existed but fell outside lookback.':!final.length?'coachMatch found no final signal.':'Complete'; return `<tr><td>${esc(rule.title)}</td><td>${esc(rule.id)}</td><td>${esc(rule.coaching.mode)}</td><td>${esc(phrases.join(' | '))}</td><td>${described.length}</td><td>${matched.length}</td><td>${known.length}</td><td>${recent.length}</td><td>${final.length}</td><td>${esc(reason)}</td></tr>`; }).join('');
+  panel.classList.remove('hidden'); panel.innerHTML=`<div class="row"><h3>Documented Coaching Diagnostic</h3><span class="spacer"></span><button class="btn small" id="closeCoachingDiagnostics">Close</button></div>${blocker?`<div class="pill bad">BLOCKER: ${esc(blocker)}</div>`:'<div class="pill good">Pipeline has usable indexed rows</div>'}<p><strong>Source:</strong> ${esc(d.source||'none')} • Allstar raw ${(d.bridge?.rawRows||0).toLocaleString()} → bridge ${(d.bridge?.bridgeRows||d.received||0).toLocaleString()} → received ${(d.received||0).toLocaleString()} → parsed ${(d.parsed||0).toLocaleString()} → valid date ${(d.validDate||0).toLocaleString()} → state.coachingRows ${(d.survived||0).toLocaleString()} → coachingByRep ${indexed.toLocaleString()}</p><h4>Column health (name-based)</h4><table><thead><tr><th>Required field</th><th>Found?</th><th>Actual header</th><th>Sample</th></tr></thead><tbody>${columns}</tbody></table><h4>Row parsing funnel and date selection</h4><p>Received ${d.received||0} • Associate Name ${d.withName||0} • Coaching Date present ${d.withCoachingDate||0} • parser succeeded ${d.validDate||0} • survived ${d.survived||0} • assigned repKey ${state.coachingRows.filter(r=>r.repKey).length} • indexed ${indexed}</p><table><thead><tr><th>Rep</th><th>Source Coaching Date</th><th>Created On</th><th>Bridge Date</th><th>Selected</th><th>Parsed?</th><th>Description (searched field)</th><th>repKey?</th></tr></thead><tbody>${traces}</tbody></table><h4>Saved rule persistence and match funnel${allRules?' — all rules':''}</h4><table><thead><tr><th>Rule</th><th>ID</th><th>Runtime mode</th><th>Description phrases</th><th>With Description</th><th>Raw matches</th><th>Known rep</th><th>Recent</th><th>Final used</th><th>First blocking reason</th></tr></thead><tbody>${ruleRows||'<tr><td colspan="10">No saved descriptionContains rules.</td></tr>'}</tbody></table><p class="sub">Description matching is strictly scoped to the Description column. Coaching Type, Coaching Type-Multi, Corrective, and other workbook fields cannot satisfy these rules.</p>`; $('closeCoachingDiagnostics').onclick=()=>panel.classList.add('hidden');
 }
 function renderUploadReadiness(){
   if(!els.uploadReadiness) return;
@@ -2574,8 +2607,9 @@ function coachingMatchInfo(c, rule){
   });
   const phraseHits=phrases.filter(p=>{
     const np=cleanTextForSearch(p);
-    // Explicitly prioritize Description text. The all-field search remains only as a fallback.
-    return !!np && (descriptionText.includes(np) || searchText.includes(np));
+    // Description phrases are deliberately field-scoped. Coaching Type and other
+    // workbook text must never satisfy a descriptionContains rule.
+    return !!np && descriptionText.includes(np);
   });
   const typeHit=typeHits.length>0;
   const phraseHit=phraseHits.length>0;
@@ -5472,6 +5506,8 @@ function metricSourceValidation(config,label='Stat'){
 }
 function bind(){
   Object.assign(els, Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(e=>[e.id,e])));
+  els.testDocumentedCoachingBtn.onclick=()=>renderCoachingDiagnostics(false);
+  els.testAllCoachingRulesBtn.onclick=()=>renderCoachingDiagnostics(true);
   if(els.ruleSearchInput) els.ruleSearchInput.addEventListener('input',renderRules);
   if(els.ruleTypeFilter) els.ruleTypeFilter.addEventListener('change',renderRules);
   document.querySelectorAll('[data-rich-cmd]').forEach(btn=>btn.addEventListener('click',()=>{ els.ruleGuidanceEditor?.focus(); document.execCommand(btn.dataset.richCmd,false,null); renderRuleGuidancePreview(); autoSaveRuleEdit(); }));

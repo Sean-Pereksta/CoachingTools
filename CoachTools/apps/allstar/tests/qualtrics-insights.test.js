@@ -73,3 +73,13 @@ assert.deepEqual(insights.classifyConcernHistory({appearances:3,relatedCoachingL
 assert.deepEqual(insights.classifyConcernHistory({appearances:2,relatedCoachingLast21:2}),{key:'monitor',label:'Monitor'});
 
 console.log('PASS Qualtrics insights tests');
+
+// Documented Coaching contract: named event date wins and Description is isolated.
+const parseFixtureDate=value=>/^2026-\d\d-\d\d$/.test(String(value||''))?new Date(`${value}T00:00:00`):null;
+for(const createdOn of ['', 'not a date', '2020-01-01']){
+  const selected=insights.selectDocumentedCoachingDate({'Coaching Date':'2026-08-25','Created On':createdOn},parseFixtureDate);
+  assert.equal(selected.source,'Coaching Date');
+  assert.equal(selected.date.toISOString().slice(0,10),'2026-08-25');
+}
+assert.deepEqual(insights.descriptionContains('Discussed UNIQUE_QUALTRICS_COACHING_TEST with the associate.',['UNIQUE_QUALTRICS_COACHING_TEST']),['UNIQUE_QUALTRICS_COACHING_TEST']);
+assert.deepEqual(insights.descriptionContains('Discussed a completely unrelated topic.',['UNIQUE_QUALTRICS_COACHING_TEST']),[],'A phrase that exists only in Coaching Type must not match Description.');
