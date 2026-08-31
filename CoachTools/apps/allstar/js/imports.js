@@ -778,7 +778,7 @@ async function syncAllStarFromCoachToolsData(options={}){
   if(!window.CoachToolsData || state.lifecycle?.closing) return {changed:false,cancelled:!!state.lifecycle?.closing};
   const syncGeneration=++state.centralSyncGeneration;
   const lifecycleGeneration=Number(options.generation??state.lifecycle?.generation??0);
-  const active=()=>!state.lifecycle?.closing && !state.lifecycle?.hidden && syncGeneration===state.centralSyncGeneration && lifecycleGeneration===Number(state.lifecycle?.generation||0);
+  const active=()=>!state.lifecycle?.closing && syncGeneration===state.centralSyncGeneration && lifecycleGeneration===Number(state.lifecycle?.generation||0);
   const job=options.job||null;
   await window.CoachToolsData.ready();
   const mappings=[
@@ -818,12 +818,14 @@ async function syncAllStarFromCoachToolsData(options={}){
     for(let index=0;index<changed.length;index++){
       if(!active()) throw Object.assign(new Error('Central synchronization cancelled.'),{cancelled:true});
       const change=changed[index], mapping=mappings.find(([type])=>type===change.datasetType), loader=mapping&&mapping[1];
+      if(state.startup?.running && typeof setAllStarStartupDiagnosticPhase==='function') setAllStarStartupDiagnosticPhase(`${change.datasetType} IndexedDB read`,change.datasetType);
       const record=await window.CoachToolsData.getCurrent(change.datasetType,{includeRecord:true});
       if(!record?.data?.workbook?.sheets?.length || !loader) continue;
       if(job) updateAllStarStartupProgress(job,`Refreshing ${change.datasetType}…`,70+Math.round(18*(index/Math.max(1,changed.length))));
       const wb=directWorkbookFromCoachToolsDataset(record.data);
       const file={name:record.originalFileName||`${change.datasetType}.xlsx`,size:record.fileSize||0,lastModified:Date.parse(record.fileModifiedDate||record.importedAt)||Date.now()};
       const common={fromCentral:true,batch:true,render:false,persist:false,categorize:false,manageProgress:false,silent:true};
+      if(state.startup?.running && typeof setAllStarStartupDiagnosticPhase==='function'){ setAllStarStartupDiagnosticPhase(`${change.datasetType} normalization`,change.datasetType); state.startup.phase.rows=Number(record?.rowCount||record?.data?.meta?.totalRows||0); }
       const ok=await loader(file,wb,common); if(ok===false) throw new Error(`${change.datasetType} could not be applied.`);
       applied.push(change.datasetType); nextSync[change.datasetType]=change.identity;
     }

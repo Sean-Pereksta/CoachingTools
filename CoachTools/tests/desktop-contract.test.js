@@ -120,7 +120,12 @@ assert(smartImportScript.includes('analysis.authoritativeUpdateScope'), 'The sma
 assert(allstarImportsScript.includes("const ALLSTAR_SYNC_KEY='allStarCoachToolsSync.v2'"), 'Allstar should use the metadata-rich central sync map.');
 assert(allstarImportsScript.includes('directWorkbookFromCoachToolsDataset') && !allstarImportsScript.includes('function sheetJsWorkbookFromCoachToolsDataset'), 'Central datasets should use the direct AOA adapter instead of rebuilding SheetJS workbooks.');
 assert(allstarModelsScript.includes('createAllStarStartupJob') && allstarModelsScript.includes('job.preventedRegressions++'), 'Allstar startup progress should have one monotonic owner.');
-assert(allstarAppScript.includes('async function startAllStar()') && allstarAppScript.includes("type:'coachtools:close-ready'"), 'Allstar should coordinate startup and acknowledge close preparation.');
+assert(allstarAppScript.includes('function startAllStar()') && allstarAppScript.includes('runAllStarStartupPipeline') && allstarAppScript.includes("type:'coachtools:close-ready'"), 'Allstar should coordinate a single-flight startup and acknowledge close preparation.');
+assert(allstarAppScript.includes('return state.startup.promise') && allstarAppScript.includes('awaitedExisting'), 'Concurrent startup requests should await the active startup flight.');
+assert(!/coachtools:app-hidden[^}]{0,300}cancelAllStarBackgroundWork/.test(allstarAppScript), 'Minimizing All-Star must not cancel and invalidate its live startup state.');
+assert(!/coachtools:app-visible[^}]{0,500}scheduleAllStarCentralSync/.test(allstarAppScript), 'Restoring an already-ready All-Star must not trigger a full shared-data reconciliation.');
+assert(allstarAppScript.includes('[All-Star Startup Stall]') && allstarAppScript.includes('concurrentStartupOperations'), 'Startup should expose privacy-safe phase stall diagnostics.');
+assert(allstarPersistenceScript.includes('ALLSTAR_IDB_STALL_MS') && allstarPersistenceScript.includes('did not finish within'), 'IndexedDB waits should fail recoverably instead of spinning forever.');
 assert(!allstarAppScript.includes("flushImportCacheSave('pagehide flush')") && !allstarAppScript.includes("flushImportCacheSave('visibilitychange flush')"), 'Allstar lifecycle events should not perform duplicate full flushes.');
 assert(allstarPersistenceScript.includes('dirtyOnly:true,noRender:true,noCompaction:true,lifecycleSave:true') || allstarAppScript.includes('dirtyOnly:true,noRender:true,noCompaction:true,lifecycleSave:true'), 'Close persistence should use the lightweight dirty-record mode.');
 assert(desktopStyles.includes('.startup-progress'), 'Startup readiness should include a visible progress bar.');

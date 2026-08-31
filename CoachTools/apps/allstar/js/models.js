@@ -607,6 +607,8 @@ function createAllStarStartupJob(label='Opening Allstar…'){
   state.progressJob=job; state.startup.job=job;
   if(els.loadingTitle) els.loadingTitle.textContent='Opening All-Star';
   renderProgressValue(label,0);
+  if(els.loadingDiagnostics) els.loadingDiagnostics.textContent='';
+  if(els.loadingActions) els.loadingActions.classList.add('hidden');
   return job;
 }
 function setAllStarStartupPhase(job,start,end,label=''){
