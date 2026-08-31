@@ -1,0 +1,145 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function counterMapIsValid(data, allowedKeys) {
+      return data.keys().hasOnly(allowedKeys)
+        && data.get('sessions', 0) is int && data.get('sessions', 0) >= 0
+        && data.get('uniqueVisitors', 0) is int && data.get('uniqueVisitors', 0) >= 0
+        && data.get('appOpenEvents', 0) is int && data.get('appOpenEvents', 0) >= 0
+        && data.get('uploadActions', 0) is int && data.get('uploadActions', 0) >= 0
+        && data.get('filesUploaded', 0) is int && data.get('filesUploaded', 0) >= 0;
+    }
+
+    function countersMoveForward(newData, oldData) {
+      return newData.get('sessions', 0) >= oldData.get('sessions', 0)
+        && newData.get('sessions', 0) <= oldData.get('sessions', 0) + 1
+        && newData.get('uniqueVisitors', 0) >= oldData.get('uniqueVisitors', 0)
+        && newData.get('uniqueVisitors', 0) <= oldData.get('uniqueVisitors', 0) + 1
+        && newData.get('appOpenEvents', 0) >= oldData.get('appOpenEvents', 0)
+        && newData.get('appOpenEvents', 0) <= oldData.get('appOpenEvents', 0) + 1
+        && newData.get('uploadActions', 0) >= oldData.get('uploadActions', 0)
+        && newData.get('uploadActions', 0) <= oldData.get('uploadActions', 0) + 1
+        && newData.get('filesUploaded', 0) >= oldData.get('filesUploaded', 0)
+        && newData.get('filesUploaded', 0) <= oldData.get('filesUploaded', 0) + 1000;
+    }
+
+    match /coachtoolsUsage/{docId} {
+      allow read: if docId == 'summary';
+      allow create: if docId == 'summary'
+        && request.resource.data.get('schemaVersion', 0) == 1
+        && counterMapIsValid(
+          request.resource.data,
+          ['schemaVersion', 'sessions', 'uniqueVisitors', 'appOpenEvents', 'uploadActions', 'filesUploaded']
+        )
+        && request.resource.data.get('sessions', 0) <= 1
+        && request.resource.data.get('uniqueVisitors', 0) <= 1
+        && request.resource.data.get('appOpenEvents', 0) <= 1
+        && request.resource.data.get('uploadActions', 0) <= 1
+        && request.resource.data.get('filesUploaded', 0) <= 1000;
+      allow update: if docId == 'summary'
+        && request.resource.data.get('schemaVersion', 0) == 1
+        && resource.data.get('schemaVersion', 0) == 1
+        && counterMapIsValid(
+          request.resource.data,
+          ['schemaVersion', 'sessions', 'uniqueVisitors', 'appOpenEvents', 'uploadActions', 'filesUploaded']
+        )
+        && countersMoveForward(request.resource.data, resource.data);
+      allow delete: if false;
+    }
+
+    match /coachtoolsUsageDaily/{day} {
+      allow read: if true;
+      allow create: if request.resource.data.get('date', '') == day
+        && request.resource.data.get('date', '') is string
+        && request.resource.data.keys().hasOnly(['date', 'sessions', 'uniqueVisitors', 'appOpenEvents', 'uploadActions', 'filesUploaded'])
+        && counterMapIsValid(
+          request.resource.data,
+          ['date', 'sessions', 'uniqueVisitors', 'appOpenEvents', 'uploadActions', 'filesUploaded']
+        )
+        && request.resource.data.get('sessions', 0) <= 1
+        && request.resource.data.get('uniqueVisitors', 0) <= 1
+        && request.resource.data.get('appOpenEvents', 0) <= 1
+        && request.resource.data.get('uploadActions', 0) <= 1
+        && request.resource.data.get('filesUploaded', 0) <= 1000;
+      allow update: if request.resource.data.get('date', '') == day
+        && resource.data.get('date', '') == day
+        && request.resource.data.keys().hasOnly(['date', 'sessions', 'uniqueVisitors', 'appOpenEvents', 'uploadActions', 'filesUploaded'])
+        && counterMapIsValid(
+          request.resource.data,
+          ['date', 'sessions', 'uniqueVisitors', 'appOpenEvents', 'uploadActions', 'filesUploaded']
+        )
+        && countersMoveForward(request.resource.data, resource.data);
+      allow delete: if false;
+    }
+
+    match /coachtoolsUsageApps/{appId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['appId', 'name', 'opens', 'uniqueVisitors'])
+        && request.resource.data.appId == appId
+        && request.resource.data.appId is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.opens is int
+        && request.resource.data.opens == 1
+        && request.resource.data.get('uniqueVisitors', 0) is int
+        && request.resource.data.get('uniqueVisitors', 0) >= 0
+        && request.resource.data.get('uniqueVisitors', 0) <= 1;
+      allow update: if request.resource.data.keys().hasOnly(['appId', 'name', 'opens', 'uniqueVisitors'])
+        && request.resource.data.appId == appId
+        && resource.data.appId == appId
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.opens is int
+        && resource.data.opens is int
+        && request.resource.data.opens >= resource.data.opens
+        && request.resource.data.opens <= resource.data.opens + 1
+        && request.resource.data.get('uniqueVisitors', 0) is int
+        && request.resource.data.get('uniqueVisitors', 0) >= resource.data.get('uniqueVisitors', 0)
+        && request.resource.data.get('uniqueVisitors', 0) <= resource.data.get('uniqueVisitors', 0) + 1;
+      allow delete: if false;
+    }
+
+    match /coachtoolsUsageInitials/{labelId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['label', 'distinctApps', 'appOpenEvents', 'uploadActions', 'filesUploaded'])
+        && request.resource.data.label == labelId
+        && request.resource.data.label is string
+        && request.resource.data.label.size() == 3
+        && request.resource.data.get('distinctApps', 0) is int
+        && request.resource.data.get('distinctApps', 0) >= 0
+        && request.resource.data.get('distinctApps', 0) <= 1
+        && request.resource.data.get('appOpenEvents', 0) is int
+        && request.resource.data.get('appOpenEvents', 0) >= 0
+        && request.resource.data.get('appOpenEvents', 0) <= 1
+        && request.resource.data.get('uploadActions', 0) is int
+        && request.resource.data.get('uploadActions', 0) >= 0
+        && request.resource.data.get('uploadActions', 0) <= 1
+        && request.resource.data.get('filesUploaded', 0) is int
+        && request.resource.data.get('filesUploaded', 0) >= 0
+        && request.resource.data.get('filesUploaded', 0) <= 1000;
+      allow update: if request.resource.data.keys().hasOnly(['label', 'distinctApps', 'appOpenEvents', 'uploadActions', 'filesUploaded'])
+        && request.resource.data.label == labelId
+        && resource.data.label == labelId
+        && request.resource.data.get('distinctApps', 0) is int
+        && request.resource.data.get('distinctApps', 0) >= resource.data.get('distinctApps', 0)
+        && request.resource.data.get('distinctApps', 0) <= resource.data.get('distinctApps', 0) + 1
+        && request.resource.data.get('appOpenEvents', 0) is int
+        && request.resource.data.get('appOpenEvents', 0) >= resource.data.get('appOpenEvents', 0)
+        && request.resource.data.get('appOpenEvents', 0) <= resource.data.get('appOpenEvents', 0) + 1
+        && request.resource.data.get('uploadActions', 0) is int
+        && request.resource.data.get('uploadActions', 0) >= resource.data.get('uploadActions', 0)
+        && request.resource.data.get('uploadActions', 0) <= resource.data.get('uploadActions', 0) + 1
+        && request.resource.data.get('filesUploaded', 0) is int
+        && request.resource.data.get('filesUploaded', 0) >= resource.data.get('filesUploaded', 0)
+        && request.resource.data.get('filesUploaded', 0) <= resource.data.get('filesUploaded', 0) + 1000;
+      allow delete: if false;
+    }
+
+    // Everything outside the analytics schema stays closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
