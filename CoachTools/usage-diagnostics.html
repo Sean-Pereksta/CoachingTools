@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b1420">
+  <title>CoachTools Usage Diagnostics</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #08111b;
+      --panel: #101d2a;
+      --panel-2: #142536;
+      --line: #294056;
+      --text: #edf5fb;
+      --muted: #91a8bb;
+      --good: #65d49b;
+      --warn: #f0c36a;
+      --bad: #f07070;
+      --accent: #72b7ff;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at top, #11273a 0, var(--bg) 42%); color: var(--text); }
+    button, select { font: inherit; }
+    .shell { width: min(1500px, calc(100% - 36px)); margin: 0 auto; padding: 34px 0 60px; }
+    .topbar { display: flex; gap: 24px; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; }
+    .eyebrow { margin: 0 0 6px; color: var(--accent); text-transform: uppercase; letter-spacing: .16em; font-size: 11px; font-weight: 800; }
+    h1, h2 { margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 44px); letter-spacing: -.035em; }
+    h2 { font-size: 18px; }
+    .subtitle { margin: 8px 0 0; color: var(--muted); max-width: 780px; }
+    .controls { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+    .controls label { color: var(--muted); }
+    select, button { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 9px; padding: 9px 12px; }
+    button { cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    .status { display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: rgba(16, 29, 42, .82); }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 4px rgba(240, 195, 106, .08); }
+    .status.good .dot { background: var(--good); box-shadow: 0 0 0 4px rgba(101, 212, 155, .08); }
+    .status.bad .dot { background: var(--bad); box-shadow: 0 0 0 4px rgba(240, 112, 112, .08); }
+    .metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+    .metric, .panel { border: 1px solid var(--line); background: linear-gradient(180deg, rgba(20, 37, 54, .94), rgba(12, 24, 36, .94)); border-radius: 15px; box-shadow: 0 18px 44px rgba(0,0,0,.18); }
+    .metric { padding: 18px; min-height: 118px; }
+    .metric small { display: block; color: var(--muted); font-weight: 700; margin-bottom: 10px; }
+    .metric strong { font-size: 30px; letter-spacing: -.04em; }
+    .metric span { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
+    .grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 14px; }
+    .panel { padding: 20px; min-width: 0; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    .panel-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    canvas { width: 100%; height: 330px; display: block; border-radius: 10px; background: rgba(4, 12, 20, .3); }
+    .wide { grid-column: 1 / -1; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 11px 10px; border-bottom: 1px solid rgba(41, 64, 86, .7); text-align: left; }
+    th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody tr:hover { background: rgba(114, 183, 255, .045); }
+    .initial-badge { display: inline-grid; place-items: center; width: 38px; height: 30px; border-radius: 8px; background: #1a3146; border: 1px solid #31536e; font-weight: 900; letter-spacing: .08em; }
+    .empty { color: var(--muted); padding: 22px 8px; text-align: center; }
+    .foot { margin-top: 15px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 1100px) { .metrics { grid-template-columns: repeat(3, 1fr); } .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
+    @media (max-width: 700px) { .shell { width: min(100% - 20px, 1500px); padding-top: 20px; } .topbar { align-items: flex-start; flex-direction: column; } .controls { justify-content: flex-start; } .metrics { grid-template-columns: repeat(2, 1fr); } canvas { height: 270px; } }
+  </style>
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Private aggregate analytics</p>
+        <h1>CoachTools Usage Diagnostics</h1>
+        <p class="subtitle">Anonymous adoption and application-use counts only. No uploaded file contents, filenames, employee names, email addresses, device fingerprints, or detailed user histories are read by this portal.</p>
+      </div>
+      <div class="controls">
+        <span id="connectionStatus" class="status"><span class="dot"></span><span id="connectionText">Connecting…</span></span>
+        <label for="refreshMinutes">Check every</label>
+        <select id="refreshMinutes" aria-label="Refresh interval">
+          <option value="1">1 minute</option>
+          <option value="2">2 minutes</option>
+          <option value="5" selected>5 minutes</option>
+          <option value="10">10 minutes</option>
+          <option value="15">15 minutes</option>
+          <option value="30">30 minutes</option>
+        </select>
+        <button id="refreshNow" type="button">Check now</button>
+      </div>
+    </header>
+
+    <section class="metrics" aria-label="Usage totals">
+      <article class="metric"><small>Unique visitors</small><strong id="uniqueVisitors">—</strong><span>Approximate installations</span></article>
+      <article class="metric"><small>Sessions</small><strong id="sessions">—</strong><span>Launcher opens</span></article>
+      <article class="metric"><small>App opens</small><strong id="appOpenEvents">—</strong><span>All application opens</span></article>
+      <article class="metric"><small>Upload actions</small><strong id="uploadActions">—</strong><span>Import selections</span></article>
+      <article class="metric"><small>Files selected</small><strong id="filesUploaded">—</strong><span>Count only, never filenames</span></article>
+      <article class="metric"><small>Apps / visitor</small><strong id="appsPerVisitor">—</strong><span>Average distinct apps</span></article>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <div class="panel-head"><div><h2>Visitors over time</h2><p>Daily anonymous unique visitors</p></div><strong id="dailyRange"></strong></div>
+        <canvas id="visitorChart" aria-label="Daily unique visitor graph"></canvas>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><div><h2>Application usage</h2><p>Total opens by application</p></div><strong id="appCount"></strong></div>
+        <canvas id="appChart" aria-label="Application usage bar graph"></canvas>
+      </article>
+
+      <article class="panel wide">
+        <div class="panel-head">
+          <div><h2>Anonymous initials</h2><p>Random local labels with aggregate breadth of usage. These are not employees’ real initials.</p></div>
+          <strong id="initialCount"></strong>
+        </div>
+        <div style="overflow:auto">
+          <table>
+            <thead><tr><th>Initials</th><th class="num">Distinct apps</th><th class="num">App opens</th><th class="num">Upload actions</th><th class="num">Files selected</th></tr></thead>
+            <tbody id="initialRows"><tr><td colspan="5" class="empty">Waiting for analytics…</td></tr></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+
+    <p class="foot"><span id="lastChecked">Not checked yet.</span> <span id="lastChanged"></span> The dashboard redraws only when aggregate values change.</p>
+  </main>
+
+  <script>
+    (function usageDiagnostics() {
+      'use strict';
+
+      const firebaseConfig = {
+        apiKey: 'AIzaSyDEpWQEzkA8TYzuJNqLEcZmFJOCYaeAryE',
+        authDomain: 'myone3-visitors.firebaseapp.com',
+        projectId: 'myone3-visitors',
+        storageBucket: 'myone3-visitors.firebasestorage.app',
+        messagingSenderId: '1000181582176',
+        appId: '1:1000181582176:web:9a8b5ba5f9679ae3233605'
+      };
+
+      const $ = id => document.getElementById(id);
+      let db = null;
+      let timer = null;
+      let lastSignature = '';
+      let lastPayload = null;
+      let inFlight = false;
+
+      function number(value) { return Number(value) || 0; }
+      function formatNumber(value) { return number(value).toLocaleString(); }
+      function setConnection(kind, text) {
+        $('connectionStatus').className = `status ${kind || ''}`.trim();
+        $('connectionText').textContent = text;
+      }
+
+      function timestampText() {
+        return new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
+      }
+
+      function resizeCanvas(canvas) {
+        const ratio = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(320, Math.floor(rect.width));
+        const height = Math.max(220, Math.floor(rect.height));
+        if (canvas.width !== Math.floor(width * ratio) || canvas.height !== Math.floor(height * ratio)) {
+          canvas.width = Math.floor(width * ratio);
+          canvas.height = Math.floor(height * ratio);
+        }
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        return { ctx, width, height };
+      }
+
+      function drawEmpty(canvas, text) {
+        const { ctx, width, height } = resizeCanvas(canvas);
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = '#91a8bb';
+        ctx.font = '13px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText(text, width / 2, height / 2);
+      }
+
+      function drawVisitorChart(items) {
+        const canvas = $('visitorChart');
+        if (!items.length) return drawEmpty(canvas, 'No daily visitor data yet.');
+        const { ctx, width, height } = resizeCanvas(canvas);
+        ctx.clearRect(0, 0, width, height);
+        const pad = { left: 42, right: 18, top: 20, bottom: 42 };
+        const graphW = width - pad.left - pad.right;
+        const graphH = height - pad.top - pad.bottom;
+        const max = Math.max(1, ...items.map(item => number(item.uniqueVisitors)));
+
+        ctx.strokeStyle = 'rgba(145,168,187,.18)';
+        ctx.lineWidth = 1;
+        ctx.fillStyle = '#91a8bb';
+        ctx.font = '11px system-ui';
+        ctx.textAlign = 'right';
+        for (let step = 0; step <= 4; step += 1) {
+          const y = pad.top + graphH * step / 4;
+          ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
+          ctx.fillText(String(Math.round(max * (1 - step / 4))), pad.left - 8, y + 4);
+        }
+
+        const points = items.map((item, index) => ({
+          x: pad.left + (items.length === 1 ? graphW / 2 : graphW * index / (items.length - 1)),
+          y: pad.top + graphH - (number(item.uniqueVisitors) / max) * graphH,
+          item
+        }));
+
+        ctx.strokeStyle = '#72b7ff';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
+        ctx.stroke();
+        ctx.fillStyle = '#72b7ff';
+        points.forEach(point => { ctx.beginPath(); ctx.arc(point.x, point.y, 3.5, 0, Math.PI * 2); ctx.fill(); });
+
+        ctx.fillStyle = '#91a8bb';
+        ctx.textAlign = 'center';
+        const labelStep = Math.max(1, Math.ceil(items.length / 7));
+        points.forEach((point, index) => {
+          if (index % labelStep && index !== points.length - 1) return;
+          const date = new Date(`${point.item.date}T00:00:00`);
+          const label = Number.isNaN(date.getTime()) ? point.item.date : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+          ctx.fillText(label, point.x, height - 16);
+        });
+      }
+
+      function drawAppChart(items) {
+        const canvas = $('appChart');
+        const top = items.slice(0, 12);
+        if (!top.length) return drawEmpty(canvas, 'No application opens yet.');
+        const { ctx, width, height } = resizeCanvas(canvas);
+        ctx.clearRect(0, 0, width, height);
+        const left = Math.min(155, Math.max(105, width * .34));
+        const right = 50;
+        const topPad = 18;
+        const bottom = 12;
+        const graphW = width - left - right;
+        const rowH = (height - topPad - bottom) / top.length;
+        const max = Math.max(1, ...top.map(item => number(item.opens)));
+        ctx.font = '11px system-ui';
+
+        top.forEach((item, index) => {
+          const y = topPad + index * rowH;
+          const barH = Math.max(8, rowH * .54);
+          const barY = y + (rowH - barH) / 2;
+          const barW = graphW * number(item.opens) / max;
+          ctx.fillStyle = '#72b7ff';
+          ctx.fillRect(left, barY, barW, barH);
+          ctx.fillStyle = '#edf5fb';
+          ctx.textAlign = 'right';
+          const label = String(item.name || item.appId || 'App');
+          ctx.fillText(label.length > 20 ? label.slice(0, 18) + '…' : label, left - 8, barY + barH / 2 + 4);
+          ctx.textAlign = 'left';
+          ctx.fillStyle = '#91a8bb';
+          ctx.fillText(formatNumber(item.opens), Math.min(width - right + 5, left + barW + 7), barY + barH / 2 + 4);
+        });
+      }
+
+      function renderInitials(items) {
+        const body = $('initialRows');
+        body.innerHTML = '';
+        if (!items.length) {
+          body.innerHTML = '<tr><td colspan="5" class="empty">No anonymous initials have been recorded yet.</td></tr>';
+          return;
+        }
+        for (const item of items) {
+          const row = document.createElement('tr');
+          const label = document.createElement('td');
+          const badge = document.createElement('span');
+          badge.className = 'initial-badge';
+          badge.textContent = item.label || '---';
+          label.appendChild(badge);
+          row.appendChild(label);
+          for (const key of ['distinctApps', 'appOpenEvents', 'uploadActions', 'filesUploaded']) {
+            const cell = document.createElement('td');
+            cell.className = 'num';
+            cell.textContent = formatNumber(item[key]);
+            row.appendChild(cell);
+          }
+          body.appendChild(row);
+        }
+      }
+
+      function render(payload) {
+        const summary = payload.summary || {};
+        $('uniqueVisitors').textContent = formatNumber(summary.uniqueVisitors);
+        $('sessions').textContent = formatNumber(summary.sessions);
+        $('appOpenEvents').textContent = formatNumber(summary.appOpenEvents);
+        $('uploadActions').textContent = formatNumber(summary.uploadActions);
+        $('filesUploaded').textContent = formatNumber(summary.filesUploaded);
+        const visitorCount = number(summary.uniqueVisitors);
+        const distinctTotal = payload.initials.reduce((sum, item) => sum + number(item.distinctApps), 0);
+        $('appsPerVisitor').textContent = visitorCount ? (distinctTotal / visitorCount).toFixed(1) : '0.0';
+        $('appCount').textContent = `${payload.apps.length} apps`;
+        $('initialCount').textContent = `${payload.initials.length} labels`;
+        $('dailyRange').textContent = payload.daily.length ? `${payload.daily.length} days` : 'No data';
+        drawVisitorChart(payload.daily);
+        drawAppChart(payload.apps);
+        renderInitials(payload.initials);
+      }
+
+      async function fetchPayload() {
+        const [summarySnap, dailySnap, appsSnap, initialsSnap] = await Promise.all([
+          db.collection('coachtoolsUsage').doc('summary').get(),
+          db.collection('coachtoolsUsageDaily').orderBy('date', 'asc').limit(90).get(),
+          db.collection('coachtoolsUsageApps').get(),
+          db.collection('coachtoolsUsageInitials').get()
+        ]);
+        const summary = summarySnap.exists ? summarySnap.data() : {};
+        const daily = dailySnap.docs.map(doc => doc.data()).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+        const apps = appsSnap.docs.map(doc => doc.data()).sort((a, b) => number(b.opens) - number(a.opens));
+        const initials = initialsSnap.docs.map(doc => doc.data()).sort((a, b) => number(b.distinctApps) - number(a.distinctApps) || String(a.label || '').localeCompare(String(b.label || '')));
+        return { summary, daily, apps, initials };
+      }
+
+      async function checkForChanges(force) {
+        if (!db || inFlight) return;
+        inFlight = true;
+        $('refreshNow').disabled = true;
+        setConnection('', 'Checking…');
+        try {
+          const payload = await fetchPayload();
+          const signature = JSON.stringify(payload);
+          const changed = force || signature !== lastSignature;
+          if (changed) {
+            render(payload);
+            lastPayload = payload;
+            lastSignature = signature;
+            $('lastChanged').textContent = `Last change: ${timestampText()}.`;
+          }
+          $('lastChecked').textContent = `Last checked: ${timestampText()}.`;
+          setConnection('good', changed ? 'Updated' : 'No change');
+        } catch (error) {
+          setConnection('bad', 'Firebase unavailable');
+          $('lastChecked').textContent = `Last check failed: ${error && error.message ? error.message : error}.`;
+        } finally {
+          inFlight = false;
+          $('refreshNow').disabled = false;
+        }
+      }
+
+      function schedule() {
+        if (timer) clearInterval(timer);
+        const minutes = Math.max(1, Number($('refreshMinutes').value) || 5);
+        timer = setInterval(() => checkForChanges(false), minutes * 60 * 1000);
+      }
+
+      async function start() {
+        try {
+          if (!window.firebase || !window.firebase.initializeApp || !window.firebase.firestore) throw new Error('Firebase scripts could not load.');
+          const app = window.firebase.apps && window.firebase.apps.length
+            ? window.firebase.apps.find(item => item && item.options && item.options.projectId === firebaseConfig.projectId)
+              || window.firebase.initializeApp(firebaseConfig, 'coachtools-usage-diagnostics')
+            : window.firebase.initializeApp(firebaseConfig, 'coachtools-usage-diagnostics');
+          db = app.firestore();
+          $('refreshMinutes').addEventListener('change', schedule);
+          $('refreshNow').addEventListener('click', () => checkForChanges(true));
+          window.addEventListener('resize', () => { if (lastPayload) render(lastPayload); });
+          schedule();
+          await checkForChanges(true);
+        } catch (error) {
+          setConnection('bad', 'Firebase unavailable');
+          $('lastChecked').textContent = `Could not start diagnostics: ${error && error.message ? error.message : error}.`;
+        }
+      }
+
+      if (document.readyState === 'complete') start();
+      else window.addEventListener('load', start, { once: true });
+    })();
+  </script>
+</body>
+</html>
