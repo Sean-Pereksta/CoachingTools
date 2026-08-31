@@ -236,6 +236,36 @@ function scheduleAllStarCentralSync(detail={}){
   },350);
 }
 
+function allStarStartupRowCount(){
+  return typeof allSourceKeys==='function' ? allSourceKeys().reduce((total,key)=>total+Number((getRowsRaw(key)||[]).length),0) : 0;
+}
+function setAllStarStartupDiagnosticPhase(label,dataset=''){
+  const startup=state.startup;
+  if(startup.phase) clearAllStarStartupDiagnosticPhase('success');
+  const now=performance.now();
+  startup.phase={label,dataset,rows:allStarStartupRowCount(),startedAt:now,token:startup.generation};
+  const report=()=>{
+    if(!startup.running || startup.phase?.startedAt!==now) return;
+    const elapsedMs=Math.round(performance.now()-now), snapshot={phase:label,dataset:dataset||undefined,elapsedMs,rows:startup.phase.rows,activeLoadToken:startup.generation,concurrentStartupOperations:startup.running?1:0};
+    startup.diagnostics.currentPhase=snapshot;
+    if(els.loadingDiagnostics) els.loadingDiagnostics.textContent=`${label} · ${(elapsedMs/1000).toFixed(1)}s · ${snapshot.rows.toLocaleString()} rows · load ${snapshot.activeLoadToken}`;
+    if(elapsedMs>=15000){ startup.diagnostics.stalls=[...(startup.diagnostics.stalls||[]),snapshot].slice(-10); console.warn('[All-Star Startup Stall]',snapshot); }
+  };
+  report(); startup.watchdogTimer=setInterval(report,5000);
+}
+function clearAllStarStartupDiagnosticPhase(outcome='complete'){
+  const startup=state.startup, phase=startup.phase;
+  if(startup.watchdogTimer){clearInterval(startup.watchdogTimer);startup.watchdogTimer=0;}
+  if(phase){ startup.diagnostics.phases=[...(startup.diagnostics.phases||[]),{label:phase.label,dataset:phase.dataset,rows:phase.rows,outcome,durationMs:Math.round(performance.now()-phase.startedAt)}]; startup.phase=null; }
+}
+function showAllStarStartupFailure(error){
+  if(els.loadingTitle) els.loadingTitle.textContent='All-Star could not finish loading';
+  if(els.loadingText) els.loadingText.textContent=String(error?.message||error||'An unexpected startup operation failed.');
+  if(els.loadingDiagnostics) els.loadingDiagnostics.textContent=`Phase: ${state.startup.diagnostics?.lastFailedPhase||'startup'} · load ${state.startup.generation}`;
+  if(els.loadingActions) els.loadingActions.classList.remove('hidden');
+  els.loadingOverlay?.classList.add('open'); els.loadingOverlay?.setAttribute('aria-hidden','false');
+}
+
 
 let allStarRegressionTestsLoadPromise=null;
 function loadAllStarRegressionTests(){
@@ -290,16 +320,19 @@ function prepareAllStarClose(requestId=''){
 }
 async function measureAllStarStartupStep(label,task){
   const started=performance.now();
-  try{ return await task(); }
+  setAllStarStartupDiagnosticPhase(label);
+  try{ const result=await task(); clearAllStarStartupDiagnosticPhase('success'); return result; }
+  catch(error){ state.startup.diagnostics.lastFailedPhase=label; clearAllStarStartupDiagnosticPhase('failure'); throw error; }
   finally{
     const durationMs=Math.round(performance.now()-started), diagnostics=state.startup.diagnostics||(state.startup.diagnostics={});
     diagnostics.steps={...(diagnostics.steps||{}),[label]:durationMs};
     if(durationMs>100){ diagnostics.slowOperations=[...(diagnostics.slowOperations||[]),{label,durationMs}]; console.warn('[All-Star Startup] Slow operation',{label,durationMs}); }
   }
 }
-async function startAllStar(){
-  if(state.startup.running || state.lifecycle.closing) return false;
+async function runAllStarStartupPipeline(){
+  if(state.lifecycle.closing) return false;
   state.startup.running=true; state.startup.completed=false; state.startup.diagnostics={startupSource:'defaults',sourceDatasetsLoaded:0,centralCompared:0,centralRefreshed:0,cachedSourcesReused:0,indexesReused:0,indexesRebuilt:0,indexesDeferred:0,indexedDbWrites:0,fullRenders:0,lightweightStartupRenders:0,categorizedDataTouched:false,workbookSheetsExpanded:0,progressRegressions:0,slowOperations:[],steps:{}};
+  state.startup.pipelineCount++;
   const generation=++state.lifecycle.generation; state.startup.generation=generation;
   const job=createAllStarStartupJob('Loading settings…');
   const started=performance.now();
@@ -323,7 +356,7 @@ async function startAllStar(){
     updateAllStarStartupProgress(job,localLoaded?'CoachingTools data connected.':'Ready for CoachingTools data.',55);
     if(state.lifecycle.closing || generation!==state.lifecycle.generation) return false;
 
-    const reconciliation=await measureAllStarStartupStep('shared data reconciliation',()=>syncAllStarFromCoachToolsData({reason:'startup IndexedDB synchronization',generation,render:false,deferTeamRebuild:true,deferIndexes:true,allowLegacyBackfill:false}));
+    const reconciliation=await measureAllStarStartupStep('shared data reconciliation',()=>syncAllStarFromCoachToolsData({reason:'startup IndexedDB synchronization',generation,job,render:false,deferTeamRebuild:true,deferIndexes:true,allowLegacyBackfill:false}));
     if(reconciliation?.cancelled || state.lifecycle.closing || generation!==state.lifecycle.generation) return false;
     updateAllStarStartupProgress(job,'CoachingTools data ready.',85);
     if(importCacheHasDirty()){
@@ -342,9 +375,18 @@ async function startAllStar(){
     return true;
   }catch(error){
     console.warn('[All-Star] Startup retained the last valid state.',error);
-    if(!state.lifecycle.closing){ renderAllStarAfterDataBatch({sourcesChanged:[],reason:'startup recovery',startup:true}); finishAllStarStartupProgress(job,'Ready with a startup warning.'); }
+    if(!state.lifecycle.closing){ renderAllStarAfterDataBatch({sourcesChanged:[],reason:'startup recovery',startup:true}); showAllStarStartupFailure(error); }
     return false;
-  }finally{ state.startup.running=false; }
+  }finally{ clearAllStarStartupDiagnosticPhase('finished'); state.startup.running=false; }
+}
+function startAllStar(){
+  state.startup.requestCount++;
+  if(state.lifecycle.closing) return Promise.resolve(false);
+  if(state.startup.completed) return Promise.resolve(true);
+  if(state.startup.promise && state.startup.running){ state.startup.diagnostics.awaitedExisting=Number(state.startup.diagnostics?.awaitedExisting||0)+1; return state.startup.promise; }
+  const flight=runAllStarStartupPipeline(); state.startup.promise=flight;
+  flight.finally(()=>{ if(state.startup.promise===flight) state.startup.promise=null; });
+  return flight;
 }
 
 window.addEventListener('message',event=>{
@@ -352,24 +394,24 @@ window.addEventListener('message',event=>{
   if(type==='coachtools:prepare-close') prepareAllStarClose(event.data.requestId||'');
   if(type==='coachtools:cancel-data-loads' && !state.lifecycle.closing) cancelAllStarBackgroundWork('desktop cancellation');
   if(type==='coachtools:app-hidden' && !state.lifecycle.closing){
-    state.lifecycle.hidden=true; cancelAllStarBackgroundWork('application hidden');
+    state.lifecycle.hidden=true;
     if(!state.startup.running && !state.centralSyncStageActive && importCacheHasDirty()) scheduleImportedDataSave('hidden dirty save',{delay:0,silent:true,dirtyOnly:true,noRender:true,noCompaction:true,lifecycleSave:true});
   }
   if(type==='coachtools:app-visible' && !state.lifecycle.closing){
     state.lifecycle.hidden=false;
-    if(!state.startup.completed) Promise.resolve(state.startup.promise).finally(()=>{ if(!state.startup.completed && !state.startup.running && !state.lifecycle.closing) state.startup.promise=startAllStar(); });
-    else scheduleAllStarCentralSync({source:'all',reason:'Allstar became visible'});
+    if(!state.startup.completed) startAllStar();
   }
 });
 window.addEventListener('pagehide',()=>{ state.lifecycle.hidden=true; cancelAllStarBackgroundWork('pagehide'); });
 document.addEventListener('visibilitychange',()=>{
   state.lifecycle.hidden=document.visibilityState==='hidden';
   if(state.lifecycle.hidden && !state.lifecycle.closing){
-    cancelAllStarBackgroundWork('document hidden');
     if(!state.startup.running && !state.centralSyncStageActive && importCacheHasDirty()) scheduleImportedDataSave('hidden dirty save',{delay:0,silent:true,dirtyOnly:true,noRender:true,noCompaction:true,lifecycleSave:true});
   }else if(!state.lifecycle.closing){
-    if(!state.startup.completed && !state.startup.running) state.startup.promise=startAllStar();
-    else if(state.startup.completed) scheduleAllStarCentralSync({source:'all',reason:'document visible'});
+    if(!state.startup.completed) startAllStar();
   }
 });
-state.startup.promise=startAllStar();
+if(els.loadingRetryBtn) els.loadingRetryBtn.onclick=()=>{ state.startup.completed=false; startAllStar(); };
+if(els.loadingTroubleshootBtn) els.loadingTroubleshootBtn.onclick=()=>{ hideProgress({force:true}); openTroubleshoot('documented_coaching'); };
+if(els.loadingContinueBtn) els.loadingContinueBtn.onclick=()=>{ hideProgress({force:true}); setStatus(); };
+startAllStar();

@@ -254,6 +254,8 @@ function importCacheOpenDb(){
   if(!('indexedDB' in window)) return Promise.reject(new Error('IndexedDB is not available in this browser.'));
   return new Promise((resolve,reject)=>{
     const req=indexedDB.open(IMPORT_CACHE_DB,IMPORT_CACHE_SCHEMA_VERSION);
+    let settled=false; const timer=setTimeout(()=>{if(settled)return;settled=true;reject(new Error(`Opening the All-Star IndexedDB cache did not finish within ${ALLSTAR_IDB_STALL_MS/1000} seconds.`));},ALLSTAR_IDB_STALL_MS);
+    const finish=(fn,value)=>{if(settled){try{value?.close?.();}catch(_){}return;}settled=true;clearTimeout(timer);fn(value);};
     req.onupgradeneeded=()=>{
       const db=req.result;
       if(!db.objectStoreNames.contains(IMPORT_CACHE_META_STORE)) db.createObjectStore(IMPORT_CACHE_META_STORE,{keyPath:'id'});
@@ -267,12 +269,13 @@ function importCacheOpenDb(){
       if(!db.objectStoreNames.contains('coachtoolsPeople')){ const store=db.createObjectStore('coachtoolsPeople',{keyPath:'personId'}); store.createIndex('normalizedName','normalizedName',{unique:false}); store.createIndex('role','role',{unique:false}); store.createIndex('department','department',{unique:false}); store.createIndex('currentCoachId','currentCoachId',{unique:false}); }
       if(!db.objectStoreNames.contains('coachtoolsIdentityReviews')){ const store=db.createObjectStore('coachtoolsIdentityReviews',{keyPath:'id'}); store.createIndex('status','status',{unique:false}); store.createIndex('createdAt','createdAt',{unique:false}); }
     };
-    req.onsuccess=()=>resolve(req.result);
-    req.onerror=()=>reject(req.error||new Error('Could not open import cache database.'));
+    req.onsuccess=()=>finish(resolve,req.result);
+    req.onerror=()=>finish(reject,req.error||new Error('Could not open import cache database.'));
   });
 }
-function idbReq(req){ return new Promise((resolve,reject)=>{ req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error||new Error('IndexedDB request failed.')); }); }
-function idbTxDone(tx){ return new Promise((resolve,reject)=>{ tx.oncomplete=()=>resolve(); tx.onerror=()=>reject(tx.error||new Error('IndexedDB transaction failed.')); tx.onabort=()=>reject(tx.error||new Error('IndexedDB transaction aborted.')); }); }
+const ALLSTAR_IDB_STALL_MS=30000;
+function idbReq(req,label='IndexedDB request'){ return new Promise((resolve,reject)=>{ let settled=false; const timer=setTimeout(()=>{ if(settled)return; settled=true; try{req.transaction?.abort?.();}catch(_){} reject(new Error(`${label} did not finish within ${ALLSTAR_IDB_STALL_MS/1000} seconds.`)); },ALLSTAR_IDB_STALL_MS); const finish=(fn,value)=>{if(settled)return;settled=true;clearTimeout(timer);fn(value);}; req.onsuccess=()=>finish(resolve,req.result); req.onerror=()=>finish(reject,req.error||new Error(`${label} failed.`)); }); }
+function idbTxDone(tx,label='IndexedDB transaction'){ return new Promise((resolve,reject)=>{ let settled=false; const timer=setTimeout(()=>{if(settled)return;settled=true;try{tx.abort();}catch(_){}reject(new Error(`${label} did not finish within ${ALLSTAR_IDB_STALL_MS/1000} seconds.`));},ALLSTAR_IDB_STALL_MS); const finish=(fn,value)=>{if(settled)return;settled=true;clearTimeout(timer);fn(value);}; tx.oncomplete=()=>finish(resolve); tx.onerror=()=>finish(reject,tx.error||new Error(`${label} failed.`)); tx.onabort=()=>finish(reject,tx.error||new Error(`${label} was aborted.`)); }); }
 async function importCacheReadMeta(){
   const db=await importCacheOpenDb();
   try{ return await idbReq(db.transaction(IMPORT_CACHE_META_STORE,'readonly').objectStore(IMPORT_CACHE_META_STORE).get('current')); }
@@ -459,7 +462,9 @@ function afterImportedDataRestored(reason='local cache loaded', opts={}){
 }
 async function loadImportedDataFromIndexedDB(opts={}){
   const generation=Number(opts.generation??state.lifecycle?.generation??0);
-  const stillActive=()=>!state.lifecycle?.closing && !state.lifecycle?.hidden && generation===Number(state.lifecycle?.generation||0);
+  // Being hidden/minimized does not invalidate an in-flight hydration. The
+  // iframe and its state remain alive; only close or a newer generation wins.
+  const stillActive=()=>!state.lifecycle?.closing && generation===Number(state.lifecycle?.generation||0);
   if(state.importCacheSaving || !stillActive()) return false;
   state.importCacheLoading=true; state.importCache.status='loading';
   if(opts.showProgress) showProgress('Loading local IndexedDB import cache...',6);
