@@ -6,10 +6,11 @@ Passed automated package checks
 - Every application module parses individually.
 - The ordered application JavaScript parses as one combined program.
 - The extracted regression suite parses and is not loaded during normal startup.
-- The final Qualtrics generator's 505,946-byte inline application script parses.
+- The final Qualtrics generator's inline application script parses, and its Individual Messages dependencies parse independently before portable bundling.
 - The standalone Qualtrics insights module parses and its focused formatting, corrective-context, urgency, and organization-summary tests pass.
+- The standalone Qualtrics Individual Messages engine and UI integration parse, and focused migration, threshold, ranking, variable, roster ambiguity, category, and send-readiness tests pass.
 - The modular source contains no encoded legacy generator or runtime patch engine.
-- The final generator contains Display Column text templates, contextual corrective-history labels and legend, rule-specific Top 3 evidence, distinct overall KPI wording, Why Identified details, Follow-Up, Organization Opportunity Summary, clear-data, urgency PDF, Coach Profile, Overall Coaching Profile, Coaching Topic Impact, and simplified executive-report markers.
+- The final generator contains Display Column text templates, contextual corrective-history labels and legend, rule-specific Top 3 evidence, distinct overall KPI wording, Why Identified details, Follow-Up, Organization Opportunity Summary, Individual Messages, clear-data, urgency PDF, Coach Profile, Overall Coaching Profile, Coaching Topic Impact, and simplified executive-report markers.
 - Required localStorage keys, IndexedDB names, schema versions, and store names remain present.
 - Generalized Display lookup, coach-row targeting, calculated display values, conditional badges/colors, and explicit missing-value behavior are present.
 - The versioned normalized JSON package builder, validator, direct hydration path, and legacy workbook fallback are present.

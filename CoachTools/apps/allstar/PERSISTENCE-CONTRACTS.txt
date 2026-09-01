@@ -49,6 +49,7 @@ Qualtrics generator IndexedDB
   - problemHistory (keyPath: id)
   - settings (keyPath: key)
     - concernHistoryLoadedFile.v1 (latest loaded filename, timestamp, and representative-name counts)
+    - individualMessageSettings.v1 (header, Concern/Strength headings, footer, and no-behavior preview preference)
 
 Compatibility policy
 Existing names and stored object structures remain compatible. Schema version 8 adds compound history/scope indexes and persistent identity lookup indexes on top of chunked central datasets, shared people, and identity-review stores. `CoachToolsData.storageContract` is authoritative for the shared database name, version, and store list; Allstar keeps a version-8 fallback for standalone execution. The modular Qualtrics carrier uses srcdoc so its saved data remains on the same parent-document storage origin used by the previous embedded generator.
@@ -75,5 +76,8 @@ Rule-schema additions are normalized on load without changing the IndexedDB vers
 - correctiveContext defaults to disabled, with the former-corrective Follow-Up scan also disabled.
 - displayColumn lookupVersion 2 stores displayMode, lookupMatchEntity, lookupMatchColumn, lookupReturnColumn, lookupDateColumn, lookupCustomValue, lookupSelection, displayCalculation, displayValueType, displayMissingMode, displayMissingText, and ordered displayRules.
 - Saved Display Column criteria without lookupVersion remain on their legacy matching behavior.
+- individualMessage schema version 1 adds independently enabled Concern and Strength conditions, messages, thresholds, and variable mappings to each saved rule.
+- Rules saved before individualMessage existed normalize to Concern enabled with Existing Rule Result, Strength disabled, and the original rule ID and bulk-report behavior unchanged.
+- Representative email roster rows are session-only and are not persisted in IndexedDB or localStorage.
 
 Older saved rules therefore retain their prior matching and presentation behavior until a user explicitly enables the new options.

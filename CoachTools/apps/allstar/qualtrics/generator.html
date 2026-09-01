@@ -7,6 +7,8 @@
 <script src="../../vendor/xlsx.full.min.js" onerror="this.onerror=null;this.src='../../../vendor/xlsx.full.min.js'"></script>
 <script src="../../vendor/jszip.min.js" onerror="this.onerror=null;this.src='../../../vendor/jszip.min.js'"></script>
 <script src="insights.js" onerror="this.onerror=null;this.src='qualtrics/insights.js'"></script>
+<script src="individual-messages.js" onerror="this.onerror=null;this.src='qualtrics/individual-messages.js'"></script>
+<script src="individual-ui.js" onerror="this.onerror=null;this.src='qualtrics/individual-ui.js'"></script>
 <style>
 :root{
   --bg:#f8fafc;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#e5e7eb;--soft:#f1f5f9;
@@ -65,6 +67,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
 .impactRuleGrid{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}.impactPhraseBox{border:1px solid #bfdbfe;border-radius:14px;background:#eff6ff;padding:11px;margin:10px 0}.impactSessionControls{margin-top:9px;align-items:end}.impactViewControls{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.impactViewControls>label{min-width:230px;flex:1}.impactScopeGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));align-items:end}.impactScopeGrid select[multiple]{min-height:88px;text-transform:none}.impactSnapshotGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:9px}.impactMetric{border:1px solid #dbe2ea;border-radius:13px;padding:10px;background:#fff}.impactMetric .k{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:1000}.impactMetric .v{font-size:22px;font-weight:1000;margin-top:3px}.impactMetric .d{font-size:11px;color:#64748b;font-weight:800;margin-top:3px}.impactBars{display:grid;gap:10px}.impactBar{display:flex;min-height:42px;border:1px solid #cbd5e1;border-radius:13px;overflow:hidden;background:#f1f5f9}.impactBar button{border:0;border-right:1px solid rgba(255,255,255,.45);min-width:84px;padding:7px;color:#fff;font-size:11px;font-weight:1000;line-height:1.2}.impactBar button:last-child{border-right:0}.impactBar .positive{background:#16a34a}.impactBar .neutral{background:#d97706}.impactBar .negative{background:#dc2626}.impactBar .exact{background:#2563eb}.impactBar .other{background:#7c3aed}.impactBar .none{background:#94a3b8;color:#0f172a}.impactNotMeasured{font-size:11px;color:#64748b;font-weight:900;margin-top:5px}.impactNarrative{border:1px solid #bfdbfe;border-left:5px solid #2563eb;border-radius:13px;background:#eff6ff;padding:11px;color:#1e3a8a;line-height:1.5}.impactNarrative.positive{border-left-color:#16a34a;background:#f0fdf4;color:#166534}.impactNarrative.negative{border-left-color:#dc2626;background:#fef2f2;color:#991b1b}.impactNarrative.neutral{border-left-color:#d97706;background:#fffbeb;color:#92400e}.impactFiveAreas{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px}.impactArea{border:1px solid #dbe2ea;border-top:4px solid #2563eb;border-radius:13px;padding:10px;background:#fff}.impactArea h4{margin:0 0 5px}.impactArea strong{font-size:21px}.impactSection{border:1px solid #dbe2ea;border-radius:16px;background:#fff;padding:13px;box-shadow:0 8px 24px rgba(15,23,42,.05);display:grid;gap:10px}.impactSection h2,.impactSection h3{margin:0}.impactBadge{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:1000;border:1px solid #cbd5e1;background:#f8fafc}.impactBadge.positive{color:#166534;background:#dcfce7;border-color:#86efac}.impactBadge.neutral{color:#92400e;background:#fef3c7;border-color:#fcd34d}.impactBadge.negative{color:#991b1b;background:#fee2e2;border-color:#fca5a5}.impactBadge.not_measurable{color:#475569;background:#e2e8f0;border-color:#cbd5e1}.impactBadge.exact{color:#1e40af;background:#dbeafe;border-color:#93c5fd}.impactBadge.other{color:#6b21a8;background:#f3e8ff;border-color:#d8b4fe}.impactBadge.none{color:#475569;background:#f1f5f9}.impactActionCritical{border-left:5px solid #dc2626}.impactActionHigh{border-left:5px solid #ea580c}.impactActionModerate{border-left:5px solid #d97706}.impactPositiveCard{border-left:5px solid #16a34a}.impactMethod{border:1px solid #cbd5e1;border-radius:12px;padding:9px;background:#f8fafc}.impactMethod summary{cursor:pointer;font-weight:1000}.impactCompare th[data-impact-sort]{cursor:pointer}.impactDiag{border:1px solid #fbbf24;border-left:5px solid #d97706;border-radius:12px;background:#fffbeb;padding:10px}.impactEmpty{color:#64748b;font-weight:800;padding:14px;text-align:center}.impactRepDetail{font-size:11px;color:#475569;line-height:1.4;margin-top:4px}.impactReportShell{display:grid;gap:12px;margin-bottom:14px}.impactTableWrap{overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid #dbe2ea;border-radius:12px}.impactTableWrap table{min-width:1050px}.impactTableWrap th{position:sticky;top:0}.impactInlineStat{font-size:11px;color:#475569;font-weight:800}.impactChange{font-weight:1000}.impactChange.positive{color:#166534}.impactChange.neutral{color:#92400e}.impactChange.negative{color:#991b1b}@media(max-width:700px){.impactSnapshotGrid,.impactFiveAreas{grid-template-columns:repeat(2,minmax(0,1fr))}.impactBar{overflow-x:auto}.impactBar button{min-width:120px}.impactViewControls,.impactScopeGrid{display:grid;grid-template-columns:1fr}.impactViewControls>label{min-width:0}.impactMetric .v{font-size:18px}}
 .correctiveContextBox{border:1px solid #fed7aa;border-left:5px solid #f97316;border-radius:14px;background:#fff7ed;padding:12px}.correctiveContextGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end}.orgSummaryControls{display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:12px;align-items:end}.orgSummaryControls select{min-height:120px;text-transform:none}.orgExecutiveGrid,.orgSummaryGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}.orgExecutiveCard,.orgSummaryBlock{border:1px solid #dbe2ea;border-radius:14px;background:#fff;padding:12px}.orgSummaryBlock{border-top:5px solid #2563eb}.orgSummaryBlock h3{margin:0 0 8px}.orgOpportunityRow{padding:7px 0;border-top:1px solid #e5e7eb;font-size:12px}.orgOpportunityRow:first-of-type{border-top:0}.orgMetaLine{font-size:12px;color:#475569;line-height:1.5}.repSignal{font-weight:1000}.repSignal.critical{color:#991b1b;background:#fee2e2;border-radius:5px;padding:1px 3px}.repSignal.elevated{color:#9a3412;background:#ffedd5;border-radius:5px;padding:1px 3px}.repSignal.standard{color:#854d0e;background:#fef9c3;border-radius:5px;padding:1px 3px}.repSignal.improving{color:#166534;background:#dcfce7;border-radius:5px;padding:1px 3px}.followUpCompact{margin-top:9px;border:1px solid #fed7aa;border-left:4px solid #f97316;border-radius:9px;background:#fff7ed;padding:8px 10px;font-size:11px;line-height:1.45}@media(max-width:700px){.orgSummaryControls{grid-template-columns:1fr}.correctiveContextGrid{grid-template-columns:1fr}}
 .concernHistoryStatusBtn{border-color:#cbd5e1;background:#f8fafc;color:#475569}.concernHistoryStatusBtn.loaded{border-color:#86efac;background:#dcfce7;color:#166534}.concernHistoryViewer{margin-top:10px;border:1px solid #86efac;border-left:5px solid #16a34a;border-radius:14px;background:#f0fdf4;padding:12px}.concernHistoryViewerHead{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}.concernHistoryNameList{max-height:340px;overflow-y:auto;overscroll-behavior:contain;display:grid;gap:6px;margin-top:10px;padding-right:5px}.concernHistoryNameRow{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #dbe2ea;border-radius:10px;background:#fff;padding:8px 10px;font-size:12px;font-weight:900}.concernHistoryNameRow .pill{flex:0 0 auto}.concernHistoryViewerFoot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px}@media(max-width:700px){.concernHistoryViewerHead{display:grid;grid-template-columns:1fr}.concernHistoryNameList{max-height:280px}}
+.individualRuleGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.individualSide{border:1px solid var(--line);border-top:5px solid #ea580c;border-radius:14px;background:#fff;padding:12px;display:grid;gap:10px}.individualSide.strength{border-top-color:#16a34a}.individualSide h3{margin:0}.individualSideGrid{display:grid;grid-template-columns:repeat(2,minmax(160px,1fr));gap:9px}.individualSideGrid .wide{grid-column:1/-1}.individualVariableList{display:grid;gap:7px}.individualVariableRow{display:grid;grid-template-columns:minmax(80px,.55fr) minmax(105px,.7fr) minmax(150px,1fr) minmax(95px,.55fr) auto;gap:7px;align-items:end;border:1px solid var(--line);border-radius:11px;background:#f8fafc;padding:8px}.individualWorkflow{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.individualWorkflow span{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:1000;color:#475569}.individualWorkflow span:not(:last-child):after{content:'›';font-size:18px;color:#94a3b8}.individualSummary{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px}.individualSummaryTile{border:1px solid var(--line);border-radius:13px;background:#fff;padding:10px;text-align:left}.individualSummaryTile strong{display:block;font-size:22px}.individualSummaryTile span{font-size:11px;color:var(--muted);font-weight:900}.individualSummaryTile.good{border-color:#86efac;background:#f0fdf4}.individualSummaryTile.warn{border-color:#fcd34d;background:#fffbeb}.individualSummaryTile.bad{border-color:#fca5a5;background:#fef2f2}.individualTemplateGrid{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px}.individualTemplateGrid .wide{grid-column:1/-1}.individualReviewTable table{min-width:1180px}.individualReviewTable details{min-width:310px}.individualReviewTable summary{cursor:pointer;font-weight:1000;color:#1d4ed8}.individualMessagePreview{white-space:pre-wrap;border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px;margin-top:8px;line-height:1.45}.individualDiagnostics{display:grid;gap:7px;margin-top:8px}.individualDiagnostic{border:1px solid var(--line);border-left:4px solid #94a3b8;border-radius:10px;background:#f8fafc;padding:8px}.individualDiagnostic.pass{border-left-color:#16a34a}.individualDiagnostic.fail{border-left-color:#dc2626}.individualMatchList{display:grid;gap:4px;margin-top:6px}.individualMatchList span{font-size:11px;color:#475569}.statusReady{color:#166534}.statusBlocked{color:#991b1b}@media(max-width:980px){.individualRuleGrid,.individualTemplateGrid{grid-template-columns:1fr}.individualTemplateGrid .wide{grid-column:auto}.individualVariableRow{grid-template-columns:1fr 1fr}.individualVariableRow .btn{grid-column:1/-1}}
 </style>
 </head>
 <body>
@@ -75,6 +78,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
     <button class="tabBtn" data-tab="rules">2. Build Rules</button>
     <button class="tabBtn" data-tab="reportfiles">3. Add Report Files</button>
     <button class="tabBtn" data-tab="report">4. Action Report</button>
+    <button class="tabBtn" data-tab="individual">Individual Messages</button>
     <button class="tabBtn" data-tab="orgsummary">Organization Opportunities</button>
     <button class="tabBtn" data-tab="coachprofiles">Coach Profiles</button>
     <button class="tabBtn" data-tab="overallcoaching">Overall Coaching Profile</button>
@@ -378,6 +382,45 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
             </div>
           </details>
 
+          <details class="ruleSection" id="individualRuleSection" open>
+            <summary><span class="sectionCopy">Individual message outcomes<small>Configure the measurable Concern and Strength sides used for representative messages.</small></span><span class="pill sectionState" id="individualRuleSectionState">Concern only</span></summary>
+            <div class="ruleSectionContent">
+              <div class="note"><strong>Backward compatible:</strong> older rules keep their existing concern behavior and load with Strength disabled. These settings only add personalized representative messages; coach, team, and bulk reporting stay unchanged.</div>
+              <div class="individualRuleGrid">
+                <section class="individualSide concern">
+                  <div class="row"><h3>Concern</h3><span class="spacer"></span><label class="inlineCheck"><input id="individualConcernEnabled" type="checkbox" checked> Enabled</label></div>
+                  <div class="individualSideGrid">
+                    <label>Metric source<select id="individualConcernSourceType"><option value="legacy">Existing rule result</option><option value="stat">Calculated stat</option><option value="reportField">Report field</option></select></label>
+                    <label id="individualConcernSourceField">Stat / source<input id="individualConcernSource" list="individualMetricOptions" placeholder="Consumer Appointment Rate"></label>
+                    <label id="individualConcernFieldField">Report field<input id="individualConcernField" list="individualReportFieldOptions" placeholder="Appointment Rate"></label>
+                    <label>Comparison<select id="individualConcernOperator"><option value="legacy">Existing rule result</option><option value="lt">&lt;</option><option value="lte">&lt;=</option><option value="gt">&gt;</option><option value="gte">&gt;=</option><option value="eq">=</option><option value="neq">!=</option><option value="between">Between</option></select></label>
+                    <label>Threshold<input id="individualConcernThreshold" placeholder="45%"></label>
+                    <label id="individualConcernThreshold2Field" class="hidden">Second threshold<input id="individualConcernThreshold2" placeholder="55%"></label>
+                    <label class="wide">Concern message<textarea id="individualConcernMessage" placeholder="Your current Appointment Rate is (AR)..."></textarea></label>
+                  </div>
+                  <div class="row"><strong>Concern Variables</strong><span class="spacer"></span><button class="btn small" type="button" id="addIndividualConcernVariableBtn">+ Variable</button></div>
+                  <div class="individualVariableList" id="individualConcernVariables"></div>
+                </section>
+                <section class="individualSide strength">
+                  <div class="row"><h3>Strength</h3><span class="spacer"></span><label class="inlineCheck"><input id="individualStrengthEnabled" type="checkbox"> Enabled</label></div>
+                  <div class="individualSideGrid">
+                    <label>Metric source<select id="individualStrengthSourceType"><option value="stat">Calculated stat</option><option value="reportField">Report field</option><option value="legacy">Existing rule result</option></select></label>
+                    <label id="individualStrengthSourceField">Stat / source<input id="individualStrengthSource" list="individualMetricOptions" placeholder="Consumer Appointment Rate"></label>
+                    <label id="individualStrengthFieldField">Report field<input id="individualStrengthField" list="individualReportFieldOptions" placeholder="Appointment Rate"></label>
+                    <label>Comparison<select id="individualStrengthOperator"><option value="gte">&gt;=</option><option value="gt">&gt;</option><option value="lte">&lt;=</option><option value="lt">&lt;</option><option value="eq">=</option><option value="neq">!=</option><option value="between">Between</option><option value="legacy">Existing rule result</option></select></label>
+                    <label>Threshold<input id="individualStrengthThreshold" placeholder="55%"></label>
+                    <label id="individualStrengthThreshold2Field" class="hidden">Second threshold<input id="individualStrengthThreshold2" placeholder="65%"></label>
+                    <label class="wide">Strength message<textarea id="individualStrengthMessage" placeholder="Your Appointment Rate of (AR) is a strong result..."></textarea></label>
+                  </div>
+                  <div class="row"><strong>Strength Variables</strong><span class="spacer"></span><button class="btn small" type="button" id="addIndividualStrengthVariableBtn">+ Variable</button></div>
+                  <div class="individualVariableList" id="individualStrengthVariables"></div>
+                </section>
+              </div>
+              <datalist id="individualMetricOptions"></datalist><datalist id="individualReportFieldOptions"></datalist>
+              <div class="row"><span class="sub">Built in: (FirstName), (LastName), (FullName), (Email), (ConcernName), (ConcernValue), (StrengthName), (StrengthValue), (ConcernThreshold), (StrengthThreshold), and (CoachName).</span><span class="spacer"></span><button class="btn primary" type="button" id="saveIndividualRuleBtn">Save Concern &amp; Strength</button></div>
+            </div>
+          </details>
+
           <details class="ruleSection" open>
             <summary><span class="sectionCopy">Live representative preview<small>Confirm the selected file rule is pulling the intended people.</small></span><span class="pill blue sectionState">Validation</span></summary>
             <div class="ruleSectionContent">
@@ -488,6 +531,36 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
     <div id="reportBody" style="display:grid;gap:14px"><div class="empty">Add report files and/or select Other Type rules, then click Generate Report.</div></div>
   </section>
 
+  <section class="view" id="view-individual">
+    <div class="stepBanner"><strong>Individual Messages</strong><span class="sub">Generate one reviewable message per representative using the strongest qualifying Concern and Strength. Nothing is sent automatically.</span></div>
+    <div class="card"><div class="individualWorkflow"><span>Load Data</span><span>Configure Rules</span><span>Load Email Roster</span><span>Evaluate Individuals</span><span>Review Messages</span><span>Export</span></div></div>
+    <div class="grid">
+      <div class="card">
+        <h2>Representative Email Roster</h2>
+        <div class="sub">Excel, CSV, or pasted-tabular file with First Name, Last Name, and Username. The roster stays in this browser session and is never sent externally.</div>
+        <label class="drop" id="individualRosterDrop" style="margin-top:10px"><input id="individualRosterInput" type="file" accept=".csv,.tsv,.txt,.xlsx,.xls"><strong>Drop the representative roster here</strong><span class="sub">First Name + Last Name will match the report representative; Username supplies the email.</span><button class="btn primary" type="button">Choose roster</button></label>
+        <div id="individualRosterStatus" class="note" style="margin-top:10px">No roster loaded.</div>
+        <details style="margin-top:10px"><summary style="cursor:pointer;font-weight:1000">Or paste roster rows</summary><label style="margin-top:8px">Paste Excel cells or CSV rows<textarea id="individualRosterPaste" placeholder="First Name&#9;Last Name&#9;Username&#10;John&#9;Smith&#9;john.smith@example.com"></textarea></label><div class="row" style="margin-top:8px"><span class="sub">Include the First Name, Last Name, and Username header row.</span><span class="spacer"></span><button class="btn blue" type="button" id="loadIndividualRosterPasteBtn">Load Pasted Roster</button></div></details>
+      </div>
+      <div class="card">
+        <div class="row"><h2>Message Wrapper</h2><span class="spacer"></span><button class="btn primary" type="button" id="saveIndividualTemplateBtn">Save Wrapper</button></div>
+        <div class="individualTemplateGrid">
+          <label class="wide">Header<textarea id="individualTemplateHeader">Hi (FirstName),</textarea></label>
+          <label>Concern heading<input id="individualConcernHeading" value="Area to Focus On"></label>
+          <label>Strength heading<input id="individualStrengthHeading" value="Great Work"></label>
+          <label class="wide">Footer<textarea id="individualTemplateFooter">Keep up the progress, and please reach out to your Job Coach if you have any questions.</textarea></label>
+          <label class="inlineCheck wide"><input id="individualIncludeNeither" type="checkbox"> Create a wrapper-only message when no behavior qualifies</label>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row"><div><h2 style="margin:0">Representative Email Matching</h2><div class="sub">Unmatched and ambiguous representatives stay visible and are excluded from send-ready exports.</div></div><span class="spacer"></span><button class="btn primary" type="button" id="evaluateIndividualsBtn">Evaluate Individuals</button><button class="btn blue" type="button" id="exportIndividualReviewBtn">Export Review Excel</button><button class="btn good" type="button" id="exportIndividualEmailsBtn">Export Send-Ready Email Files</button></div>
+      <div class="individualSummary" id="individualSummary" style="margin-top:12px"><div class="empty">Load a roster, configure rule outcomes, and evaluate individuals.</div></div>
+      <div class="row" style="margin-top:12px"><label>Show<select id="individualResultFilter"><option value="all">All</option><option value="ready">Ready</option><option value="hasConcern">Has Concern</option><option value="hasStrength">Has Strength</option><option value="both">Concern + Strength</option><option value="concernOnly">Concern Only</option><option value="strengthOnly">Strength Only</option><option value="neither">No Qualifying Behavior</option><option value="missingEmail">Missing Email</option><option value="ambiguous">Ambiguous Match</option><option value="templateError">Template Error</option><option value="missingMetric">Missing Metric</option></select></label><label style="min-width:260px">Find representative<input id="individualResultSearch" type="search" placeholder="Search name, email, concern, or strength"></label></div>
+    </div>
+    <div class="card individualReviewTable" id="individualReview"><div class="empty">No individual evaluation has been run.</div></div>
+  </section>
+
   <section class="view" id="view-orgsummary">
     <div class="stepBanner"><strong>Organization Opportunity Summary</strong><span class="sub">A separate leadership view showing where opportunities are most severe, widespread, concentrated, improving, or declining. It does not change the coach email.</span></div>
     <div class="card orgSummaryControls">
@@ -572,7 +645,12 @@ const state = {
   historyIndex:{occurrences:new Map(),byRepRule:new Map()},
   historyWarnings:[],
   concernHistoryLoad:null,
-  concernHistoryExpanded:false
+  concernHistoryExpanded:false,
+  individualRosterRows:[],
+  individualRosterFileName:'',
+  individualTemplate:null,
+  individualEvaluation:null,
+  individualResults:[]
 };
 const els = {};
 function $(id){ return document.getElementById(id); }
@@ -1164,6 +1242,7 @@ function normalizeRule(rule){
   rule.stats = Array.isArray(rule.stats) ? rule.stats : [];
   rule.guidance = Object.assign({enabled:true,title:'How to understand this report',html:''}, rule.guidance || {});
   if(rule.guidance.enabled == null) rule.guidance.enabled = true;
+  rule.individualMessage = QualtricsIndividualMessages.normalizeRuleConfig(rule);
   rule.createdAt = rule.createdAt || new Date().toISOString();
   rule.updatedAt = rule.updatedAt || rule.createdAt;
   return rule;
@@ -1258,6 +1337,7 @@ function readRuleForm(){
   rule.statCount = statCountFormSnapshot();
   rule.coachingCorrective = coachingCorrectiveFormSnapshot();
   rule.correctiveContext = correctiveContextFormSnapshot();
+  rule.individualMessage = individualRuleFormSnapshot(rule);
   rule.guidance = { enabled:!!els.ruleGuidanceEnabled?.checked, title:(els.ruleGuidanceTitle?.value || 'How to understand this report').trim() || 'How to understand this report', html:sanitizeRichHtml(els.ruleGuidanceEditor?.innerHTML || '') };
   rule.criteria = rule.criteria || [];
   rule.stats = rule.stats || [];
@@ -1357,6 +1437,7 @@ function fillRuleForm(rule){
   if(els.ruleGuidanceTitle) els.ruleGuidanceTitle.value = rule?.guidance?.title || 'How to understand this report';
   if(els.ruleGuidanceEditor) els.ruleGuidanceEditor.innerHTML = rule?.guidance?.html || '';
   renderWeeklyColumnSelectors(rule);
+  fillIndividualRuleForm(rule);
   renderRuleGuidancePreview();
   renderCriteriaChips(); renderCountRuleChips(); renderCoachingLinkChips(); renderCoachPhraseChips(); renderStatAttachChips(); renderStatRuleChips(); renderStatCountRuleChips(); renderCoachingCorrectiveRuleChips(); renderCoachingTypeOptions(); updateRuleTypeVisibility();
   els.sampleHint.textContent = state.currentHeaders.length ? `${state.currentHeaders.length} saved header option(s)` : 'No sample loaded.';
@@ -1433,6 +1514,7 @@ function updateRuleSectionStates(){
   if(els.criteriaSectionState) els.criteriaSectionState.textContent=isHeaderCountRule(rule)?`Count ≥ ${Number(rule.countRule?.minCount??1)}`:isStatRule(rule)?'Stat threshold':isCoachingCorrectiveRule(rule)?'Coaching → corrective':`${rule.criteria?.length||0} rule${(rule.criteria?.length||0)===1?'':'s'}`;
   if(els.coachingSectionState) els.coachingSectionState.textContent=rule.coaching?.mode&&rule.coaching.mode!=='none'?'Linked':'Not linked';
   if(els.statsSectionState) els.statsSectionState.textContent=`${rule.stats?.length||0} check${(rule.stats?.length||0)===1?'':'s'}`;
+  updateIndividualRuleSectionState();
 }
 function ruleGuidanceBlockHtml(rule, email=false){
   rule=rule ? normalizeRule(rule) : null;
@@ -5492,6 +5574,7 @@ function resetNewRuleScratchFields(){
   if(els.statThreshold) els.statThreshold.value='';
   if(els.statWeeks) els.statWeeks.value='10';
   if(els.statAlarmPct) els.statAlarmPct.value='75%';
+  fillIndividualRuleForm(null);
 }
 async function openBlankRuleForm(){
   // Finish the rule currently being edited, then leave saved-rule mode entirely.
@@ -5529,6 +5612,7 @@ function metricSourceValidation(config,label='Stat'){
 }
 function bind(){
   Object.assign(els, Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(e=>[e.id,e])));
+  bindIndividualMessages();
   els.testDocumentedCoachingBtn.onclick=()=>renderCoachingDiagnostics(false);
   els.testAllCoachingRulesBtn.onclick=()=>renderCoachingDiagnostics(true);
   if(els.ruleSearchInput) els.ruleSearchInput.addEventListener('input',renderRules);
@@ -5613,7 +5697,7 @@ async function init(){
   switchTab('keyfiles');
   rebuildCoachAliasIndex();
   renderHireDateControls(); renderCoreChips(); renderDashboardFileList(); renderUploadReadiness(); renderOtherRulePicker(); renderStatCountSelectors(currentRule()); updateStatCountFieldVisibility(); renderReportAudienceControls(); populateOrgSummarySelect(); markRulePreviewStale('Select a saved rule, then use Refresh Preview when ready.');
-  state.db=await openDB(); const [savedRules,savedHistory]=await Promise.all([getAll(STORES.rules),getAll(STORES.history)]); state.rules=savedRules.map(normalizeRule); state.history=savedHistory; rebuildConcernHistoryIndex(); await loadConcernHistorySnapshot(); renderConcernHistoryStatus();
+  state.db=await openDB(); const [savedRules,savedHistory]=await Promise.all([getAll(STORES.rules),getAll(STORES.history)]); state.rules=savedRules.map(normalizeRule); state.history=savedHistory; rebuildConcernHistoryIndex(); await Promise.all([loadConcernHistorySnapshot(),loadIndividualMessageSettings()]); renderConcernHistoryStatus();
   if(state.rules.length) state.currentRuleId=state.rules[0].id;
   renderRules(); renderOtherRulePicker(); if(state.currentRuleId) fillRuleForm(state.rules[0]); else fillRuleForm(null);
   setStatus(`Ready. Loaded ${state.rules.length} saved rule set(s) and ${state.history.length} unique concern appearance(s).`);
