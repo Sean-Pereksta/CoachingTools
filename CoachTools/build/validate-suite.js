@@ -157,6 +157,13 @@ for (const supportFile of ['apps/allstar/qualtrics/generator.html']) {
   if (!exists(supportFile)) fail(`Missing support application file: ${supportFile}`);
   else validateInlineScripts(path.join(ROOT, supportFile), fs.readFileSync(path.join(ROOT, supportFile), 'utf8'));
 }
+for (const supportFile of ['apps/allstar/qualtrics/individual-messages.js', 'apps/allstar/qualtrics/individual-ui.js']) {
+  if (!exists(supportFile)) fail(`Missing support application file: ${supportFile}`);
+  else {
+    try { new Function(fs.readFileSync(path.join(ROOT, supportFile), 'utf8')); }
+    catch (error) { fail(`${supportFile}: JavaScript parse failed: ${error.message}`); }
+  }
+}
 
 const index = exists('index.html') ? fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8') : '';
 if (!index.includes('apps-manifest.js')) fail('index.html must load the file://-safe JavaScript manifest.');
