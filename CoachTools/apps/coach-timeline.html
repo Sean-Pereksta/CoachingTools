@@ -2498,7 +2498,7 @@
     const tf = getTimeframe();
     const st = getSettings();
 
-    if(!S.rawItems.length){
+    if(!S.rawItems.length && !S.docCoachingsAll.length){
       setStatus("", "Waiting…");
       $("kRows").textContent="—";
       $("kCoaches").textContent="—";
