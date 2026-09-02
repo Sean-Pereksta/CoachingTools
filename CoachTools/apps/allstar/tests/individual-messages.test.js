@@ -33,6 +33,8 @@ assert.equal(engine.compareObservation({missing:true},side()).missing,true);
 assert.equal(engine.compareObservation({value:.50,isPercent:true},side({operator:'lt',threshold:'45%'})).pass,false);
 assert.equal(engine.compareObservation({value:.50,isPercent:true},side({operator:'gte',threshold:'55%'})).pass,false,'failing Concern must not imply Strength');
 assert.equal(engine.formatValue({value:0.0083333333,raw:0.0083333333},'duration',false),'12:00');
+assert.deepEqual({maxConcerns:engine.normalizeTemplate({maxConcerns:'2'}).maxConcerns,maxStrengths:engine.normalizeTemplate({maxStrengths:'3'}).maxStrengths},{maxConcerns:2,maxStrengths:3});
+assert.equal(engine.normalizeTemplate({maxConcerns:'0',maxStrengths:'not a number'}).maxStrengths,0,'invalid or zero maximums retain every finding');
 
 const rep={repKey:'john',fullName:'JOHN   SMITH',coach:'Pat Coach'};
 const concernRule=rule('Appointment Rate',side({source:'rate',operator:'lt',threshold:'45%',message:'Your rate is (Rate).',variables:[{name:'Rate',sourceType:'stat',source:'rate',format:'percent'}]}),side({source:'rate',enabled:true,operator:'gte',threshold:'55%',message:'Strong rate (Rate).',variables:[{name:'Rate',sourceType:'stat',source:'rate',format:'percent'}]}));
@@ -58,19 +60,39 @@ const salesRule=rule('Sales',side({enabled:false}),side({source:'sales',enabled:
 result=engine.evaluateAll({representatives:[rep],rules:[qaRule,salesRule],rosterRows:roster,resolver:resolver({'john:QA:qa':80,'john:Sales:sales':30}),template:engine.DEFAULT_TEMPLATE}).results[0];
 assert.ok(result.concern&&result.strength); assert.equal(result.status,'Ready');
 
-// Ranking uses normalized distance, not the lowest or highest raw value.
+// Finding order uses the observed rule volume, with normalized distance as a tie-breaker.
 const smallRaw=rule('Small Raw',side({source:'small',operator:'lt',threshold:'.45',message:'small',variables:[]}),side({enabled:false}));
 const largeRaw=rule('Large Raw',side({source:'large',operator:'lt',threshold:'10',message:'large',variables:[]}),side({enabled:false}));
 result=engine.evaluateAll({representatives:[rep],rules:[smallRaw,largeRaw],rosterRows:roster,resolver:resolver({'john:Small Raw:small':.40,'john:Large Raw:large':5}),template:engine.DEFAULT_TEMPLATE}).results[0];
-assert.equal(result.concern.title,'Large Raw','the smallest raw number alone must not win Concern ranking');
+assert.equal(result.concern.title,'Large Raw','the highest observed Concern volume wins');
 const hugeStrength=rule('Huge Raw',side({enabled:false}),side({source:'huge',enabled:true,operator:'gte',threshold:'90',message:'huge',variables:[]}));
 const rateStrength=rule('Rate Strength',side({enabled:false}),side({source:'betterRate',enabled:true,operator:'gte',threshold:'.55',message:'rate',variables:[]}));
 result=engine.evaluateAll({representatives:[rep],rules:[hugeStrength,rateStrength],rosterRows:roster,resolver:resolver({'john:Huge Raw:huge':100,'john:Rate Strength:betterRate':.70}),template:engine.DEFAULT_TEMPLATE}).results[0];
-assert.equal(result.strength.title,'Rate Strength','the highest raw number alone must not win Strength ranking');
+assert.equal(result.strength.title,'Huge Raw','the highest observed Strength volume wins');
 const tieA=rule('A tie',side({source:'a',threshold:'10',message:'a',variables:[]}),side({enabled:false}));
 const tieB=rule('B tie',side({source:'b',threshold:'20',message:'b',variables:[]}),side({enabled:false}));
 result=engine.evaluateAll({representatives:[rep],rules:[tieA,tieB],rosterRows:roster,resolver:resolver({'john:A tie:a':5,'john:B tie:b':10}),template:engine.DEFAULT_TEMPLATE}).results[0];
-assert.equal(result.concern.title,'A tie','ties must resolve deterministically by rule order');
+assert.equal(result.concern.title,'B tie','observed volume wins when normalized severity is tied');
+const sameVolumeA=rule('First same-volume rule',side({source:'sameA',threshold:'10',message:'first',variables:[]}),side({enabled:false}));
+const sameVolumeB=rule('Second same-volume rule',side({source:'sameB',threshold:'10',message:'second',variables:[]}),side({enabled:false}));
+result=engine.evaluateAll({representatives:[rep],rules:[sameVolumeA,sameVolumeB],rosterRows:roster,resolver:resolver({'john:First same-volume rule:sameA':5,'john:Second same-volume rule:sameB':5}),template:engine.DEFAULT_TEMPLATE}).results[0];
+assert.equal(result.concern.title,'First same-volume rule','equal volume and severity resolve deterministically by rule order');
+
+// Per-message maximums keep only the highest-volume findings while diagnostics retain every rule.
+const discounts=rule('Discounts',side({source:'discounts',operator:'gte',threshold:'1',message:'Discount need.',variables:[]}),side({enabled:false}));
+const insuranceSkip=rule('Skipping Insurance Cash',side({source:'insuranceSkip',operator:'gte',threshold:'1',message:'Insurance Cash need.',variables:[]}),side({enabled:false}));
+const afterpay=rule('Afterpay',side({source:'afterpay',operator:'gte',threshold:'1',message:'Afterpay need.',variables:[]}),side({enabled:false}));
+result=engine.evaluateAll({representatives:[rep],rules:[afterpay,discounts,insuranceSkip],rosterRows:roster,resolver:resolver({'john:Afterpay:afterpay':4,'john:Discounts:discounts':16,'john:Skipping Insurance Cash:insuranceSkip':12}),template:{...engine.DEFAULT_TEMPLATE,maxConcerns:2}}).results[0];
+assert.deepEqual(result.concerns.map(item=>item.title),['Discounts','Skipping Insurance Cash'],'the maximum includes the two highest-volume weaknesses in order');
+assert.equal(result.qualifyingConcernCount,3,'the full qualifying count remains available for review');
+assert.equal(result.concernMessages.length,2); assert.doesNotMatch(result.message,/Afterpay need/);
+assert.equal(result.diagnostics.filter(item=>item.side==='concern'&&item.pass).length,3,'diagnostics retain capped findings');
+const coaching=rule('Coaching Follow-through',side({enabled:false}),side({source:'coaching',enabled:true,operator:'gte',threshold:'1',message:'Coaching strength.',variables:[]}));
+const quality=rule('Call Quality',side({enabled:false}),side({source:'quality',enabled:true,operator:'gte',threshold:'1',message:'Quality strength.',variables:[]}));
+const rapport=rule('Rapport',side({enabled:false}),side({source:'rapport',enabled:true,operator:'gte',threshold:'1',message:'Rapport strength.',variables:[]}));
+result=engine.evaluateAll({representatives:[rep],rules:[coaching,quality,rapport],rosterRows:roster,resolver:resolver({'john:Coaching Follow-through:coaching':7,'john:Call Quality:quality':15,'john:Rapport:rapport':10}),template:{...engine.DEFAULT_TEMPLATE,maxStrengths:2}}).results[0];
+assert.deepEqual(result.strengths.map(item=>item.title),['Call Quality','Rapport'],'the maximum includes the two highest-volume strengths in order');
+assert.equal(result.qualifyingStrengthCount,3); assert.doesNotMatch(result.message,/Coaching strength/);
 
 // Stat, report-field, and built-in variables all substitute; unknown variables block readiness.
 const variableRule=rule('Variables',side({source:'countMetric',threshold:'50',message:'(FirstName) (FullName) (Email) stat=(S) field=(F)',variables:[{name:'S',sourceType:'stat',source:'statSource',format:'number'},{name:'F',sourceType:'reportField',field:'Offers',format:'raw'}]}),side({enabled:false}));

@@ -68,6 +68,7 @@ async function main(){
   let evaluated=engine.evaluateAll({representatives:index.representatives,rules,rosterRows:roster,resolver:resolver(values),template:genericBefore});
   const alex=evaluated.results.find(result=>result.repKey==='a'), dana=evaluated.results.find(result=>result.repKey==='d');
   assert.equal(alex.concerns.length,2,'all qualifying concern rules remain available');
+  assert.equal(alex.qualifyingConcernCount,2,'default zero maximum keeps every qualifying concern');
   assert.deepEqual(alex.concernMessages,['Same final concern.'],'identical final messages are deduplicated');
   assert.equal(alex.greeting,'Hi Alex,','(FirstName) remains resolved from the representative first name');
   assert.equal(alex.areasToFocusOn,'Same final concern.','areas to focus on are exposed as a separate export-ready section');
@@ -77,6 +78,8 @@ async function main(){
   assert.equal(dana.status,'Ready','generic-only representative is review/send ready');
   assert.equal(dana.sendReady,true);
   assert.match(dana.message,/Shared weekly note/);
+  const capped=engine.evaluateAll({representatives:[index.repByKey.get('a')],rules,rosterRows:roster,resolver:resolver(values),template:{...genericBefore,maxConcerns:1,maxStrengths:1}}).results[0];
+  assert.equal(capped.concerns.length,1); assert.equal(capped.qualifyingConcernCount,2); assert.equal(capped.strengths.length,1);
   const genericAfter={...genericBefore,genericPlacement:'after'};
   const after=engine.evaluateAll({representatives:[index.repByKey.get('a')],rules,rosterRows:roster,resolver:resolver(values),template:genericAfter}).results[0];
   assert.ok(after.message.indexOf('Shared weekly note.')>after.message.indexOf('Great Work'),'generic message after findings');

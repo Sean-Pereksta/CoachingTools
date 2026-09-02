@@ -18,7 +18,9 @@
     includeNeither:false,
     includeGeneric:false,
     genericMessage:'',
-    genericPlacement:'before'
+    genericPlacement:'before',
+    maxConcerns:0,
+    maxStrengths:0
   });
   const BUILT_INS=Object.freeze([
     'FirstName','LastName','FullName','Email','ConcernName','ConcernValue','ConcernThreshold',
@@ -115,6 +117,7 @@
   }
   function normalizeTemplate(raw){
     raw=raw||{};
+    const maximum=value=>{ const parsed=Math.floor(Number(value)); return Number.isFinite(parsed)&&parsed>0?Math.min(50,parsed):0; };
     return {
       header:raw.header==null?DEFAULT_TEMPLATE.header:cleanText(raw.header),
       concernHeading:raw.concernHeading==null?DEFAULT_TEMPLATE.concernHeading:cleanText(raw.concernHeading),
@@ -123,7 +126,9 @@
       includeNeither:!!raw.includeNeither,
       includeGeneric:!!raw.includeGeneric,
       genericMessage:cleanText(raw.genericMessage),
-      genericPlacement:raw.genericPlacement==='after'?'after':'before'
+      genericPlacement:raw.genericPlacement==='after'?'after':'before',
+      maxConcerns:maximum(raw.maxConcerns),
+      maxStrengths:maximum(raw.maxStrengths)
     };
   }
 
@@ -304,8 +309,15 @@
   }
   function rankCandidates(candidates){
     return candidates.slice().sort(function(a,b){
+      const aVolume=a?.volume, bVolume=b?.volume, aHasVolume=typeof aVolume==='number'&&Number.isFinite(aVolume), bHasVolume=typeof bVolume==='number'&&Number.isFinite(bVolume);
+      if(aHasVolume!==bHasVolume) return bHasVolume-aHasVolume;
+      if(aHasVolume&&bVolume!==aVolume) return bVolume-aVolume;
       return (b.score-a.score)||(a.ruleIndex-b.ruleIndex)||String(a.rule?.title||'').localeCompare(String(b.rule?.title||''))||String(a.rule?.id||'').localeCompare(String(b.rule?.id||''));
     });
+  }
+  function candidateVolume(observation){
+    const value=Number.isFinite(observation?.value)?observation.value:numeric(observation?.raw,observation?.isPercent);
+    return Number.isFinite(value)?value:null;
   }
   function uniqueRenderedMessages(sideName,candidates,rep,emailMatch,otherCandidate,resolver){
     const seen=new Set(), messages=[], errors=[];
@@ -329,12 +341,14 @@
         const diagnostic={ruleId:rule.id,ruleTitle:rule.title,side:sideName,enabled:true,pass:evaluation.pass,missing:evaluation.missing,score:evaluation.score,condition:conditionLabel(side),reason:evaluation.reason,observation,value:observationDisplay(observation)};
         diagnostics.push(diagnostic);
         if(evaluation.pass){
-          const candidate={rule,ruleIndex,title:rule.title||side.source||side.field||sideName,sideName,side,observation,score:evaluation.score,diagnostic};
+          const candidate={rule,ruleIndex,title:rule.title||side.source||side.field||sideName,sideName,side,observation,volume:candidateVolume(observation),score:evaluation.score,diagnostic};
           (sideName==='concern'?concerns:strengths).push(candidate);
         }
       });
     });
-    const rankedConcerns=rankCandidates(concerns), rankedStrengths=rankCandidates(strengths);
+    const allRankedConcerns=rankCandidates(concerns), allRankedStrengths=rankCandidates(strengths);
+    const rankedConcerns=template.maxConcerns?allRankedConcerns.slice(0,template.maxConcerns):allRankedConcerns;
+    const rankedStrengths=template.maxStrengths?allRankedStrengths.slice(0,template.maxStrengths):allRankedStrengths;
     const concern=rankedConcerns[0]||null, strength=rankedStrengths[0]||null;
     const baseValues=valuesForResult(Object.assign({},rep,{fullName}),emailMatch,concern,strength);
     const concernRendered=uniqueRenderedMessages('Concern',rankedConcerns,rep,emailMatch,strength,resolver);
@@ -364,12 +378,13 @@
       repKey:rep.repKey||rep.key||normalizeName(fullName),fullName,email:emailMatch.email||'',emailMatch,
       coach:rep.coach||rep.coachName||'',team:rep.team||rep.teamName||'',organizationNames:rep.organizationNames||[],
       concern,strength,concerns:rankedConcerns,strengths:rankedStrengths,
+      qualifyingConcernCount:allRankedConcerns.length,qualifyingStrengthCount:allRankedStrengths.length,
       greeting:greeting.text||'',concernHeading:concernHeading.text||'',areasToFocusOn:concernRendered.messages.join('\n\n'),strengthHeading:strengthHeading.text||'',strengthSection:strengthRendered.messages.join('\n\n'),genericMessage:generic.text||'',closing:closing.text||'',
       concernMessages:concernRendered.messages,strengthMessages:strengthRendered.messages,diagnostics,errors,status,sendReady,
       message:hasBehavior||hasGeneric||template.includeNeither?sections.join('\n\n'):'',
       selectionReason:{
-        concern:concern?'Highest normalized Concern severity among qualifying rules.':'No Concern threshold was crossed.',
-        strength:strength?'Highest normalized Strength score among qualifying rules.':'No Strength threshold was crossed.'
+        concern:concern?'Highest observed Concern volume among qualifying rules; normalized severity breaks equal-volume ties.':'No Concern threshold was crossed.',
+        strength:strength?'Highest observed Strength volume among qualifying rules; normalized severity breaks equal-volume ties.':'No Strength threshold was crossed.'
       }
     };
   }
