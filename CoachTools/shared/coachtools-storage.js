@@ -81,6 +81,7 @@
     'myone2.gaps.prefs',
     'myone2.gaps.panelCollapsed',
     'myone2.coachSpeed.columnMap',
+    'myone2.coachSpeed.coordinatorConfig',
     'myone2.coachSpeed.sidebarCollapsed',
     'qaOnlyDash.settings.v6',
     'impactTool.activeTab',
