@@ -15,7 +15,10 @@
     concernHeading:'Area to Focus On',
     strengthHeading:'Great Work',
     footer:'Keep up the progress, and please reach out to your Job Coach if you have any questions.',
-    includeNeither:false
+    includeNeither:false,
+    includeGeneric:false,
+    genericMessage:'',
+    genericPlacement:'before'
   });
   const BUILT_INS=Object.freeze([
     'FirstName','LastName','FullName','Email','ConcernName','ConcernValue','ConcernThreshold',
@@ -117,8 +120,75 @@
       concernHeading:raw.concernHeading==null?DEFAULT_TEMPLATE.concernHeading:cleanText(raw.concernHeading),
       strengthHeading:raw.strengthHeading==null?DEFAULT_TEMPLATE.strengthHeading:cleanText(raw.strengthHeading),
       footer:raw.footer==null?DEFAULT_TEMPLATE.footer:cleanText(raw.footer),
-      includeNeither:!!raw.includeNeither
+      includeNeither:!!raw.includeNeither,
+      includeGeneric:!!raw.includeGeneric,
+      genericMessage:cleanText(raw.genericMessage),
+      genericPlacement:raw.genericPlacement==='after'?'after':'before'
     };
+  }
+
+  function scopeSet(value){ return value instanceof Set?value:new Set(Array.isArray(value)?value:[]); }
+  function scopeKey(value){ return normalizeName(value); }
+  function buildScopeIndex(representatives,organizations){
+    const sourceOrganizations=(organizations||[]).map(function(raw,index){
+      const id=cleanText(raw?.id||raw?.name)||`organization-${index+1}`, name=cleanText(raw?.name)||id;
+      return {id,name,coachNames:[...new Set((raw?.coachNames||raw?.coaches||[]).map(cleanText).filter(Boolean))],coachKeys:new Set(),repKeys:new Set(),search:scopeKey(`${name} ${id}`)};
+    });
+    const organizationById=new Map(), organizationByName=new Map(), organizationsByCoach=new Map();
+    for(const organization of sourceOrganizations){
+      organizationById.set(organization.id,organization); organizationByName.set(scopeKey(organization.name),organization);
+      for(const coachName of organization.coachNames){
+        const coachKey=scopeKey(coachName); if(!coachKey) continue;
+        organization.coachKeys.add(coachKey);
+        if(!organizationsByCoach.has(coachKey)) organizationsByCoach.set(coachKey,new Set());
+        organizationsByCoach.get(coachKey).add(organization.id);
+      }
+    }
+    const repByKey=new Map(), coachByKey=new Map();
+    for(const raw of representatives||[]){
+      const fullName=cleanText(raw?.fullName||raw?.name||raw?.repName), repKey=cleanText(raw?.repKey||raw?.key)||normalizeName(fullName);
+      if(!repKey||!fullName) continue;
+      const coach=cleanText(raw?.coach||raw?.coachName), coachKey=scopeKey(coach), team=cleanText(raw?.team||raw?.teamName);
+      const organizationIds=new Set();
+      for(const value of [raw?.organizationId,raw?.organization,raw?.organizationName,raw?.org]){
+        const direct=organizationById.get(cleanText(value))||organizationByName.get(scopeKey(value)); if(direct) organizationIds.add(direct.id);
+      }
+      for(const id of organizationsByCoach.get(coachKey)||[]) organizationIds.add(id);
+      const organizationNames=[...organizationIds].map(id=>organizationById.get(id)?.name).filter(Boolean);
+      const rep=Object.assign({},raw,{repKey,fullName,coach,coachKey,team,organizationIds,organizationNames,
+        normalizedSearch:scopeKey(`${fullName} ${coach} ${team} ${organizationNames.join(' ')}`)});
+      const existing=repByKey.get(repKey);
+      if(existing){
+        if(!existing.coach&&coach){ existing.coach=coach; existing.coachKey=coachKey; }
+        if(!existing.team&&team) existing.team=team;
+        for(const id of organizationIds) existing.organizationIds.add(id);
+        existing.organizationNames=[...existing.organizationIds].map(id=>organizationById.get(id)?.name).filter(Boolean);
+        existing.normalizedSearch=scopeKey(`${existing.fullName} ${existing.coach} ${existing.team} ${existing.organizationNames.join(' ')}`);
+        continue;
+      }
+      repByKey.set(repKey,rep);
+    }
+    for(const rep of repByKey.values()){
+      for(const id of rep.organizationIds) organizationById.get(id)?.repKeys.add(rep.repKey);
+      if(rep.coachKey){
+        if(!coachByKey.has(rep.coachKey)) coachByKey.set(rep.coachKey,{key:rep.coachKey,name:rep.coach||'Unassigned',repKeys:new Set(),organizationIds:new Set(),search:scopeKey(`${rep.coach} ${rep.team} ${rep.organizationNames.join(' ')}`)});
+        const coach=coachByKey.get(rep.coachKey); coach.repKeys.add(rep.repKey); for(const id of rep.organizationIds) coach.organizationIds.add(id);
+      }
+    }
+    const indexedOrganizations=sourceOrganizations.sort((a,b)=>a.name.localeCompare(b.name));
+    const coaches=[...coachByKey.values()].sort((a,b)=>a.name.localeCompare(b.name));
+    const indexedRepresentatives=[...repByKey.values()].sort((a,b)=>a.fullName.localeCompare(b.fullName));
+    return {organizations:indexedOrganizations,organizationById,coaches,coachByKey,representatives:indexedRepresentatives,repByKey,allRepKeys:indexedRepresentatives.map(rep=>rep.repKey)};
+  }
+  function resolveScope(index,selection){
+    selection=selection||{};
+    const organizationIds=scopeSet(selection.organizationIds), coachKeys=scopeSet(selection.coachKeys), includeRepKeys=scopeSet(selection.includeRepKeys), excludeRepKeys=scopeSet(selection.excludeRepKeys);
+    const hasGroupSelection=organizationIds.size>0||coachKeys.size>0, defaultAll=selection.allByDefault==null?!includeRepKeys.size:selection.allByDefault!==false, selected=new Set(hasGroupSelection||!defaultAll?[]:(index?.allRepKeys||[]));
+    for(const id of organizationIds) for(const repKey of index?.organizationById?.get(id)?.repKeys||[]) selected.add(repKey);
+    for(const key of coachKeys) for(const repKey of index?.coachByKey?.get(key)?.repKeys||[]) selected.add(repKey);
+    for(const repKey of includeRepKeys) if(index?.repByKey?.has(repKey)) selected.add(repKey);
+    for(const repKey of excludeRepKeys) selected.delete(repKey);
+    return (index?.representatives||[]).filter(rep=>selected.has(rep.repKey));
   }
 
   function numeric(value,percentContext){
@@ -237,8 +307,17 @@
       return (b.score-a.score)||(a.ruleIndex-b.ruleIndex)||String(a.rule?.title||'').localeCompare(String(b.rule?.title||''))||String(a.rule?.id||'').localeCompare(String(b.rule?.id||''));
     });
   }
-  function evaluateRepresentative(rep,rules,rosterIndex,resolver,template){
-    rules=(rules||[]).map(normalizeRule); template=normalizeTemplate(template);
+  function uniqueRenderedMessages(sideName,candidates,rep,emailMatch,otherCandidate,resolver){
+    const seen=new Set(), messages=[], errors=[];
+    for(const candidate of candidates){
+      const values=sideName==='Concern'?valuesForResult(rep,emailMatch,candidate,otherCandidate):valuesForResult(rep,emailMatch,otherCandidate,candidate);
+      const rendered=resolveMessage(sideName,candidate,rep,emailMatch,values,resolver); errors.push(...rendered.errors);
+      const text=cleanText(rendered.text), normalized=text.replace(/\s+/g,' ').toLowerCase();
+      if(text&&!seen.has(normalized)){ seen.add(normalized); messages.push(text); }
+    }
+    return {messages,errors:[...new Set(errors)]};
+  }
+  function evaluateRepresentativePrepared(rep,rules,rosterIndex,resolver,template){
     const fullName=rep.fullName||rep.name||rep.repName||'', emailMatch=matchRosterName(fullName,rosterIndex);
     const diagnostics=[], concerns=[], strengths=[];
     rules.forEach(function(rule,ruleIndex){
@@ -255,40 +334,63 @@
         }
       });
     });
-    const concern=rankCandidates(concerns)[0]||null, strength=rankCandidates(strengths)[0]||null;
+    const rankedConcerns=rankCandidates(concerns), rankedStrengths=rankCandidates(strengths);
+    const concern=rankedConcerns[0]||null, strength=rankedStrengths[0]||null;
     const baseValues=valuesForResult(Object.assign({},rep,{fullName}),emailMatch,concern,strength);
-    const concernMessage=resolveMessage('Concern',concern,rep,emailMatch,baseValues,resolver);
-    const strengthMessage=resolveMessage('Strength',strength,rep,emailMatch,baseValues,resolver);
+    const concernRendered=uniqueRenderedMessages('Concern',rankedConcerns,rep,emailMatch,strength,resolver);
+    const strengthRendered=uniqueRenderedMessages('Strength',rankedStrengths,rep,emailMatch,concern,resolver);
     const wrapperParts=[replaceVariables(template.header,baseValues,BUILT_INS)];
-    if(concern){ wrapperParts.push(replaceVariables(template.concernHeading,baseValues,BUILT_INS),concernMessage); }
-    if(strength){ wrapperParts.push(replaceVariables(template.strengthHeading,baseValues,BUILT_INS),strengthMessage); }
+    if(concern) wrapperParts.push(replaceVariables(template.concernHeading,baseValues,BUILT_INS));
+    if(strength) wrapperParts.push(replaceVariables(template.strengthHeading,baseValues,BUILT_INS));
+    const generic=template.includeGeneric&&template.genericMessage?replaceVariables(template.genericMessage,baseValues,BUILT_INS):{text:'',errors:[]};
     wrapperParts.push(replaceVariables(template.footer,baseValues,BUILT_INS));
-    const errors=[...new Set(wrapperParts.flatMap(part=>part.errors||[]))];
+    const errors=[...new Set(wrapperParts.flatMap(part=>part.errors||[]).concat(concernRendered.errors,strengthRendered.errors,generic.errors||[]))];
     const sections=[];
     if(wrapperParts[0].text) sections.push(wrapperParts[0].text);
+    if(generic.text&&template.genericPlacement==='before') sections.push(generic.text);
     let position=1;
-    if(concern){ const heading=wrapperParts[position++].text; const message=wrapperParts[position++].text; if(heading) sections.push(heading); if(message) sections.push(message); }
-    if(strength){ const heading=wrapperParts[position++].text; const message=wrapperParts[position++].text; if(heading) sections.push(heading); if(message) sections.push(message); }
+    if(concern){ const heading=wrapperParts[position++].text; if(heading) sections.push(heading); sections.push(...concernRendered.messages); }
+    if(strength){ const heading=wrapperParts[position++].text; if(heading) sections.push(heading); sections.push(...strengthRendered.messages); }
+    if(generic.text&&template.genericPlacement==='after') sections.push(generic.text);
     const footer=wrapperParts[wrapperParts.length-1].text; if(footer) sections.push(footer);
-    const hasBehavior=!!(concern||strength), anyMissingMetric=diagnostics.some(item=>item.enabled&&item.missing);
+    const hasBehavior=!!(concern||strength), hasGeneric=!!generic.text, anyMissingMetric=diagnostics.some(item=>item.enabled&&item.missing);
     let status='Ready';
     if(emailMatch.status==='ambiguous') status='Ambiguous Email';
     else if(emailMatch.status!=='matched') status='Missing Email';
     else if(errors.length) status='Template Error';
-    else if(!hasBehavior) status=anyMissingMetric?'Missing Metric':'No Qualifying Behavior';
-    const sendReady=status==='Ready'&&hasBehavior;
+    else if(!hasBehavior&&!hasGeneric) status=anyMissingMetric?'Missing Metric':'No Qualifying Behavior';
+    const sendReady=status==='Ready'&&(hasBehavior||hasGeneric);
     return {
       repKey:rep.repKey||rep.key||normalizeName(fullName),fullName,email:emailMatch.email||'',emailMatch,
-      coach:rep.coach||rep.coachName||'',concern,strength,diagnostics,errors,status,sendReady,
-      message:hasBehavior||template.includeNeither?sections.join('\n\n'):'',
+      coach:rep.coach||rep.coachName||'',team:rep.team||rep.teamName||'',organizationNames:rep.organizationNames||[],
+      concern,strength,concerns:rankedConcerns,strengths:rankedStrengths,concernMessages:concernRendered.messages,strengthMessages:strengthRendered.messages,genericMessage:generic.text||'',diagnostics,errors,status,sendReady,
+      message:hasBehavior||hasGeneric||template.includeNeither?sections.join('\n\n'):'',
       selectionReason:{
         concern:concern?'Highest normalized Concern severity among qualifying rules.':'No Concern threshold was crossed.',
         strength:strength?'Highest normalized Strength score among qualifying rules.':'No Strength threshold was crossed.'
       }
     };
   }
+  function evaluateRepresentative(rep,rules,rosterIndex,resolver,template){
+    return evaluateRepresentativePrepared(rep,(rules||[]).map(normalizeRule),rosterIndex,resolver,normalizeTemplate(template));
+  }
+  function reviewCategory(result){
+    if(result?.concern&&result?.strength) return 'mixed';
+    if(result?.concern) return 'attention';
+    if(result?.strength) return 'strength';
+    return 'noFinding';
+  }
+  function compareReviewPriority(a,b){
+    const order={attention:0,mixed:1,strength:2,noFinding:3}, categoryDiff=order[reviewCategory(a)]-order[reviewCategory(b)]; if(categoryDiff) return categoryDiff;
+    const concernScore=item=>Math.max(0,...(item?.concerns||[]).map(candidate=>Number(candidate.score)||0));
+    const scoreDiff=concernScore(b)-concernScore(a); if(scoreDiff) return scoreDiff;
+    const concernCountDiff=(b?.concerns?.length||0)-(a?.concerns?.length||0); if(concernCountDiff) return concernCountDiff;
+    const strengthScoreDiff=Math.max(0,...(b?.strengths||[]).map(candidate=>Number(candidate.score)||0))-Math.max(0,...(a?.strengths||[]).map(candidate=>Number(candidate.score)||0)); if(strengthScoreDiff) return strengthScoreDiff;
+    return String(a?.fullName||'').localeCompare(String(b?.fullName||''))||String(a?.repKey||'').localeCompare(String(b?.repKey||''));
+  }
+  function sortReviewResults(results){ return (results||[]).slice().sort(compareReviewPriority); }
   function summarize(results){
-    const summary={evaluated:results.length,matched:0,unmatched:0,ambiguous:0,ready:0,concern:0,strength:0,both:0,neither:0,templateErrors:0,missingMetrics:0};
+    const summary={evaluated:results.length,matched:0,unmatched:0,ambiguous:0,ready:0,concern:0,strength:0,both:0,neither:0,attention:0,mixed:0,strengthOnly:0,noFinding:0,templateErrors:0,missingMetrics:0};
     for(const result of results){
       if(result.emailMatch.status==='matched') summary.matched++;
       else if(result.emailMatch.status==='ambiguous') summary.ambiguous++;
@@ -298,6 +400,7 @@
       if(result.strength) summary.strength++;
       if(result.concern&&result.strength) summary.both++;
       if(!result.concern&&!result.strength) summary.neither++;
+      const category=reviewCategory(result); summary[category==='strength'?'strengthOnly':category]++;
       if(result.status==='Template Error') summary.templateErrors++;
       if(result.status==='Missing Metric') summary.missingMetrics++;
     }
@@ -306,13 +409,30 @@
   function evaluateAll(options){
     options=options||{};
     if(!options.resolver||typeof options.resolver.resolveObservation!=='function'||typeof options.resolver.resolveVariable!=='function') throw new Error('An Individual Message data resolver is required.');
-    const index=buildRosterIndex(options.rosterRows||[]);
-    const results=(options.representatives||[]).map(rep=>evaluateRepresentative(rep,options.rules||[],index,options.resolver,options.template));
+    const index=options.rosterIndex||buildRosterIndex(options.rosterRows||[]), rules=(options.rules||[]).map(normalizeRule), template=normalizeTemplate(options.template);
+    const results=(options.representatives||[]).map(rep=>evaluateRepresentativePrepared(rep,rules,index,options.resolver,template));
+    results.sort((a,b)=>String(a.fullName).localeCompare(String(b.fullName)));
+    return {rosterIndex:index,results,summary:summarize(results)};
+  }
+  async function evaluateAllAsync(options){
+    options=options||{};
+    if(!options.resolver||typeof options.resolver.resolveObservation!=='function'||typeof options.resolver.resolveVariable!=='function') throw new Error('An Individual Message data resolver is required.');
+    const index=options.rosterIndex||buildRosterIndex(options.rosterRows||[]), rules=(options.rules||[]).map(normalizeRule), template=normalizeTemplate(options.template), representatives=options.representatives||[], results=[];
+    const sliceMs=Math.max(4,Number(options.sliceMs)||12), chunkSize=Math.max(1,Number(options.chunkSize)||25), yieldToBrowser=typeof options.yieldToBrowser==='function'?options.yieldToBrowser:()=>new Promise(resolve=>setTimeout(resolve,0));
+    let sliceStarted=Date.now();
+    for(let i=0;i<representatives.length;i++){
+      if(options.signal?.aborted||options.cancelled?.()){ const error=new Error('Individual review cancelled.'); error.name='AbortError'; throw error; }
+      results.push(evaluateRepresentativePrepared(representatives[i],rules,index,options.resolver,template));
+      const completed=i+1, shouldYield=completed%chunkSize===0||Date.now()-sliceStarted>=sliceMs;
+      if(shouldYield||completed===representatives.length){ options.onProgress?.({completed,total:representatives.length,fraction:representatives.length?completed/representatives.length:1}); }
+      if(shouldYield&&completed<representatives.length){ await yieldToBrowser(); sliceStarted=Date.now(); }
+    }
     results.sort((a,b)=>String(a.fullName).localeCompare(String(b.fullName)));
     return {rosterIndex:index,results,summary:summarize(results)};
   }
   function filterResult(result,filter){
     if(!filter||filter==='all') return true;
+    if(['attention','mixed','strength','noFinding'].includes(filter)) return reviewCategory(result)===filter;
     if(filter==='ready') return result.sendReady;
     if(filter==='hasConcern') return !!result.concern;
     if(filter==='hasStrength') return !!result.strength;
@@ -321,6 +441,7 @@
     if(filter==='strengthOnly') return !result.concern&&!!result.strength;
     if(filter==='neither') return !result.concern&&!result.strength;
     if(filter==='missingEmail') return result.status==='Missing Email';
+    if(filter==='emailIssue') return result.status==='Missing Email'||result.status==='Ambiguous Email';
     if(filter==='ambiguous') return result.status==='Ambiguous Email';
     if(filter==='templateError') return result.status==='Template Error';
     if(filter==='missingMetric') return result.status==='Missing Metric';
@@ -329,7 +450,8 @@
 
   return {
     SCHEMA_VERSION,DEFAULT_TEMPLATE,BUILT_INS,normalizeName,splitName,rosterRows,buildRosterIndex,matchRosterName,
+    buildScopeIndex,resolveScope,reviewCategory,compareReviewPriority,sortReviewResults,
     normalizeVariable,normalizeSide,normalizeRuleConfig,normalizeRule,normalizeTemplate,numeric,compareObservation,
-    operatorLabel,conditionLabel,formatValue,replaceVariables,evaluateRepresentative,evaluateAll,summarize,filterResult
+    operatorLabel,conditionLabel,formatValue,replaceVariables,evaluateRepresentative,evaluateAll,evaluateAllAsync,summarize,filterResult
   };
 });
