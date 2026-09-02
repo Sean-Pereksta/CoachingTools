@@ -132,29 +132,49 @@ function clearQualtricsEmailData(){
 }
 
 let qualtricsGeneratorLoadPromise=null;
+let qualtricsGeneratorReadyTimer=null;
+function validateQualtricsGeneratorHtml(html){
+  if(typeof html!=='string'||!html.trim()) throw new Error('The final Qualtrics generator source is empty.');
+  for(const id of ['view-keyfiles','qaInput','coachingInput','checklistInput','weeklyStatsInput']) if(!html.includes(`id="${id}"`)) throw new Error(`The Qualtrics generator is missing ${id}.`);
+  const inlineScripts=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(match=>match[1]).filter(source=>source.trim());
+  if(!inlineScripts.length) throw new Error('The Qualtrics generator contains no executable scripts.');
+  inlineScripts.forEach((source,index)=>{ try{ new Function(source); }catch(error){ throw new Error(`Embedded Qualtrics script ${index+1} is invalid: ${error.message||error}`); } });
+  return html;
+}
 function mountQualtricsGeneratorHtml(html){
   if(!els.qualtricsEmailFrame) throw new Error('The Qualtrics iframe is unavailable.');
-  if(typeof html!=='string'||!html.trim()) throw new Error('The final Qualtrics generator source is empty.');
-  els.qualtricsEmailFrame.srcdoc=html;
+  els.qualtricsEmailFrame.srcdoc=validateQualtricsGeneratorHtml(html);
 }
 function loadQualtricsGeneratorFrame(){
   if(qualtricsGeneratorLoadPromise) return qualtricsGeneratorLoadPromise;
-  qualtricsGeneratorLoadPromise=new Promise((resolve,reject)=>{
+  qualtricsGeneratorLoadPromise=new Promise(resolve=>{
+    let finished=false;
+    const fallback=reason=>{
+      if(finished) return; finished=true;
+      const direct=els.qualtricsEmailFrame?.dataset?.src||'qualtrics/generator.html';
+      if(els.qualtricsEmailFrame){ els.qualtricsEmailFrame.removeAttribute('srcdoc'); els.qualtricsEmailFrame.src=direct; }
+      if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=`The generated Qualtrics carrier could not be used (${reason}). Opening the standalone generator so Add 4 Key Files remains available…`;
+      console.error('[Qualtrics Generator] Carrier recovery',reason);
+      resolve();
+    };
     const ready=()=>{
-      try{ mountQualtricsGeneratorHtml(window.__ALLSTAR_QUALTRICS_GENERATOR_HTML__); resolve(); }
-      catch(err){ reject(err); }
+      try{
+        mountQualtricsGeneratorHtml(window.__ALLSTAR_QUALTRICS_GENERATOR_HTML__); finished=true; resolve();
+        clearTimeout(qualtricsGeneratorReadyTimer);
+        qualtricsGeneratorReadyTimer=setTimeout(()=>{
+          if(state.qualtricsReady) return;
+          const direct=els.qualtricsEmailFrame?.dataset?.src||'qualtrics/generator.html';
+          if(els.qualtricsEmailFrame){ els.qualtricsEmailFrame.removeAttribute('srcdoc'); els.qualtricsEmailFrame.src=direct; }
+          if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent='The embedded Qualtrics workspace did not finish starting. Retrying with the standalone generator so Add 4 Key Files can load…';
+        },12000);
+      }catch(err){ fallback(err?.message||String(err)); }
     };
     if(typeof window.__ALLSTAR_QUALTRICS_GENERATOR_HTML__==='string') return ready();
     const carrier=document.createElement('script');
-    carrier.src='qualtrics/generator-source.js';
+    carrier.src=`qualtrics/generator-source.js?v=${Date.now().toString(36)}`;
     carrier.async=true;
     carrier.onload=ready;
-    carrier.onerror=()=>{
-      const fallback=els.qualtricsEmailFrame?.dataset?.src||'qualtrics/generator.html';
-      if(els.qualtricsEmailFrame) els.qualtricsEmailFrame.src=fallback;
-      if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent='The storage-compatible Qualtrics carrier could not load. Opening the standalone generator directly…';
-      resolve();
-    };
+    carrier.onerror=()=>fallback('the carrier file did not load');
     document.head.appendChild(carrier);
   });
   return qualtricsGeneratorLoadPromise;
@@ -174,7 +194,7 @@ function openQualtricsEmailWorkspace(){
 
 function handleQualtricsMessage(event){
   if(event.source!==els.qualtricsEmailFrame?.contentWindow) return; const data=event.data||{};
-  if(data.type==='qualtrics-generator-ready'){ state.qualtricsReady=true; sendQualtricsCoreFiles(false); return; }
+  if(data.type==='qualtrics-generator-ready'){ clearTimeout(qualtricsGeneratorReadyTimer); qualtricsGeneratorReadyTimer=null; state.qualtricsReady=true; sendQualtricsCoreFiles(false); return; }
   if(data.type==='qualtrics-hire-date-source-request'){ sendQualtricsHireDateSource(data); return; }
   if(data.type==='qualtrics-key-files-progress'){ if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=data.message||'Connecting All-Star data…'; return; }
   if(data.type==='qualtrics-key-files-complete'){ const c=data.counts||{}; state.qualtricsCoreConnectedSignature=state.qualtricsCorePendingSignature||qualtricsCoreSourceSignature(); state.qualtricsCorePendingSignature=''; if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=`Connected: ${Number(c.qa||0).toLocaleString()} KPI · ${Number(c.coaching||0).toLocaleString()} coaching · ${Number(c.checklist||0).toLocaleString()} checklist. Weekly Stats remain manual. Nothing was previewed or generated.`; return; }
