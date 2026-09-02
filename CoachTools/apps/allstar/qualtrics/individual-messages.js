@@ -339,20 +339,20 @@
     const baseValues=valuesForResult(Object.assign({},rep,{fullName}),emailMatch,concern,strength);
     const concernRendered=uniqueRenderedMessages('Concern',rankedConcerns,rep,emailMatch,strength,resolver);
     const strengthRendered=uniqueRenderedMessages('Strength',rankedStrengths,rep,emailMatch,concern,resolver);
-    const wrapperParts=[replaceVariables(template.header,baseValues,BUILT_INS)];
-    if(concern) wrapperParts.push(replaceVariables(template.concernHeading,baseValues,BUILT_INS));
-    if(strength) wrapperParts.push(replaceVariables(template.strengthHeading,baseValues,BUILT_INS));
+    const greeting=replaceVariables(template.header,baseValues,BUILT_INS);
+    const concernHeading=concern?replaceVariables(template.concernHeading,baseValues,BUILT_INS):{text:'',errors:[]};
+    const strengthHeading=strength?replaceVariables(template.strengthHeading,baseValues,BUILT_INS):{text:'',errors:[]};
     const generic=template.includeGeneric&&template.genericMessage?replaceVariables(template.genericMessage,baseValues,BUILT_INS):{text:'',errors:[]};
-    wrapperParts.push(replaceVariables(template.footer,baseValues,BUILT_INS));
+    const closing=replaceVariables(template.footer,baseValues,BUILT_INS);
+    const wrapperParts=[greeting,concernHeading,strengthHeading,generic,closing];
     const errors=[...new Set(wrapperParts.flatMap(part=>part.errors||[]).concat(concernRendered.errors,strengthRendered.errors,generic.errors||[]))];
     const sections=[];
-    if(wrapperParts[0].text) sections.push(wrapperParts[0].text);
+    if(greeting.text) sections.push(greeting.text);
     if(generic.text&&template.genericPlacement==='before') sections.push(generic.text);
-    let position=1;
-    if(concern){ const heading=wrapperParts[position++].text; if(heading) sections.push(heading); sections.push(...concernRendered.messages); }
-    if(strength){ const heading=wrapperParts[position++].text; if(heading) sections.push(heading); sections.push(...strengthRendered.messages); }
+    if(concern){ if(concernHeading.text) sections.push(concernHeading.text); sections.push(...concernRendered.messages); }
+    if(strength){ if(strengthHeading.text) sections.push(strengthHeading.text); sections.push(...strengthRendered.messages); }
     if(generic.text&&template.genericPlacement==='after') sections.push(generic.text);
-    const footer=wrapperParts[wrapperParts.length-1].text; if(footer) sections.push(footer);
+    if(closing.text) sections.push(closing.text);
     const hasBehavior=!!(concern||strength), hasGeneric=!!generic.text, anyMissingMetric=diagnostics.some(item=>item.enabled&&item.missing);
     let status='Ready';
     if(emailMatch.status==='ambiguous') status='Ambiguous Email';
@@ -363,7 +363,9 @@
     return {
       repKey:rep.repKey||rep.key||normalizeName(fullName),fullName,email:emailMatch.email||'',emailMatch,
       coach:rep.coach||rep.coachName||'',team:rep.team||rep.teamName||'',organizationNames:rep.organizationNames||[],
-      concern,strength,concerns:rankedConcerns,strengths:rankedStrengths,concernMessages:concernRendered.messages,strengthMessages:strengthRendered.messages,genericMessage:generic.text||'',diagnostics,errors,status,sendReady,
+      concern,strength,concerns:rankedConcerns,strengths:rankedStrengths,
+      greeting:greeting.text||'',concernHeading:concernHeading.text||'',areasToFocusOn:concernRendered.messages.join('\n\n'),strengthHeading:strengthHeading.text||'',strengthSection:strengthRendered.messages.join('\n\n'),genericMessage:generic.text||'',closing:closing.text||'',
+      concernMessages:concernRendered.messages,strengthMessages:strengthRendered.messages,diagnostics,errors,status,sendReady,
       message:hasBehavior||hasGeneric||template.includeNeither?sections.join('\n\n'):'',
       selectionReason:{
         concern:concern?'Highest normalized Concern severity among qualifying rules.':'No Concern threshold was crossed.',

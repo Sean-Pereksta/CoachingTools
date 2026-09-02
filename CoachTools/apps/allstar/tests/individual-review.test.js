@@ -23,6 +23,7 @@ function resolver(values){
 }
 
 async function main(){
+  assert.equal(engine.replaceVariables('Hi (firstname),',{FirstName:'Alex'},engine.BUILT_INS).text,'Hi Alex,','first-name wrapper tokens remain case-insensitive');
   const representatives=[
     {repKey:'a',fullName:'Alex Able',coach:'Coach One',team:'North'},
     {repKey:'b',fullName:'Blair Baker',coach:'Coach Two',team:'South'},
@@ -68,6 +69,10 @@ async function main(){
   const alex=evaluated.results.find(result=>result.repKey==='a'), dana=evaluated.results.find(result=>result.repKey==='d');
   assert.equal(alex.concerns.length,2,'all qualifying concern rules remain available');
   assert.deepEqual(alex.concernMessages,['Same final concern.'],'identical final messages are deduplicated');
+  assert.equal(alex.greeting,'Hi Alex,','(FirstName) remains resolved from the representative first name');
+  assert.equal(alex.areasToFocusOn,'Same final concern.','areas to focus on are exposed as a separate export-ready section');
+  assert.equal(alex.strengthSection,'Excellent result.','strength findings are exposed as a separate export-ready section');
+  assert.match(alex.closing,/Keep up the progress/,'closing wrapper is exposed separately');
   assert.ok(alex.message.indexOf('Shared weekly note.')<alex.message.indexOf('Area to Focus On'),'generic message before findings');
   assert.equal(dana.status,'Ready','generic-only representative is review/send ready');
   assert.equal(dana.sendReady,true);
