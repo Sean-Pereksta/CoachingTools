@@ -113,6 +113,59 @@ async function saveIndividualMessageSettings(){
   toast('Individual message wrapper saved locally.');
 }
 
+function individualRuleSelection(){
+  if(!(state.individualSelectedRuleIds instanceof Set)) state.individualSelectedRuleIds=new Set(state.individualSelectedRuleIds||[]);
+  for(const id of [...state.individualSelectedRuleIds]) if(!state.rules.some(rule=>rule.id===id)) state.individualSelectedRuleIds.delete(id);
+  return state.individualSelectedRuleIds;
+}
+function individualReportSelection(){
+  if(!(state.individualSelectedReportFileIds instanceof Set)) state.individualSelectedReportFileIds=new Set(state.individualSelectedReportFileIds||[]);
+  for(const id of [...state.individualSelectedReportFileIds]) if(!state.dashboardFiles.some(file=>file.id===id)) state.individualSelectedReportFileIds.delete(id);
+  return state.individualSelectedReportFileIds;
+}
+function individualRuleForFile(file){ return state.rules.find(rule=>rule.id===file?.ruleId)||matchRuleForFile(file?.fileName)||null; }
+function individualSelectedRules(){ const selected=individualRuleSelection(); return state.rules.filter(rule=>selected.has(rule.id)); }
+function individualSelectedReportFiles(){ const selected=individualReportSelection(); return state.dashboardFiles.filter(file=>selected.has(file.id)&&file.status!=='error'); }
+function renderIndividualReportOptions(){
+  if(!els.individualReportOptions) return;
+  const selected=individualReportSelection(), files=state.dashboardFiles||[];
+  els.individualReportOptions.innerHTML=files.map(file=>{
+    const rule=individualRuleForFile(file), disabled=file.status==='error';
+    return `<label class="individualSelectionOption"><input type="checkbox" data-individual-report-file="${esc(file.id)}"${selected.has(file.id)&&!disabled?' checked':''}${disabled?' disabled':''}><span><strong>${esc(file.fileName)}</strong><small>${file.error?esc(file.error):`${(file.rows||[]).length.toLocaleString()} rows • ${esc(file.sheetName||'report')}`}</small><span class="pill ${rule?'good':disabled?'bad':'warn'}">${rule?`Matched: ${esc(rule.title)}`:disabled?'File error':'No matching saved rule'}</span></span></label>`;
+  }).join('')||'<div class="empty compact">No report files uploaded.</div>';
+  els.individualReportOptions.querySelectorAll('[data-individual-report-file]').forEach(input=>input.onchange=()=>{ input.checked?selected.add(input.dataset.individualReportFile):selected.delete(input.dataset.individualReportFile); invalidateIndividualRunCache('individual report selection changed'); renderIndividualDataSelectionSummary(); renderIndividualRuleOptions(); });
+  if(els.individualReportSelectionCount) els.individualReportSelectionCount.textContent=`${individualSelectedReportFiles().length.toLocaleString()} selected`;
+}
+function renderIndividualRuleOptions(){
+  if(!els.individualRuleOptions) return;
+  const selected=individualRuleSelection(), selectedFiles=individualSelectedReportFiles(), query=QualtricsIndividualMessages.normalizeName(els.individualRuleSearch?.value||'');
+  const rules=(state.rules||[]).filter(rule=>!query||QualtricsIndividualMessages.normalizeName(`${rule.title} ${ruleTypeLabel(rule)} ${rule.baseName||''}`).includes(query));
+  els.individualRuleOptions.innerHTML=rules.map(rule=>{
+    const config=QualtricsIndividualMessages.normalizeRuleConfig(rule), enabledSides=[config.concern.enabled?'Concern':'',config.strength.enabled?'Strength':''].filter(Boolean), reportFiles=selectedFiles.filter(file=>individualRuleForFile(file)?.id===rule.id), needsFile=ruleNeedsReportFile(rule);
+    const source=needsFile?`${reportFiles.length.toLocaleString()} selected matching report${reportFiles.length===1?'':'s'}`:'Uses the four key files';
+    return `<label class="individualSelectionOption"><input type="checkbox" data-individual-rule="${esc(rule.id)}"${selected.has(rule.id)?' checked':''}><span><strong>${esc(rule.title||'Untitled Rule')}</strong><small>${esc(ruleTypeLabel(rule))} • ${esc(enabledSides.join(' + ')||'No individual outcome enabled')} • ${esc(source)}</small><span class="pill ${needsFile?(reportFiles.length?'good':'warn'):'blue'}">${needsFile?'Report file rule':'4 key files'}</span></span></label>`;
+  }).join('')||'<div class="empty compact">No saved rules match this search.</div>';
+  els.individualRuleOptions.querySelectorAll('[data-individual-rule]').forEach(input=>input.onchange=()=>{ input.checked?selected.add(input.dataset.individualRule):selected.delete(input.dataset.individualRule); invalidateIndividualRunCache('individual rule selection changed'); renderIndividualDataSelectionSummary(); renderIndividualScopeSummary(); });
+  if(els.individualRuleSelectionCount) els.individualRuleSelectionCount.textContent=`${individualSelectedRules().length.toLocaleString()} selected`;
+}
+function renderIndividualDataSelectionSummary(){
+  if(!els.individualDataSelectionSummary) return;
+  const rules=individualSelectedRules(), files=individualSelectedReportFiles(), missing=rules.filter(rule=>ruleNeedsReportFile(rule)&&!files.some(file=>individualRuleForFile(file)?.id===rule.id));
+  const headline=rules.length?`${rules.length.toLocaleString()} rule${rules.length===1?'':'s'} selected`:'No rules selected';
+  const detail=`${files.length.toLocaleString()} report file${files.length===1?'':'s'} selected${missing.length?` • ${missing.length.toLocaleString()} selected report-file rule${missing.length===1?' has':'s have'} no matching checked file`:' • Ready to choose an organization and people'}`;
+  els.individualDataSelectionSummary.innerHTML=`<strong>${headline}</strong><span>${detail}</span>`;
+  if(els.individualReportSelectionCount) els.individualReportSelectionCount.textContent=`${files.length.toLocaleString()} selected`;
+  if(els.individualRuleSelectionCount) els.individualRuleSelectionCount.textContent=`${rules.length.toLocaleString()} selected`;
+  renderIndividualScopeSummary();
+}
+function renderIndividualDataSelection(){ renderIndividualReportOptions(); renderIndividualRuleOptions(); renderIndividualDataSelectionSummary(); }
+async function addIndividualReportFiles(files){
+  const added=await addDashboardFiles(files);
+  for(const file of added||[]) if(file.status!=='error') individualReportSelection().add(file.id);
+  invalidateIndividualRunCache('individual report files uploaded'); renderIndividualDataSelection();
+  if(els.individualReportInput) els.individualReportInput.value='';
+}
+
 function individualAddRepresentative(map,rawName,repK,extra={}){
   const name=displayName(rawName); if(!name) return;
   const ident=repK?{key:repK,name}:{...resolveIdentity(name)}; if(!ident.key) return;
@@ -125,6 +178,7 @@ function individualAddRepresentative(map,rawName,repK,extra={}){
 }
 function invalidateIndividualRunCache(reason='inputs changed'){
   state.individualRunCache=null;
+  state.individualResultsStale=!!state.individualResults?.length;
   state.individualCacheInvalidationReason=reason;
 }
 function invalidateIndividualScopeIndex(reason='representative membership changed'){
@@ -177,8 +231,11 @@ function renderIndividualOrganizationOptions(){
 function renderIndividualCoachOptions(){
   if(!els.individualCoachOptions) return;
   const index=individualScopeIndex(), selection=individualScopeSelection(), query=QualtricsIndividualMessages.normalizeName(els.individualCoachSearch?.value||'');
-  const matches=index.coaches.filter(item=>!query||item.search.includes(query)||QualtricsIndividualMessages.normalizeName(item.name).includes(query)), visible=matches.slice(0,160);
-  els.individualCoachOptions.innerHTML=visible.map(item=>`<label class="individualScopeOption"><input type="checkbox" data-individual-coach="${esc(item.key)}"${selection.coachKeys.has(item.key)?' checked':''}><span><strong>${esc(item.name)}</strong><small>${item.repKeys.size.toLocaleString()} people</small></span></label>`).join('')+individualScopeListNote(matches.length,visible.length)||'<div class="empty compact">No coaches match.</div>';
+  const matches=index.coaches.filter(item=>!query||item.search.includes(query)||QualtricsIndividualMessages.normalizeName(item.name).includes(query)).sort((a,b)=>{
+    const aSelected=[...a.organizationIds].some(id=>selection.organizationIds.has(id)), bSelected=[...b.organizationIds].some(id=>selection.organizationIds.has(id));
+    return Number(bSelected)-Number(aSelected)||a.name.localeCompare(b.name);
+  }), visible=matches.slice(0,160);
+  els.individualCoachOptions.innerHTML=visible.map(item=>{ const organizations=[...item.organizationIds].map(id=>index.organizationById.get(id)?.name).filter(Boolean); return `<label class="individualScopeOption"><input type="checkbox" data-individual-coach="${esc(item.key)}"${selection.coachKeys.has(item.key)?' checked':''}><span><strong>${esc(item.name)}</strong><small>${item.repKeys.size.toLocaleString()} people${organizations.length?` • ${esc(organizations.join(', '))}`:''}</small></span></label>`; }).join('')+individualScopeListNote(matches.length,visible.length)||'<div class="empty compact">No coaches match.</div>';
   els.individualCoachOptions.querySelectorAll('[data-individual-coach]').forEach(input=>input.onchange=()=>{ if(input.checked){ selection.allByDefault=false; selection.coachKeys.add(input.dataset.individualCoach); }else selection.coachKeys.delete(input.dataset.individualCoach); invalidateIndividualRunCache('review scope changed'); renderIndividualScopeSummary(); renderIndividualRepresentativeOptions(); });
 }
 function individualRepScopeMode(repKey){ const selection=individualScopeSelection(); return selection.excludeRepKeys.has(repKey)?'exclude':selection.includeRepKeys.has(repKey)?'include':'automatic'; }
@@ -191,9 +248,12 @@ function renderIndividualRepresentativeOptions(){
 }
 function renderIndividualScopeSummary(){
   if(!els.individualScopeSummary) return;
-  const summary=individualScopeSummary(), selection=individualScopeSelection(), isAll=selection.allByDefault&&!selection.organizationIds.size&&!selection.coachKeys.size&&!selection.includeRepKeys.size&&!selection.excludeRepKeys.size;
+  const summary=individualScopeSummary(), selection=individualScopeSelection(), selectedRules=individualSelectedRules(), isAll=selection.allByDefault&&!selection.organizationIds.size&&!selection.coachKeys.size&&!selection.includeRepKeys.size&&!selection.excludeRepKeys.size;
   els.individualScopeSummary.innerHTML=`<strong>${summary.representatives.toLocaleString()} representatives selected</strong><span>${summary.organizations.toLocaleString()} organizations • ${summary.coaches.toLocaleString()} coaches${isAll?' • All available people':!summary.representatives?' • Empty scope':''}</span>`;
-  if(els.evaluateIndividualsBtn){ els.evaluateIndividualsBtn.textContent=`Review ${summary.representatives.toLocaleString()} ${summary.representatives===1?'Person':'People'}`; els.evaluateIndividualsBtn.disabled=!summary.representatives||!!state.individualReviewRun; }
+  if(els.evaluateIndividualsBtn){ els.evaluateIndividualsBtn.textContent=selectedRules.length?`Review ${summary.representatives.toLocaleString()} ${summary.representatives===1?'Person':'People'} with ${selectedRules.length.toLocaleString()} ${selectedRules.length===1?'Rule':'Rules'}`:'Select Rules to Review'; els.evaluateIndividualsBtn.disabled=!summary.representatives||!selectedRules.length||!!state.individualReviewRun; }
+  const currentResults=!!state.individualResults?.length&&!state.individualResultsStale;
+  if(els.exportIndividualReviewBtn) els.exportIndividualReviewBtn.disabled=!currentResults||!!state.individualReviewRun;
+  if(els.exportIndividualEmailsBtn) els.exportIndividualEmailsBtn.disabled=!currentResults||!!state.individualReviewRun;
 }
 function renderIndividualScope(){ renderIndividualOrganizationOptions(); renderIndividualCoachOptions(); renderIndividualRepresentativeOptions(); renderIndividualScopeSummary(); }
 function resetIndividualScope(){
@@ -203,6 +263,14 @@ function resetIndividualScope(){
 function clearIndividualScope(){
   const selection=individualScopeSelection(); for(const key of Object.keys(selection)) if(selection[key] instanceof Set) selection[key].clear(); selection.allByDefault=false;
   invalidateIndividualRunCache('review scope cleared'); renderIndividualScope();
+}
+function selectAllIndividualOrganizations(){
+  const selection=individualScopeSelection(), index=individualScopeIndex(); selection.organizationIds=new Set(index.organizations.map(item=>item.id)); selection.allByDefault=false;
+  invalidateIndividualRunCache('organization scope changed'); renderIndividualScope();
+}
+function clearIndividualOrganizations(){
+  const selection=individualScopeSelection(); selection.organizationIds.clear(); selection.allByDefault=false;
+  invalidateIndividualRunCache('organization scope changed'); renderIndividualScope();
 }
 function individualMetricConfig(source){
   const raw=String(source||'').trim(), normalized=headerKey(raw);
@@ -241,7 +309,7 @@ function individualLegacyObservation(rep,rule,reportDate,cache,context){
     else if(isStatCountRule(rule)) for(const base of buildStatCountRecords(rule,reportDate)) add(base,{value:base.count,raw:base.count,formatted:String(base.count),label:rule.statCount?.label||rule.title,score:base.count});
     else if(isCoachingCorrectiveRule(rule)) for(const base of buildCoachingCorrectiveRecords(rule,reportDate)) add(base,{value:base.ratio,raw:base.ratio,formatted:isFinite(base.ratio)?fmtNum(base.ratio,2):String(base.coachings?.length||0),label:rule.title,score:base.coachings?.length||1});
     else if(isHeaderCountRule(rule)){
-      const sources=(state.dashboardFiles||[]).filter(file=>file.ruleId===rule.id||matchRuleForFile(file.fileName)?.id===rule.id).map(file=>({name:file.fileName,rows:file.rows||[]}));
+      const sources=(context.reportFiles||[]).filter(file=>individualRuleForFile(file)?.id===rule.id).map(file=>({name:file.fileName,rows:file.rows||[]}));
       for(const base of buildHeaderCountRecords(rule,sources).records) add(base,{value:base.count,raw:base.count,formatted:String(base.count),label:rule.countRule?.label||rule.title,score:base.count});
     }else{
       for(const [repKey,items] of context.dashboardByRuleRep.get(rule.id)||[]){
@@ -285,9 +353,9 @@ function setIndividualReviewProgress(percent,phase='',detail=''){
     setProgress(value,phase);
   }else setProgress(null);
 }
-async function buildIndividualRunContext(scopeIndex,signal,onProgress){
-  const rulesById=new Map((state.rules||[]).map(rule=>[rule.id,rule])), dashboardByRuleRep=new Map(), dashboardByRep=new Map();
-  const files=(state.dashboardFiles||[]).map(file=>({file,rule:rulesById.get(file.ruleId)||matchRuleForFile(file.fileName)}));
+async function buildIndividualRunContext(scopeIndex,rules,reportFiles,signal,onProgress){
+  const rulesById=new Map((rules||[]).map(rule=>[rule.id,rule])), dashboardByRuleRep=new Map(), dashboardByRep=new Map();
+  const files=(reportFiles||[]).map(file=>{ const matched=rulesById.get(file.ruleId)||matchRuleForFile(file.fileName); return {file,rule:matched&&rulesById.has(matched.id)?matched:null}; });
   const totalRows=Math.max(1,files.reduce((sum,item)=>sum+(item.file.rows?.length||0),0)); let processed=0;
   for(const {file,rule} of files){
     individualThrowIfCancelled(signal);
@@ -304,11 +372,11 @@ async function buildIndividualRunContext(scopeIndex,signal,onProgress){
     }
     onProgress?.(processed/totalRows); await individualYieldToBrowser();
   }
-  return {scopeIndex,rulesById,dashboardByRuleRep,dashboardByRep};
+  return {scopeIndex,rulesById,reportFiles:reportFiles||[],dashboardByRuleRep,dashboardByRep};
 }
-function individualReviewSignature(representatives,template,reportDate){
+function individualReviewSignature(representatives,rules,reportFiles,template,reportDate){
   const selection=individualScopeSelection();
-  return JSON.stringify({dataRevision:state.individualDataRevision,reportDate:ymd(reportDate),rules:state.rules,template,rosterRevision:state.individualRosterRevision||0,reps:representatives.map(rep=>rep.repKey),scope:{allByDefault:selection.allByDefault,organizations:[...selection.organizationIds].sort(),coaches:[...selection.coachKeys].sort(),include:[...selection.includeRepKeys].sort(),exclude:[...selection.excludeRepKeys].sort()}});
+  return JSON.stringify({dataRevision:state.individualDataRevision,reportDate:ymd(reportDate),rules,reportFileIds:(reportFiles||[]).map(file=>file.id).sort(),template,rosterRevision:state.individualRosterRevision||0,reps:representatives.map(rep=>rep.repKey),scope:{allByDefault:selection.allByDefault,organizations:[...selection.organizationIds].sort(),coaches:[...selection.coachKeys].sort(),include:[...selection.includeRepKeys].sort(),exclude:[...selection.excludeRepKeys].sort()}});
 }
 function renderIndividualPerformance(){
   if(!els.individualPerformanceDiagnostics) return;
@@ -332,7 +400,7 @@ async function loadIndividualRoster(file){
     const parsed=await readFileAsWorkbookRows(file,'First Name');
     const choices=(parsed.sheets||[]).map(sheet=>({sheet,first:findHeader(sheet.headers||[],['First Name','FirstName']),last:findHeader(sheet.headers||[],['Last Name','LastName','Surname']),email:findHeader(sheet.headers||[],['Username','User Name','Email','Email Address'])})).filter(item=>item.first&&item.last&&item.email).sort((a,b)=>(b.sheet.rows?.length||0)-(a.sheet.rows?.length||0));
     if(!choices.length) throw new Error('No sheet contains First Name, Last Name, and Username columns.');
-    state.individualRosterRows=choices[0].sheet.rows||[]; state.individualRosterFileName=file.name; state.individualRosterRevision=(state.individualRosterRevision||0)+1; state.individualResults=[]; state.individualEvaluation=null; invalidateIndividualRunCache('email roster changed'); renderIndividualRosterStatus(); renderIndividualSummary(); renderIndividualReview();
+    state.individualRosterRows=choices[0].sheet.rows||[]; state.individualRosterFileName=file.name; state.individualRosterRevision=(state.individualRosterRevision||0)+1; state.individualResults=[]; state.individualEvaluation=null; invalidateIndividualRunCache('email roster changed'); renderIndividualRosterStatus(); renderIndividualScopeSummary(); renderIndividualSummary(); renderIndividualReview();
     setStatus(`Loaded ${state.individualRosterRows.length.toLocaleString()} representative roster row(s). Nothing was sent.`);
   }catch(error){ console.error(error); toast(`Roster could not be loaded: ${error.message||error}`); }
   finally{ if(els.individualRosterInput) els.individualRosterInput.value=''; }
@@ -342,12 +410,14 @@ function loadPastedIndividualRoster(){
     const text=els.individualRosterPaste?.value||'', aoa=parseDelimitedText(text); if(aoa.length<2) throw new Error('Paste a header row and at least one representative row.');
     const parsed=aoaToRows(aoa,0), first=findHeader(parsed.headers,['First Name','FirstName']), last=findHeader(parsed.headers,['Last Name','LastName','Surname']), email=findHeader(parsed.headers,['Username','User Name','Email','Email Address']);
     if(!first||!last||!email) throw new Error('Pasted rows must include First Name, Last Name, and Username columns.');
-    state.individualRosterRows=parsed.rows; state.individualRosterFileName='Pasted roster'; state.individualRosterRevision=(state.individualRosterRevision||0)+1; state.individualResults=[]; state.individualEvaluation=null; invalidateIndividualRunCache('email roster changed'); renderIndividualRosterStatus(); renderIndividualSummary(); renderIndividualReview();
+    state.individualRosterRows=parsed.rows; state.individualRosterFileName='Pasted roster'; state.individualRosterRevision=(state.individualRosterRevision||0)+1; state.individualResults=[]; state.individualEvaluation=null; invalidateIndividualRunCache('email roster changed'); renderIndividualRosterStatus(); renderIndividualScopeSummary(); renderIndividualSummary(); renderIndividualReview();
     setStatus(`Loaded ${parsed.rows.length.toLocaleString()} pasted representative roster row(s). Nothing was sent.`);
   }catch(error){ toast(`Pasted roster could not be loaded: ${error.message||error}`); }
 }
 async function evaluateIndividualMessages(){
   if(!state.individualRosterRows?.length){ toast('Load the representative email roster first.'); return; }
+  const selectedRules=individualSelectedRules(), selectedReportFiles=individualSelectedReportFiles();
+  if(!selectedRules.length){ toast('Select at least one rule to run in Report Files & Rules.'); return; }
   if(state.individualReviewRun) return;
   const controller=new AbortController(), run={id:uid(),controller}; state.individualReviewRun=run; renderIndividualScopeSummary();
   const timings={}, totalStarted=performance.now(), mark=(label,started)=>{ timings[label]=performance.now()-started; };
@@ -355,23 +425,23 @@ async function evaluateIndividualMessages(){
     setIndividualReviewProgress(2,'Preparing review scope','Resolving organizations, coaches, and individual overrides'); await individualYieldToBrowser();
     let started=performance.now(); const scopeIndex=individualScopeIndex(), representatives=individualResolvedScope(); mark('Scope resolution',started);
     if(!representatives.length){ toast('Choose at least one representative to review.'); return; }
-    state.individualTemplate=individualTemplateFromForm(); const reportDate=parseDate(els.reportDate?.value)||new Date(), signature=individualReviewSignature(representatives,state.individualTemplate,reportDate);
+    state.individualTemplate=individualTemplateFromForm(); const reportDate=parseDate(els.reportDate?.value)||new Date(), signature=individualReviewSignature(representatives,selectedRules,selectedReportFiles,state.individualTemplate,reportDate);
     if(state.individualRunCache?.signature===signature){
-      state.individualEvaluation=state.individualRunCache.evaluation; state.individualResults=state.individualRunCache.results; state.individualPerformance={timings:{'Scope resolution':timings['Scope resolution'],'Active run cache':0,'Total':performance.now()-totalStarted},cacheHit:true};
+      state.individualEvaluation=state.individualRunCache.evaluation; state.individualResults=state.individualRunCache.results; state.individualResultsStale=false; state.individualPerformance={timings:{'Scope resolution':timings['Scope resolution'],'Active run cache':0,'Total':performance.now()-totalStarted},cacheHit:true};
       setIndividualReviewProgress(95,'Rendering review',`${state.individualResults.length.toLocaleString()} cached representatives`); renderIndividualSummary(); renderIndividualReview(); renderIndividualPerformance(); setIndividualReviewProgress(100,'Review ready','Reused the completed active review');
       setStatus(`Reviewed ${state.individualResults.length.toLocaleString()} selected representatives from the active cache. Nothing was sent.`); await new Promise(resolve=>setTimeout(resolve,160)); return;
     }
     setIndividualReviewProgress(11,'Resolving representative data',`Indexing report rows for ${representatives.length.toLocaleString()} people`);
-    started=performance.now(); const context=await buildIndividualRunContext(scopeIndex,controller.signal,fraction=>setIndividualReviewProgress(11+fraction*14,'Resolving representative data',`${Math.round(fraction*100)}% of report rows indexed`)); mark('Representative indexes',started);
+    started=performance.now(); const context=await buildIndividualRunContext(scopeIndex,selectedRules,selectedReportFiles,controller.signal,fraction=>setIndividualReviewProgress(11+fraction*14,'Resolving representative data',`${Math.round(fraction*100)}% of selected report rows indexed`)); mark('Representative indexes',started);
     individualThrowIfCancelled(controller.signal);
     started=performance.now(); const rosterIndex=QualtricsIndividualMessages.buildRosterIndex(state.individualRosterRows), resolver=createIndividualResolver(reportDate,context); mark('Roster and resolver',started);
     setIndividualReviewProgress(25,'Evaluating Concern / Strength rules',`0 / ${representatives.length.toLocaleString()} representatives`);
-    started=performance.now(); const evaluation=await QualtricsIndividualMessages.evaluateAllAsync({representatives,rules:state.rules,rosterIndex,resolver,template:state.individualTemplate,signal:controller.signal,chunkSize:20,sliceMs:12,yieldToBrowser:individualYieldToBrowser,onProgress:progress=>setIndividualReviewProgress(25+progress.fraction*45,'Evaluating Concern / Strength rules',`${progress.completed.toLocaleString()} / ${progress.total.toLocaleString()} representatives`)}); mark('Rule evaluation',started);
+    started=performance.now(); const evaluation=await QualtricsIndividualMessages.evaluateAllAsync({representatives,rules:selectedRules,rosterIndex,resolver,template:state.individualTemplate,signal:controller.signal,chunkSize:20,sliceMs:12,yieldToBrowser:individualYieldToBrowser,onProgress:progress=>setIndividualReviewProgress(25+progress.fraction*45,'Evaluating Concern / Strength rules',`${progress.completed.toLocaleString()} / ${progress.total.toLocaleString()} representatives`)}); mark('Rule evaluation',started);
     individualThrowIfCancelled(controller.signal);
     setIndividualReviewProgress(72,'Ranking review priority','Putting the people who need attention first'); await individualYieldToBrowser();
     started=performance.now(); const results=QualtricsIndividualMessages.sortReviewResults(evaluation.results); evaluation.results=results; evaluation.summary=QualtricsIndividualMessages.summarize(results); mark('Priority ranking',started);
     setIndividualReviewProgress(87,'Building messages','Deduplicating and preparing review blocks'); await individualYieldToBrowser();
-    started=performance.now(); state.individualEvaluation=evaluation; state.individualResults=results; state.individualRenderLimit=80; mark('Message model',started);
+    started=performance.now(); state.individualEvaluation=evaluation; state.individualResults=results; state.individualResultsStale=false; state.individualRenderLimit=80; mark('Message model',started);
     setIndividualReviewProgress(95,'Rendering review',`${results.length.toLocaleString()} representative blocks`);
     started=performance.now(); renderIndividualSummary(); renderIndividualReview(); mark('Initial render',started);
     timings.Total=performance.now()-totalStarted; state.individualPerformance={timings,cacheHit:false}; renderIndividualPerformance();
@@ -433,13 +503,18 @@ function renderIndividualReview(){
   const filtered=results.filter(result=>individualMatchesResultFilter(result,filter)).filter(result=>!coach||result.coach===coach).filter(result=>!organization||(result.organizationNames||[]).includes(organization)).filter(result=>!q||QualtricsIndividualMessages.normalizeName(`${result.fullName} ${result.email} ${result.coach} ${result.team} ${(result.organizationNames||[]).join(' ')} ${(result.concerns||[]).map(item=>item.title).join(' ')} ${(result.strengths||[]).map(item=>item.title).join(' ')} ${result.status}`).includes(q));
   const limit=Math.max(40,Number(state.individualRenderLimit)||80), shown=filtered.slice(0,limit), mode=els.individualViewMode?.value||'review';
   const content=mode==='diagnostics'?individualDiagnosticsTableHtml(shown,filtered.length):`<div class="individualReviewList">${shown.map(individualReviewCardHtml).join('')||'<div class="empty">No representatives match this filter.</div>'}</div>`;
-  els.individualReview.innerHTML=`<div class="individualReviewCount"><strong>${filtered.length.toLocaleString()} people match this view</strong><span>${shown.length.toLocaleString()} rendered • ${results.length.toLocaleString()} reviewed</span></div>${content}${filtered.length>shown.length?`<div class="row center" style="margin-top:12px"><button class="btn blue" type="button" data-individual-show-more>Show ${Math.min(80,filtered.length-shown.length).toLocaleString()} More</button></div>`:''}`;
+  els.individualReview.innerHTML=`${state.individualResultsStale?'<div class="note dangerText" style="margin-bottom:10px">Selections or inputs changed. Run the Individual Review again before exporting these results.</div>':''}<div class="individualReviewCount"><strong>${filtered.length.toLocaleString()} people match this view</strong><span>${shown.length.toLocaleString()} rendered • ${results.length.toLocaleString()} reviewed</span></div>${content}${filtered.length>shown.length?`<div class="row center" style="margin-top:12px"><button class="btn blue" type="button" data-individual-show-more>Show ${Math.min(80,filtered.length-shown.length).toLocaleString()} More</button></div>`:''}`;
   els.individualReview.querySelector('[data-individual-show-more]')?.addEventListener('click',()=>{ state.individualRenderLimit=limit+80; renderIndividualReview(); });
 }
 function individualExportRows(){
-  return (state.individualResults||[]).map(result=>({Representative:result.fullName,Coach:result.coach||'',Team:result.team||'',Organization:(result.organizationNames||[]).join(' | '),ReviewPriority:QualtricsIndividualMessages.reviewCategory(result),Email:result.email,Concern:(result.concerns||[]).map(item=>item.title).join(' | '),ConcernMessages:(result.concernMessages||[]).join(' | '),Strength:(result.strengths||[]).map(item=>item.title).join(' | '),StrengthMessages:(result.strengthMessages||[]).join(' | '),GenericMessage:result.genericMessage||'',Status:result.status,SendReady:result.sendReady?'Yes':'No',Message:result.message,Errors:result.errors.join(' | '),MatchStatus:result.emailMatch.status,NormalizedName:result.emailMatch.normalizedName}));
+  return (state.individualResults||[]).map(result=>({
+    Representative:result.fullName,Coach:result.coach||'',Team:result.team||'',Organization:(result.organizationNames||[]).join(' | '),ReviewPriority:QualtricsIndividualMessages.reviewCategory(result),Email:result.email,
+    GreetingMessageWrapper:result.greeting||'',AreasToFocusOn:result.areasToFocusOn||(result.concernMessages||[]).join('\n\n'),StrengthSection:result.strengthSection||(result.strengthMessages||[]).join('\n\n'),GenericMessage:result.genericMessage||'',Closing:result.closing||'',CompleteMessage:result.message,
+    ConcernRules:(result.concerns||[]).map(item=>item.title).join(' | '),StrengthRules:(result.strengths||[]).map(item=>item.title).join(' | '),Status:result.status,SendReady:result.sendReady?'Yes':'No',Errors:result.errors.join(' | '),MatchStatus:result.emailMatch.status,NormalizedName:result.emailMatch.normalizedName
+  }));
 }
 function exportIndividualReview(){
+  if(state.individualResultsStale){ toast('Run the Individual Review again before exporting changed selections.'); return; }
   const rows=individualExportRows(); if(!rows.length){ toast('Evaluate individuals before exporting the review.'); return; }
   const diagnostics=(state.individualResults||[]).flatMap(result=>result.diagnostics.map(item=>({Representative:result.fullName,Rule:item.ruleTitle,Side:item.side,Enabled:item.enabled?'Yes':'No',Value:item.value,Condition:item.condition,Result:item.missing?'MISSING':item.pass?'PASS':'FAIL',NormalizedScore:item.score,Reason:item.reason})));
   if(window.XLSX){ const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Individual Messages'); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(diagnostics),'Rule Diagnostics'); XLSX.writeFile(wb,`qualtrics_individual_message_review_${ymd(new Date())}.xlsx`); }
@@ -450,6 +525,7 @@ function individualEml(result){
   return [`To: ${result.email}`,`Subject: ${subject}`,'MIME-Version: 1.0',`Content-Type: multipart/alternative; boundary="${boundary}"`,'',`--${boundary}`,'Content-Type: text/plain; charset="UTF-8"','',result.message,'',`--${boundary}`,'Content-Type: text/html; charset="UTF-8"','',`<!doctype html><html><body style="font-family:Segoe UI,Arial,sans-serif;line-height:1.5;color:#0f172a">${html}</body></html>`,'',`--${boundary}--`].join('\r\n');
 }
 async function exportIndividualEmails(){
+  if(state.individualResultsStale){ toast('Run the Individual Review again before exporting changed selections.'); return; }
   const ready=(state.individualResults||[]).filter(result=>result.sendReady); if(!ready.length){ toast('No send-ready individual messages are available.'); return; }
   if(!window.JSZip){ toast('ZIP export library is unavailable.'); return; }
   const zip=new JSZip(); for(const result of ready) zip.file(`${sanitizeFile(result.fullName)}.eml`,individualEml(result));
@@ -470,10 +546,23 @@ function bindIndividualMessages(){
   ['dragenter','dragover'].forEach(name=>els.individualRosterDrop.addEventListener(name,event=>{ event.preventDefault(); els.individualRosterDrop.classList.add('drag'); }));
   ['dragleave','drop'].forEach(name=>els.individualRosterDrop.addEventListener(name,event=>{ event.preventDefault(); els.individualRosterDrop.classList.remove('drag'); }));
   els.individualRosterDrop.addEventListener('drop',event=>loadIndividualRoster(event.dataTransfer.files[0]));
+  els.individualReportInput?.addEventListener('change',event=>addIndividualReportFiles(event.target.files));
+  els.individualReportDrop?.addEventListener('click',event=>{ if(event.target.tagName!=='INPUT') els.individualReportInput.click(); });
+  for(const name of ['dragenter','dragover']) els.individualReportDrop?.addEventListener(name,event=>{ event.preventDefault(); els.individualReportDrop.classList.add('drag'); });
+  for(const name of ['dragleave','drop']) els.individualReportDrop?.addEventListener(name,event=>{ event.preventDefault(); els.individualReportDrop.classList.remove('drag'); });
+  els.individualReportDrop?.addEventListener('drop',event=>addIndividualReportFiles(event.dataTransfer.files));
   els.loadIndividualRosterPasteBtn.onclick=loadPastedIndividualRoster;
   els.saveIndividualTemplateBtn.onclick=saveIndividualMessageSettings; els.evaluateIndividualsBtn.onclick=evaluateIndividualMessages; els.exportIndividualReviewBtn.onclick=exportIndividualReview; els.exportIndividualEmailsBtn.onclick=exportIndividualEmails;
   els.resetIndividualScopeBtn?.addEventListener('click',resetIndividualScope);
   els.clearIndividualScopeBtn?.addEventListener('click',clearIndividualScope);
+  els.selectAllIndividualOrganizationsBtn?.addEventListener('click',selectAllIndividualOrganizations);
+  els.clearIndividualOrganizationsBtn?.addEventListener('click',clearIndividualOrganizations);
+  els.selectAllIndividualReportsBtn?.addEventListener('click',()=>{ state.individualSelectedReportFileIds=new Set(state.dashboardFiles.filter(file=>file.status!=='error').map(file=>file.id)); invalidateIndividualRunCache('individual report selection changed'); renderIndividualDataSelection(); });
+  els.clearIndividualReportsBtn?.addEventListener('click',()=>{ individualReportSelection().clear(); invalidateIndividualRunCache('individual report selection changed'); renderIndividualDataSelection(); });
+  els.selectMatchedIndividualRulesBtn?.addEventListener('click',()=>{ const selected=individualRuleSelection(); for(const file of individualSelectedReportFiles()){ const rule=individualRuleForFile(file); if(rule) selected.add(rule.id); } invalidateIndividualRunCache('individual rule selection changed'); renderIndividualDataSelection(); });
+  els.clearIndividualRulesBtn?.addEventListener('click',()=>{ individualRuleSelection().clear(); invalidateIndividualRunCache('individual rule selection changed'); renderIndividualDataSelection(); });
+  els.clearIndividualDataSelectionBtn?.addEventListener('click',()=>{ individualReportSelection().clear(); individualRuleSelection().clear(); invalidateIndividualRunCache('individual data selections cleared'); renderIndividualDataSelection(); });
+  els.individualRuleSearch?.addEventListener('input',renderIndividualRuleOptions);
   els.individualOrganizationSearch?.addEventListener('input',renderIndividualOrganizationOptions);
   els.individualCoachSearch?.addEventListener('input',renderIndividualCoachOptions);
   els.individualRepresentativeSearch?.addEventListener('input',renderIndividualRepresentativeOptions);
