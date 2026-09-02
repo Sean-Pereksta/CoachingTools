@@ -286,6 +286,30 @@
   .coordDayRow.selected td{background:#e0f2fe;font-weight:900}
   @media(max-width:900px){.coordSummaryGrid{grid-template-columns:1fr}}
 
+  /* Coordinator rankings + identity assignments */
+  .coordRankDefinition{display:grid;grid-template-columns:minmax(130px,.8fr) minmax(180px,1.25fr) 42px minmax(130px,.8fr) minmax(180px,1.25fr);gap:9px;align-items:end}
+  .coordRankArrow{display:grid;place-items:center;height:42px;font-size:22px;color:var(--accent);font-weight:950}
+  .coordRankActions{display:grid;grid-template-columns:repeat(4,minmax(135px,1fr));gap:9px;align-items:end;margin-top:10px}
+  @media(max-width:1050px){.coordRankDefinition{grid-template-columns:1fr 1fr}.coordRankArrow{display:none}.coordRankActions{grid-template-columns:1fr 1fr}}
+  @media(max-width:650px){.coordRankDefinition,.coordRankActions{grid-template-columns:1fr}}
+  .coordColumnChoices{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:8px}
+  @media(max-width:950px){.coordColumnChoices{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.coordColumnChoices{grid-template-columns:1fr}}
+  .coordColumnChoice{display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:11px;padding:8px 10px;background:#fff;font-size:12px;font-weight:850;color:var(--ink)}
+  .sortHeader{border:0;background:transparent;color:inherit;font:inherit;font-weight:900;padding:0;cursor:pointer;white-space:nowrap}
+  .sortHeader:hover{color:var(--accent)}
+  .assignmentSummary{display:flex;gap:8px;flex-wrap:wrap}
+  .assignmentStatus{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900;background:#f1f5f9;color:#475569}
+  .assignmentStatus.manual{background:#ede9fe;color:#6d28d9}
+  .assignmentStatus.auto{background:#dcfce7;color:#166534}
+  .assignmentStatus.ambiguous,.assignmentStatus.unmatched{background:#fef3c7;color:#92400e}
+  .assignmentSourceGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:720px){.assignmentSourceGrid{grid-template-columns:1fr}}
+  .assignmentSourceCard{border:1px solid var(--line);border-radius:13px;padding:10px;background:#fbfdff}
+  .assignmentRowControls{display:grid;grid-template-columns:minmax(170px,1fr) minmax(130px,.7fr) auto;gap:6px;align-items:center;min-width:420px}
+  .assignmentRowControls input,.assignmentRowControls select{padding:7px 8px;border-radius:9px}
+  .qualityPill{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
+
 </style>
 </head>
 <body>
@@ -567,6 +591,7 @@
         <button class="tabBtn on" id="tabCoachTimelineResults">Individual Coach</button>
         <button class="tabBtn" id="tabSpeedRankingResults">Job Coach Speed Rankings</button>
         <button class="tabBtn" id="tabCoordinatorResults">Coordinators</button>
+        <button class="tabBtn" id="tabCoordinatorSpeedRankingResults">Coordinator Speed Rankings</button>
       </div>
 
       <div class="resultPane on" id="paneCoachTimelineResults">
@@ -661,7 +686,7 @@
               <button class="tabBtn on" id="tabCoordinatorVisual" type="button">Visual Results</button>
               <button class="tabBtn" id="tabCoordinatorSummary" type="button">Summary Results</button>
             </div>
-            <span class="inlinePill" id="coordScopePill">—</span>
+            <div class="row"><button class="btn secondary coordAssignmentsOpen" id="btnCoordAssignmentsFromCoordinator" type="button">Coordinator Initial Assignments</button><span class="inlinePill" id="coordScopePill">—</span></div>
           </div>
 
           <div class="coordResultPane on" id="paneCoordinatorVisual">
@@ -721,8 +746,50 @@
           <div class="coordResultPane" id="paneCoordinatorSummary">
             <div class="scopeBanner" id="coordSummaryScope">Coordinator summaries use the selected global start and end dates.</div>
             <div class="grid2" style="align-items:start;margin-top:12px">
-              <div class="panelSoft"><div class="sectionTitle">Checklist coordinators</div><div class="tblWrap" style="margin-top:8px"><table id="coordChecklistTable"><thead><tr><th>Coordinator</th><th>Count</th><th>Avg Gap</th><th>Median</th><th>Max</th></tr></thead><tbody></tbody></table></div></div>
-              <div class="panelSoft"><div class="sectionTitle">Documentation coordinators</div><div class="tblWrap" style="margin-top:8px"><table id="coordDocTable"><thead><tr><th>Coordinator</th><th>Count</th><th>Avg Gap</th><th>Median</th><th>Max</th></tr></thead><tbody></tbody></table></div></div>
+              <div class="panelSoft"><div class="sectionTitle">Checklist coordinators</div><div class="tblWrap" style="margin-top:8px"><table id="coordChecklistTable"><thead><tr><th>Coordinator</th><th>Initial</th><th>Count</th><th>Avg Gap</th><th>Median</th><th>Max</th></tr></thead><tbody></tbody></table></div></div>
+              <div class="panelSoft"><div class="sectionTitle">Documentation coordinators</div><div class="tblWrap" style="margin-top:8px"><table id="coordDocTable"><thead><tr><th>Coordinator</th><th>Initial</th><th>Count</th><th>Avg Gap</th><th>Median</th><th>Max</th></tr></thead><tbody></tbody></table></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <div class="resultPane" id="paneCoordinatorSpeedRankingResults">
+        <div class="visual-shell">
+          <div class="scopeBanner" id="coordRankingScopeHint">Choose two coordinator milestones to build rankings.</div>
+          <div class="panelSoft">
+            <div class="panelTitle">
+              <div><b>Ranking Definition</b><div class="mini">Compare any date-compatible Checklist or Documented Coaching field. Rankings refresh when the definition changes.</div></div>
+              <div class="row">
+                <button class="btn secondary coordAssignmentsOpen" id="btnCoordAssignmentsFromRanking" type="button">Coordinator Initial Assignments</button>
+                <button class="btn" id="btnExportCoordinatorRankings" type="button">Export rankings to Excel</button>
+              </div>
+            </div>
+            <div class="coordRankDefinition">
+              <div><label>Early data source</label><select id="coordRankEarlySource"><option value="checklist">Checklist</option><option value="docs">Documented Coaching</option></select></div>
+              <div><label>Early date field / statistic</label><select id="coordRankEarlyField"></select></div>
+              <div class="coordRankArrow" aria-hidden="true">→</div>
+              <div><label>Late data source</label><select id="coordRankLateSource"><option value="checklist">Checklist</option><option value="docs">Documented Coaching</option></select></div>
+              <div><label>Late date field / statistic</label><select id="coordRankLateField"></select></div>
+            </div>
+            <div class="coordRankActions">
+              <div><label>Rank by</label><select id="coordRankBy"><option value="avg">Fastest average</option><option value="median">Fastest median</option><option value="fastest">Fastest completion</option><option value="slowest">Best slowest completion</option><option value="count">Highest record count</option></select></div>
+              <div><label>Minimum valid records</label><input id="coordRankMinCount" type="number" min="0" step="1" value="1" /></div>
+              <div><label>Search coordinator / initial</label><input id="coordRankSearch" type="text" placeholder="Search coordinators…" /></div>
+              <div><button class="btn" id="btnBuildCoordinatorRankings" type="button" style="width:100%">Build Rankings</button></div>
+            </div>
+          </div>
+          <div class="panelSoft">
+            <div class="panelTitle"><b>Ranking columns</b><span class="mini">Choose the same results you want displayed and exported.</span></div>
+            <div class="coordColumnChoices" id="coordRankingColumnBuilder"></div>
+          </div>
+          <div class="panelSoft">
+            <div class="panelTitle">
+              <b>Coordinator speed rankings</b>
+              <div class="row"><span class="inlinePill" id="coordRankingCountPill">—</span><span class="inlinePill qualityPill" id="coordRankingQualityPill">—</span></div>
+            </div>
+            <div class="tblWrap" style="max-height:650px">
+              <table id="coordRankingTable"><thead></thead><tbody></tbody></table>
             </div>
           </div>
         </div>
@@ -761,6 +828,49 @@
   </div>
 </div>
 
+
+
+<div class="modalBack" id="coordAssignmentsBack">
+  <div class="modal" style="width:min(1180px,98vw)">
+    <div class="mh">
+      <div>
+        <div style="font-weight:950">Coordinator Initial Assignments</div>
+        <div class="mini">One shared mapping is used by Coordinators and Coordinator Speed Rankings. Manual assignments always win.</div>
+      </div>
+      <div class="row"><button class="btn secondary" id="btnRerunCoordinatorAutoMatch" type="button">Re-run automatic matching</button><button class="closeBtn" id="btnCloseCoordAssignments" type="button">Close</button></div>
+    </div>
+    <div class="mb grid">
+      <div class="assignmentSummary">
+        <span class="inlinePill" id="coordAssignmentAutoCount">0 automatic</span>
+        <span class="inlinePill qualityPill" id="coordAssignmentNeedsCount">0 need assignment</span>
+        <span class="inlinePill" id="coordAssignmentUnmatchedNames">0 unmatched coordinators</span>
+      </div>
+      <div class="panelSoft">
+        <div class="panelTitle"><div><b>Coordinator source columns</b><div class="mini">Auto-detect recognizes common Coordinator, Coord Name, and Coord Initial labels. Override either source when needed.</div></div><button class="btn" id="btnSaveCoordSourceColumns" type="button">Save column selections</button></div>
+        <div class="assignmentSourceGrid">
+          <div class="assignmentSourceCard">
+            <div class="sectionTitle">Checklist</div>
+            <div class="grid2"><div><label>Coordinator Name Column</label><select id="coordMapChecklistName"></select></div><div><label>Coordinator Initial Column</label><select id="coordMapChecklistInitial"></select></div></div>
+          </div>
+          <div class="assignmentSourceCard">
+            <div class="sectionTitle">Documented Coaching</div>
+            <div class="grid2"><div><label>Coordinator Name Column</label><select id="coordMapDocsName"></select></div><div><label>Coordinator Initial Column</label><select id="coordMapDocsInitial"></select></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="panelSoft">
+        <div class="panelTitle"><b>Initial mapping</b><span class="mini">Ambiguous initials are never guessed. Choose a known coordinator or type a new name.</span></div>
+        <div class="tblWrap" style="max-height:470px">
+          <table id="coordAssignmentTable"><thead><tr><th>Source Initial</th><th>Coordinator assignment / custom name</th><th>Status</th><th></th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+      <div class="panelSoft">
+        <div class="sectionTitle">Coordinators without a source initial</div>
+        <div class="chips" id="coordUnmatchedCoordinatorList"></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="modalBack" id="itemDetailBack">
   <div class="modal" style="width:min(820px,98vw)">
@@ -932,6 +1042,25 @@
     localChecklistDockObj:null,
     importedChecklistSourceRows:[],
     availableChecklistHeaders:[],
+    availableDocHeaders:[],
+    localDocDockObj:null,
+    importedDocSourceRows:[],
+    dataRevision:0,
+    coordinatorConfig:{
+      sources:{checklist:{nameColumn:"",initialColumn:""},docs:{nameColumn:"",initialColumn:""}},
+      manualMappings:{},
+      early:{source:"checklist",field:""},
+      late:{source:"docs",field:""},
+      visibleColumns:["rank","name","initial","count","avg","median","fastest","slowest"],
+      rankBy:"avg",
+      minCount:1,
+      sort:{key:"rank",dir:"asc"}
+    },
+    coordIdentityCache:null,
+    coordIdentityCacheKey:"",
+    coordRankingCache:null,
+    coordRankingCacheKey:"",
+    lastCoordinatorRankingRows:[],
     lastFilteredItems:[],
     lastFocusItemsByCoach:new Map(),
     timelineHitPoints:[],
@@ -1564,6 +1693,201 @@
     });
   }
 
+
+  const COORD_CONFIG_KEY = APP_NS + ".coachSpeed.coordinatorConfig";
+  const COORD_RANK_COLUMN_DEFS = [
+    {id:"rank",label:"Rank"},{id:"name",label:"Coordinator Name"},{id:"initial",label:"Coordinator Initial"},
+    {id:"count",label:"Record Count"},{id:"avg",label:"Average Completion Speed"},
+    {id:"median",label:"Median Completion Speed"},{id:"fastest",label:"Fastest Completion"},
+    {id:"slowest",label:"Slowest Completion"},{id:"earlyDate",label:"Early Date"},
+    {id:"lateDate",label:"Late Date"},{id:"earlySource",label:"Early Source"},{id:"lateSource",label:"Late Source"}
+  ];
+  function defaultCoordinatorConfig(){
+    return {sources:{checklist:{nameColumn:"",initialColumn:""},docs:{nameColumn:"",initialColumn:""}},manualMappings:{},early:{source:"checklist",field:""},late:{source:"docs",field:""},visibleColumns:["rank","name","initial","count","avg","median","fastest","slowest"],rankBy:"avg",minCount:1,sort:{key:"rank",dir:"asc"}};
+  }
+  function loadCoordinatorConfig(){
+    const base=defaultCoordinatorConfig();let saved=null;
+    try{saved=JSON.parse(localStorage.getItem(COORD_CONFIG_KEY)||"null");}catch(e){}
+    if(!saved||typeof saved!=="object"){S.coordinatorConfig=base;return;}
+    S.coordinatorConfig={...base,...saved,sources:{checklist:{...base.sources.checklist,...(saved.sources&&saved.sources.checklist||{})},docs:{...base.sources.docs,...(saved.sources&&saved.sources.docs||{})}},manualMappings:{...(saved.manualMappings||{})},early:{...base.early,...(saved.early||{})},late:{...base.late,...(saved.late||{})},visibleColumns:Array.isArray(saved.visibleColumns)&&saved.visibleColumns.length?saved.visibleColumns.filter(id=>COORD_RANK_COLUMN_DEFS.some(col=>col.id===id)):base.visibleColumns,sort:{...base.sort,...(saved.sort||{})}};
+  }
+  function saveCoordinatorConfig(){try{localStorage.setItem(COORD_CONFIG_KEY,JSON.stringify(S.coordinatorConfig));}catch(e){}}
+  function invalidateCoordinatorCaches(){S.coordIdentityCacheKey="";S.coordRankingCacheKey="";S.coordRankingCache=null;}
+  function markCoordinatorDataChanged(){S.dataRevision++;invalidateCoordinatorCaches();}
+  function pickCoordinatorField(row,sourceKind,fieldKind,candidates){
+    if(!row||typeof row!=="object")return undefined;
+    const cfg=S.coordinatorConfig&&S.coordinatorConfig.sources&&S.coordinatorConfig.sources[sourceKind];
+    const explicit=String(cfg&&cfg[fieldKind==="name"?"nameColumn":"initialColumn"]||"").trim();
+    if(explicit){const target=normHdr(explicit);for(const key of Object.keys(row))if(normHdr(key)===target)return row[key];}
+    if(sourceKind==="checklist"&&fieldKind==="name"){const legacy=String(S.columnMap.coord||"").trim();if(legacy){const target=normHdr(legacy);for(const key of Object.keys(row))if(normHdr(key)===target)return row[key];}}
+    return pickField(row,candidates);
+  }
+  function refreshAvailableCoordinatorHeaders(){
+    refreshAvailableChecklistHeaders();const found=new Set();
+    collectHeadersFromSource(S.localDocDockObj).forEach(value=>found.add(value));
+    collectHeadersFromSource({rows:S.importedDocSourceRows}).forEach(value=>found.add(value));
+    for(const row of S.docCoachingsAll.slice(0,100))Object.keys(row&&row.sourceRow||{}).forEach(key=>{if(String(key).trim())found.add(String(key).trim());});
+    S.availableDocHeaders=[...found].sort((a,b)=>a.localeCompare(b));
+  }
+  function fillCoordinatorColumnSelect(id,headers,current,label){
+    const select=$(id);if(!select)return;select.innerHTML='<option value="">Auto-detect '+label+'</option>';
+    headers.forEach(header=>{const option=document.createElement("option");option.value=header;option.textContent=header;select.appendChild(option);});
+    if(current&&!headers.includes(current)){const option=document.createElement("option");option.value=current;option.textContent=current+" (saved)";select.appendChild(option);}select.value=current||"";
+  }
+  function refreshCoordinatorSourceColumnSelects(){
+    refreshAvailableCoordinatorHeaders();const sources=S.coordinatorConfig.sources;
+    fillCoordinatorColumnSelect("coordMapChecklistName",S.availableChecklistHeaders,sources.checklist.nameColumn,"Coordinator Name");
+    fillCoordinatorColumnSelect("coordMapChecklistInitial",S.availableChecklistHeaders,sources.checklist.initialColumn,"Coordinator Initial");
+    fillCoordinatorColumnSelect("coordMapDocsName",S.availableDocHeaders,sources.docs.nameColumn,"Coordinator Name");
+    fillCoordinatorColumnSelect("coordMapDocsInitial",S.availableDocHeaders,sources.docs.initialColumn,"Coordinator Initial");
+  }
+  function coordinatorInitialCode(value){return normName(value).replace(/[^a-z0-9]/gi,"").toUpperCase();}
+  function isCoordinatorInitialValue(value){const text=normName(value);return /^[A-Z0-9]{1,5}$/.test(text)&&/[A-Z]/.test(text);}
+  function candidateInitialsForName(name){
+    const words=normName(name).replace(/[.'’_-]+/g," ").split(/\s+/).filter(Boolean).filter(word=>!/^((jr|sr|ii|iii|iv))$/i.test(word));if(!words.length)return[];
+    const out=new Set();if(words.length===1)out.add(words[0].slice(0,2).toUpperCase());else{out.add((words[0][0]+words[words.length-1][0]).toUpperCase());out.add(words.map(word=>word[0]).join("").toUpperCase());}return[...out].filter(Boolean);
+  }
+  function coordinatorValuesFromRow(row,source){return source==="docs"?{name:normName(row.coordinatorName),initial:normName(row.coordInitials)}:{name:normName(row.coordEnteredOnAdmin),initial:normName(row.coordInitial)};}
+  function ensureCoordinatorIdentityCache(force){
+    const manual=JSON.stringify(S.coordinatorConfig.manualMappings||{}),key=S.dataRevision+"|"+manual+"|"+JSON.stringify(S.coordinatorConfig.sources||{});
+    if(!force&&S.coordIdentityCache&&S.coordIdentityCacheKey===key)return S.coordIdentityCache;
+    const names=new Set(),initials=new Set();
+    const add=(nameValue,initialValue)=>{let name=normName(nameValue),initial=normName(initialValue);if(name&&isCoordinatorInitialValue(name)&&!initial){initial=name;name="";}if(name)names.add(name);if(initial)initials.add(coordinatorInitialCode(initial));};
+    S.rawItems.forEach(row=>{const value=coordinatorValuesFromRow(row,"checklist");add(value.name,value.initial);});
+    S.docCoachingsAll.forEach(row=>{const value=coordinatorValuesFromRow(row,"docs");add(value.name,value.initial);});
+    Object.values(S.coordinatorConfig.manualMappings||{}).forEach(name=>{if(normName(name))names.add(normName(name));});
+    const candidateMap=new Map();
+    [...names].forEach(name=>candidateInitialsForName(name).forEach(code=>{const list=candidateMap.get(code)||[];list.push(name);candidateMap.set(code,list);}));
+    const resolvedByInitial=new Map(),statusByInitial=new Map(),candidatesByInitial=new Map();
+    [...initials].forEach(code=>{const manualName=normName((S.coordinatorConfig.manualMappings||{})[code]),candidates=[...new Set(candidateMap.get(code)||[])];candidatesByInitial.set(code,candidates);if(manualName){resolvedByInitial.set(code,manualName);statusByInitial.set(code,"manual");}else if(candidates.length===1){resolvedByInitial.set(code,candidates[0]);statusByInitial.set(code,"auto");}else if(candidates.length>1)statusByInitial.set(code,"ambiguous");else statusByInitial.set(code,"unmatched");});
+    const preferredInitialByName=new Map();[...resolvedByInitial.entries()].forEach(([code,name])=>{if(!preferredInitialByName.has(normCoachKey(name)))preferredInitialByName.set(normCoachKey(name),code);});
+    const assignedNames=new Set([...resolvedByInitial.values()].map(normCoachKey)),unmatchedNames=[...names].filter(name=>!assignedNames.has(normCoachKey(name))).sort((a,b)=>a.localeCompare(b));
+    const cache={names:[...names].sort((a,b)=>a.localeCompare(b)),initials:[...initials].sort((a,b)=>a.localeCompare(b)),resolvedByInitial,statusByInitial,candidatesByInitial,preferredInitialByName,unmatchedNames};
+    S.coordIdentityCache=cache;S.coordIdentityCacheKey=key;refreshCoordinatorAssignmentButtons(cache);return cache;
+  }
+  function coordinatorIdentity(nameValue,initialValue){
+    const cache=ensureCoordinatorIdentityCache(false);let rawName=normName(nameValue),code=coordinatorInitialCode(initialValue);
+    if(rawName&&isCoordinatorInitialValue(rawName)&&!code){code=coordinatorInitialCode(rawName);rawName="";}
+    const manualName=code?normName((S.coordinatorConfig.manualMappings||{})[code]):"",resolved=manualName||(rawName&&!isCoordinatorInitialValue(rawName)?rawName:"")||(code?cache.resolvedByInitial.get(code):"")||code||"(unmatched coordinator)";
+    const status=manualName?"manual":(rawName&&!isCoordinatorInitialValue(rawName)?"exact":(code?cache.statusByInitial.get(code)||"unmatched":"unmatched"));return{name:resolved,initial:code||cache.preferredInitialByName.get(normCoachKey(resolved))||"",status};
+  }
+  function preferredInitialForName(name){return ensureCoordinatorIdentityCache(false).preferredInitialByName.get(normCoachKey(name))||"";}
+  function coordinatorNeedsAssignmentCount(cache){cache=cache||ensureCoordinatorIdentityCache(false);return cache.initials.filter(code=>["ambiguous","unmatched"].includes(cache.statusByInitial.get(code))).length;}
+  function refreshCoordinatorAssignmentButtons(cache){cache=cache||S.coordIdentityCache;if(!cache)return;const needs=coordinatorNeedsAssignmentCount(cache);document.querySelectorAll(".coordAssignmentsOpen").forEach(button=>{button.textContent="Coordinator Initial Assignments"+(needs?" • "+needs+" needs assignment":"");});}
+  function renderCoordinatorAssignments(){
+    refreshCoordinatorSourceColumnSelects();const cache=ensureCoordinatorIdentityCache(true),body=$("coordAssignmentTable").querySelector("tbody");body.innerHTML="";let autoCount=0;
+    cache.initials.forEach(code=>{
+      const status=cache.statusByInitial.get(code)||"unmatched";if(status==="auto")autoCount++;const assigned=cache.resolvedByInitial.get(code)||"",row=document.createElement("tr");
+      const options=['<option value="">Needs assignment</option>'].concat(cache.names.map(name=>'<option value="'+escapeHtml(name)+'"'+(name===assigned?' selected':'')+'>'+escapeHtml(name)+'</option>')).join(""),candidateText=status==="ambiguous"?(cache.candidatesByInitial.get(code)||[]).join(" or "):"";
+      row.innerHTML='<td class="mono"><b>'+escapeHtml(code)+'</b>'+(candidateText?'<div class="mini">Could be '+escapeHtml(candidateText)+'</div>':'')+'</td><td><div class="assignmentRowControls"><select data-coord-assign="'+escapeHtml(code)+'">'+options+'</select><input type="text" data-coord-custom="'+escapeHtml(code)+'" placeholder="Or type coordinator name"><button class="btn secondary" data-coord-custom-save="'+escapeHtml(code)+'" type="button">Assign</button></div></td><td><span class="assignmentStatus '+escapeHtml(status)+'">'+escapeHtml(status==="auto"?"Auto":status==="manual"?"Manual":status==="ambiguous"?"Ambiguous":"Needs Assignment")+'</span></td><td><button class="btn ghost" data-coord-clear="'+escapeHtml(code)+'" type="button">Clear manual</button></td>';body.appendChild(row);
+    });
+    if(!cache.initials.length)body.innerHTML='<tr><td colspan="4" class="mini">No coordinator initials were found in the active Checklist or Documented Coaching sources.</td></tr>';
+    $("coordAssignmentAutoCount").textContent=autoCount+" automatic";$("coordAssignmentNeedsCount").textContent=coordinatorNeedsAssignmentCount(cache)+" need assignment";$("coordAssignmentUnmatchedNames").textContent=cache.unmatchedNames.length+" unmatched coordinator"+(cache.unmatchedNames.length===1?"":"s");
+    const unmatched=$("coordUnmatchedCoordinatorList");unmatched.innerHTML=cache.unmatchedNames.length?cache.unmatchedNames.map(name=>'<span class="chip">'+escapeHtml(name)+'</span>').join(""):'<span class="mini">Every known coordinator has a resolved initial.</span>';
+    body.querySelectorAll("select[data-coord-assign]").forEach(select=>select.addEventListener("change",()=>{const code=select.dataset.coordAssign;if(select.value)S.coordinatorConfig.manualMappings[code]=select.value;else delete S.coordinatorConfig.manualMappings[code];saveCoordinatorConfig();invalidateCoordinatorCaches();renderCoordinatorAssignments();recompute(false);}));
+    body.querySelectorAll("button[data-coord-custom-save]").forEach(button=>button.addEventListener("click",()=>{const code=button.dataset.coordCustomSave,input=body.querySelector('input[data-coord-custom="'+CSS.escape(code)+'"]'),name=normName(input&&input.value);if(!name){toast("Coordinator name required","Type the coordinator name to assign to "+code+".");return;}S.coordinatorConfig.manualMappings[code]=name;saveCoordinatorConfig();invalidateCoordinatorCaches();renderCoordinatorAssignments();recompute(false);}));
+    body.querySelectorAll("button[data-coord-clear]").forEach(button=>button.addEventListener("click",()=>{delete S.coordinatorConfig.manualMappings[button.dataset.coordClear];saveCoordinatorConfig();invalidateCoordinatorCaches();renderCoordinatorAssignments();recompute(false);}));
+  }
+  function openCoordinatorAssignments(){renderCoordinatorAssignments();$("coordAssignmentsBack").style.display="flex";}
+  function saveCoordinatorSourceColumns(){
+    const cfg=S.coordinatorConfig.sources;cfg.checklist.nameColumn=$("coordMapChecklistName").value||"";cfg.checklist.initialColumn=$("coordMapChecklistInitial").value||"";cfg.docs.nameColumn=$("coordMapDocsName").value||"";cfg.docs.initialColumn=$("coordMapDocsInitial").value||"";saveCoordinatorConfig();invalidateCoordinatorCaches();reparseChecklistSourcesAfterMapping();reparseDocumentedSourcesAfterCoordinatorMapping();refreshAvailableCoordinatorHeaders();recompute(true);renderCoordinatorAssignments();toast("Coordinator columns saved","Checklist and Documented Coaching were re-read with the selected coordinator columns.");
+  }
+  function reparseDocumentedSourcesAfterCoordinatorMapping(){
+    if(S.localDocDockObj)S.localDocCoachingsAll=canonicalizeDocumentedCoachings(S.localDocDockObj);if(S.importedDocSourceRows.length)S.importedDocCoachingsAll=canonicalizeDocumentedCoachings({rows:S.importedDocSourceRows});
+    if(S.docDataMode==="import")applyDocumentedCoachings([...S.importedDocCoachingsAll],{mode:"import"});else applyDocumentedCoachings([...S.localDocCoachingsAll],{mode:"local"});
+  }
+  function coordinatorSourceRows(source){return source==="docs"?S.docCoachingsAll:S.rawItems;}
+  function coordinatorRawValue(row,field){const raw=row&&row.sourceRow||{},target=normHdr(field);for(const key of Object.keys(raw))if(normHdr(key)===target)return raw[key];return undefined;}
+  function availableCoordinatorDateFields(source){
+    refreshAvailableCoordinatorHeaders();const headers=source==="docs"?S.availableDocHeaders:S.availableChecklistHeaders,rows=coordinatorSourceRows(source).slice(0,500),chosen=new Set([S.coordinatorConfig.early.field,S.coordinatorConfig.late.field].filter(Boolean));
+    return headers.filter(header=>{const normalized=normHdr(header);if(!/(date|created|served|completed|entered|added|time|day)/.test(normalized)&&!chosen.has(header))return false;let nonempty=0,valid=0;for(const row of rows){const value=coordinatorRawValue(row,header);if(value===undefined||value===null||String(value).trim()==="")continue;nonempty++;if(parseDate(value))valid++;}return valid>0&&(valid/Math.max(1,nonempty)>=.45||/(date|created|served|completed|entered|added)/.test(normalized));}).sort((a,b)=>a.localeCompare(b));
+  }
+  function preferredCoordinatorDateField(source,role,fields){
+    const preferences=source==="docs"?(role==="late"?["dateaddedtoadmin","addedtoadmindate","createdon","date"]:["date","createdon","dateaddedtoadmin"]):(role==="late"?["dateserved","enteredonadmindate","datecompleted","createdon"]:["createdon","incidentdate","dateserved"]);
+    for(const preferred of preferences){const found=fields.find(field=>normHdr(field)===preferred);if(found)return found;}return fields[0]||"";
+  }
+  function fillMilestoneFieldSelect(id,source,current,role){
+    const select=$(id);if(!select)return"";const fields=availableCoordinatorDateFields(source);let chosen=fields.includes(current)?current:preferredCoordinatorDateField(source,role,fields);select.innerHTML="";
+    if(!fields.length)select.innerHTML='<option value="">No date-compatible fields detected</option>';fields.forEach(field=>{const option=document.createElement("option");option.value=field;option.textContent=field;select.appendChild(option);});select.value=chosen;return chosen;
+  }
+  function refreshCoordinatorMilestoneControls(){
+    const cfg=S.coordinatorConfig;$("coordRankEarlySource").value=cfg.early.source||"checklist";$("coordRankLateSource").value=cfg.late.source||"docs";cfg.early.field=fillMilestoneFieldSelect("coordRankEarlyField",cfg.early.source,cfg.early.field,"early");cfg.late.field=fillMilestoneFieldSelect("coordRankLateField",cfg.late.source,cfg.late.field,"late");$("coordRankBy").value=cfg.rankBy||"avg";$("coordRankMinCount").value=Math.max(0,Number(cfg.minCount)||0);
+  }
+  function coordinatorRowAllowed(row,source){
+    if(source==="docs"){if(S.docTypesAll.length&&!(row.types||[]).some(type=>S.docTypeSelected.has(type)))return false;return true;}
+    const settings=getSettings();if(settings.match&&!String(row.action||"").toLowerCase().includes(settings.match))return false;if(S.excludedReps.has(row.associate))return false;if(S.incidentTypesAll.length&&!S.incidentSelected.has(row.incident||"(blank)"))return false;return true;
+  }
+  function coordinatorRecordKeys(row,source){
+    const raw=row&&row.sourceRow||{},strongCandidates=["caseid","recordid","interactionid","contactid","evaluationid","ticketid","itemid","workitemid","guid"];let strong="";
+    for(const candidate of strongCandidates){const value=pickField(raw,[candidate]);if(value!==undefined&&value!==null&&String(value).trim()!==""){strong=normCoachKey(value);break;}}
+    const person=normCoachKey(source==="docs"?row.rep:row.associate),coach=normCoachKey(row.coach);return{strong:strong?"id|"+strong:"",fallback:person&&coach?"personcoach|"+person+"|"+coach:""};
+  }
+  function milestoneCoordinatorIdentity(row,source){const value=coordinatorValuesFromRow(row,source);return coordinatorIdentity(value.name,value.initial);}
+  function coordinatorMilestoneRecords(source,field,rangeRequired){
+    const timeframe=getTimeframe(),output=[];coordinatorSourceRows(source).forEach((row,index)=>{if(!coordinatorRowAllowed(row,source))return;const date=parseDate(coordinatorRawValue(row,field));if(!date||isNaN(date)||(rangeRequired&&!inRange(date,timeframe)))return;const identity=milestoneCoordinatorIdentity(row,source),keys=coordinatorRecordKeys(row,source);output.push({uid:source+"|"+index,date,row,source,identity,strong:keys.strong,fallback:keys.fallback});});return output;
+  }
+  function coordinatorIdentitiesCompatible(left,right){
+    if(!left||!right)return true;const leftKey=normCoachKey(left.name),rightKey=normCoachKey(right.name);if(!leftKey||!rightKey||leftKey===rightKey)return true;if(left.status==="unmatched"||right.status==="unmatched")return left.initial&&right.initial&&left.initial===right.initial;return false;
+  }
+  function buildCoordinatorPairs(){
+    const cfg=S.coordinatorConfig,result={pairs:[],missing:0,negative:0,conflicts:0};if(!cfg.early.field||!cfg.late.field)return result;const settings=getSettings();
+    const addPair=(early,late)=>{if(!early||!late){result.missing++;return;}if(!coordinatorIdentitiesCompatible(early.identity,late.identity)){result.conflicts++;return;}const duration=(late.date.getTime()-early.date.getTime())/86400000;if(!isFinite(duration)||duration<0){result.negative++;return;}if(settings.maxOn&&duration>settings.maxDays){result.conflicts++;return;}const identity=late.identity&&late.identity.name!=="(unmatched coordinator)"?late.identity:early.identity;result.pairs.push({coordinator:identity.name,initial:identity.initial||preferredInitialForName(identity.name),status:identity.status,days:duration,earlyDate:early.date,lateDate:late.date,earlySource:cfg.early.source,lateSource:cfg.late.source});};
+    if(cfg.early.source===cfg.late.source){
+      const source=cfg.early.source,timeframe=getTimeframe();coordinatorSourceRows(source).forEach((row,index)=>{if(!coordinatorRowAllowed(row,source))return;const earlyDate=parseDate(coordinatorRawValue(row,cfg.early.field)),lateDate=parseDate(coordinatorRawValue(row,cfg.late.field));if(!earlyDate||!inRange(earlyDate,timeframe))return;if(!lateDate){result.missing++;return;}const identity=milestoneCoordinatorIdentity(row,source),base={uid:source+"|"+index,row,source,identity};addPair({...base,date:earlyDate},{...base,date:lateDate});});return result;
+    }
+    const earlyRows=coordinatorMilestoneRecords(cfg.early.source,cfg.early.field,true).sort((a,b)=>a.date-b.date),lateRows=coordinatorMilestoneRecords(cfg.late.source,cfg.late.field,false).sort((a,b)=>a.date-b.date),byStrong=new Map(),byFallback=new Map();
+    lateRows.forEach(row=>{if(row.strong){const list=byStrong.get(row.strong)||[];list.push(row);byStrong.set(row.strong,list);}if(row.fallback){const list=byFallback.get(row.fallback)||[];list.push(row);byFallback.set(row.fallback,list);}});
+    const used=new Set();earlyRows.forEach(early=>{const groups=[];if(early.strong&&byStrong.has(early.strong))groups.push(byStrong.get(early.strong));if(early.fallback&&byFallback.has(early.fallback))groups.push(byFallback.get(early.fallback));let match=null;for(const group of groups){match=group.find(late=>!used.has(late.uid)&&late.date>=early.date&&coordinatorIdentitiesCompatible(early.identity,late.identity));if(match)break;}if(!match){result.missing++;return;}used.add(match.uid);addPair(early,match);});return result;
+  }
+  function coordinatorRankingAggregate(){
+    const cfg=S.coordinatorConfig,tf=getTimeframe(),settings=getSettings(),key=[S.dataRevision,cfg.early.source,cfg.early.field,cfg.late.source,cfg.late.field,tf.label,tf.basis,settings.match,settings.maxOn,settings.maxDays,[...S.incidentSelected].join("|"),[...S.docTypeSelected].join("|"),JSON.stringify(cfg.manualMappings||{})].join("¦");
+    if(S.coordRankingCache&&S.coordRankingCacheKey===key)return S.coordRankingCache;const paired=buildCoordinatorPairs(),groups=new Map();
+    paired.pairs.forEach(pair=>{const key=normCoachKey(pair.coordinator)+"|"+pair.initial,group=groups.get(key)||{name:pair.coordinator,initial:pair.initial,values:[],earlyDates:[],lateDates:[]};group.values.push(pair.days);group.earlyDates.push(pair.earlyDate);group.lateDates.push(pair.lateDate);groups.set(key,group);});
+    const rows=[...groups.values()].map(group=>{const summary=stats(group.values);return{name:group.name,initial:group.initial||preferredInitialForName(group.name),count:summary.count,avg:summary.avg,median:summary.median,fastest:summary.min,slowest:summary.max,earlyDate:new Date(Math.min(...group.earlyDates.map(date=>date.getTime()))),lateDate:new Date(Math.max(...group.lateDates.map(date=>date.getTime()))),earlySource:cfg.early.source==="docs"?"Documented Coaching":"Checklist",lateSource:cfg.late.source==="docs"?"Documented Coaching":"Checklist"};});
+    S.coordRankingCache={rows,quality:paired};S.coordRankingCacheKey=key;return S.coordRankingCache;
+  }
+  function coordinatorRankMetric(row,mode){if(mode==="count")return-row.count;if(mode==="median")return row.median;if(mode==="fastest")return row.fastest;if(mode==="slowest")return row.slowest;return row.avg;}
+  function getCoordinatorRankingRows(){
+    const data=coordinatorRankingAggregate(),minCount=Math.max(0,Number(S.coordinatorConfig.minCount)||0),base=data.rows.filter(row=>row.count>=minCount).sort((a,b)=>{const left=coordinatorRankMetric(a,S.coordinatorConfig.rankBy),right=coordinatorRankMetric(b,S.coordinatorConfig.rankBy);return left-right||b.count-a.count||a.name.localeCompare(b.name);}).map((row,index)=>({...row,rank:index+1}));
+    S.lastCoordinatorRankingRows=base;const search=normCoachKey($("coordRankSearch")&&$("coordRankSearch").value);let rows=search?base.filter(row=>normCoachKey(row.name+" "+row.initial).includes(search)):base;const sort=S.coordinatorConfig.sort||{key:"rank",dir:"asc"},direction=sort.dir==="desc"?-1:1;
+    rows=[...rows].sort((a,b)=>{const left=a[sort.key],right=b[sort.key];if(left instanceof Date&&right instanceof Date)return(left-right)*direction;if(typeof left==="number"||typeof right==="number")return((Number(left)||0)-(Number(right)||0))*direction;return String(left||"").localeCompare(String(right||""))*direction;});return{rows,quality:data.quality};
+  }
+  function formatCoordinatorDuration(days){if(!isFinite(days))return"—";if(days<2){const totalMinutes=Math.max(0,Math.round(days*1440)),hours=Math.floor(totalMinutes/60),minutes=totalMinutes%60;return hours+"h"+(minutes?" "+minutes+"m":"");}return fmtNum(days,1)+"d";}
+  function renderCoordinatorRankingColumnBuilder(){
+    const wrap=$("coordRankingColumnBuilder");if(!wrap)return;const visible=new Set(S.coordinatorConfig.visibleColumns||[]);wrap.innerHTML="";
+    COORD_RANK_COLUMN_DEFS.forEach(column=>{const label=document.createElement("label");label.className="coordColumnChoice";label.innerHTML='<input type="checkbox" data-coord-rank-column="'+column.id+'" '+(visible.has(column.id)?"checked":"")+"> "+escapeHtml(column.label);wrap.appendChild(label);});
+    wrap.querySelectorAll("input[data-coord-rank-column]").forEach(input=>input.addEventListener("change",()=>{const selected=[...wrap.querySelectorAll("input[data-coord-rank-column]:checked")].map(item=>item.dataset.coordRankColumn);if(!selected.length){input.checked=true;toast("Keep one column","Coordinator rankings need at least one visible column.");return;}S.coordinatorConfig.visibleColumns=selected;saveCoordinatorConfig();renderCoordinatorSpeedRankings();}));
+  }
+  function coordinatorRankCell(row,column){
+    if(column==="rank")return'<td class="mono">'+row.rank+"</td>";if(column==="name")return'<td><button class="rankCoachBtn" data-open-coordinator="'+encodeURIComponent(row.name)+'">'+escapeHtml(row.name)+"</button></td>";if(column==="initial")return'<td class="mono">'+escapeHtml(row.initial||"—")+"</td>";if(column==="count")return'<td class="mono">'+row.count+"</td>";
+    if(["avg","median","fastest","slowest"].includes(column))return'<td class="mono" style="'+dayHeat(row[column])+'">'+formatCoordinatorDuration(row[column])+"</td>";if(column==="earlyDate"||column==="lateDate")return'<td class="mono">'+fmtDateShort(row[column])+"</td>";if(column==="earlySource"||column==="lateSource")return"<td>"+escapeHtml(row[column])+"</td>";return"<td>—</td>";
+  }
+  function renderCoordinatorSpeedRankings(){
+    if(!$("coordRankingTable"))return;refreshCoordinatorMilestoneControls();renderCoordinatorRankingColumnBuilder();const result=getCoordinatorRankingRows(),visible=(S.coordinatorConfig.visibleColumns||[]).filter(id=>COORD_RANK_COLUMN_DEFS.some(column=>column.id===id)),head=$("coordRankingTable").querySelector("thead"),body=$("coordRankingTable").querySelector("tbody"),sort=S.coordinatorConfig.sort||{key:"rank",dir:"asc"};
+    head.innerHTML="<tr>"+visible.map(id=>{const column=COORD_RANK_COLUMN_DEFS.find(item=>item.id===id),arrow=sort.key===id?(sort.dir==="asc"?" ▲":" ▼"):"";return'<th><button class="sortHeader" data-coord-sort="'+id+'" type="button">'+escapeHtml(column.label+arrow)+"</button></th>";}).join("")+"</tr>";body.innerHTML="";
+    result.rows.forEach(row=>{const tr=document.createElement("tr");tr.innerHTML=visible.map(column=>coordinatorRankCell(row,column)).join("");body.appendChild(tr);});
+    if(!result.rows.length)body.innerHTML='<tr><td colspan="'+Math.max(1,visible.length)+'" class="mini">No valid coordinator date pairs meet the current definition, mappings, timeframe, and minimum record count.</td></tr>';
+    head.querySelectorAll("[data-coord-sort]").forEach(button=>button.addEventListener("click",()=>{const key=button.dataset.coordSort;if(S.coordinatorConfig.sort.key===key)S.coordinatorConfig.sort.dir=S.coordinatorConfig.sort.dir==="asc"?"desc":"asc";else S.coordinatorConfig.sort={key,dir:key==="count"?"desc":"asc"};saveCoordinatorConfig();renderCoordinatorSpeedRankings();}));
+    body.querySelectorAll("[data-open-coordinator]").forEach(button=>button.addEventListener("click",()=>{const name=decodeURIComponent(button.dataset.openCoordinator),preferred=S.coordinatorConfig.early.source;S.coordSource=preferred;$("coordSourceSelect").value=preferred;switchResultsTab("coord");populateCoordinatorFocusSelect();$("coordFocusSelect").value=name;S.focusCoordinator=name;renderCoordinatorView();}));
+    const quality=result.quality;$("coordRankingCountPill").textContent=result.rows.length+" coordinator"+(result.rows.length===1?"":"s")+" • "+quality.pairs.length+" valid pair"+(quality.pairs.length===1?"":"s");$("coordRankingQualityPill").textContent=(quality.missing+quality.negative+quality.conflicts)+" excluded / incomplete";
+    const earlyLabel=S.coordinatorConfig.early.source==="docs"?"Documented Coaching":"Checklist",lateLabel=S.coordinatorConfig.late.source==="docs"?"Documented Coaching":"Checklist";$("coordRankingScopeHint").textContent=getTimeframe().label+" • "+earlyLabel+" → "+S.coordinatorConfig.early.field+" to "+lateLabel+" → "+S.coordinatorConfig.late.field+" • one-to-one record matching • fastest first";
+  }
+  function syncCoordinatorRankingDefinition(){
+    const cfg=S.coordinatorConfig;cfg.early.source=$("coordRankEarlySource").value||"checklist";cfg.early.field=$("coordRankEarlyField").value||"";cfg.late.source=$("coordRankLateSource").value||"docs";cfg.late.field=$("coordRankLateField").value||"";cfg.rankBy=$("coordRankBy").value||"avg";cfg.minCount=Math.max(0,Number($("coordRankMinCount").value)||0);cfg.sort={key:"rank",dir:"asc"};saveCoordinatorConfig();S.coordRankingCacheKey="";renderCoordinatorSpeedRankings();
+  }
+  function exportCoordinatorRankings(){
+    const rows=S.lastCoordinatorRankingRows.length?S.lastCoordinatorRankingRows:getCoordinatorRankingRows().rows;if(!rows.length){toast("Nothing to export","No coordinators meet the ranking definition.");return;}if(!window.XLSX){toast("Excel unavailable","Refresh the page so the XLSX library can load.");return;}
+    const visible=(S.coordinatorConfig.visibleColumns||[]).filter(id=>COORD_RANK_COLUMN_DEFS.some(column=>column.id===id)),header=visible.map(id=>COORD_RANK_COLUMN_DEFS.find(column=>column.id===id).label),value=(row,id)=>{if(["avg","median","fastest","slowest"].includes(id))return row[id];if(id==="earlyDate"||id==="lateDate")return fmtDate(row[id]);return row[id];},aoa=[header,...rows.map(row=>visible.map(id=>value(row,id)))],workbook=XLSX.utils.book_new(),sheet=XLSX.utils.aoa_to_sheet(aoa);
+    sheet["!freeze"]={xSplit:0,ySplit:1};sheet["!cols"]=header.map((label,index)=>({wch:index===1?28:Math.max(12,Math.min(28,label.length+3))}));XLSX.utils.book_append_sheet(workbook,sheet,"Coordinator Rankings");
+    const meta=XLSX.utils.aoa_to_sheet([["Early source",S.coordinatorConfig.early.source],["Early field",S.coordinatorConfig.early.field],["Late source",S.coordinatorConfig.late.source],["Late field",S.coordinatorConfig.late.field],["Rank by",S.coordinatorConfig.rankBy],["Timeframe",getTimeframe().label],["Exported",new Date().toLocaleString()]]);XLSX.utils.book_append_sheet(workbook,meta,"Definition");XLSX.writeFile(workbook,"coordinator_speed_rankings_"+new Date().toISOString().slice(0,10)+".xlsx");toast("Exported","Coordinator ranking workbook downloaded.");
+  }
+  function installCoordinatorRankingHandlers(){
+    document.querySelectorAll(".coordAssignmentsOpen").forEach(button=>button.addEventListener("click",openCoordinatorAssignments));$("btnCloseCoordAssignments").addEventListener("click",()=>$("coordAssignmentsBack").style.display="none");$("coordAssignmentsBack").addEventListener("click",event=>{if(event.target===$("coordAssignmentsBack"))$("coordAssignmentsBack").style.display="none";});
+    $("btnRerunCoordinatorAutoMatch").addEventListener("click",()=>{invalidateCoordinatorCaches();renderCoordinatorAssignments();renderCoordinatorTables();renderCoordinatorView();renderCoordinatorSpeedRankings();toast("Automatic matching refreshed","Manual coordinator assignments were preserved.");});$("btnSaveCoordSourceColumns").addEventListener("click",saveCoordinatorSourceColumns);
+    ["coordRankEarlySource","coordRankLateSource"].forEach(id=>$(id).addEventListener("change",()=>{const side=id==="coordRankEarlySource"?"early":"late";S.coordinatorConfig[side].source=$(id).value;S.coordinatorConfig[side].field="";saveCoordinatorConfig();S.coordRankingCacheKey="";renderCoordinatorSpeedRankings();}));
+    ["coordRankEarlyField","coordRankLateField","coordRankBy","coordRankMinCount"].forEach(id=>$(id).addEventListener("change",syncCoordinatorRankingDefinition));$("btnBuildCoordinatorRankings").addEventListener("click",syncCoordinatorRankingDefinition);$("coordRankSearch").addEventListener("input",renderCoordinatorSpeedRankings);$("btnExportCoordinatorRankings").addEventListener("click",exportCoordinatorRankings);
+  }
+
   function calendarDaysBetween(a,b){
     if(!(a instanceof Date) || isNaN(a) || !(b instanceof Date) || isNaN(b)) return NaN;
     return (b.getTime()-a.getTime())/86400000;
@@ -1639,7 +1963,8 @@
         const incidentRaw = pickMappedField(r, "incident", ["incident","incidenttype","incidentcategory","type"]);
         const correctiveRaw = pickMappedField(r, "corrective", ["corrective","correctivetype","correctiveaction","correctivelevel","discipline","disciplinaryaction"]);
         const descRaw = pickMappedField(r, "desc", ["description","desc","details","notes","note","summary"]);
-        const coordNameRaw = pickMappedField(r, "coord", ["coordenteredonadmin","coordenteredonadminname","coordentered","enteredbyadmincoord","admincoord"]);
+        const coordNameRaw = pickCoordinatorField(r, "checklist", "name", ["coordinator","coordinatorname","coordname","coordenteredonadmin","coordenteredonadminname","coordentered","enteredbyadmincoord","admincoord"]);
+        const coordInitialRaw = pickCoordinatorField(r, "checklist", "initial", ["coordinatorinitial","coordinatorinitials","coordinitial","coordinitials","coordinit"]);
         const coordDateRaw = pickMappedField(r, "coordDate", ["enteredonadmindate","dateenteredonadmin","adminentereddate","enteredadmindate"]);
 
         const coach = normName(coachRaw) || "(blank)";
@@ -1672,9 +1997,11 @@
           corrective: String(correctiveRaw ?? "").trim(),
           desc: normName(descRaw),
           coordEnteredOnAdmin: normName(coordNameRaw) || "",
+          coordInitial: normName(coordInitialRaw) || "",
           enteredOnAdminDate: coordAdminDate && !isNaN(coordAdminDate) ? coordAdminDate : null,
           coordAdminGapDays,
-          sourceSheet: pack.sheetName || ""
+          sourceSheet: pack.sheetName || "",
+          sourceRow:r
         });
       }
     }
@@ -1706,7 +2033,8 @@
         const typeSingle = pickField(r, ["coachingtype","type"]);
         const repRaw = pickField(r, ["associatename","associate","name","rep","employee"]);
         const descRaw = pickField(r, ["description","desc","notes","note","details","summary","coachingnotes"]);
-        const coordInitialsRaw = pickField(r, ["coordinitials","coordinatorinitials","coordinit"]);
+        const coordNameRaw = pickCoordinatorField(r, "docs", "name", ["coordinator","coordinatorname","coordname","assignedcoordinator","assignedcoord"]);
+        const coordInitialsRaw = pickCoordinatorField(r, "docs", "initial", ["coordinitials","coordinatorinitials","coordinatorinitial","coordinitial","coordinit"]);
         const dateAddedAdminRaw = pickField(r, ["dateaddedtoadmin","addedtoadmindate","admindateadded","dateaddedadmin"]);
 
         const coach = normName(coachRaw) || "(blank)";
@@ -1738,9 +2066,11 @@
           lagDays,
           types,
           desc:normName(descRaw),
+          coordinatorName:normName(coordNameRaw) || "",
           coordInitials:normName(coordInitialsRaw) || "",
           dateAddedToAdmin: adminDate && !isNaN(adminDate) ? adminDate : null,
-          coordAdminGapDays
+          coordAdminGapDays,
+          sourceRow:r
         });
       }
     }
@@ -1864,6 +2194,7 @@
 
   function applyChecklistItems(items, opts={}){
     S.rawItems = Array.isArray(items) ? items : [];
+    markCoordinatorDataChanged();
     S.checkLoaded = S.rawItems.length > 0;
     if(opts.mode) S.dataMode = opts.mode;
     pruneCoachCutToActive();
@@ -2034,6 +2365,7 @@
     const previousSelected = new Set(S.docTypeSelected || []);
     const prevHadAll = !S.docTypesAll.length || previousSelected.size === S.docTypesAll.length;
     S.docCoachingsAll = Array.isArray(coachings) ? coachings : [];
+    markCoordinatorDataChanged();
     S.docLoaded = S.docCoachingsAll.length > 0;
     if(opts.mode) S.docDataMode = opts.mode;
 
@@ -2051,6 +2383,8 @@
     const obj = loadDockObjByKey(key);
     if(!obj){ setDocBadge("bad","Key not readable"); return; }
 
+    S.localDocDockObj = obj;
+    refreshAvailableCoordinatorHeaders();
     const coachings = canonicalizeDocumentedCoachings(obj);
     S.docKey = key;
     S.localDocCoachingsAll = coachings;
@@ -2078,7 +2412,9 @@
   }
 
   function applyImportedDocRows(rows, label, detail){
-    const coachings = canonicalizeDocumentedCoachings({rows});
+    S.importedDocSourceRows = Array.isArray(rows) ? rows : [];
+    refreshAvailableCoordinatorHeaders();
+    const coachings = canonicalizeDocumentedCoachings({rows:S.importedDocSourceRows});
     if(!coachings.length){
       setDocImportBadge("bad", "Import found no usable doc rows");
       toast("Doc import failed", "I found headers, but no rows matched Coach / Date / Coaching Type.");
@@ -2162,7 +2498,7 @@
     const tf = getTimeframe();
     const st = getSettings();
 
-    if(!S.rawItems.length){
+    if(!S.rawItems.length && !S.docCoachingsAll.length){
       setStatus("", "Waiting…");
       $("kRows").textContent="—";
       $("kCoaches").textContent="—";
@@ -2177,6 +2513,7 @@
       if($("coordDailyTable")) $("coordDailyTable").querySelector("tbody").innerHTML="";
       if($("weeklyTable")) $("weeklyTable").querySelector("tbody").innerHTML="";
       if($("rankingTable")){ $("rankingTable").querySelector("thead").innerHTML=""; $("rankingTable").querySelector("tbody").innerHTML=""; }
+    if($("coordRankingTable")){ $("coordRankingTable").querySelector("thead").innerHTML=""; $("coordRankingTable").querySelector("tbody").innerHTML=""; }
       if($("timelinePopupContent")) $("timelinePopupContent").innerHTML=`<div class="mini">Load checklist data to begin.</div>`;
       if($("coachTimelineStage")) $("coachTimelineStage").classList.remove("expanded");
       $("coordDocTable").querySelector("tbody").innerHTML="";
@@ -2304,12 +2641,14 @@
     const weeks = tf.weeks || (docCount ? 1 : null);
     const docPerWk = (weeks && weeks > 0) ? (docCount / weeks) : 0;
 
+    ensureCoordinatorIdentityCache(false);
     const coordChecklistMap = new Map();
     const coordChecklistItems = [];
     for(const arr of afterCut.values()){
       for(const it of arr){
-        const key = normName(it.coordEnteredOnAdmin);
-        if(!key || !isFinite(it.coordAdminGapDays) || !(it.served instanceof Date) || !(it.enteredOnAdminDate instanceof Date)) continue;
+        const identity = coordinatorIdentity(it.coordEnteredOnAdmin,it.coordInitial);
+        const key = identity.name;
+        if(!key || key === "(unmatched coordinator)" || !isFinite(it.coordAdminGapDays) || !(it.served instanceof Date) || !(it.enteredOnAdminDate instanceof Date)) continue;
         coordChecklistItems.push(it);
         const bucket = coordChecklistMap.get(key) || [];
         bucket.push(it.coordAdminGapDays);
@@ -2324,8 +2663,9 @@
     const coordDocMap = new Map();
     const coordDocItems = [];
     for(const dc of docScope){
-      const key = normName(dc.coordInitials);
-      if(!key || !isFinite(dc.coordAdminGapDays) || !(dc.created instanceof Date) || !(dc.dateAddedToAdmin instanceof Date)) continue;
+      const identity = coordinatorIdentity(dc.coordinatorName,dc.coordInitials);
+      const key = identity.name;
+      if(!key || key === "(unmatched coordinator)" || !isFinite(dc.coordAdminGapDays) || !(dc.created instanceof Date) || !(dc.dateAddedToAdmin instanceof Date)) continue;
       coordDocItems.push(dc);
       const bucket = coordDocMap.get(key) || [];
       bucket.push(dc.coordAdminGapDays);
@@ -2348,6 +2688,7 @@
     renderSpeedRankings();
     renderCoordinatorTables();
     renderCoordinatorView();
+    renderCoordinatorSpeedRankings();
 
     setStatus("good", "Computed ✓");
     if(withToast){
@@ -2632,17 +2973,17 @@
   function coordinatorSourceLabel(){ return S.coordSource==="docs" ? "Documentation coordinators" : "Checklist coordinators"; }
   function coordinatorDateKey(d){ return dateInputValue(d); }
   function coordinatorRawItems(){ return S.coordSource==="docs" ? S.lastDocCoordItems : S.lastChecklistCoordItems; }
-  function coordinatorNameOf(raw){ return normName(S.coordSource==="docs" ? raw.coordInitials : raw.coordEnteredOnAdmin); }
+  function coordinatorNameOf(raw){ const value=coordinatorValuesFromRow(raw,S.coordSource); return coordinatorIdentity(value.name,value.initial).name; }
   function coordinatorVisualRow(raw){
     if(S.coordSource==="docs"){
       return {
-        source:"docs", coordinator:normName(raw.coordInitials), start:raw.created, end:raw.dateAddedToAdmin,
+        source:"docs", coordinator:coordinatorNameOf(raw), start:raw.created, end:raw.dateAddedToAdmin,
         gap:Number(raw.coordAdminGapDays), label:(raw.types||[]).join(" • ")||"Documented coaching",
         sub:raw.rep||raw.coach||"", raw
       };
     }
     return {
-      source:"checklist", coordinator:normName(raw.coordEnteredOnAdmin), start:raw.served, end:raw.enteredOnAdminDate,
+      source:"checklist", coordinator:coordinatorNameOf(raw), start:raw.served, end:raw.enteredOnAdminDate,
       gap:Number(raw.coordAdminGapDays), label:raw.incident||"Checklist item",
       sub:raw.associate||raw.coach||"", raw
     };
@@ -2785,12 +3126,13 @@
     const tb1 = $("coordChecklistTable").querySelector("tbody");
     tb1.innerHTML = "";
     if(!S.lastChecklistCoordSumm.length){
-      tb1.innerHTML = `<tr><td colspan="5" class="mini" style="padding:12px 8px; color:var(--muted)">No checklist coordinator rows matched the current filters.</td></tr>`;
+      tb1.innerHTML = `<tr><td colspan="6" class="mini" style="padding:12px 8px; color:var(--muted)">No checklist coordinator rows matched the current filters.</td></tr>`;
     } else {
       S.lastChecklistCoordSumm.forEach(r=>{
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${escapeHtml(r.name)}</td>
+          <td class="mono">${escapeHtml(preferredInitialForName(r.name) || "—")}</td>
           <td class="mono">${r.count}</td>
           <td class="mono">${fmtNum(r.avg,2)}</td>
           <td class="mono">${fmtNum(r.median,2)}</td>
@@ -2803,12 +3145,13 @@
     const tb2 = $("coordDocTable").querySelector("tbody");
     tb2.innerHTML = "";
     if(!S.lastDocCoordSumm.length){
-      tb2.innerHTML = `<tr><td colspan="5" class="mini" style="padding:12px 8px; color:var(--muted)">No documentation coordinator rows matched the current filters.</td></tr>`;
+      tb2.innerHTML = `<tr><td colspan="6" class="mini" style="padding:12px 8px; color:var(--muted)">No documentation coordinator rows matched the current filters.</td></tr>`;
     } else {
       S.lastDocCoordSumm.forEach(r=>{
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${escapeHtml(r.name)}</td>
+          <td class="mono">${escapeHtml(preferredInitialForName(r.name) || "—")}</td>
           <td class="mono">${r.count}</td>
           <td class="mono">${fmtNum(r.avg,2)}</td>
           <td class="mono">${fmtNum(r.median,2)}</td>
@@ -3689,9 +4032,10 @@
     XLSX.writeFile(wb,`job_coach_speed_rankings_${new Date().toISOString().slice(0,10)}.xlsx`);toast("Exported","Ranking workbook downloaded.");
   }
   function switchResultsTab(which){
-    const map={coach:["tabCoachTimelineResults","paneCoachTimelineResults"],rank:["tabSpeedRankingResults","paneSpeedRankingResults"],coord:["tabCoordinatorResults","paneCoordinatorResults"]};
+    const map={coach:["tabCoachTimelineResults","paneCoachTimelineResults"],rank:["tabSpeedRankingResults","paneSpeedRankingResults"],coord:["tabCoordinatorResults","paneCoordinatorResults"],coordRank:["tabCoordinatorSpeedRankingResults","paneCoordinatorSpeedRankingResults"]};
     Object.values(map).forEach(([t,p])=>{$(t).classList.remove("on");$(p).classList.remove("on");});const pair=map[which];$(pair[0]).classList.add("on");$(pair[1]).classList.add("on");
     if(which==="coord") renderCoordinatorView();
+    if(which==="coordRank") renderCoordinatorSpeedRankings();
   }
   function reparseChecklistSourcesAfterMapping(){
     if(S.localChecklistDockObj) S.localRawItems=canonicalizeChecklistSpeedRows(S.localChecklistDockObj);
@@ -3873,6 +4217,8 @@
     S.docCoachingsAll=[];
     S.localDocCoachingsAll=[];
     S.importedDocCoachingsAll=[];
+    S.importedDocSourceRows=[];
+    S.localDocDockObj=null;
     S.importedDocSourceLabel="";
     S.docDataMode="local";
     S.docTypesAll=[];
@@ -3891,6 +4237,11 @@
     S.lastFilteredItems=[];
     S.lastFocusItemsByCoach=new Map();
     S.lastRankingRows=[];
+    S.lastCoordinatorRankingRows=[];
+    S.coordRankingCache=null;
+    S.coordRankingCacheKey="";
+    S.coordIdentityCache=null;
+    S.coordIdentityCacheKey="";
     S.focusCoach="";
     S.selectedWeekKey="";
     S.coordSource="checklist";
@@ -3915,6 +4266,7 @@
     if($("weeklyTable")) $("weeklyTable").querySelector("tbody").innerHTML="";
     if($("categoryCompareTable")) $("categoryCompareTable").querySelector("tbody").innerHTML="";
     if($("rankingTable")){ $("rankingTable").querySelector("thead").innerHTML=""; $("rankingTable").querySelector("tbody").innerHTML=""; }
+    if($("coordRankingTable")){ $("coordRankingTable").querySelector("thead").innerHTML=""; $("coordRankingTable").querySelector("tbody").innerHTML=""; }
     $("excludedChips").innerHTML="";
     $("kRows").textContent="—";
     $("kCoaches").textContent="—";
@@ -4039,7 +4391,7 @@
   $("itemDetailBack").addEventListener("click",e=>{if(e.target===$("itemDetailBack"))$("itemDetailBack").style.display="none";});
   document.addEventListener("keydown",e=>{
     if(e.key!=="Escape") return;
-    ["itemDetailBack","timelinePopupBack","modalBack","settingsBack"].forEach(id=>{const el=$(id);if(el)el.style.display="none";});
+    ["itemDetailBack","timelinePopupBack","modalBack","settingsBack","coordAssignmentsBack"].forEach(id=>{const el=$(id);if(el)el.style.display="none";});
   });
 
   $("btnClose").addEventListener("click", ()=> $("modalBack").style.display="none");
@@ -4051,6 +4403,7 @@
   $("tabCoachTimelineResults").addEventListener("click", ()=>switchResultsTab("coach"));
   $("tabSpeedRankingResults").addEventListener("click", ()=>{switchResultsTab("rank");renderSpeedRankings();});
   $("tabCoordinatorResults").addEventListener("click", ()=>switchResultsTab("coord"));
+  $("tabCoordinatorSpeedRankingResults").addEventListener("click", ()=>switchResultsTab("coordRank"));
   $("tabCoordinatorVisual").addEventListener("click",()=>setCoordinatorSubTab("visual"));
   $("tabCoordinatorSummary").addEventListener("click",()=>setCoordinatorSubTab("summary"));
   $("coordSourceSelect").addEventListener("change",()=>{S.coordSource=$("coordSourceSelect").value;S.focusCoordinator="";S.selectedCoordWeekKey="";S.selectedCoordDayKey="";renderCoordinatorView();});
@@ -4088,11 +4441,13 @@
   }));
 
   loadSavedColumnMap();
+  loadCoordinatorConfig();
   loadSidebarPreference();
   refreshMappingOptions();
   renderRankingBandBuilder();
   installTimelinePointerHandlers();
   installCoordinatorTimelinePointerHandlers();
+  installCoordinatorRankingHandlers();
   setCoordinatorSubTab("visual");
   setCoachSummaryExpanded(false);
   autoLoadAll(true);

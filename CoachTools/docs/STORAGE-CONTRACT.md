@@ -116,7 +116,7 @@ Legacy consumers may reread the compatibility dock during the transition.
 These stay separate from shared weekly data:
 
 - Coaching Gaps: `myone2.gaps.prefs`, `myone2.gaps.panelCollapsed`, and per-team keys under `myone2.teamAnalysisChecklist.*`
-- Coach Timeline: `myone2.coachSpeed.columnMap`, `myone2.coachSpeed.sidebarCollapsed`
+- Coach Timeline: `myone2.coachSpeed.columnMap`, `myone2.coachSpeed.coordinatorConfig`, `myone2.coachSpeed.sidebarCollapsed`
 - QA Scores: `qaOnlyDash.settings.v6`
 - KPI Impact: `impactTool.activeTab`
 - Weekly Data setup: `myone.master.v2.setup`

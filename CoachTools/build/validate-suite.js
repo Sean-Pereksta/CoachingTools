@@ -108,7 +108,7 @@ const expectedMarkers = {
   'allstar': ['id="runBtn"', 'id="packagedFile"', 'js/core.js'],
   'weekly-data': ['id="btnImportMany"', 'id="btnGenerate"', 'IMPORT.SOURCES'],
   'coaching-gaps': ['gaps.prefs', 'CoachToolsAppData', 'weeklyRetail', 'weeklyReferral', 'documentedCoaching', 'checklist', 'qa'],
-  'coach-timeline': ['coachSpeed.columnMap', 'CoachToolsAppData', 'checklist', 'documentedCoaching'],
+  'coach-timeline': ['coachSpeed.columnMap', 'coachSpeed.coordinatorConfig', 'tabCoordinatorSpeedRankingResults', 'Coordinator Initial Assignments', 'CoachToolsAppData', 'checklist', 'documentedCoaching'],
   'kpi-impact': ['impactTool.activeTab', 'CoachToolsAppData', 'weeklyRetail', 'weeklyReferral', 'documentedCoaching'],
   'qa-scores': ['qaOnlyDash.settings.v6', 'CoachToolsAppData', 'qa', 'documentedCoaching'],
   'audit-checklist': ['CoachToolsAppData', 'checklist', 'documentedCoaching'],
