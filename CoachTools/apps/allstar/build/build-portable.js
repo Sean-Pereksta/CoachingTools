@@ -30,8 +30,16 @@ const insights=read('qualtrics/insights.js');
 const individualMessages=read('qualtrics/individual-messages.js');
 const individualUi=read('qualtrics/individual-ui.js');
 const generatorRaw=fs.readFileSync(generatorPath,'utf8');
-let generator=generatorRaw.replace(/<script src="insights\.js" onerror="[^"]*"><\/script>/,()=>'<script data-qualtrics-source="qualtrics/insights.js">\n'+insights.replace(/<\/script/gi,'<\\/script')+'\n<\/script>');
-if(generator===generatorRaw) throw new Error('Qualtrics insights module script tag was not found for bundling.');
+for(const vendor of ['xlsx.full.min.js','jszip.min.js']){
+  const standaloneMarker='<script src="../../../vendor/'+vendor+'"><\/script>';
+  if(!generatorRaw.includes(standaloneMarker)) throw new Error('Standalone Qualtrics vendor marker missing: '+vendor);
+}
+let generator=generatorRaw
+  .replace('<script src="../../../vendor/xlsx.full.min.js"><\/script>','<script src="../../vendor/xlsx.full.min.js"><\/script>')
+  .replace('<script src="../../../vendor/jszip.min.js"><\/script>','<script src="../../vendor/jszip.min.js"><\/script>');
+const beforeInsights=generator;
+generator=generator.replace(/<script src="insights\.js" onerror="[^"]*"><\/script>/,()=>'<script data-qualtrics-source="qualtrics/insights.js">\n'+insights.replace(/<\/script/gi,'<\\/script')+'\n<\/script>');
+if(generator===beforeInsights) throw new Error('Qualtrics insights module script tag was not found for bundling.');
 const beforeIndividualMessages=generator;
 generator=generator.replace(/<script src="individual-messages\.js" onerror="[^"]*"><\/script>/,()=>'<script data-qualtrics-source="qualtrics/individual-messages.js">\n'+individualMessages.replace(/<\/script/gi,'<\\/script')+'\n<\/script>');
 if(generator===beforeIndividualMessages) throw new Error('Qualtrics Individual Messages engine script tag was not found for bundling.');
@@ -55,8 +63,8 @@ for(const shared of ['coachtools-sync.js','coachtools-storage.js','coachtools-id
 }
 html=html.replace(/<link rel="stylesheet" href="css\/allstar\.css">/,()=>'<style data-allstar-source="css/allstar.css">\n'+read('css/allstar.css')+'\n</style>');
 let portableGenerator=generator;
-portableGenerator=portableGenerator.replace(/<script src="\.\.\/\.\.\/vendor\/xlsx\.full\.min\.js" onerror="[^"]*"><\/script>/,'<script data-allstar-vendor="xlsx.full.min.js">window.XLSX=parent.XLSX;<\/script>');
-portableGenerator=portableGenerator.replace(/<script src="\.\.\/\.\.\/vendor\/jszip\.min\.js" onerror="[^"]*"><\/script>/,()=>'<script data-allstar-vendor="jszip.min.js">\n'+readSuite('vendor/jszip.min.js').replace(/<\/script/gi,'<\\/script')+'\n<\/script>');
+portableGenerator=portableGenerator.replace(/<script src="\.\.\/\.\.\/vendor\/xlsx\.full\.min\.js"><\/script>/,'<script data-allstar-vendor="xlsx.full.min.js">window.XLSX=parent.XLSX;<\/script>');
+portableGenerator=portableGenerator.replace(/<script src="\.\.\/\.\.\/vendor\/jszip\.min\.js"><\/script>/,()=>'<script data-allstar-vendor="jszip.min.js">\n'+readSuite('vendor/jszip.min.js').replace(/<\/script/gi,'<\\/script')+'\n<\/script>');
 if(/\.\.\/vendor\/(?:xlsx|jszip)/.test(portableGenerator)) throw new Error('Portable Qualtrics generator still contains a vendor path.');
 validateBundledGenerator(portableGenerator,'Portable Qualtrics srcdoc');
 const assets='<script data-allstar-portable-assets>\nwindow.__ALLSTAR_QUALTRICS_GENERATOR_HTML__='+scriptLiteral(portableGenerator)+';\nwindow.__ALLSTAR_REGRESSION_TESTS_SOURCE__='+scriptLiteral(fs.readFileSync(testsPath,'utf8'))+';\n<\/script>\n';
