@@ -138,7 +138,7 @@ function validateQualtricsGeneratorHtml(html){
   for(const id of ['view-keyfiles','qaInput','coachingInput','checklistInput','weeklyStatsInput']) if(!html.includes(`id="${id}"`)) throw new Error(`The Qualtrics generator is missing ${id}.`);
   const inlineScripts=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(match=>match[1]).filter(source=>source.trim());
   if(!inlineScripts.length) throw new Error('The Qualtrics generator contains no executable scripts.');
-  inlineScripts.forEach((source,index)=>{ try{ new Function(source); }catch(error){ throw new Error(`Embedded Qualtrics script ${index+1} is invalid: ${error.message||error}`); } });
+  for(const marker of ['els.qaInput.onchange=e=>loadQA','els.coachingInput.onchange=e=>loadCoaching','els.checklistInput.onchange=e=>loadChecklist','els.weeklyStatsInput.onchange=e=>loadWeeklyStats']) if(!html.includes(marker)) throw new Error(`The Qualtrics generator is missing an Add 4 Key Files handler: ${marker}.`);
   return html;
 }
 function mountQualtricsGeneratorHtml(html){
