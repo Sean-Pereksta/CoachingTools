@@ -80,11 +80,32 @@
 
   function shortDate(date) {
     if (!(date instanceof Date) || isNaN(date)) return '—';
-    return `${date.getUTCMonth() + 1}/${date.getUTCDate()}/${String(date.getUTCFullYear()).slice(-2)}`;
+    return `${date.getUTCMonth() + 1}/${date.getUTCDate()}/${date.getUTCFullYear()}`;
   }
 
   function weekSundayLabel(weekKey) {
     return shortDate(sundayForIsoWeekKey(weekKey));
+  }
+
+  function patchTooltipWeekHeader() {
+    const original = root.buildTooltipText;
+    if (typeof original !== 'function' || original.__cgShortDateHover) return;
+
+    function enhancedBuildTooltipText(rep, wk) {
+      const text = original.apply(this, arguments);
+      const weekKey = clean(wk);
+      const dateLabel = weekSundayLabel(weekKey);
+      if (!weekKey || !dateLabel || dateLabel === '—') return text;
+
+      const lines = String(text == null ? '' : text).split('\n');
+      if (!lines.length) return text;
+      lines[0] = lines[0].replace(weekKey, dateLabel);
+      return lines.join('\n');
+    }
+
+    enhancedBuildTooltipText.__cgShortDateHover = true;
+    enhancedBuildTooltipText.__original = original;
+    root.buildTooltipText = enhancedBuildTooltipText;
   }
 
   function patchCanonicalQA() {
@@ -321,6 +342,7 @@
     if (!required.every(name => typeof root[name] === 'function') || !document.getElementById('tt')) return false;
 
     patchCanonicalQA();
+    patchTooltipWeekHeader();
     addStyles();
     patchTooltipBehavior();
     installMonitorClickEnhancement();
