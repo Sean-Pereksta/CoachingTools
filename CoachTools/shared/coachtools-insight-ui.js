@@ -6,7 +6,7 @@
   const insightScript = document.currentScript;
   const sharedBase = insightScript && insightScript.src ? new URL('.', insightScript.src) : null;
 
-  function esc(value){ return String(value==null?'':value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[ch])); }
+  function esc(value){ return String(value==null?'':value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
   function dateText(value){ if(!value)return '—'; const d=value instanceof Date?value:new Date(value); return Number.isNaN(d.getTime())?'—':d.toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}); }
   function pct(value){ return root.CoachToolsIntelligence&&root.CoachToolsIntelligence.formatPercent?root.CoachToolsIntelligence.formatPercent(value):Number.isFinite(value)?`${(value*100).toFixed(1)}%`:'—'; }
   function outcomeChange(row){
