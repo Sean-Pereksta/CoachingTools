@@ -101,9 +101,21 @@
     document.head.appendChild(script);
   }
 
+  function loadCoachTimelineCoordinatorRanges(appId){
+    const currentApp=appId||state.appId||root.CoachToolsShell&&root.CoachToolsShell.app&&root.CoachToolsShell.app.id||'';
+    if(currentApp!=='coach-timeline'||!sharedBase||document.getElementById('coach-timeline-coordinator-ranges-script'))return;
+    const script=document.createElement('script');
+    script.id='coach-timeline-coordinator-ranges-script';
+    script.src=new URL('coach-timeline-coordinator-ranges.js',sharedBase).href;
+    script.async=true;
+    script.onerror=()=>{ try{console.warn('Coach Timeline coordinator range columns unavailable.');}catch(_){} };
+    document.head.appendChild(script);
+  }
+
   function mount(appId){
     if(state.mounted)return; state.mounted=true;state.appId=appId||root.CoachToolsShell&&root.CoachToolsShell.app&&root.CoachToolsShell.app.id||''; if(!state.appId)return;
     loadCoachingGapsLayout();
+    loadCoachTimelineCoordinatorRanges(state.appId);
     ensureUi();
     if(state.appId==='people-profiles'){
       document.addEventListener('click',event=>{ const target=event.target&&event.target.closest&&event.target.closest('[data-person-id]'); if(!target)return;state.personId=target.dataset.personId||'';scheduleRefresh(220); },true);
@@ -113,5 +125,6 @@
     if(typeof root.requestIdleCallback==='function')root.requestIdleCallback(()=>scheduleRefresh(0),{timeout:1600});else setTimeout(()=>scheduleRefresh(0),700);
   }
 
+  loadCoachTimelineCoordinatorRanges();
   root.CoachToolsInsightUI=Object.freeze({VERSION,mount,refresh,openDrawer,closeDrawer});
 })(typeof window!=='undefined'?window:globalThis);
