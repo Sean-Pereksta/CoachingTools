@@ -409,6 +409,21 @@
     document.head.appendChild(script);
   }
 
+  function installCoachTimelineCoordinatorRangeScript() {
+    if (!sharedBase || app.id !== 'coach-timeline' || document.getElementById('coach-timeline-coordinator-ranges-script')) return;
+    const src = new URL('coach-timeline-coordinator-ranges.js', sharedBase).href;
+    if (document.readyState === 'loading') {
+      const safeSrc = src.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      document.write(`<script id="coach-timeline-coordinator-ranges-script" src="${safeSrc}"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'coach-timeline-coordinator-ranges-script';
+    script.src = src;
+    script.async = false;
+    document.head.appendChild(script);
+  }
+
   function loadSharedScript(name, readyCheck) {
     if (typeof readyCheck === 'function' && readyCheck()) return Promise.resolve(true);
     if (!sharedBase) return Promise.resolve(false);
@@ -448,6 +463,7 @@
 
   installChunkedStartupLoader();
   installDockChunkLoaderScript();
+  installCoachTimelineCoordinatorRangeScript();
 
   root.addEventListener('error', event => { post('coachtools:app-error', { message: event.message || 'Application error' }); });
   root.addEventListener('unhandledrejection', event => { post('coachtools:app-error', { message: String(event.reason && event.reason.message || event.reason || 'Unhandled application error') }); });

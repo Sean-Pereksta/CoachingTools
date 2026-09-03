@@ -329,7 +329,7 @@
   function tryInstall() {
     if (install()) return;
     attempts += 1;
-    if (attempts < 120) root.setTimeout(tryInstall, 50);
+    if (attempts < 1200) root.setTimeout(tryInstall, 250);
   }
 
   if (document.readyState === 'loading') {
