@@ -1,30 +1,34 @@
 (function installCoachTimelineCoordinatorRangeColumns(root) {
-  const FEATURE_ID = 'coach-timeline-coordinator-range-columns';
-  const BUILDER_ID = 'coordSpeedRangeBuilder';
+  const FEATURE_KEY = '__coachTimelineCoordinatorRangeColumns';
   const PANEL_ID = 'coordSpeedRangePanel';
-  let installed = false;
+  const BUILDER_ID = 'coordSpeedRangeBuilder';
   let attempts = 0;
+  let observer = null;
+  let renderQueued = false;
 
-  function ready() {
-    try {
-      return typeof S !== 'undefined'
-        && S
-        && S.coordinatorConfig
-        && typeof renderCoordinatorSpeedRankings === 'function'
-        && typeof getCoordinatorRankingRows === 'function'
-        && typeof coordinatorRankingAggregate === 'function'
-        && typeof saveCoordinatorConfig === 'function'
-        && typeof COORD_RANK_COLUMN_DEFS !== 'undefined'
-        && document.getElementById('coordRankingColumnBuilder')
-        && document.getElementById('coordRankingTable');
-    } catch (_) {
-      return false;
-    }
+  if (root[FEATURE_KEY]) return;
+
+  function api() {
+    return root.CoachTimelineCoordinatorRangesAPI || null;
   }
 
-  function coordinatorBands() {
-    if (!Array.isArray(S.coordinatorConfig.rangeBands)) S.coordinatorConfig.rangeBands = [];
-    return S.coordinatorConfig.rangeBands;
+  function ready() {
+    const bridge = api();
+    return Boolean(
+      bridge
+      && typeof bridge.getRangeBands === 'function'
+      && typeof bridge.setRangeBands === 'function'
+      && typeof bridge.getRangeRows === 'function'
+      && typeof bridge.render === 'function'
+      && document.getElementById('coordRankingColumnBuilder')
+      && document.getElementById('coordRankingTable')
+    );
+  }
+
+  function bands() {
+    const bridge = api();
+    const value = bridge ? bridge.getRangeBands() : [];
+    return Array.isArray(value) ? value : [];
   }
 
   function safeLabel(band, index) {
@@ -42,52 +46,18 @@
     return { min, max };
   }
 
-  function rowKey(name, initial) {
-    const normalizedName = typeof normCoachKey === 'function'
-      ? normCoachKey(name)
-      : String(name || '').trim().toLowerCase();
-    return `${normalizedName}|${String(initial || '').trim().toUpperCase()}`;
+  function notify(title, detail) {
+    const bridge = api();
+    if (bridge && typeof bridge.toast === 'function') bridge.toast(title, detail);
   }
 
-  function preferredInitial(name) {
-    try {
-      return typeof preferredInitialForName === 'function' ? preferredInitialForName(name) : '';
-    } catch (_) {
-      return '';
-    }
-  }
-
-  function pairValuesByCoordinator(pairs) {
-    const grouped = new Map();
-    (pairs || []).forEach(pair => {
-      const initial = pair.initial || preferredInitial(pair.coordinator);
-      const key = rowKey(pair.coordinator, initial);
-      const list = grouped.get(key) || [];
-      const value = Number(pair.days);
-      if (Number.isFinite(value) && value >= 0) list.push(value);
-      grouped.set(key, list);
-    });
-    return grouped;
-  }
-
-  function rangeMetric(row, band, grouped) {
-    const values = grouped.get(rowKey(row.name, row.initial)) || [];
-    const bounds = boundsFor(band);
-    if (!bounds || !values.length) return { count: 0, total: values.length, pct: NaN };
-    const count = values.filter(value => value >= bounds.min && value <= bounds.max).length;
-    return { count, total: values.length, pct: count / values.length * 100 };
-  }
-
-  function formatPercent(value) {
-    if (!Number.isFinite(value)) return '—';
-    if (typeof fmtPct === 'function') return fmtPct(value, 0);
-    return `${Math.round(value)}%`;
-  }
-
-  function showToast(title, detail) {
-    try {
-      if (typeof toast === 'function') toast(title, detail);
-    } catch (_) {}
+  function saveBands(nextBands, rerender) {
+    const bridge = api();
+    if (!bridge) return;
+    bridge.setRangeBands(nextBands);
+    renderBuilder();
+    if (rerender !== false) bridge.render();
+    queueRangeColumns();
   }
 
   function ensurePanel() {
@@ -103,7 +73,7 @@
     panel.innerHTML = `
       <div class="panelTitle">
         <b>Custom speed range columns</b>
-        <span class="mini">Add percentage columns for coordinator items completed inside any inclusive day range. Existing ranking columns stay unchanged.</span>
+        <span class="mini">Build percentage columns for coordinator items completed inside any inclusive day range. Existing Coordinator Speed Ranking columns stay unchanged.</span>
       </div>
       <div class="bandBuilder" id="${BUILDER_ID}"></div>
       <div class="row" style="margin-top:8px">
@@ -113,24 +83,21 @@
     builtInPanel.insertAdjacentElement('afterend', panel);
 
     panel.querySelector('#btnAddCoordSpeedRange').addEventListener('click', () => {
-      const bands = coordinatorBands();
-      const number = bands.length + 1;
-      bands.push({
+      const next = bands();
+      const number = next.length + 1;
+      next.push({
         id: `coord_range_${Date.now()}_${number}`,
         label: `Custom range ${number}`,
         min: 0,
         max: 3
       });
-      saveCoordinatorConfig();
-      renderCoordinatorSpeedRankings();
+      saveBands(next);
     });
 
     panel.querySelector('#btnClearCoordSpeedRanges').addEventListener('click', () => {
-      if (!coordinatorBands().length) return;
-      S.coordinatorConfig.rangeBands = [];
-      saveCoordinatorConfig();
-      renderCoordinatorSpeedRankings();
-      showToast('Custom columns cleared', 'Existing Coordinator Speed Ranking columns were left unchanged.');
+      if (!bands().length) return;
+      saveBands([]);
+      notify('Custom columns cleared', 'Existing Coordinator Speed Ranking columns were left unchanged.');
     });
 
     return panel;
@@ -140,10 +107,10 @@
     const panel = ensurePanel();
     const wrap = panel && panel.querySelector(`#${BUILDER_ID}`);
     if (!wrap) return;
-    const bands = coordinatorBands();
+    const current = bands();
     wrap.innerHTML = '';
 
-    if (!bands.length) {
+    if (!current.length) {
       const empty = document.createElement('div');
       empty.className = 'mini';
       empty.textContent = 'No custom speed columns yet. Add a column, then set its name, minimum days, and maximum days.';
@@ -151,7 +118,7 @@
       return;
     }
 
-    bands.forEach((band, index) => {
+    current.forEach((band, index) => {
       const row = document.createElement('div');
       row.className = 'bandRow';
       row.dataset.coordRangeId = band.id;
@@ -169,60 +136,74 @@
     wrap.querySelectorAll('input[data-coord-range-field]').forEach(input => {
       input.addEventListener('change', () => {
         const row = input.closest('[data-coord-range-id]');
-        const band = coordinatorBands().find(item => item.id === row.dataset.coordRangeId);
+        const next = bands();
+        const band = next.find(item => item.id === row.dataset.coordRangeId);
         if (!band) return;
         const field = input.dataset.coordRangeField;
-        if (field === 'label') band.label = input.value.trim() || safeLabel(band, coordinatorBands().indexOf(band));
-        else band[field] = Math.max(0, Number(input.value) || 0);
-        saveCoordinatorConfig();
-        renderCoordinatorSpeedRankings();
+        if (field === 'label') {
+          band.label = input.value.trim() || safeLabel(band, next.indexOf(band));
+        } else {
+          band[field] = Math.max(0, Number(input.value) || 0);
+        }
+        saveBands(next);
       });
     });
 
     wrap.querySelectorAll('[data-delete-coord-range]').forEach(button => {
       button.addEventListener('click', () => {
         const row = button.closest('[data-coord-range-id]');
-        S.coordinatorConfig.rangeBands = coordinatorBands().filter(item => item.id !== row.dataset.coordRangeId);
-        saveCoordinatorConfig();
-        renderCoordinatorSpeedRankings();
+        saveBands(bands().filter(item => item.id !== row.dataset.coordRangeId));
       });
     });
   }
 
+  function formatPercent(value) {
+    return Number.isFinite(value) ? `${Math.round(value)}%` : '—';
+  }
+
+  function clearCustomCells(table) {
+    table.querySelectorAll('[data-coord-custom-range]').forEach(node => node.remove());
+  }
+
   function appendRangeColumns() {
-    const bands = coordinatorBands();
-    if (!bands.length) return;
+    renderQueued = false;
+    const bridge = api();
+    const current = bands();
     const table = document.getElementById('coordRankingTable');
-    const headRow = table && table.querySelector('thead tr');
-    const body = table && table.querySelector('tbody');
+    if (!bridge || !table) return;
+
+    clearCustomCells(table);
+    if (!current.length) return;
+
+    const headRow = table.querySelector('thead tr');
+    const body = table.querySelector('tbody');
     if (!headRow || !body) return;
+    const rangeRows = bridge.getRangeRows(current, false) || [];
 
-    const result = getCoordinatorRankingRows();
-    const grouped = pairValuesByCoordinator(result.quality && result.quality.pairs);
-
-    bands.forEach((band, index) => {
+    current.forEach((band, index) => {
       const th = document.createElement('th');
+      th.dataset.coordCustomRange = band.id;
       th.textContent = `${safeLabel(band, index)} %`;
-      th.title = boundsFor(band)
-        ? `${boundsFor(band).min} to ${boundsFor(band).max} days, inclusive`
-        : 'Set both minimum and maximum days';
+      const bounds = boundsFor(band);
+      th.title = bounds ? `${bounds.min} to ${bounds.max} days, inclusive` : 'Set both minimum and maximum days';
       headRow.appendChild(th);
     });
 
-    if (!result.rows.length) {
+    if (!rangeRows.length) {
       const emptyCell = body.querySelector('tr td[colspan]');
       if (emptyCell) emptyCell.colSpan = headRow.children.length;
       return;
     }
 
     const bodyRows = [...body.querySelectorAll('tr')];
-    result.rows.forEach((row, rowIndex) => {
+    rangeRows.forEach((entry, rowIndex) => {
       const tr = bodyRows[rowIndex];
       if (!tr) return;
-      bands.forEach(band => {
-        const metric = rangeMetric(row, band, grouped);
+      (entry.metrics || []).forEach((metric, bandIndex) => {
+        const band = current[bandIndex];
         const td = document.createElement('td');
         td.className = 'rankingCell';
+        td.dataset.coordCustomRange = band && band.id || String(bandIndex);
 
         const pct = document.createElement('div');
         pct.className = 'rankingPct';
@@ -241,99 +222,114 @@
     });
   }
 
-  function installRenderPatch() {
-    const originalRender = renderCoordinatorSpeedRankings;
-    renderCoordinatorSpeedRankings = function renderCoordinatorSpeedRankingsWithRanges() {
-      const result = originalRender.apply(this, arguments);
-      renderBuilder();
-      appendRangeColumns();
-      return result;
-    };
+  function queueRangeColumns() {
+    if (renderQueued) return;
+    renderQueued = true;
+    root.requestAnimationFrame ? root.requestAnimationFrame(appendRangeColumns) : root.setTimeout(appendRangeColumns, 0);
   }
 
-  function installExportPatch() {
-    const originalExport = exportCoordinatorRankings;
-    exportCoordinatorRankings = function exportCoordinatorRankingsWithRanges() {
-      const bands = coordinatorBands();
-      if (!bands.length) return originalExport.apply(this, arguments);
-
-      const rows = S.lastCoordinatorRankingRows.length
-        ? S.lastCoordinatorRankingRows
-        : getCoordinatorRankingRows().rows;
-      if (!rows.length) {
-        showToast('Nothing to export', 'No coordinators meet the ranking definition.');
-        return;
-      }
-      if (!root.XLSX) {
-        showToast('Excel unavailable', 'Refresh the page so the XLSX library can load.');
-        return;
-      }
-
-      const visible = (S.coordinatorConfig.visibleColumns || [])
-        .filter(id => COORD_RANK_COLUMN_DEFS.some(column => column.id === id));
-      const builtInHeaders = visible.map(id => COORD_RANK_COLUMN_DEFS.find(column => column.id === id).label);
-      const customHeaders = bands.map((band, index) => `${safeLabel(band, index)} %`);
-      const header = [...builtInHeaders, ...customHeaders];
-      const aggregate = coordinatorRankingAggregate();
-      const grouped = pairValuesByCoordinator(aggregate.quality && aggregate.quality.pairs);
-      const builtInValue = (row, id) => {
-        if (['avg', 'median', 'fastest', 'slowest'].includes(id)) return row[id];
-        if (id === 'earlyDate' || id === 'lateDate') return typeof fmtDate === 'function' ? fmtDate(row[id]) : row[id];
-        return row[id];
-      };
-      const aoa = [header];
-      rows.forEach(row => {
-        aoa.push([
-          ...visible.map(id => builtInValue(row, id)),
-          ...bands.map(band => rangeMetric(row, band, grouped).pct)
-        ]);
+  function watchRankingTable() {
+    const table = document.getElementById('coordRankingTable');
+    if (!table || observer) return;
+    observer = new MutationObserver(mutations => {
+      const appChangedTable = mutations.some(mutation => {
+        const nodes = [...mutation.addedNodes, ...mutation.removedNodes];
+        return nodes.some(node => {
+          if (node.nodeType !== 1) return false;
+          return !node.hasAttribute('data-coord-custom-range');
+        });
       });
+      if (appChangedTable) queueRangeColumns();
+    });
+    observer.observe(table, { childList: true, subtree: true });
+  }
 
-      const workbook = XLSX.utils.book_new();
-      const sheet = XLSX.utils.aoa_to_sheet(aoa);
-      sheet['!freeze'] = { xSplit: 0, ySplit: 1 };
-      sheet['!cols'] = header.map((label, index) => ({
-        wch: index === 1 ? 28 : Math.max(12, Math.min(28, String(label).length + 3))
-      }));
-      XLSX.utils.book_append_sheet(workbook, sheet, 'Coordinator Rankings');
+  function exportWithRanges() {
+    const bridge = api();
+    const current = bands();
+    if (!bridge || !current.length) return false;
+    const rangeRows = bridge.getRangeRows(current, true) || [];
+    if (!rangeRows.length) {
+      notify('Nothing to export', 'No coordinators meet the ranking definition.');
+      return true;
+    }
+    if (!root.XLSX) {
+      notify('Excel unavailable', 'Refresh the page so the XLSX library can load.');
+      return true;
+    }
 
-      const metaRows = [
-        ['Early source', S.coordinatorConfig.early.source],
-        ['Early field', S.coordinatorConfig.early.field],
-        ['Late source', S.coordinatorConfig.late.source],
-        ['Late field', S.coordinatorConfig.late.field],
-        ['Rank by', S.coordinatorConfig.rankBy],
-        ['Timeframe', typeof getTimeframe === 'function' ? getTimeframe().label : ''],
-        ...bands.map((band, index) => {
-          const bounds = boundsFor(band);
-          return [
-            `Custom column: ${safeLabel(band, index)}`,
-            bounds ? `${bounds.min}–${bounds.max} days inclusive` : 'Invalid range'
-          ];
-        }),
-        ['Exported', new Date().toLocaleString()]
-      ];
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(metaRows), 'Definition');
-      XLSX.writeFile(workbook, `coordinator_speed_rankings_${new Date().toISOString().slice(0, 10)}.xlsx`);
-      showToast('Exported', 'Coordinator ranking workbook downloaded with custom speed range percentages.');
+    const config = bridge.getConfig();
+    const defs = bridge.getColumnDefs();
+    const visible = (config.visibleColumns || []).filter(id => defs.some(column => column.id === id));
+    const builtInHeaders = visible.map(id => defs.find(column => column.id === id).label);
+    const header = [...builtInHeaders, ...current.map((band, index) => `${safeLabel(band, index)} %`)];
+    const builtInValue = (row, id) => {
+      if (['avg', 'median', 'fastest', 'slowest'].includes(id)) return row[id];
+      if (id === 'earlyDate' || id === 'lateDate') return bridge.formatDate(row[id]);
+      return row[id];
     };
+    const aoa = [header];
+    rangeRows.forEach(entry => {
+      aoa.push([
+        ...visible.map(id => builtInValue(entry.row, id)),
+        ...(entry.metrics || []).map(metric => metric.pct)
+      ]);
+    });
+
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet(aoa);
+    sheet['!freeze'] = { xSplit: 0, ySplit: 1 };
+    sheet['!cols'] = header.map((label, index) => ({
+      wch: index === 1 ? 28 : Math.max(12, Math.min(28, String(label).length + 3))
+    }));
+    XLSX.utils.book_append_sheet(workbook, sheet, 'Coordinator Rankings');
+
+    const metaRows = [
+      ['Early source', config.early && config.early.source || ''],
+      ['Early field', config.early && config.early.field || ''],
+      ['Late source', config.late && config.late.source || ''],
+      ['Late field', config.late && config.late.field || ''],
+      ['Rank by', config.rankBy || ''],
+      ['Timeframe', bridge.getTimeframeLabel()],
+      ...current.map((band, index) => {
+        const bounds = boundsFor(band);
+        return [`Custom column: ${safeLabel(band, index)}`, bounds ? `${bounds.min}–${bounds.max} days inclusive` : 'Invalid range'];
+      }),
+      ['Exported', new Date().toLocaleString()]
+    ];
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(metaRows), 'Definition');
+    XLSX.writeFile(workbook, `coordinator_speed_rankings_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    notify('Exported', 'Coordinator ranking workbook downloaded with custom speed range percentages.');
+    return true;
+  }
+
+  function installExportIntercept() {
+    const button = document.getElementById('btnExportCoordinatorRankings');
+    if (!button || button.dataset.coordRangeExportIntercept === '1') return;
+    button.dataset.coordRangeExportIntercept = '1';
+    button.addEventListener('click', event => {
+      if (!bands().length) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      exportWithRanges();
+    }, true);
   }
 
   function install() {
-    if (installed || !ready()) return false;
-    installed = true;
-    coordinatorBands();
+    if (!ready()) return false;
     ensurePanel();
-    installRenderPatch();
-    installExportPatch();
-    renderCoordinatorSpeedRankings();
+    renderBuilder();
+    watchRankingTable();
+    installExportIntercept();
+    queueRangeColumns();
+    root[FEATURE_KEY] = Object.freeze({ refresh: queueRangeColumns });
     return true;
   }
 
   function tryInstall() {
     if (install()) return;
     attempts += 1;
-    if (attempts < 80) root.setTimeout(tryInstall, 50);
+    if (attempts < 120) root.setTimeout(tryInstall, 50);
   }
 
   if (document.readyState === 'loading') {
@@ -341,6 +337,4 @@
   } else {
     root.setTimeout(tryInstall, 0);
   }
-
-  root[FEATURE_ID] = Object.freeze({ install: tryInstall });
 })(window);
