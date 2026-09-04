@@ -306,23 +306,33 @@ function individualReportObservation(rep,field,rule,context){
 }
 function individualLegacyObservation(rep,rule,reportDate,cache,context){
   if(!cache.has(rule.id)){
-    const map=new Map(), add=(base,observation)=>{ if(base?.repKey) map.set(base.repKey,Object.assign({missing:false,matched:true,label:rule.title,score:1},observation||{})); };
-    if(isStatRule(rule)) for(const repItem of context.scopeIndex.representatives){ const check=evaluateStatRuleForRep(repItem.repKey,rule.statRule,reportDate); if(check.meets) add(repItem,{value:check.avg,raw:check.avg,formatted:formatMetricValue(check.label,check.avg),label:check.label,isPercent:isPercentHeader(check.label),score:(check.pctLow||0)*100}); }
-    else if(isStatCountRule(rule)) for(const base of buildStatCountRecords(rule,reportDate)) add(base,{value:base.count,raw:base.count,formatted:String(base.count),label:rule.statCount?.label||rule.title,score:base.count});
-    else if(isCoachingCorrectiveRule(rule)) for(const base of buildCoachingCorrectiveRecords(rule,reportDate)) add(base,{value:base.ratio,raw:base.ratio,formatted:isFinite(base.ratio)?fmtNum(base.ratio,2):String(base.coachings?.length||0),label:rule.title,score:base.coachings?.length||1});
+    const map=new Map(), add=(base,observation)=>{ if(base?.repKey) map.set(base.repKey,Object.assign({missing:false,matched:true,label:rule.title,score:1,rankingVolume:0,rankingLabel:'Original rule qualifying count'},observation||{})); };
+    if(isStatRule(rule)) for(const repItem of context.scopeIndex.representatives){
+      const check=evaluateStatRuleForRep(repItem.repKey,rule.statRule,reportDate), percentMode=rule.statRule?.minimumMode!=='weeks', rankingVolume=percentMode?(isFinite(check.pctLow)?check.pctLow*100:0):check.lowWeeks;
+      add(repItem,{matched:check.meets,value:check.avg,raw:check.avg,formatted:formatMetricValue(check.label,check.avg),label:check.label,isPercent:isPercentHeader(check.label),score:(check.pctLow||0)*100,rankingVolume,rankingLabel:percentMode?'Percent of valued weeks below goal':'Weeks below goal'});
+    }
+    else if(isStatCountRule(rule)){
+      const minimum=Math.max(0,Number(rule.statCount?.minCount)||0), volumeRule={...rule,statCount:{...(rule.statCount||{}),minCount:0}};
+      for(const base of buildStatCountRecords(volumeRule,reportDate)) add(base,{matched:base.count>=minimum,value:base.count,raw:base.count,formatted:String(base.count),label:rule.statCount?.label||rule.title,score:base.count,rankingVolume:base.count,rankingLabel:rule.statCount?.label||'Matching rows'});
+    }
+    else if(isCoachingCorrectiveRule(rule)){
+      const minimum=Math.max(0,Number(rule.coachingCorrective?.minCoachingCount)||0), volumeRule={...rule,coachingCorrective:{...(rule.coachingCorrective||{}),minCoachingCount:0}};
+      for(const base of buildCoachingCorrectiveRecords(volumeRule,reportDate)) add(base,{matched:base.coachings.length>=minimum,value:base.ratio,raw:base.ratio,formatted:isFinite(base.ratio)?fmtNum(base.ratio,2):String(base.coachings?.length||0),label:rule.title,score:base.coachings?.length||1,rankingVolume:base.coachings.length,rankingLabel:'Matching documented coachings'});
+    }
     else if(isHeaderCountRule(rule)){
       const sources=(context.reportFiles||[]).filter(file=>individualRuleForFile(file)?.id===rule.id).map(file=>({name:file.fileName,rows:file.rows||[]}));
-      for(const base of buildHeaderCountRecords(rule,sources).records) add(base,{value:base.count,raw:base.count,formatted:String(base.count),label:rule.countRule?.label||rule.title,score:base.count});
+      const minimum=countThreshold(rule), volumeRule={...rule,countRule:{...(rule.countRule||{}),minCount:0}};
+      for(const base of buildHeaderCountRecords(volumeRule,sources).records) add(base,{matched:base.count>=minimum,value:base.count,raw:base.count,formatted:String(base.count),label:rule.countRule?.label||rule.title,score:base.count,rankingVolume:base.count,rankingLabel:rule.countRule?.label||'Matching rows'});
     }else{
       for(const [repKey,items] of context.dashboardByRuleRep.get(rule.id)||[]){
-        for(const item of items){ const raw=item.raw; if(!rowMeetsRule(raw,rule)) continue; const field=rule.displayColumn?.enabled?rule.displayColumn.header:(rule.criteria?.[0]?.header||''); const value=field?raw[field]:rule.title;
-          add({repKey},{value:numberForComparison(value,field,isPercentHeader(field)||hasPercentSign(value)),raw:value,formatted:field?formatValueForHeader(field,value):String(value),label:field||rule.title,isPercent:isPercentHeader(field),score:1});
-        }
+        const matches=items.filter(item=>rowMeetsRule(item.raw,rule)); if(!matches.length) continue;
+        const raw=matches[0].raw, field=rule.displayColumn?.enabled?rule.displayColumn.header:(rule.criteria?.[0]?.header||''), value=field?raw[field]:rule.title;
+        add({repKey},{value:numberForComparison(value,field,isPercentHeader(field)||hasPercentSign(value)),raw:value,formatted:field?formatValueForHeader(field,value):String(value),label:field||rule.title,isPercent:isPercentHeader(field),score:matches.length,rankingVolume:matches.length,rankingLabel:'Matching report rows'});
       }
     }
     cache.set(rule.id,map);
   }
-  return cache.get(rule.id).get(rep.repKey)||{missing:false,matched:false,label:rule.title,raw:'',formatted:'',score:0,reason:'Existing rule did not identify this representative'};
+  return cache.get(rule.id).get(rep.repKey)||{missing:false,matched:false,label:rule.title,raw:'',formatted:'',score:0,rankingVolume:0,rankingLabel:'Original rule qualifying count',reason:'Existing rule did not identify this representative'};
 }
 function createIndividualResolver(reportDate,context){
   const legacyCache=new Map(), observationCache=new Map();
@@ -337,6 +347,7 @@ function createIndividualResolver(reportDate,context){
       const source=variable.field||variable.source;
       return variable.sourceType==='reportField'?cached(`report|${rule.id}|${rep.repKey}|${source}`,()=>individualReportObservation(rep,source,rule,context)):cached(`stat|${rep.repKey}|${source}`,()=>individualStatObservation(rep,source,reportDate));
     },
+    resolveRankingVolume(rep,rule){ return individualLegacyObservation(rep,rule,reportDate,legacyCache,context); },
     observationCache,legacyCache
   };
 }
@@ -471,7 +482,7 @@ function renderIndividualSummary(){
   renderIndividualResultFacets();
 }
 function individualDiagnosticHtml(result){
-  return `<div class="individualDiagnostics">${result.diagnostics.map(item=>`<div class="individualDiagnostic ${item.pass?'pass':'fail'}"><strong>${esc(item.ruleTitle)} — ${esc(item.side[0].toUpperCase()+item.side.slice(1))}</strong><div class="mini">Value: ${esc(item.value||'N/A')} • Condition: ${esc(item.condition)} • Result: ${item.enabled?(item.missing?'MISSING':item.pass?'PASS':'FAIL'):'DISABLED'}${item.pass?` • Normalized score: ${Number(item.score).toFixed(2)}`:''}</div><div class="mini muted">${esc(item.reason||'')}</div></div>`).join('')}</div>`;
+  return `<div class="individualDiagnostics">${result.diagnostics.map(item=>`<div class="individualDiagnostic ${item.pass?'pass':'fail'}"><strong>${esc(item.ruleTitle)} — ${esc(item.side[0].toUpperCase()+item.side.slice(1))}</strong><div class="mini">Value: ${esc(item.value||'N/A')} • Condition: ${esc(item.condition)} • Result: ${item.enabled?(item.missing?'MISSING':item.pass?'PASS':'FAIL'):'DISABLED'}${item.pass?` • Original qualifying counter: ${Number(item.rankingVolume||0).toLocaleString()} ${esc(item.rankingLabel||'')}`:''}${item.pass?` • Normalized score: ${Number(item.score).toFixed(2)}`:''}</div><div class="mini muted">${esc(item.reason||'')}</div></div>`).join('')}</div>`;
 }
 function individualMatchHtml(result){
   const match=result.emailMatch, possible=(match.matches||[]).map(item=>`<span>${esc(item.fullName)} — ${esc(item.email||'no Username')}</span>`).join('');
@@ -520,7 +531,7 @@ function individualExportRows(){
 function exportIndividualReview(){
   if(state.individualResultsStale){ toast('Run the Individual Review again before exporting changed selections.'); return; }
   const rows=individualExportRows(); if(!rows.length){ toast('Evaluate individuals before exporting the review.'); return; }
-  const diagnostics=(state.individualResults||[]).flatMap(result=>result.diagnostics.map(item=>({Representative:result.fullName,Rule:item.ruleTitle,Side:item.side,Enabled:item.enabled?'Yes':'No',Value:item.value,Condition:item.condition,Result:item.missing?'MISSING':item.pass?'PASS':'FAIL',NormalizedScore:item.score,Reason:item.reason})));
+  const diagnostics=(state.individualResults||[]).flatMap(result=>result.diagnostics.map(item=>({Representative:result.fullName,Rule:item.ruleTitle,Side:item.side,Enabled:item.enabled?'Yes':'No',Value:item.value,Condition:item.condition,Result:item.missing?'MISSING':item.pass?'PASS':'FAIL',OriginalQualifyingCounter:item.rankingVolume,OriginalCounterLabel:item.rankingLabel,NormalizedScore:item.score,Reason:item.reason})));
   if(window.XLSX){ const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Individual Messages'); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(diagnostics),'Rule Diagnostics'); XLSX.writeFile(wb,`qualtrics_individual_message_review_${ymd(new Date())}.xlsx`); }
   else { const headers=Object.keys(rows[0]); const csv=[headers.join(',')].concat(rows.map(row=>headers.map(header=>`"${String(row[header]??'').replace(/"/g,'""')}"`).join(','))).join('\n'); downloadBlob(new Blob([csv],{type:'text/csv'}),`qualtrics_individual_message_review_${ymd(new Date())}.csv`); }
 }

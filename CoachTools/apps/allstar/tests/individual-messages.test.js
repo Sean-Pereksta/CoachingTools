@@ -5,10 +5,11 @@ const engine=require('../qualtrics/individual-messages.js');
 
 function side(overrides={}){ return {enabled:true,sourceType:'stat',source:'metric',operator:'lt',threshold:'45%',threshold2:'',message:'Value (X) for (FullName)',variables:[{name:'X',sourceType:'stat',source:'metric',format:'percent'}],...overrides}; }
 function rule(id,concern,strength){ return {id,title:id,criteria:[{header:'Example'}],individualMessage:{concern:concern||side(),strength:strength||side({enabled:false,operator:'gte',threshold:'55%'})}}; }
-function resolver(values={},variableValues={}){
+function resolver(values={},variableValues={},rankingValues={}){
   return {
     resolveObservation(rep,config,currentRule){ const value=values[`${rep.repKey}:${currentRule.id}:${config.source||config.field}`]; return value==null?{missing:true,reason:'missing'}:{value,raw:value,formatted:config.source==='rate'?`${value*100}%`:String(value),label:config.source||config.field,isPercent:config.source==='rate'||config.source==='metric'}; },
-    resolveVariable(rep,variable,currentRule){ const lookup=variableValues[`${rep.repKey}:${currentRule.id}:${variable.source||variable.field}`]; const value=lookup==null?values[`${rep.repKey}:${currentRule.id}:${variable.source||variable.field}`]:lookup; return value==null?{missing:true}:{value,raw:value,formatted:String(value),label:variable.source||variable.field,isPercent:variable.format==='percent'}; }
+    resolveVariable(rep,variable,currentRule){ const lookup=variableValues[`${rep.repKey}:${currentRule.id}:${variable.source||variable.field}`]; const value=lookup==null?values[`${rep.repKey}:${currentRule.id}:${variable.source||variable.field}`]:lookup; return value==null?{missing:true}:{value,raw:value,formatted:String(value),label:variable.source||variable.field,isPercent:variable.format==='percent'}; },
+    resolveRankingVolume(rep,currentRule,sideName,observation){ const value=rankingValues[`${rep.repKey}:${currentRule.id}`]; return value==null?observation:{rankingVolume:value,rankingLabel:'Original qualifying count'}; }
   };
 }
 const roster=[
@@ -60,7 +61,7 @@ const salesRule=rule('Sales',side({enabled:false}),side({source:'sales',enabled:
 result=engine.evaluateAll({representatives:[rep],rules:[qaRule,salesRule],rosterRows:roster,resolver:resolver({'john:QA:qa':80,'john:Sales:sales':30}),template:engine.DEFAULT_TEMPLATE}).results[0];
 assert.ok(result.concern&&result.strength); assert.equal(result.status,'Ready');
 
-// Finding order uses the observed rule volume, with normalized distance as a tie-breaker.
+// Finding order uses the original report-qualification counter, with normalized distance as a tie-breaker.
 const smallRaw=rule('Small Raw',side({source:'small',operator:'lt',threshold:'.45',message:'small',variables:[]}),side({enabled:false}));
 const largeRaw=rule('Large Raw',side({source:'large',operator:'lt',threshold:'10',message:'large',variables:[]}),side({enabled:false}));
 result=engine.evaluateAll({representatives:[rep],rules:[smallRaw,largeRaw],rosterRows:roster,resolver:resolver({'john:Small Raw:small':.40,'john:Large Raw:large':5}),template:engine.DEFAULT_TEMPLATE}).results[0];
@@ -82,15 +83,16 @@ assert.equal(result.concern.title,'First same-volume rule','equal volume and sev
 const discounts=rule('Discounts',side({source:'discounts',operator:'gte',threshold:'1',message:'Discount need.',variables:[]}),side({enabled:false}));
 const insuranceSkip=rule('Skipping Insurance Cash',side({source:'insuranceSkip',operator:'gte',threshold:'1',message:'Insurance Cash need.',variables:[]}),side({enabled:false}));
 const afterpay=rule('Afterpay',side({source:'afterpay',operator:'gte',threshold:'1',message:'Afterpay need.',variables:[]}),side({enabled:false}));
-result=engine.evaluateAll({representatives:[rep],rules:[afterpay,discounts,insuranceSkip],rosterRows:roster,resolver:resolver({'john:Afterpay:afterpay':4,'john:Discounts:discounts':16,'john:Skipping Insurance Cash:insuranceSkip':12}),template:{...engine.DEFAULT_TEMPLATE,maxConcerns:2}}).results[0];
+result=engine.evaluateAll({representatives:[rep],rules:[afterpay,discounts,insuranceSkip],rosterRows:roster,resolver:resolver({'john:Afterpay:afterpay':1,'john:Discounts:discounts':1,'john:Skipping Insurance Cash:insuranceSkip':1},{},{'john:Afterpay':4,'john:Discounts':16,'john:Skipping Insurance Cash':12}),template:{...engine.DEFAULT_TEMPLATE,maxConcerns:2}}).results[0];
 assert.deepEqual(result.concerns.map(item=>item.title),['Discounts','Skipping Insurance Cash'],'the maximum includes the two highest-volume weaknesses in order');
+assert.deepEqual(result.concerns.map(item=>item.volume),[16,12],'ranking comes from the original report-qualification counters, not the Individual Message condition values');
 assert.equal(result.qualifyingConcernCount,3,'the full qualifying count remains available for review');
 assert.equal(result.concernMessages.length,2); assert.doesNotMatch(result.message,/Afterpay need/);
 assert.equal(result.diagnostics.filter(item=>item.side==='concern'&&item.pass).length,3,'diagnostics retain capped findings');
 const coaching=rule('Coaching Follow-through',side({enabled:false}),side({source:'coaching',enabled:true,operator:'gte',threshold:'1',message:'Coaching strength.',variables:[]}));
 const quality=rule('Call Quality',side({enabled:false}),side({source:'quality',enabled:true,operator:'gte',threshold:'1',message:'Quality strength.',variables:[]}));
 const rapport=rule('Rapport',side({enabled:false}),side({source:'rapport',enabled:true,operator:'gte',threshold:'1',message:'Rapport strength.',variables:[]}));
-result=engine.evaluateAll({representatives:[rep],rules:[coaching,quality,rapport],rosterRows:roster,resolver:resolver({'john:Coaching Follow-through:coaching':7,'john:Call Quality:quality':15,'john:Rapport:rapport':10}),template:{...engine.DEFAULT_TEMPLATE,maxStrengths:2}}).results[0];
+result=engine.evaluateAll({representatives:[rep],rules:[coaching,quality,rapport],rosterRows:roster,resolver:resolver({'john:Coaching Follow-through:coaching':1,'john:Call Quality:quality':1,'john:Rapport:rapport':1},{},{'john:Coaching Follow-through':7,'john:Call Quality':15,'john:Rapport':10}),template:{...engine.DEFAULT_TEMPLATE,maxStrengths:2}}).results[0];
 assert.deepEqual(result.strengths.map(item=>item.title),['Call Quality','Rapport'],'the maximum includes the two highest-volume strengths in order');
 assert.equal(result.qualifyingStrengthCount,3); assert.doesNotMatch(result.message,/Coaching strength/);
 

@@ -316,7 +316,7 @@
     });
   }
   function candidateVolume(observation){
-    const value=Number.isFinite(observation?.value)?observation.value:numeric(observation?.raw,observation?.isPercent);
+    const value=Number.isFinite(observation?.rankingVolume)?observation.rankingVolume:(Number.isFinite(observation?.value)?observation.value:numeric(observation?.raw,observation?.isPercent));
     return Number.isFinite(value)?value:null;
   }
   function uniqueRenderedMessages(sideName,candidates,rep,emailMatch,otherCandidate,resolver){
@@ -338,10 +338,11 @@
         if(!side.enabled){ diagnostics.push({ruleId:rule.id,ruleTitle:rule.title,side:sideName,enabled:false,pass:false,missing:false,score:0,condition:conditionLabel(side),reason:'Disabled'}); return; }
         const observation=resolver.resolveObservation(rep,side,rule,sideName);
         const evaluation=compareObservation(observation,side);
-        const diagnostic={ruleId:rule.id,ruleTitle:rule.title,side:sideName,enabled:true,pass:evaluation.pass,missing:evaluation.missing,score:evaluation.score,condition:conditionLabel(side),reason:evaluation.reason,observation,value:observationDisplay(observation)};
+        const rankingObservation=typeof resolver.resolveRankingVolume==='function'?(resolver.resolveRankingVolume(rep,rule,sideName,observation)||observation):observation, volume=candidateVolume(rankingObservation);
+        const diagnostic={ruleId:rule.id,ruleTitle:rule.title,side:sideName,enabled:true,pass:evaluation.pass,missing:evaluation.missing,score:evaluation.score,condition:conditionLabel(side),reason:evaluation.reason,observation,value:observationDisplay(observation),rankingVolume:volume,rankingLabel:rankingObservation?.rankingLabel||rankingObservation?.label||'Rule value'};
         diagnostics.push(diagnostic);
         if(evaluation.pass){
-          const candidate={rule,ruleIndex,title:rule.title||side.source||side.field||sideName,sideName,side,observation,volume:candidateVolume(observation),score:evaluation.score,diagnostic};
+          const candidate={rule,ruleIndex,title:rule.title||side.source||side.field||sideName,sideName,side,observation,volume,volumeLabel:diagnostic.rankingLabel,score:evaluation.score,diagnostic};
           (sideName==='concern'?concerns:strengths).push(candidate);
         }
       });
@@ -383,8 +384,8 @@
       concernMessages:concernRendered.messages,strengthMessages:strengthRendered.messages,diagnostics,errors,status,sendReady,
       message:hasBehavior||hasGeneric||template.includeNeither?sections.join('\n\n'):'',
       selectionReason:{
-        concern:concern?'Highest observed Concern volume among qualifying rules; normalized severity breaks equal-volume ties.':'No Concern threshold was crossed.',
-        strength:strength?'Highest observed Strength volume among qualifying rules; normalized severity breaks equal-volume ties.':'No Strength threshold was crossed.'
+        concern:concern?"Highest original-rule qualifying counter among matching Concerns; normalized severity breaks equal-counter ties.":'No Concern threshold was crossed.',
+        strength:strength?"Highest original-rule qualifying counter among matching Strengths; normalized severity breaks equal-counter ties.":'No Strength threshold was crossed.'
       }
     };
   }
