@@ -39,9 +39,10 @@ function qualtricsBridgeRow(row,kind,sourceLabel=''){
   return out;
 }
 function qualtricsBridgeRows(rows,kind,sourceLabel=''){ return (rows||[]).map(row=>qualtricsBridgeRow(row,kind,sourceLabel)).filter(r=>Object.keys(r).length); }
-async function qualtricsBridgeRowsDeferred(rows,kind,sourceLabel=''){
+async function qualtricsBridgeRowsDeferred(rows,kind,sourceLabel='',isCurrent=()=>true){
   const out=[], source=rows||[];
   for(let i=0;i<source.length;i++){
+    if(i%1500===0&&!isCurrent()){ const error=new Error('Source connection superseded'); error.name='AbortError'; throw error; }
     const row=qualtricsBridgeRow(source[i],kind,sourceLabel); if(Object.keys(row).length) out.push(row);
     if(i&&i%1500===0) await new Promise(resolve=>setTimeout(resolve,0));
   }
@@ -64,11 +65,11 @@ function qualtricsCoreSourceSignature(){
   const lookupSignature=qualtricsHireDateSourceCatalog().map(source=>`${source.key}:${source.rowCount}:${source.headers.join(',')}`).join(';');
   return `${sourceSignature}|orgs:${orgSignature}|lookup:${lookupSignature}`;
 }
-async function buildQualtricsCorePayload(){
+async function buildQualtricsCorePayload(isCurrent=()=>true){
   const rawCoachingRows=state.data.documented_coaching.rows||[];
-  const qaRows=await qualtricsBridgeRowsDeferred(state.data.qa.rows||[],'qa');
-  const coachingRows=await qualtricsBridgeRowsDeferred(rawCoachingRows,'coaching');
-  const checklistRows=await qualtricsBridgeRowsDeferred(state.data.checklist.rows||[],'checklist');
+  const qaRows=await qualtricsBridgeRowsDeferred(state.data.qa.rows||[],'qa','',isCurrent);
+  const coachingRows=await qualtricsBridgeRowsDeferred(rawCoachingRows,'coaching','',isCurrent);
+  const checklistRows=await qualtricsBridgeRowsDeferred(state.data.checklist.rows||[],'checklist','',isCurrent);
   return {sentAt:new Date().toISOString(),diagnostics:{documentedCoaching:{rawRows:rawCoachingRows.length,normalizedRows:rawCoachingRows.length,bridgeRows:coachingRows.length}},organizations:(state.orgs||[]).map(o=>({id:o.id,name:o.name,coachNames:[...(o.coachNames||[])]})),lookupSources:qualtricsHireDateSourceCatalog(),files:{
     qa:{fileName:state.data.qa.fileName||'All-Star QA',sheetName:'90-day KPI',headers:qualtricsBridgeHeaders('qa',qaRows,['All-Star Representative Key','Agent Name','Team','Coach','Interaction Start Time','Score %']),rows:qaRows},
     coaching:{fileName:state.data.documented_coaching.fileName||'All-Star Documented Coaching',sheetName:'Documented Coaching',headers:qualtricsBridgeHeaders('documented_coaching',coachingRows,['All-Star Representative Key','Associate Name','Job Coach','Date']),rows:coachingRows},
@@ -109,10 +110,10 @@ async function sendQualtricsCoreFiles(force=false){
   const token=id(); state.qualtricsCoreBuildToken=token; state.qualtricsCorePendingSignature=signature;
   if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent='Preparing the three automatic source connections in responsive batches. No preview or report is running…';
   try{
-    const payload=await buildQualtricsCorePayload(); if(state.qualtricsCoreBuildToken!==token) return; const f=payload.files;
+    const payload=await buildQualtricsCorePayload(()=>state.qualtricsCoreBuildToken===token); if(state.qualtricsCoreBuildToken!==token) return; const f=payload.files;
     if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=`Connecting ${f.qa.rows.length.toLocaleString()} KPI, ${f.coaching.rows.length.toLocaleString()} coaching, and ${f.checklist.rows.length.toLocaleString()} checklist rows without running a report…`;
     els.qualtricsEmailFrame.contentWindow.postMessage({type:'allstar-core-files',payload},'*');
-  }catch(err){ state.qualtricsCorePendingSignature=''; if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=`Could not prepare the connected sources: ${err?.message||err}`; }
+  }catch(err){ if(state.qualtricsCoreBuildToken!==token) return; state.qualtricsCorePendingSignature=''; if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=`Could not prepare the connected sources: ${err?.message||err}`; }
 }
 async function sendQualtricsWeeklyStats(){
   if(!state.qualtricsReady||!els.qualtricsEmailFrame?.contentWindow){ if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent='Wait for the Qualtrics email workspace to finish opening, then load Weekly Stats.'; return; }

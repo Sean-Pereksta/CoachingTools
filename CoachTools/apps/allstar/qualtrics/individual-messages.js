@@ -19,8 +19,8 @@
     includeGeneric:false,
     genericMessage:'',
     genericPlacement:'before',
-    maxConcerns:0,
-    maxStrengths:0
+    maxConcerns:1,
+    maxStrengths:2
   });
   const BUILT_INS=Object.freeze([
     'FirstName','LastName','FullName','Email','ConcernName','ConcernValue','ConcernThreshold',
@@ -116,7 +116,7 @@
     return copy;
   }
   function normalizeTemplate(raw){
-    raw=raw||{};
+    raw=raw||DEFAULT_TEMPLATE;
     const maximum=value=>{ const parsed=Math.floor(Number(value)); return Number.isFinite(parsed)&&parsed>0?Math.min(50,parsed):0; };
     return {
       header:raw.header==null?DEFAULT_TEMPLATE.header:cleanText(raw.header),

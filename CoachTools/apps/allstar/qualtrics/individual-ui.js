@@ -158,7 +158,7 @@ function renderIndividualDataSelectionSummary(){
   els.individualDataSelectionSummary.innerHTML=`<strong>${headline}</strong><span>${detail}</span>`;
   if(els.individualReportSelectionCount) els.individualReportSelectionCount.textContent=`${files.length.toLocaleString()} selected`;
   if(els.individualRuleSelectionCount) els.individualRuleSelectionCount.textContent=`${rules.length.toLocaleString()} selected`;
-  renderIndividualScopeSummary();
+  renderIndividualScopeSummary(); renderIndividualPreflight();
 }
 function renderIndividualDataSelection(){ renderIndividualReportOptions(); renderIndividualRuleOptions(); renderIndividualDataSelectionSummary(); }
 async function addIndividualReportFiles(files){
@@ -506,9 +506,60 @@ function renderIndividualReview(){
   const filter=els.individualResultFilter?.value||'all', q=QualtricsIndividualMessages.normalizeName(els.individualResultSearch?.value||''), coach=els.individualResultCoach?.value||'', organization=els.individualResultOrganization?.value||'';
   const filtered=results.filter(result=>individualMatchesResultFilter(result,filter)).filter(result=>!coach||result.coach===coach).filter(result=>!organization||(result.organizationNames||[]).includes(organization)).filter(result=>!q||QualtricsIndividualMessages.normalizeName(`${result.fullName} ${result.email} ${result.coach} ${result.team} ${(result.organizationNames||[]).join(' ')} ${(result.concerns||[]).map(item=>item.title).join(' ')} ${(result.strengths||[]).map(item=>item.title).join(' ')} ${result.status}`).includes(q));
   const limit=Math.max(40,Number(state.individualRenderLimit)||80), shown=filtered.slice(0,limit), mode=els.individualViewMode?.value||'review';
-  const content=mode==='diagnostics'?individualDiagnosticsTableHtml(shown,filtered.length):`<div class="individualReviewList">${shown.map(individualReviewCardHtml).join('')||'<div class="empty">No representatives match this filter.</div>'}</div>`;
+  const content=mode==='diagnostics'?individualDiagnosticsTableHtml(shown,filtered.length):mode==='cards'?`<div class="individualReviewList">${shown.map(individualReviewCardHtml).join('')||'<div class="empty">No representatives match this filter.</div>'}</div>`:individualEmailWorkspace(shown);
   els.individualReview.innerHTML=`${state.individualResultsStale?'<div class="note dangerText" style="margin-bottom:10px">Selections or inputs changed. Run the Individual Review again before exporting these results.</div>':''}<div class="individualReviewCount"><strong>${filtered.length.toLocaleString()} people match this view</strong><span>${shown.length.toLocaleString()} rendered • ${results.length.toLocaleString()} reviewed</span></div>${content}${filtered.length>shown.length?`<div class="row center" style="margin-top:12px"><button class="btn blue" type="button" data-individual-show-more>Show ${Math.min(80,filtered.length-shown.length).toLocaleString()} More</button></div>`:''}`;
+  els.individualReview.querySelectorAll('[data-message-person]').forEach(button=>button.onclick=()=>{ const scrollTop=els.individualReview.querySelector('.messagePeople')?.scrollTop||0; state.individualPreviewRepKey=button.dataset.messagePerson; renderIndividualReview(); const people=els.individualReview.querySelector('.messagePeople'); if(people) people.scrollTop=scrollTop; people?.querySelector('[aria-pressed="true"]')?.focus({preventScroll:true}); });
   els.individualReview.querySelector('[data-individual-show-more]')?.addEventListener('click',()=>{ state.individualRenderLimit=limit+80; renderIndividualReview(); });
+}
+function individualEmailWorkspace(results){
+  if(!results.length) return '<div class="empty">No representatives match this filter.</div>';
+  const selected=results.find(result=>result.repKey===state.individualPreviewRepKey)||results[0];
+  const fields=QualtricsWorkflow.emailFields(selected,state.individualTemplate);
+  return `<div class="messageWorkspace"><aside class="messagePeople" aria-label="Representatives">${results.map(result=>`<button type="button" class="messagePerson" data-message-person="${esc(result.repKey)}" aria-pressed="${result===selected}"><strong>${esc(result.fullName)}</strong><small>${esc(result.email||'Missing email')}</small><small>${result.concerns?.length||0} Concern Areas • ${result.strengths?.length||0} Strengths</small><small class="${result.sendReady?'statusReady':'statusBlocked'}">${result.sendReady?'✓ Ready':'! Needs Review'} — ${esc(result.status)}</small></button>`).join('')}</aside><article class="messagePaper"><h2>${esc(selected.fullName)}</h2><div class="sub">${esc(selected.email||'Missing email')}</div>${QualtricsWorkflow.EMAIL_COLUMNS.slice(2).map(column=>`<section><h3>${esc(column)}</h3>${esc(fields[column])||'<span class="muted">No content</span>'}</section>`).join('')}${selected.errors.length?`<div class="note dangerText">${selected.errors.map(esc).join('<br>')}</div>`:''}<details><summary>Supporting rule and roster evidence</summary>${individualDiagnosticHtml(selected)}${individualMatchHtml(selected)}</details></article></div>`;
+}
+function exportFinalIndividualEmails(){
+  if(state.individualResultsStale){ toast('Run the Individual Review again before exporting changed selections.'); return; }
+  const rows=(state.individualResults||[]).filter(result=>result.sendReady).map(result=>QualtricsWorkflow.emailFields(result,state.individualTemplate));
+  if(!rows.length){ toast('No send-ready individual messages are available.'); return; }
+  if(!window.XLSX){ toast('Excel export library is unavailable.'); return; }
+  const wb=XLSX.utils.book_new(), sheet=XLSX.utils.json_to_sheet(rows,{header:QualtricsWorkflow.EMAIL_COLUMNS.slice()});
+  sheet['!cols']=[{wch:26},{wch:36},{wch:55},{wch:65},{wch:65},{wch:55}];
+  XLSX.utils.book_append_sheet(wb,sheet,'Email Messages');
+  XLSX.writeFile(wb,`qualtrics_final_email_${ymd(new Date())}.xlsx`);
+  toast(`Exported ${rows.length} send-ready messages. Nothing was sent.`);
+}
+function individualPreflight(){
+  const files=individualSelectedReportFiles(), rows=state.masterRows||{};
+  return individualSelectedRules().map(rule=>{
+    const issues=[], config=QualtricsIndividualMessages.normalizeRuleConfig(rule);
+    const matched=files.filter(file=>individualRuleForFile(file)?.id===rule.id);
+    const headers=new Set(matched.flatMap(file=>file.headers||[]).map(headerKey));
+    const requireMaster=(key,label)=>{ if(!rows[key]?.length) issues.push(`${label} is not loaded`); };
+    if(ruleNeedsReportFile(rule)&&!matched.length) issues.push('No matching checked report file');
+    if(!config.concern.enabled&&!config.strength.enabled) issues.push('No Individual Message outcome enabled');
+    for(const side of [config.concern,config.strength].filter(side=>side.enabled)){
+      if(side.sourceType==='legacy'){
+        if(isStatRule(rule)) requireMaster('weeklyStats','Weekly Stats');
+        if(isStatCountRule(rule)) requireMaster(rule.statCount?.source||'qa','Count source');
+        if(isCoachingCorrectiveRule(rule)){ requireMaster('coaching','Documented Coaching'); if(rule.coachingCorrective?.requireChecklist) requireMaster('checklist','Checklist'); }
+      }
+      for(const item of [side,...(side.variables||[])]){
+        if(item.sourceType==='reportField'&&!headers.has(headerKey(item.field||item.source||''))) issues.push(`Report column missing: ${item.field||item.source||'(not selected)'}`);
+        if(item.sourceType==='stat'){
+          const metric=individualMetricConfig(item.source), key=metric.metric==='callQuality'?'qa':'weeklyStats'; requireMaster(key,key==='qa'?'90-day QA':'Weekly Stats');
+          if(metric.metric==='custom'&&rows[key]?.length&&!Object.keys(rows[key][0]?.raw||rows[key][0]||{}).some(header=>headerKey(header)===headerKey(item.source))) issues.push(`Verify stat column: ${item.source||'(not selected)'}`);
+        }
+      }
+    }
+    if(!state.individualRosterRows?.length) issues.push('Email roster is not loaded');
+    return {rule,issues:[...new Set(issues)]};
+  });
+}
+function renderIndividualPreflight(){
+  const host=document.getElementById('individualPreflight'); if(!host) return;
+  const checks=individualPreflight(), problems=checks.filter(check=>check.issues.length);
+  host.innerHTML=`<summary>${checks.length-problems.length} Rules Ready • ${problems.length} Need Attention</summary><div class="sub">Source and column checks only. The review validates each representative, variable and email before export.</div><ul>${problems.map(check=>`<li><button class="btn small" data-preflight-rule="${esc(check.rule.id)}">${esc(check.rule.title)}</button> ${check.issues.map(esc).join('; ')}</li>`).join('')||'<li>No source issues found for the selected rules.</li>'}</ul>`;
+  host.querySelectorAll('[data-preflight-rule]').forEach(button=>button.onclick=()=>{ const rule=state.rules.find(rule=>rule.id===button.dataset.preflightRule); if(rule){ fillRuleForm(rule); switchTab('rules'); renderRules(); } });
 }
 function individualExportRows(){
   return (state.individualResults||[]).map(result=>({
@@ -556,6 +607,7 @@ function bindIndividualMessages(){
   for(const name of ['dragleave','drop']) els.individualReportDrop?.addEventListener(name,event=>{ event.preventDefault(); els.individualReportDrop.classList.remove('drag'); });
   els.individualReportDrop?.addEventListener('drop',event=>addIndividualReportFiles(event.dataTransfer.files));
   els.loadIndividualRosterPasteBtn.onclick=loadPastedIndividualRoster;
+  document.getElementById('exportFinalEmailBtn')?.addEventListener('click',exportFinalIndividualEmails);
   els.saveIndividualTemplateBtn.onclick=saveIndividualMessageSettings; els.evaluateIndividualsBtn.onclick=evaluateIndividualMessages; els.exportIndividualReviewBtn.onclick=exportIndividualReview; els.exportIndividualEmailsBtn.onclick=exportIndividualEmails;
   els.resetIndividualScopeBtn?.addEventListener('click',resetIndividualScope);
   els.clearIndividualScopeBtn?.addEventListener('click',clearIndividualScope);

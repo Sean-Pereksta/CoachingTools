@@ -81,3 +81,10 @@ Rule-schema additions are normalized on load without changing the IndexedDB vers
 - Representative email roster rows are session-only and are not persisted in IndexedDB or localStorage.
 
 Older saved rules therefore retain their prior matching and presentation behavior until a user explicitly enables the new options.
+
+Qualtrics workflow metadata (2026-09-08; no database/schema version change)
+- settings record qualtricsRulesetAttachment.v1 stores only name, savedAt, an advisory content checksum, and an optional import error. It does not duplicate report rows or rule contents.
+- Existing rules/settings/IDs remain authoritative. Import still merges validated rules by ID; rules omitted from an imported file are retained locally and the status remains Unsaved Changes until a full rules export is created.
+- Local auto-save never claims to overwrite an imported/exported JSON file. External changes are observable only on re-import. Up to Date refers to the last successfully imported/exported snapshot, not a filesystem watcher.
+- New Individual Message settings use maxConcerns=1 and maxStrengths=2. Saved explicit values, zero/unlimited values, and legacy saved settings without limits retain their prior behavior.
+- Final Email Export uses one worksheet and exactly Name, Email, Header, Concern Areas, Strengths, Footer. Generic-before text is included in Header and generic-after text in Footer. Review/diagnostic and EML exports retain their separate contracts.
