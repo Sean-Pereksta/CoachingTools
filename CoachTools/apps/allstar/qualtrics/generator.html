@@ -7,6 +7,7 @@
 <script src="../../../vendor/xlsx.full.min.js"></script>
 <script src="../../../vendor/jszip.min.js"></script>
 <script src="insights.js" onerror="this.onerror=null;this.src='qualtrics/insights.js'"></script>
+<script src="workflow.js"></script>
 <script src="individual-messages.js" onerror="this.onerror=null;this.src='qualtrics/individual-messages.js'"></script>
 <script src="individual-ui.js" onerror="this.onerror=null;this.src='qualtrics/individual-ui.js'"></script>
 <style>
@@ -70,21 +71,27 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
 .individualRuleGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.individualSide{border:1px solid var(--line);border-top:5px solid #ea580c;border-radius:14px;background:#fff;padding:12px;display:grid;gap:10px}.individualSide.strength{border-top-color:#16a34a}.individualSide h3{margin:0}.individualSideGrid{display:grid;grid-template-columns:repeat(2,minmax(160px,1fr));gap:9px}.individualSideGrid .wide{grid-column:1/-1}.individualVariableList{display:grid;gap:7px}.individualVariableRow{display:grid;grid-template-columns:minmax(80px,.55fr) minmax(105px,.7fr) minmax(150px,1fr) minmax(95px,.55fr) auto;gap:7px;align-items:end;border:1px solid var(--line);border-radius:11px;background:#f8fafc;padding:8px}.individualWorkflow{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.individualWorkflow span{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:1000;color:#475569}.individualWorkflow span:not(:last-child):after{content:'›';font-size:18px;color:#94a3b8}.individualSummary{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px}.individualSummaryTile{border:1px solid var(--line);border-radius:13px;background:#fff;padding:10px;text-align:left}.individualSummaryTile strong{display:block;font-size:22px}.individualSummaryTile span{font-size:11px;color:var(--muted);font-weight:900}.individualSummaryTile.good{border-color:#86efac;background:#f0fdf4}.individualSummaryTile.warn{border-color:#fcd34d;background:#fffbeb}.individualSummaryTile.bad{border-color:#fca5a5;background:#fef2f2}.individualTemplateGrid{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px}.individualTemplateGrid .wide{grid-column:1/-1}.individualReviewTable table{min-width:1180px}.individualReviewTable details{min-width:310px}.individualReviewTable summary{cursor:pointer;font-weight:1000;color:#1d4ed8}.individualMessagePreview{white-space:pre-wrap;border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px;margin-top:8px;line-height:1.45}.individualDiagnostics{display:grid;gap:7px;margin-top:8px}.individualDiagnostic{border:1px solid var(--line);border-left:4px solid #94a3b8;border-radius:10px;background:#f8fafc;padding:8px}.individualDiagnostic.pass{border-left-color:#16a34a}.individualDiagnostic.fail{border-left-color:#dc2626}.individualMatchList{display:grid;gap:4px;margin-top:6px}.individualMatchList span{font-size:11px;color:#475569}.statusReady{color:#166534}.statusBlocked{color:#991b1b}@media(max-width:980px){.individualRuleGrid,.individualTemplateGrid{grid-template-columns:1fr}.individualTemplateGrid .wide{grid-column:auto}.individualVariableRow{grid-template-columns:1fr 1fr}.individualVariableRow .btn{grid-column:1/-1}}
 .individualScopeGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.individualScopeColumn{border:1px solid #dbe2ea;border-radius:14px;background:#f8fafc;padding:11px;display:grid;gap:8px;align-content:start}.individualScopeColumn h3{margin:0}.individualScopeList{display:grid;gap:6px;max-height:310px;overflow:auto;overscroll-behavior:contain;padding-right:3px}.individualScopeOption,.individualRepScopeRow{display:flex;align-items:center;gap:9px;border:1px solid #dbe2ea;border-radius:10px;background:#fff;padding:8px;text-transform:none;letter-spacing:0;color:#0f172a}.individualScopeOption>span,.individualRepScopeRow>span{display:grid;gap:2px;min-width:0}.individualScopeOption small,.individualRepScopeRow small{color:#64748b;font-size:10px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.individualRepScopeRow{justify-content:space-between}.individualRepScopeRow select{width:auto;min-width:132px;padding:7px;text-transform:none}.individualScopeSummary{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #bfdbfe;border-left:5px solid #2563eb;border-radius:12px;background:#eff6ff;padding:11px 13px;margin:11px 0}.individualScopeSummary span{font-size:12px;color:#1e40af;font-weight:900}.individualProgressPanel{border:1px solid #bfdbfe;border-radius:14px;background:linear-gradient(135deg,#eff6ff,#fff);padding:14px;margin-top:12px}.individualProgressTrack{height:13px;border-radius:999px;background:#dbeafe;overflow:hidden;margin:9px 0}.individualProgressTrack span{display:block;height:100%;width:0;background:linear-gradient(90deg,#2563eb,#16a34a);transition:width .15s ease}.individualProgressCopy{display:flex;align-items:center;justify-content:space-between;gap:10px}.individualProgressCopy strong{font-size:15px}.individualReviewToolbar{display:flex;gap:9px;align-items:end;flex-wrap:wrap;margin-top:12px}.individualReviewToolbar label{min-width:160px}.individualReviewToolbar .search{min-width:250px;flex:1}.individualReviewCount{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.individualReviewCount span{color:#64748b;font-size:12px;font-weight:900}.individualReviewList{display:grid;gap:10px}.individualReviewCard{border:1px solid #dbe2ea;border-left:6px solid #94a3b8;border-radius:14px;background:#fff;overflow:hidden}.individualReviewCard.attention{border-left-color:#dc2626}.individualReviewCard.mixed{border-left-color:#d97706}.individualReviewCard.strength{border-left-color:#16a34a}.individualReviewCard>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;cursor:pointer;list-style:none}.individualReviewCard>summary::-webkit-details-marker{display:none}.individualReviewCard>summary>span:first-child{display:grid;gap:3px}.individualReviewCard>summary small{color:#64748b;font-size:11px}.individualReviewCardMeta{display:grid;text-align:right;gap:3px}.individualReviewCardMeta b{font-size:11px;color:#475569}.individualReviewCardMeta em{font-style:normal;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#64748b}.individualReviewCardBody{border-top:1px solid #e5e7eb;padding:13px 14px;display:grid;gap:10px}.individualReviewContact{display:flex;justify-content:space-between;gap:10px;font-size:12px}.individualFinding{border:1px solid #dbe2ea;border-radius:11px;padding:10px;background:#f8fafc}.individualFinding h4{margin:0 0 7px;font-size:11px;text-transform:uppercase;letter-spacing:.06em}.individualFinding p{margin:6px 0 0;white-space:pre-wrap;line-height:1.5}.individualFinding.strength{border-color:#86efac;background:#f0fdf4}.individualFinding.concern{border-color:#fca5a5;background:#fef2f2}.individualFinding.generic{border-color:#bfdbfe;background:#eff6ff}.individualPerformanceRows{display:grid;gap:5px}.individualPerformanceRows div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #e5e7eb;padding:5px 0}.individualPerformanceRows span{color:#64748b}.goodNote{border-color:#86efac;background:#f0fdf4;color:#166534}@media(max-width:1050px){.individualScopeGrid{grid-template-columns:1fr}.individualScopeList{max-height:230px}}@media(max-width:700px){.individualScopeSummary,.individualReviewCount,.individualReviewCard>summary{align-items:flex-start;flex-direction:column}.individualReviewCardMeta{text-align:left}.individualReviewToolbar{display:grid;grid-template-columns:1fr}.individualReviewToolbar label{min-width:0}.individualRepScopeRow{align-items:flex-start;flex-direction:column}.individualRepScopeRow select{width:100%}}
 .individualSetupGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}.individualSetupPane{border:1px solid #dbe2ea;border-radius:14px;background:#f8fafc;padding:12px;display:grid;gap:9px;align-content:start}.individualSetupPane h3{margin:0}.individualSelectionList{display:grid;gap:7px;max-height:330px;overflow:auto;overscroll-behavior:contain}.individualSelectionOption{display:flex;align-items:flex-start;gap:9px;border:1px solid #dbe2ea;border-radius:11px;background:#fff;padding:9px;text-transform:none;letter-spacing:0;color:#0f172a}.individualSelectionOption>input{min-width:auto;margin-top:2px}.individualSelectionOption>span{display:grid;gap:3px;min-width:0}.individualSelectionOption small{color:#64748b;font-size:11px;font-weight:800}.individualSelectionOption .pill{width:max-content}.individualSetupSummary{border-left-color:#7c3aed;background:#f5f3ff;border-color:#ddd6fe}.individualScopeColumnHead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.individualScopeColumnHead .row{gap:5px}.individualScopeColumnHead .btn{padding:5px 8px;font-size:11px}@media(max-width:900px){.individualSetupGrid{grid-template-columns:1fr}}
+
+/* Workflow workspace: bounded scrolling and browser-contained offscreen cards. */
+#view-rules>.stepBanner{position:relative;padding-right:260px}
+.rulesetStatus{position:absolute;right:16px;top:16px;border-radius:999px;background:#f1f5f9;color:#475569;padding:8px 12px;font-size:12px;font-weight:800}
+.rulesetStatus[data-kind="current"]{background:#dcfce7;color:#166534}.rulesetStatus[data-kind="dirty"]{background:#fef3c7;color:#92400e}.rulesetStatus[data-kind="review"]{background:#fee2e2;color:#991b1b}
+.rulesLibrary{height:calc(100dvh - 125px);min-height:480px}.rulesLibraryHeader{flex-shrink:0;background:#fff}.ruleSetList{min-height:0;overflow:auto;overscroll-behavior:contain}.ruleSetCard{content-visibility:auto;contain-intrinsic-size:auto 170px}
+.messageWorkspace{display:grid;grid-template-columns:minmax(240px,320px) minmax(0,1fr);gap:18px;align-items:start}.messagePeople{max-height:70dvh;overflow:auto;display:grid;gap:7px}.messagePerson{text-align:left;border:1px solid #dbe2ea;background:#fff;border-radius:12px;padding:12px;cursor:pointer}.messagePerson[aria-pressed="true"]{border-color:#2563eb;background:#eff6ff}.messagePerson small{display:block;color:#64748b;margin-top:4px}.messagePaper{border:1px solid #dbe2ea;border-radius:16px;padding:22px;background:#fff;line-height:1.6}.messagePaper section{white-space:pre-wrap;margin-bottom:20px}.messagePaper h3{font-size:12px;color:#64748b;text-transform:uppercase}.workflowPreflight{margin:12px 0;border:1px solid #cbd5e1;border-radius:12px;padding:12px}.workflowPreflight summary{cursor:pointer;font-weight:800}.workflowPreflight li{margin:6px 0}
+.actionNavigation{position:sticky;top:80px;z-index:3;display:flex;gap:14px;align-items:end;flex-wrap:wrap;background:#fff;padding:14px;border:1px solid #dbe2ea;border-radius:14px}.actionNavigation label{flex:1;min-width:200px}#reportBody>[hidden]{display:none!important}#reportBody>div{scroll-margin-top:180px}
+#reportBody .card{content-visibility:auto;contain-intrinsic-size:auto 400px}
+@media(max-width:900px){.messageWorkspace{grid-template-columns:1fr}.messagePeople{max-height:300px}.rulesLibrary{height:65dvh;min-height:360px}#view-rules>.stepBanner{padding-right:16px;padding-top:55px}}
 </style>
 </head>
 <body>
 <header class="topbar">
   <div class="brand"><h1>Coaching Email Generator</h1><div>Qualtrics uploads → saved rules → coach-ready email reports</div></div>
   <nav class="tabs">
-    <button class="tabBtn active" data-tab="keyfiles">1. Add 4 Key Files</button>
-    <button class="tabBtn" data-tab="rules">2. Build Rules</button>
-    <button class="tabBtn" data-tab="reportfiles">3. Add Report Files</button>
+    <button class="tabBtn active" data-tab="keyfiles">1. Data / Key Files</button>
+    <button class="tabBtn" data-tab="reportfiles">2. Report Files</button>
+    <button class="tabBtn" data-tab="rules">3. Build Rules</button>
     <button class="tabBtn" data-tab="report">4. Action Report</button>
-    <button class="tabBtn" data-tab="individual">Individual Messages</button>
-    <button class="tabBtn" data-tab="orgsummary">Organization Opportunities</button>
-    <button class="tabBtn" data-tab="coachprofiles">Coach Profiles</button>
-    <button class="tabBtn" data-tab="overallcoaching">Overall Coaching Profile</button>
-    <button class="tabBtn" data-tab="topicimpact">Coaching Topic Impact</button>
+    <button class="tabBtn" data-tab="individual">5. Individual Messages</button>
   </nav>
   <span class="spacer"></span>
   <div class="progressWrap" id="progressWrap"><div class="progress"><span id="progressBar"></span></div><span class="mono mini" id="progressText">0%</span></div>
@@ -94,7 +101,8 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
 <main class="wrap">
   <section class="view" id="view-rules">
     <div class="stepBanner">
-      <strong>Step 2 — Build and document each file rule</strong>
+      <strong>Step 3 — Build Rules</strong>
+      <span id="rulesetStatus" class="rulesetStatus" role="status" title="Attach a rules JSON file or export your current rules.">— No Ruleset Attached</span>
       <span class="sub">Select a file rule from the library, confirm exactly which export name it matches, preserve its dashboard/coaching/stat logic, and add formatted instructions that will appear above that file in every coach report.</span>
     </div>
 
@@ -104,8 +112,8 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
           <div class="row"><div><h2 style="margin:0">File Rule Library</h2><div class="sub">One saved rule set per report-file format.</div></div><span class="spacer"></span><button class="btn primary" id="newRuleBtn">+ New</button></div>
           <div class="rulesLibraryStats" id="rulesLibraryStats"></div>
           <div class="rulesLibraryTools">
-            <label>Find a file rule<input id="ruleSearchInput" type="search" placeholder="Search title or base filename"></label>
-            <label>Show<select id="ruleTypeFilter"><option value="all">All rule types</option><option value="multiHeader">Multi-header</option><option value="headerCount">Header count</option><option value="statRule">Stat Rules</option><option value="statCount">Stat Count</option><option value="coachingCorrective">Documented Coaching → Corrective</option><option value="withGuidance">With guidance</option><option value="withoutGuidance">Missing guidance</option></select></label>
+            <label>Find a file rule<input id="ruleSearchInput" type="search" placeholder="Search name, source, metric, category or message"></label>
+            <label>Show<select id="ruleTypeFilter"><option value="all">All rule types</option><option value="enabled">Individual enabled</option><option value="disabled">Individual disabled</option><option value="concern">Concern</option><option value="strength">Strength</option><option value="individual">Individual</option><option value="multiHeader">Multi-header</option><option value="headerCount">Header count</option><option value="statRule">Stat Rules</option><option value="statCount">Stat Count</option><option value="coachingCorrective">Documented Coaching → Corrective</option><option value="withGuidance">With guidance</option><option value="withoutGuidance">Missing guidance</option></select></label>
           </div>
           <div class="currentRuleNotice" id="openRuleSetNotice"><span>Selected file rule: <strong id="openRuleSetName">None selected</strong></span><span class="pill blue" id="openRuleSetType">No type</span></div>
         </div>
@@ -552,6 +560,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
           <div class="individualSelectionList" id="individualRuleOptions"><div class="empty compact">No rules selected. Choose at least one rule before reviewing.</div></div>
         </section>
       </div>
+      <details id="individualPreflight" class="workflowPreflight"></details>
       <div class="individualScopeSummary individualSetupSummary" id="individualDataSelectionSummary"><strong>No rules selected</strong><span>Choose the exact rules to run. Uploaded report files alone do not run a review.</span></div>
     </div>
     <div class="grid">
@@ -589,14 +598,14 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
       <div class="individualScopeSummary" id="individualScopeSummary"><strong>No review scope loaded</strong><span>Open this workspace after data is connected.</span></div>
     </div>
     <div class="card">
-      <div class="row"><div><h2 style="margin:0">3. Run Individual Review</h2><div class="sub">The review uses only the checked rules and checked report files. Unmatched and ambiguous representatives stay visible and are excluded from send-ready exports.</div></div><span class="spacer"></span><button class="btn primary" type="button" id="evaluateIndividualsBtn">Select Rules to Review</button><button class="btn blue" type="button" id="exportIndividualReviewBtn">Export Review Excel</button><button class="btn good" type="button" id="exportIndividualEmailsBtn">Export Send-Ready Email Files</button></div>
+      <div class="row"><div><h2 style="margin:0">3. Run Individual Review</h2><div class="sub">The review uses only the checked rules and checked report files. Unmatched and ambiguous representatives stay visible and are excluded from send-ready exports.</div></div><span class="spacer"></span><button class="btn primary" type="button" id="evaluateIndividualsBtn">Select Rules to Review</button><button class="btn blue" type="button" id="exportIndividualReviewBtn">Review / Diagnostic Export</button><button class="btn good" type="button" id="exportFinalEmailBtn">Final Email Export</button><button class="btn good" type="button" id="exportIndividualEmailsBtn">Export Send-Ready Email Files</button></div>
       <div class="individualProgressPanel hidden" id="individualProgressPanel" role="status" aria-live="polite">
         <div class="individualProgressCopy"><div><strong id="individualProgressPhase">Preparing review</strong><div class="sub" id="individualProgressDetail"></div></div><span class="pill" id="individualProgressPercent">0%</span></div>
         <div class="individualProgressTrack"><span id="individualProgressBar"></span></div>
         <div class="row"><span class="sub">The generator yields between work slices so the page can keep repainting.</span><span class="spacer"></span><button class="btn bad" type="button" id="cancelIndividualReviewBtn">Cancel Review</button></div>
       </div>
       <div class="individualSummary" id="individualSummary" style="margin-top:12px"><div class="empty">Load a roster, configure rule outcomes, and evaluate individuals.</div></div>
-      <div class="individualReviewToolbar"><label>View<select id="individualViewMode"><option value="review">Clean review blocks</option><option value="diagnostics">Diagnostics table</option></select></label><label>Priority<select id="individualResultFilter"><option value="all">All</option><option value="attention">Needs Attention</option><option value="mixed">Mixed</option><option value="strength">Doing Well</option><option value="noFinding">No Individual Finding</option><option value="ready">Send Ready</option><option value="emailIssue">Email Issue</option><option value="templateError">Template Error</option><option value="missingMetric">Missing Metric</option></select></label><label>Coach<select id="individualResultCoach"><option value="">All coaches</option></select></label><label>Organization<select id="individualResultOrganization"><option value="">All organizations</option></select></label><label class="search">Find representative<input id="individualResultSearch" type="search" placeholder="Search name, coach, team, organization, concern, or strength"></label><button class="btn" id="expandAllIndividualBtn" type="button">Expand All</button><button class="btn" id="collapseAllIndividualBtn" type="button">Collapse All</button></div>
+      <div class="individualReviewToolbar"><label>View<select id="individualViewMode"><option value="cards">Detailed review cards</option><option value="review" selected>Email preview</option><option value="diagnostics">Diagnostics table</option></select></label><label>Priority<select id="individualResultFilter"><option value="all">All</option><option value="attention">Needs Attention</option><option value="mixed">Mixed</option><option value="strength">Doing Well</option><option value="noFinding">No Individual Finding</option><option value="ready">Send Ready</option><option value="emailIssue">Email Issue</option><option value="templateError">Template Error</option><option value="missingMetric">Missing Metric</option></select></label><label>Coach<select id="individualResultCoach"><option value="">All coaches</option></select></label><label>Organization<select id="individualResultOrganization"><option value="">All organizations</option></select></label><label class="search">Find representative<input id="individualResultSearch" type="search" placeholder="Search name, coach, team, organization, concern, or strength"></label><button class="btn" id="expandAllIndividualBtn" type="button">Expand All</button><button class="btn" id="collapseAllIndividualBtn" type="button">Collapse All</button></div>
       <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:1000">Diagnostics &amp; performance timing</summary><div id="individualPerformanceDiagnostics" class="note" style="margin-top:8px"><div class="sub">Run a review to capture stage timings.</div></div></details>
     </div>
     <div class="card" id="individualReview"><div class="empty">No individual evaluation has been run.</div></div>
@@ -1339,6 +1348,38 @@ function getCountNameFromRow(row, rule){
 }
 function countThreshold(rule){ const n=Number(rule?.countRule?.minCount); return isFinite(n) ? Math.max(0,n) : 1; }
 
+const RULESET_ATTACHMENT_KEY='qualtricsRulesetAttachment.v1';
+let rulesetDraftDirty=false;
+function updateRulesetStatus(){
+  const element=document.getElementById('rulesetStatus'); if(!element) return;
+  const status=QualtricsWorkflow.rulesetStatus(state.rulesetAttachment,state.rules,rulesetDraftDirty);
+  element.dataset.kind=status.kind; element.textContent=status.label;
+  element.title=state.rulesetAttachment?`${state.rulesetAttachment.name} • ${state.rulesetAttachment.savedAt} • ${state.rules.length} rules. ${state.rulesetAttachment.error||'Local auto-save does not update an exported file. External file changes are checked when you re-import it.'}`:'Import or export Rules JSON to attach a ruleset.';
+}
+async function attachRuleset(name,error='',rules=state.rules){
+  state.rulesetAttachment={name,savedAt:new Date().toISOString(),fingerprint:QualtricsWorkflow.fingerprint(rules),error}; rulesetDraftDirty=false;
+  updateRulesetStatus();
+  await put(STORES.settings,{key:RULESET_ATTACHMENT_KEY,attachment:state.rulesetAttachment});
+}
+function autoSelectCoreRules(source){
+  if(!state.masterRows[source]?.length) return;
+  let count=0;
+  for(const rule of state.rules){
+    const config=QualtricsIndividualMessages.normalizeRuleConfig(rule);
+    const metricSource=value=>individualMetricConfig(value).metric==='callQuality'?'qa':'weeklyStats';
+    const matches=(isStatRule(rule)&&metricSource(rule.statRule?.metric)===source)||(isStatCountRule(rule)&&(rule.statCount?.source||'qa')===source)||(isCoachingCorrectiveRule(rule)&&source==='coaching')||[config.concern,config.strength].some(side=>side.enabled&&side.sourceType==='stat'&&metricSource(side.source)===source);
+    if(!matches) continue;
+    individualRuleSelection().add(rule.id); if(isCoreDataRule(rule)) state.selectedOtherRuleIds.add(rule.id); count++;
+  }
+  saveOtherRuleSelection();
+  state.uploadRuleSelectionCounts=state.uploadRuleSelectionCounts||{}; state.uploadRuleSelectionCounts[source]=count;
+}
+function autoSelectUploadedRules(files){
+  for(const file of files) if(file.status!=='error'){
+    individualReportSelection().add(file.id);
+    if(file.ruleId) individualRuleSelection().add(file.ruleId);
+  }
+}
 function currentRule(){ return state.rules.find(r=>r.id===state.currentRuleId) || null; }
 function renderOpenRuleSetName(rule=currentRule()){
   const name = rule?.title || 'None selected';
@@ -1352,9 +1393,11 @@ async function saveRuleObj(rule, options={}){
   const preview=options.preview===true;
   rule = normalizeRule(rule);
   rule.updatedAt = new Date().toISOString();
-  await put(STORES.rules, rule);
+  QualtricsWorkflow.invalidateSearch(rule);
+  try{ await put(STORES.rules, rule); }catch(error){ rulesetDraftDirty=true; updateRulesetStatus(); throw error; }
   const idx=state.rules.findIndex(r=>r.id===rule.id);
   if(idx>=0) state.rules[idx]=rule; else state.rules.push(rule);
+  rulesetDraftDirty=false; updateRulesetStatus();
   invalidateIndividualRunCache('individual message rules changed');
   state.currentRuleId=rule.id;
   renderOpenRuleSetName(rule);
@@ -1395,6 +1438,7 @@ function readRuleForm(){
   rule.correctiveContext = correctiveContextFormSnapshot();
   rule.individualMessage = individualRuleFormSnapshot(rule);
   rule.guidance = { enabled:!!els.ruleGuidanceEnabled?.checked, title:(els.ruleGuidanceTitle?.value || 'How to understand this report').trim() || 'How to understand this report', html:sanitizeRichHtml(els.ruleGuidanceEditor?.innerHTML || '') };
+  QualtricsWorkflow.invalidateSearch(rule);
   rule.criteria = rule.criteria || [];
   rule.stats = rule.stats || [];
   return rule;
@@ -1503,37 +1547,46 @@ function fillRuleForm(rule){
 }
 function renderRuleLibraryStats(){
   if(!els.rulesLibraryStats) return;
-  const total=state.rules.length;
-  const guided=state.rules.filter(r=>r.guidance?.enabled!==false && String(r.guidance?.html||'').trim()).length;
+  const total=state.rules.length, active=state.rules.filter(rule=>rule.individualMessage?.concern?.enabled||rule.individualMessage?.strength?.enabled).length;
   const configured=state.rules.filter(r=>isStatRule(r) ? !!r.statRule?.goalRaw : isStatCountRule(r) ? !!(r.statCount?.nameHeader && r.statCount?.conditionHeader) : isCoachingCorrectiveRule(r) ? !!r.coachingCorrective?.coachingTopic : (r.baseName && (isHeaderCountRule(r) ? r.countRule?.nameHeader : (r.criteria?.length||0)>0))).length;
-  els.rulesLibraryStats.innerHTML=`<div class="rulesLibraryStat"><strong>${total}</strong><span>Saved rules</span></div><div class="rulesLibraryStat"><strong>${configured}</strong><span>Configured</span></div><div class="rulesLibraryStat"><strong>${guided}</strong><span>With guidance</span></div>`;
+  els.rulesLibraryStats.innerHTML=`<div class="rulesLibraryStat"><strong>${total}</strong><span>Saved rules</span></div><div class="rulesLibraryStat"><strong>${configured}</strong><span>Configured</span></div><div class="rulesLibraryStat"><strong>${active}</strong><span>Individual enabled</span></div>`;
 }
 function renderRules(){
+  const scrollTop=els.ruleList.scrollTop||0;
   els.ruleList.innerHTML = '';
   renderOpenRuleSetName(currentRule());
   renderRuleLibraryStats();
   if(!state.rules.length){ els.ruleList.innerHTML = '<div class="empty">No file rules saved yet. Create one to define matching, coaching logic, and coach instructions.</div>'; fillRuleForm(null); return; }
-  state.rules = state.rules.map(normalizeRule).sort((a,b)=>String(a.title).localeCompare(String(b.title)));
+  // Normalize at load/save boundaries, never on a cosmetic search.
+  const ordered=state.rules.sort((a,b)=>String(a.title).localeCompare(String(b.title)));
   const q=norm(els.ruleSearchInput?.value||'');
   const filter=els.ruleTypeFilter?.value||'all';
-  const filtered=state.rules.filter(r=>{
-    const matchesSearch=!q || norm(`${r.title} ${r.baseName} ${r.coaching?.emailCategory||''}`).includes(q);
+  const filtered=ordered.filter(r=>{
+    const matchesSearch=QualtricsWorkflow.matchesSearch(r,els.ruleSearchInput?.value||'');
     const hasGuide=r.guidance?.enabled!==false && !!String(r.guidance?.html||'').trim();
-    const matchesFilter=filter==='all' || filter===r.ruleType || (filter==='withGuidance'&&hasGuide) || (filter==='withoutGuidance'&&!hasGuide);
+    const individual=r.individualMessage||{}, enabled=individual.concern?.enabled||individual.strength?.enabled;
+    const matchesFilter=(filter==='enabled'&&enabled)||(filter==='disabled'&&!enabled)||(filter==='individual'&&enabled)||(filter==='concern'&&individual.concern?.enabled)||(filter==='strength'&&individual.strength?.enabled)||filter==='all' || filter===r.ruleType || (filter==='withGuidance'&&hasGuide) || (filter==='withoutGuidance'&&!hasGuide);
     return matchesSearch && matchesFilter;
   });
   if(!filtered.length){ els.ruleList.innerHTML='<div class="empty">No file rules match this search or filter.</div>'; return; }
-  for(const r of filtered){
+  const fragment=document.createDocumentFragment();
+  for(const r of filtered.slice(0,state.ruleRenderLimit||100)){
     const isActive = r.id===state.currentRuleId;
     const hasGuide=r.guidance?.enabled!==false && !!String(r.guidance?.html||'').trim();
     const div=document.createElement('div');
     div.className='item ruleSetCard'+(isActive?' active':'');
     div.dataset.ruleId = r.id; div.tabIndex = 0; div.setAttribute('role','button'); div.setAttribute('aria-pressed', isActive ? 'true' : 'false'); div.setAttribute('aria-label', `Open file rule ${r.title}`);
     div.innerHTML = `<div class="itemHead"><div><div class="itemTitle">${esc(r.title)}</div><div class="ruleCardBase">${isCoreDataRule(r)?'Source: four key files':`Filename contains: <span class="mono">${esc(r.baseName||'Not set')}</span>`}</div></div><span class="pill ${isActive?'good':'blue'}">${isActive?'Selected':'Open'}</span></div><div class="ruleCardMeta"><span class="pill">${ruleTypeLabel(r)}</span><span class="pill">${isHeaderCountRule(r) ? 'Count ≥ '+Number(r.countRule?.minCount ?? 1) : isStatRule(r) ? `${r.statRule?.minimumMode==='weeks'?Number(r.statRule?.minWeeks||1)+' weeks':r.statRule?.minPctRaw||'75%'} below goal` : isStatCountRule(r) ? `${statCountSourceLabel(r.statCount?.source)} count ≥ ${Number(r.statCount?.minCount??1)}` : isCoachingCorrectiveRule(r) ? `Coaching count ≥ ${Number(r.coachingCorrective?.minCoachingCount??1)}` : (r.criteria?.length||0)+' dashboard rule(s)'}</span><span class="pill ${isCoreDataRule(r)?'coreRuleBadge':'blue'}">${isCoreDataRule(r)?'4 key files only':(r.stats?.length||0)+' stat check(s)'}</span></div><div class="ruleCardGuide"><span class="alertDot ${hasGuide?'good':'warn'}"></span>${hasGuide?`Coach instructions: ${esc(r.guidance.title||'Saved')}`:'Coach instructions not added'}</div>`;
-    els.ruleList.appendChild(div);
+    fragment.appendChild(div);
   }
+  els.ruleList.appendChild(fragment);
+  if(filtered.length>(state.ruleRenderLimit||100)){
+    const more=document.createElement('button'); more.className='btn'; more.textContent=`Show more (${filtered.length-(state.ruleRenderLimit||100)} remaining)`;
+    more.onclick=()=>{ state.ruleRenderLimit=(state.ruleRenderLimit||100)+100; renderRules(); }; els.ruleList.appendChild(more);
+  }
+  els.ruleList.scrollTop=scrollTop;
   els.ruleList.querySelectorAll('[data-rule-id]').forEach(card=>{
-    const open = ()=>{ const rule=state.rules.find(r=>r.id===card.dataset.ruleId); if(rule){ fillRuleForm(rule); renderRules(); } };
+    const open = async ()=>{ autoSaveRuleEdit.cancel?.(); if(state.currentRuleId&&rulesetDraftDirty&&!await saveRuleObj(readRuleForm(),{fullRender:false,preview:false})) return; const rule=state.rules.find(r=>r.id===card.dataset.ruleId); if(rule){ fillRuleForm(rule); renderRules(); } };
     card.onclick=open; card.onkeydown=e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); open(); } };
   });
 }
@@ -1931,7 +1984,7 @@ async function loadRuleSample(file){
   markRulePreviewStale('Sample headers loaded. Click Refresh Preview to calculate pulled representatives.');
 }
 
-function matchRuleForFile(name){ const low=String(name||'').toLowerCase(); return state.rules.find(r=>ruleNeedsReportFile(r) && r.baseName && low.includes(r.baseName.toLowerCase())) || null; }
+function matchRuleForFile(name){ const matches=QualtricsWorkflow.matchingRules(name,state.rules); return matches.length===1?matches[0]:null; }
 async function addDashboardFiles(files){
   const arr = Array.from(files||[]); if(!arr.length) return [];
   const added=[];
@@ -1948,6 +2001,7 @@ async function addDashboardFiles(files){
     }
     setProgress(5 + (i+1)/arr.length*85, file.name);
   }
+  autoSelectUploadedRules(added);
   setProgress(null); saveReportSettings(); invalidateIndividualScopeIndex('report files changed'); renderDashboardFileList(); setStatus(`${arr.length} dashboard file(s) added.`);
   return added;
 }
@@ -1960,7 +2014,7 @@ function renderDashboardFileList(){
     const setting=reportSettingForFile(f,fileIndex+1);
     const statusClass = f.status==='matched'?'good': f.status==='error'?'bad':'warn';
     const div=document.createElement('div'); div.className='fileBadge'+((state.reportSettings.orderEnabled||state.reportSettings.weightsEnabled)?' reportConfigured':'');
-    div.innerHTML = `<div><strong>${esc(f.fileName)}</strong><small>${f.error?esc(f.error):`${(f.rows||[]).length.toLocaleString()} rows • header row ${(f.headerIndex??0)+1} • ${esc(f.sheetName||'')}`}</small></div>${reportControlsHtml(setting)}<div class="row"><span class="pill ${statusClass}">${f.status==='matched'?'Rule: '+esc(rule?.title||'matched'):f.status==='unmatched'?'No matching rule':'Error'}</span>${f.status==='unmatched'?`<button class="btn small" data-build-from-file="${esc(f.id)}">Build Rule</button>`:''}<button class="btn small bad" data-remove-file="${esc(f.id)}">×</button></div>`;
+    div.innerHTML = `<div><strong>${esc(f.fileName)}</strong><small>${f.error?esc(f.error):`${(f.rows||[]).length.toLocaleString()} rows • header row ${(f.headerIndex??0)+1} • ${esc(f.sheetName||'')}`}</small></div>${reportControlsHtml(setting)}<div class="row"><span class="pill ${statusClass}">${f.status==='matched'?'✓ Loaded • 1 applicable rule selected: '+esc(rule?.title||'matched'):f.status==='unmatched'?(QualtricsWorkflow.matchingRules(f.fileName,state.rules).length>1?'Multiple matching rules — review required':'No matching rule'):'Error'}</span>${f.status==='unmatched'?`<button class="btn small" data-build-from-file="${esc(f.id)}">Build Rule</button>`:''}<button class="btn small bad" data-remove-file="${esc(f.id)}">×</button></div>`;
     els.dashboardFileList.appendChild(div);
   }
   bindReportOptionInputs(els.dashboardFileList);
@@ -2014,7 +2068,7 @@ async function loadCoaching(file, options={}){
       out.push({rawName:String(rawName).trim(), name:ident.name, key:ident.key, repKey:ident.key, date, type, typeParts, desc, descParts, searchText, coach, rawCoach:coach, raw:row,dateTrace:{coachingDateRaw,bridgeDateRaw,createdOnRaw,selectedSource:selected.source,selectedValue:selected.value,parsed:!!date}});
     }
   }
-  state.masterRows.coaching=out; state.masterFileNames.coaching=file.name;
+  state.masterRows.coaching=out; state.masterFileNames.coaching=file.name; autoSelectCoreRules('coaching');
   invalidateHireDateLookupSource('core:coaching');
   state.coachingRows=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
   state.coachingDiagnostics=Object.assign({},state.coachingDiagnostics,{source:options.source||'manual upload',headers,received,parsed:out.length,withName,withCoachingDate,validDate,survived:state.coachingRows.length});
@@ -2039,7 +2093,7 @@ async function loadChecklist(file, options={}){
       out.push({rawName:String(rawName).trim(), name:ident.name, key:ident.key, repKey:ident.key, date, incident, corrective, coachingTypeMulti, desc, searchText, coach, rawCoach:coach, raw:row});
     }
   }
-  state.masterRows.checklist=out; state.masterFileNames.checklist=file.name;
+  state.masterRows.checklist=out; state.masterFileNames.checklist=file.name; autoSelectCoreRules('checklist');
   invalidateHireDateLookupSource('core:checklist');
   state.checklistRows=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
   if(!options.deferDerived){ rebuildDerivedMaps(); renderStatCountSelectors(currentRule()); renderStatCountRuleChips(); setStatus(`Loaded ${state.checklistRows.length.toLocaleString()} checklist rows and refreshed name matching.`); }
@@ -2072,7 +2126,7 @@ async function loadWeeklyStats(file, options={}){
   const missingDates=out.filter(r=>!r.date).length;
   state.weeklyStatsRows=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
   state.weeklyStatsDateHeaders=[...dateHeaders];
-  state.masterRows.weeklyStats=out; state.masterFileNames.weeklyStats=file.name;
+  state.masterRows.weeklyStats=out; state.masterFileNames.weeklyStats=file.name; autoSelectCoreRules('weeklyStats');
   // Weekly Stats are deliberately independent from the optional hire-date mapping.
   if(!options.deferDerived){
     rebuildDerivedMaps();
@@ -2101,7 +2155,7 @@ async function loadQA(file, options={}){
       out.push({rawName:String(rawName).trim(), name:ident.name, key:ident.key, repKey:ident.key, date, score, team, rawTeam:team, coach, rawCoach:coach, evaluator, raw:row, sourceSheet:sh.sheetName});
     }
   }
-  state.masterRows.qa=out; state.masterFileNames.qa=file.name;
+  state.masterRows.qa=out; state.masterFileNames.qa=file.name; autoSelectCoreRules('qa');
   invalidateHireDateLookupSource('core:qa');
   state.qaRows=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
   if(!options.deferDerived){ rebuildDerivedMaps(); renderStatCountSelectors(currentRule()); renderStatCountRuleChips(); setStatus(`Loaded ${state.qaRows.length.toLocaleString()} 90-day QA rows and rebuilt latest team/coach mapping.`); }
@@ -2115,7 +2169,7 @@ function allStarRowsFile(item,fallbackName,sheetName){
 function allStarBridgeNotify(type,extra={}){ if(window.parent!==window) window.parent.postMessage({type,...extra},'*'); }
 function allStarBridgeYield(){ return new Promise(resolve=>setTimeout(resolve,0)); }
 function clearConnectedSource(source){
-  state.masterRows[source]=[]; state.masterFileNames[source]='';
+  state.masterRows[source]=[]; state.masterFileNames[source]=''; if(state.uploadRuleSelectionCounts) delete state.uploadRuleSelectionCounts[source];
   if(source==='qa'){ state.qaRows=[]; invalidateHireDateLookupSource('core:qa'); }
   if(source==='coaching'){ state.coachingRows=[]; state.coachingTypeOptions=[]; invalidateHireDateLookupSource('core:coaching'); }
   if(source==='checklist'){ state.checklistRows=[]; invalidateHireDateLookupSource('core:checklist'); }
@@ -2169,6 +2223,7 @@ function renderCoreChips(){
   const unresolved=(state.coachAliasIndex?.unresolved||[]).length;
   const d=state.coachingDiagnostics||{}, withDesc=state.coachingRows.filter(r=>String(r.desc||'').trim()).length, recognized=new Set(state.coachingRows.map(r=>r.repKey).filter(Boolean)).size, descriptionRules=state.rules.filter(r=>r.coaching?.mode==='descriptionContains').length;
   els.coreDataChips.innerHTML = `<button class="pill ${(d.received||0)>0&&!state.coachingRows.length?'bad':'good'}" id="coachingDiagnosticStatus"><strong>Documented Coaching</strong> ${(d.received||0).toLocaleString()} received → ${state.coachingRows.length.toLocaleString()} usable • ${withDesc.toLocaleString()} with Description • ${recognized.toLocaleString()} recognized reps • ${descriptionRules} saved Description rules</button><span class="pill blue">Self-mapped reps: ${state.teamMap.size.toLocaleString()}</span><span class="pill blue">90-day QA: ${state.qaRows.length.toLocaleString()}</span><span class="pill blue">Checklist: ${state.checklistRows.length.toLocaleString()}</span><span class="pill blue">Weekly stats: ${state.weeklyStatsRows.length.toLocaleString()}</span><span class="pill ${state.hireDateByRep.size?'good':'warn'}">Hire dates: ${state.hireDateByRep.size.toLocaleString()}</span><span class="pill ${unresolved?'warn':'good'}">Coach aliases: ${coachAliasAutoCount().toLocaleString()} auto${unresolved?`, ${unresolved} overlap`:''}</span>`;
+  els.coreDataChips.insertAdjacentHTML('beforeend',Object.entries(state.uploadRuleSelectionCounts||{}).map(([source,count])=>`<span class="pill good">✓ ${esc(state.masterFileNames[source]||statCountSourceLabel(source))}: ${count} applicable rules selected</span>`).join(''));
   $('coachingDiagnosticStatus').onclick=()=>renderCoachingDiagnostics(false);
 }
 function coachingBlocker(d){
@@ -3186,8 +3241,26 @@ bind=function(){
   els.refreshRulePreviewBtn.onclick=function(){ const r=readRuleForm(); if(!ccCoachingPhraseValidation(r,{mark:true,notify:true}).ok) return; setStatus('Calculating representative preview...'); requestAnimationFrame(function(){ renderRuleNamePreview(); setStatus('Representative preview refreshed.'); }); };
   if(els.saveCoachingCorrectiveRuleBtn) els.saveCoachingCorrectiveRuleBtn.onclick=async function(){ const r=readRuleForm(); if(!ccCoachingPhraseValidation(r,{mark:true,notify:true}).ok) return; if(r.coachingCorrective.coachingMatch==='equals'&&!r.coachingCorrective.coachingTopic){ toast('Choose or type a Documented Coaching topic.'); return; } const b=r.coachingCorrective.buildUp; const error=b.enabled?metricSourceValidation(b,'Build Up'):''; if(error){ toast(error); return; } await saveRuleObj(r,{preview:true}); flashBtn(els.saveCoachingCorrectiveRuleBtn); toast('Documented Coaching → Corrective rule saved and preview recalculated.'); };
   if(els.duplicateRuleBtn) els.duplicateRuleBtn.onclick=async function(){ const original=currentRule(); if(!original) return; if(!ccCoachingPhraseValidation(original,{mark:true,notify:true}).ok) return; const copy=normalizeRule(JSON.parse(JSON.stringify(original))); copy.id=uid(); copy.title=(original.title||'Rule')+' Copy'; copy.createdAt=new Date().toISOString(); copy.updatedAt=copy.createdAt; const saved=await saveRuleObj(copy,{preview:false}); if(saved){ fillRuleForm(saved); renderRules(); toast('Rule duplicated with all coaching phrases and matching options.'); } };
-  els.exportRulesBtn.onclick=function(){ const invalid=state.rules.find(function(rule){ return !ccCoachingPhraseValidation(rule,{mark:false,notify:false}).ok; }); if(invalid){ fillRuleForm(invalid); ccCoachingPhraseValidation(invalid,{mark:true,notify:true}); return; } downloadBlob(new Blob([JSON.stringify(state.rules,null,2)],{type:'application/json'}),'coaching_email_rules_'+ymd(new Date())+'.json'); };
-  els.importRulesInput.onchange=async function(event){ const file=event.target.files[0]; if(!file) return; const data=JSON.parse(await file.text()); const source=Array.isArray(data)?data:(data.rules||[]); const valid=[], invalid=[]; for(const raw of source){ const rule=normalizeRule(raw); (ccCoachingPhraseValidation(rule,{mark:false,notify:false}).ok?valid:invalid).push(rule); } for(const rule of valid) await put(STORES.rules,rule); state.rules=(await getAll(STORES.rules)).map(normalizeRule); state.currentRuleId=state.rules[0]?.id||null; renderRules(); if(state.currentRuleId) fillRuleForm(state.rules[0]); toast('Imported '+valid.length+' rule set(s).'+(invalid.length?' Skipped '+invalid.length+' Contains Phrase rule(s) with no phrases.':'')); };
+  els.exportRulesBtn.onclick=async function(){ if(state.currentRuleId){ autoSaveRuleEdit.cancel?.(); if(!await saveRuleObj(readRuleForm(),{fullRender:false,preview:false})) return; } const invalid=state.rules.find(function(rule){ return !ccCoachingPhraseValidation(rule,{mark:false,notify:false}).ok; }); if(invalid){ fillRuleForm(invalid); ccCoachingPhraseValidation(invalid,{mark:true,notify:true}); return; } downloadBlob(new Blob([JSON.stringify(state.rules,null,2)],{type:'application/json'}),'coaching_email_rules_'+ymd(new Date())+'.json'); await attachRuleset('coaching_email_rules_'+ymd(new Date())+'.json'); };
+  els.importRulesInput.onchange=async function(event){
+    const file=event.target.files[0]; if(!file) return;
+    autoSaveRuleEdit.cancel?.();
+    try{
+      if(state.currentRuleId&&rulesetDraftDirty&&!await saveRuleObj(readRuleForm(),{fullRender:false,preview:false})) return;
+      const data=JSON.parse(await file.text()), source=Array.isArray(data)?data:data?.rules;
+      if(!Array.isArray(source)||source.some(rule=>!rule||typeof rule!=='object'||Array.isArray(rule))) throw new Error('Expected an array of rule objects.');
+      const valid=[], invalid=[];
+      for(const raw of source){ const rule=normalizeRule(raw); (ccCoachingPhraseValidation(rule,{mark:false,notify:false}).ok?valid:invalid).push(rule); }
+      for(const rule of valid) await put(STORES.rules,rule);
+      state.rules=(await getAll(STORES.rules)).map(normalizeRule); state.currentRuleId=state.rules[0]?.id||null;
+      invalidateIndividualRunCache('rules imported');
+      await attachRuleset(file.name,invalid.length?'Some imported rules failed validation; review the file.':'',valid);
+      renderRules(); if(state.currentRuleId) fillRuleForm(state.rules[0]); renderIndividualDataSelection();
+      toast('Imported '+valid.length+' rule set(s).'+(invalid.length?' Skipped '+invalid.length+' invalid rule(s).':''));
+    }catch(error){
+      state.rulesetAttachment={...(state.rulesetAttachment||{}),name:file.name,error:String(error.message||error)}; updateRulesetStatus(); toast('Rules import needs review: '+(error.message||error));
+    }finally{ event.target.value=''; }
+  };
   els.generateReportBtn.onclick=generateReport;
   renderCcCoachingPhraseEditor();
 };
@@ -4438,7 +4511,14 @@ function impactRenderTopic(){
   if(!analysis){ els.topicImpactBody.innerHTML='<div class="empty">Generate an Action Report to compare coaching groups.</div>'; return; }
   const ruleId=els.impactTopicRuleSelect?.value||analysis.topics[0]?.ruleId||''; els.topicImpactBody.innerHTML=ruleId?impactTopicViewHtml(ruleId,analysis.needs):'<div class="empty">No rule item is available.</div>';
 }
-function impactRenderAllViews(){ impactPopulateViewControls(); impactRenderCoachProfile(); impactRenderOverall(); impactRenderTopic(); }
+function impactRenderAllViews(){
+  // These secondary evidence views are only rendered when explicitly opened.
+  if(!['coachprofiles','overallcoaching','topicimpact'].includes(state.activeTab)) return;
+  impactPopulateViewControls();
+  if(state.activeTab==='coachprofiles') impactRenderCoachProfile();
+  if(state.activeTab==='overallcoaching') impactRenderOverall();
+  if(state.activeTab==='topicimpact') impactRenderTopic();
+}
 function impactActiveHost(){
   if(state.activeTab==='coachprofiles') return els.coachProfileBody;
   if(state.activeTab==='overallcoaching') return els.overallCoachingBody;
@@ -4514,12 +4594,29 @@ const impactRenderReportBefore=renderReport;
 renderReport=function(){
   impactRenderReportBefore(); const analysis=state.report?.coachingImpact; if(!analysis||!els.reportBody) return;
   els.reportBody.insertAdjacentHTML('afterbegin',impactActionReportHtml(analysis.needs,els.impactReportKpiSelect?.value||''));
+  installActionNavigation();
 };
 const impactGenerateReportBefore=generateReport;
 generateReport=async function(){
   const before=state.report?.generatedAt||''; await impactGenerateReportBefore();
-  if(state.report&&state.report.generatedAt!==before){ impactBuildAnalysis(); impactRenderAllViews(); renderReport(); setStatus('Action Report generated with rule-connected coaching alignment, seven-day episodes, KPI-selectable statistical movement, profiles, and action queues.'); }
+  if(state.report&&state.report.generatedAt!==before){ setStatus('Action Report generated with rule-connected coaching alignment, seven-day episodes, KPI-selectable statistical movement, profiles, and action queues.'); }
 };
+function installActionNavigation(){
+  const host=els.reportBody; if(!host) return;
+  const sections=[...host.children].filter(element=>element.querySelector('h2,h3'));
+  const nav=document.createElement('div'); nav.className='actionNavigation';
+  nav.innerHTML='<label>Find in Action Report<input type="search" placeholder="Representative, rule, coach or evidence" aria-label="Search Action Report"></label><label>Jump to section<select><option value="">Choose section</option></select></label><span role="status"></span>';
+  const select=nav.querySelector('select');
+  sections.forEach((section,index)=>{ const option=document.createElement('option'); option.value=String(index); option.textContent=section.querySelector('h2,h3').textContent; select.appendChild(option); });
+  select.onchange=()=>{ if(select.value!==''){ nav.querySelector('input').value=''; sections.forEach(section=>section.hidden=false); sections[Number(select.value)]?.scrollIntoView({block:'start'}); } };
+  const entries=sections.map(element=>({element,text:element.textContent.toLowerCase()}));
+  nav.querySelector('input').addEventListener('input',debounce(event=>{
+    const query=event.target.value.toLowerCase().trim(); let count=0;
+    for(const entry of entries){ const match=!query||entry.text.includes(query); entry.element.hidden=!match; if(match) count++; }
+    nav.querySelector('[role="status"]').textContent=`${count} of ${entries.length} sections`;
+  },120));
+  host.prepend(nav);
+}
 function impactEmailBar(needs,type,kpi){
   const style='color:#fff;padding:8px 5px;text-align:center;font-size:10px;font-weight:900;line-height:1.25', cells=[];
   if(type==='movement'){
@@ -5277,7 +5374,7 @@ async function generateReport(){
   for(const arr of byCoach.values()) arr.sort((a,b)=>b.concernScore-a.concernScore || ((b.history?.dateCount||0)-(a.history?.dateCount||0)));
   const alarmSortedByCoach = new Map([...byCoach.entries()].sort((a,b)=>compareAlarmStats(summaryStats(a[1],reportDate,teamPopulationByCoach),summaryStats(b[1],reportDate,teamPopulationByCoach)) || String(a[0]).localeCompare(String(b[0]))));
   const report={ reportDate:ymd(reportDate), generatedAt:new Date().toISOString(), unmatched, flagged, allFlagged:audienceFlagged, byCoach:alarmSortedByCoach, byCoachAll, teamPopulationByCoach, followUpWatchlist:followUpWatchlist.filter(function(item){ return reportAudienceAllowsCoach(item.coach,audience); }), excludedCoaches, minPeople, urgencyCatalog:buildUrgencyCatalog(selectedCoreRules), audience:{...audience,label:reportAudienceLabel(audience)}, audienceExcludedRecords:allFlagged.length-audienceFlagged.length, hireDateFilter:normalizeHireDateSettings(hireCfg), hireDateExcludedRecords:hireDateExcluded.length, hireDateExcludedPeople:new Set(hireDateExcluded.map(r=>r.repKey)).size };
-  state.report=report; setProgress(96,'Rendering report'); await new Promise(resolve=>setTimeout(resolve,0)); performanceStageStarted=performance.now(); renderReport(); performanceMark('Report render',performanceStageStarted); switchTab('report'); setProgress(null);
+  state.report=report; performanceStageStarted=performance.now(); impactBuildAnalysis(); performanceMark('Coaching impact',performanceStageStarted); setProgress(96,'Rendering report'); await new Promise(resolve=>setTimeout(resolve,0)); performanceStageStarted=performance.now(); renderReport(); performanceMark('Report render',performanceStageStarted); switchTab('report'); setProgress(null);
   performanceTimings.Total=performance.now()-performanceStarted; state.reportPerformance={timings:performanceTimings,generatedAt:new Date().toISOString()};
   if(new URLSearchParams(location.search).get('debug')==='1'){ const slowStages=Object.entries(performanceTimings).filter(([label,value])=>label!=='Total'&&value>=1000); console.groupCollapsed('Qualtrics Generate Report Performance'); console.table(performanceTimings); if(slowStages.length) console.warn('Unexpectedly expensive Generate Report stage(s)',Object.fromEntries(slowStages)); console.groupEnd(); }
   setStatus(`Generated ${report.audience.label}: ${flagged.length.toLocaleString()} representative-data-source record(s) identified for review.${report.audienceExcludedRecords?` Audience filter excluded ${report.audienceExcludedRecords.toLocaleString()} record(s).`:''}${hireCfg.filterEnabled?` Hire-date filter excluded ${report.hireDateExcludedPeople.toLocaleString()} representative(s).`:''} ${excludedCoaches.length ? excludedCoaches.length+' team(s) hidden by minimum people filter.' : ''}`);
@@ -5670,7 +5767,7 @@ async function openBlankRuleForm(){
   els.ruleTitle?.focus();
 }
 function flashBtn(btn){ if(!btn) return; btn.classList.remove('flash'); void btn.offsetWidth; btn.classList.add('flash'); setTimeout(()=>btn.classList.remove('flash'),900); }
-function switchTab(tab){ state.activeTab=tab; document.querySelectorAll('.tabBtn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab)); document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${tab}`)); if(tab==='individual'){ renderIndividualDataSelection(); renderIndividualScope(); renderIndividualRosterStatus(); renderIndividualSummary(); renderIndividualReview(); } }
+function switchTab(tab){ state.activeTab=tab; document.querySelectorAll('.tabBtn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab)); document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${tab}`)); impactRenderAllViews(); if(tab==='individual'){ renderIndividualDataSelection(); renderIndividualScope(); renderIndividualRosterStatus(); renderIndividualSummary(); renderIndividualReview(); } }
 function metricSourceValidation(config,label='Stat'){
   if(config?.metric==='cashAppointmentRate'){
     const mode=config.cashSourceMode==='auto'?'consumerRatio':(config.cashSourceMode||'consumerRatio');
@@ -5686,12 +5783,15 @@ function metricSourceValidation(config,label='Stat'){
   return '';
 }
 function bind(){
+  const editor=document.querySelector('.ruleEditorBody');
+  for(const event of ['input','change']) editor?.addEventListener(event,()=>{ rulesetDraftDirty=true; updateRulesetStatus(); });
+
   Object.assign(els, Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(e=>[e.id,e])));
   bindIndividualMessages();
   els.testDocumentedCoachingBtn.onclick=()=>renderCoachingDiagnostics(false);
   els.testAllCoachingRulesBtn.onclick=()=>renderCoachingDiagnostics(true);
-  if(els.ruleSearchInput) els.ruleSearchInput.addEventListener('input',renderRules);
-  if(els.ruleTypeFilter) els.ruleTypeFilter.addEventListener('change',renderRules);
+  if(els.ruleSearchInput) els.ruleSearchInput.addEventListener('input',debounce(()=>{ state.ruleRenderLimit=100; els.ruleList.scrollTop=0; renderRules(); },120));
+  if(els.ruleTypeFilter) els.ruleTypeFilter.addEventListener('change',()=>{ state.ruleRenderLimit=100; els.ruleList.scrollTop=0; renderRules(); });
   document.querySelectorAll('[data-rich-cmd]').forEach(btn=>btn.addEventListener('click',()=>{ els.ruleGuidanceEditor?.focus(); document.execCommand(btn.dataset.richCmd,false,null); renderRuleGuidancePreview(); autoSaveRuleEdit(); }));
   if(els.ruleGuidanceLinkBtn) els.ruleGuidanceLinkBtn.onclick=()=>{ const url=prompt('Paste the link address:','https://'); if(!url) return; els.ruleGuidanceEditor?.focus(); document.execCommand('createLink',false,url); renderRuleGuidancePreview(); autoSaveRuleEdit(); };
   if(els.clearRuleGuidanceBtn) els.clearRuleGuidanceBtn.onclick=()=>{ if(els.ruleGuidanceEditor) els.ruleGuidanceEditor.innerHTML=''; renderRuleGuidancePreview(); autoSaveRuleEdit(); };
@@ -5703,7 +5803,7 @@ function bind(){
   document.querySelectorAll('[data-switch]').forEach(b=>b.onclick=()=>switchTab(b.dataset.switch));
   els.newRuleBtn.onclick=openBlankRuleForm;
   els.saveRuleBtn.onclick=async()=>{ const r=readRuleForm(); await saveRuleObj(r,{preview:false}); flashBtn(els.saveRuleBtn); markRulePreviewStale('Rule saved. Click Refresh Preview to calculate representatives.'); toast('Rules saved locally without running the preview.'); };
-  els.deleteRuleBtn.onclick=async()=>{ const r=currentRule(); if(!r) return; if(!confirm(`Delete ${r.title}?`)) return; await del(STORES.rules,r.id); state.rules=state.rules.filter(x=>x.id!==r.id); state.selectedOtherRuleIds.delete(r.id); delete state.reportSettings.items[reportItemKeyForRule(r)]; saveOtherRuleSelection(); saveReportSettings(); invalidateIndividualRunCache('rule deleted'); state.currentRuleId=state.rules[0]?.id||null; renderRules(); renderOtherRulePicker(); if(state.currentRuleId) fillRuleForm(state.rules[0]); else fillRuleForm(null); };
+  els.deleteRuleBtn.onclick=async()=>{ const r=currentRule(); if(!r) return; if(!confirm(`Delete ${r.title}?`)) return; await del(STORES.rules,r.id); state.rules=state.rules.filter(x=>x.id!==r.id); updateRulesetStatus(); state.selectedOtherRuleIds.delete(r.id); delete state.reportSettings.items[reportItemKeyForRule(r)]; saveOtherRuleSelection(); saveReportSettings(); invalidateIndividualRunCache('rule deleted'); state.currentRuleId=state.rules[0]?.id||null; renderRules(); renderOtherRulePicker(); if(state.currentRuleId) fillRuleForm(state.rules[0]); else fillRuleForm(null); };
   els.ruleSampleInput.onchange=e=>loadRuleSample(e.target.files[0]);
   els.refreshRulePreviewBtn.onclick=()=>{ setStatus('Calculating representative preview...'); requestAnimationFrame(()=>{ renderRuleNamePreview(); setStatus('Representative preview refreshed.'); }); };
   if(els.ruleType) els.ruleType.onchange=async()=>{ updateRuleTypeVisibility(); const r=readRuleForm(); await saveRuleObj(r); toast(`Rule type set to ${ruleTypeLabel(r)}.`); };
@@ -5774,6 +5874,7 @@ async function init(){
   rebuildCoachAliasIndex();
   renderHireDateControls(); renderCoreChips(); renderDashboardFileList(); renderUploadReadiness(); renderOtherRulePicker(); renderStatCountSelectors(currentRule()); updateStatCountFieldVisibility(); renderReportAudienceControls(); populateOrgSummarySelect(); markRulePreviewStale('Select a saved rule, then use Refresh Preview when ready.');
   state.db=await openDB(); const [savedRules,savedHistory]=await Promise.all([getAll(STORES.rules),getAll(STORES.history)]); state.rules=savedRules.map(normalizeRule); state.history=savedHistory; rebuildConcernHistoryIndex(); await Promise.all([loadConcernHistorySnapshot(),loadIndividualMessageSettings()]); renderConcernHistoryStatus();
+  const attachmentRows=await getAll(STORES.settings); state.rulesetAttachment=attachmentRows.find(row=>row.key===RULESET_ATTACHMENT_KEY)?.attachment||null; updateRulesetStatus();
   if(state.rules.length) state.currentRuleId=state.rules[0].id;
   renderRules(); renderOtherRulePicker(); if(state.currentRuleId) fillRuleForm(state.rules[0]); else fillRuleForm(null);
   setStatus(`Ready. Loaded ${state.rules.length} saved rule set(s) and ${state.history.length} unique concern appearance(s).`);

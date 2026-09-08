@@ -64,11 +64,11 @@ async function main(){
     rule('duplicate',side({message:'Same final concern.'})),
     rule('strong',side({enabled:false}),side({enabled:true,operator:'gte',threshold:'80',message:'Excellent result.'}))
   ];
-  const genericBefore={...engine.DEFAULT_TEMPLATE,includeGeneric:true,genericMessage:'Shared weekly note.',genericPlacement:'before'};
+  const genericBefore={...engine.DEFAULT_TEMPLATE,maxConcerns:0,maxStrengths:0,includeGeneric:true,genericMessage:'Shared weekly note.',genericPlacement:'before'};
   let evaluated=engine.evaluateAll({representatives:index.representatives,rules,rosterRows:roster,resolver:resolver(values),template:genericBefore});
   const alex=evaluated.results.find(result=>result.repKey==='a'), dana=evaluated.results.find(result=>result.repKey==='d');
   assert.equal(alex.concerns.length,2,'all qualifying concern rules remain available');
-  assert.equal(alex.qualifyingConcernCount,2,'default zero maximum keeps every qualifying concern');
+  assert.equal(alex.qualifyingConcernCount,2,'explicit zero maximum keeps every qualifying concern');
   assert.deepEqual(alex.concernMessages,['Same final concern.'],'identical final messages are deduplicated');
   assert.equal(alex.greeting,'Hi Alex,','(FirstName) remains resolved from the representative first name');
   assert.equal(alex.areasToFocusOn,'Same final concern.','areas to focus on are exposed as a separate export-ready section');
