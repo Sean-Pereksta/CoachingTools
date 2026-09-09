@@ -623,6 +623,10 @@
       setStep('Saving to IndexedDB', 'active');
       const imported = [];
       const errors = analysis.errors.map(item => `${item.file && item.file.name || 'File'}: ${item.error && item.error.message || item.error}`);
+      for (const item of [...analysis.errors, ...analysis.needsReview]) {
+        const type = item.classification && (item.classification.id || item.classification.predictedId);
+        setStep(`Could not load: ${item.file.name} · Source: ${SOURCE_SHORT_LABELS[type] || type || 'Not identified'} · Reason: ${item.error?.message || item.classification?.validation?.reason || 'Could not determine a unique source from filename and headers.'} This file could not be loaded automatically. Please reach out to Sean for assistance.`, 'warning');
+      }
       const entries = analysis.recognized.slice().sort((a, b) => Number(b.parsed && b.parsed.meta && b.parsed.meta.totalRows || 0) - Number(a.parsed && a.parsed.meta && a.parsed.meta.totalRows || 0));
 
       for (let index = 0; index < entries.length; index += 1) {
@@ -644,8 +648,9 @@
           imported.push({ id: type, fileName: entry.file.name, status: result.status, filtered: scope && scope.mode !== 'all', matchedRows: Number(result && result.dataset && result.dataset.scopedRowCount) || 0 });
         } catch (error) {
           errors.push(`${entry.file.name}: ${error && error.message || error}`);
+          setStep(`Could not load: ${entry.file.name} · Source: ${sourceLabel} · Reason: ${error.message || error}. This file could not be loaded automatically. Please reach out to Sean for assistance.`, 'warning');
         }
-        setProgress(62 + ((index + 1) / Math.max(1, entries.length)) * 34, `Saved ${sourceLabel}`, entry.file.name, `${index + 1} of ${entries.length}`);
+        setProgress(62 + ((index + 1) / Math.max(1, entries.length)) * 34, `Processed ${sourceLabel}`, entry.file.name, `${index + 1} of ${entries.length}`);
         await nextPaint();
         await yieldMainThread();
       }

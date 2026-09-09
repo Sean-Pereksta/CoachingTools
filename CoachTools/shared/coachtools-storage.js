@@ -434,9 +434,9 @@
   function compareCurrent(candidate, current) {
     if (!current) return true;
     if (candidate.scopeHash && candidate.scopeHash !== current.scopeHash) return true;
-    if (candidate.periodKey && candidate.periodKey === current.periodKey) return candidate.importedAt >= current.importedAt;
-    if (candidate.periodSort !== current.periodSort) return candidate.periodSort > current.periodSort;
-    return candidate.importedAt >= current.importedAt;
+    if (candidate.periodKey && candidate.periodKey === current.periodKey) return String(candidate.importedAt || '') >= String(current.importedAt || '');
+    if (String(candidate.periodSort || '') !== String(current.periodSort || '')) return String(candidate.periodSort || '') > String(current.periodSort || '');
+    return String(candidate.importedAt || '') >= String(current.importedAt || '');
   }
   function cacheCurrentRecord(type, record) {
     if (!record) { currentData.delete(type); return; }
@@ -515,6 +515,20 @@
     if (chunks.length !== Number(record.chunkCount)) throw new Error(`Dataset ${record.datasetType || record.id} is incomplete (${chunks.length} of ${record.chunkCount} chunks).`);
     return { ...record, data: assembleDataFromChunks(record.dataShape, chunks) };
   }
+  async function readableDuplicate(db, records) {
+    for (const record of (records || []).slice().sort((a,b) => String(b.importedAt).localeCompare(String(a.importedAt)))) {
+      if (record.supersededBy) continue;
+      try {
+        const materialized = await materializeDatasetRecord(db, record);
+        if (materialized && materialized.data) return record;
+      } catch (error) {
+        // Incomplete payloads can be replaced by the validated incoming data.
+        // Database access failures must still surface; deleting history is never recovery.
+        if (!/invalid chunk metadata|is incomplete/.test(String(error && error.message))) throw error;
+      }
+    }
+    return null;
+  }
   async function putDataset(type, data, metadata) {
     const datasetType = canonicalType(type);
     if (!datasetType) throw new Error('Unknown CoachTools dataset: ' + type);
@@ -536,7 +550,7 @@
     try {
       const readTx = db.transaction([DATASET_STORE, CURRENT_STORE], 'readonly');
       const datasetStore = readTx.objectStore(DATASET_STORE);
-      const duplicateRequest = datasetStore.index('datasetScopePeriodFingerprint').get([datasetType, scopeHash, periodKey, fingerprint]);
+      const duplicateRequest = datasetStore.index('datasetScopePeriodFingerprint').getAll([datasetType, scopeHash, periodKey, fingerprint]);
       const samePeriodRequest = datasetStore.index('datasetScopePeriod').getAll([datasetType, scopeHash, periodKey]);
       const currentRequest = readTx.objectStore(CURRENT_STORE).get(datasetType);
       const latestVersionTx = db.transaction(DATASET_STORE, 'readonly');
@@ -545,9 +559,10 @@
         direction: 'prev', limit: 1,
         predicate: record => record.datasetType === datasetType
       });
-      const [duplicate, samePeriodRecords, current, latestVersions] = await Promise.all([
+      const [duplicateRecords, samePeriodRecords, current, latestVersions] = await Promise.all([
         idbRequest(duplicateRequest), idbRequest(samePeriodRequest), idbRequest(currentRequest), latestVersionPromise
       ]);
+      const duplicate = await readableDuplicate(db, duplicateRecords);
       if (duplicate) {
         const pointerCandidate = { ...compactMetadata(duplicate), datasetId: duplicate.id, updatedAt: importedAt };
         const shouldBecomeCurrent = compareCurrent(pointerCandidate, current);
@@ -675,14 +690,18 @@
     try {
       const tx = db.transaction([DATASET_STORE, CURRENT_STORE], 'readonly');
       const datasetStore = tx.objectStore(DATASET_STORE);
-      const duplicateRequest = datasetStore.index('datasetScopePeriodFingerprint').get([datasetType, scopeHash, candidate.periodKey, candidate.fingerprint]);
+      const duplicateRequest = datasetStore.index('datasetScopePeriodFingerprint').getAll([datasetType, scopeHash, candidate.periodKey, candidate.fingerprint]);
       const currentRequest = tx.objectStore(CURRENT_STORE).get(datasetType);
-      const [duplicate, current] = await Promise.all([idbRequest(duplicateRequest), idbRequest(currentRequest)]);
+      const [duplicateRecords, current] = await Promise.all([idbRequest(duplicateRequest), idbRequest(currentRequest)]);
+      const duplicate = await readableDuplicate(db, duplicateRecords);
       if (meta.automaticImport && current && current.scopeHash && scopeHash && current.scopeHash !== scopeHash) {
         return { status: 'needs-review', reason: 'The automatic update scope does not match the currently active dataset scope.', becomesCurrent: false, candidate, current: compactMetadata(current) };
       }
       if (meta.automaticImport && current && String(current.scopeHash || '') === scopeHash && Number(current.scopedRowCount) > 0 && scopedRowCount === 0) {
         return { status: 'needs-review', reason: `Scoped rows collapsed from ${Number(current.scopedRowCount)} to 0. The existing dataset was retained.`, becomesCurrent: false, candidate, current: compactMetadata(current) };
+      }
+      if (duplicateRecords.length && !duplicate && (!current || candidate.periodKey === current.periodKey)) {
+        return { status: 'updated', reason: 'Validated incoming data will repair an incomplete stored payload.', becomesCurrent: true, candidate, current: compactMetadata(current) };
       }
       const result = root.CoachToolsSync && root.CoachToolsSync.compareCandidate
         ? root.CoachToolsSync.compareCandidate(candidate, current, duplicate ? [duplicate] : [])

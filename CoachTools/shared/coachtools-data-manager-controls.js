@@ -170,7 +170,7 @@
         });
         recoveryBox.append(
           element('b', 'Upload error recovery suggested'),
-          element('div', `${issue.operation || 'Data upload'} reported an error for ${issue.datasetLabel || 'an unidentified source'}${issue.fileName ? ` (${issue.fileName})` : ''}. Recommended recovery: use Delete All Data below, confirm YES, then retry the upload.`),
+          element('div', `Could not load: ${issue.fileName || 'Uploaded file'} · Source: ${issue.datasetLabel || 'Not identified'}. This file could not be loaded automatically. Please reach out to Sean for assistance.`),
           element('small', `${issue.errorCode || 'UploadError'}: ${issue.message || 'The upload failed.'} · IndexedDB ${issue.database || details.database} · ${(issue.stores || details.stores).join(', ')}`)
         );
         body.appendChild(recoveryBox);

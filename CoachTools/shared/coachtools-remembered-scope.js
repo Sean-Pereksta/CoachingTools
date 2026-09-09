@@ -326,6 +326,10 @@
     if (!entry || !entry.parsed || !entry.classification || !entry.classification.id) {
       throw new Error('The file has not been safely classified.');
     }
+    if (typeof importer.prepareRecognizedEntry === 'function') {
+      await yieldMainThread();
+      return importer.prepareRecognizedEntry(entry, options);
+    }
     const type = entry.classification.id;
     const scopeSnapshot = typeof importer.resolveScopeSnapshot === 'function'
       ? await importer.resolveScopeSnapshot(options && options.scope || { mode: 'all', label: 'All people' })
