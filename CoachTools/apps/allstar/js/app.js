@@ -4,6 +4,7 @@
 'use strict';
 
 function wire(){
+  if(el('addMissingDefaultModelsBtn')) el('addMissingDefaultModelsBtn').onclick=addMissingDefaultModels;
   const previewSearch=el('columnPreviewSearch'); if(previewSearch) previewSearch.oninput=renderColumnPreviewValues;
   ['columnPreviewCloseBtn','columnPreviewDoneBtn'].forEach(pid=>{ const b=el(pid); if(b) b.onclick=closeColumnPreview; });
   document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));
