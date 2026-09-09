@@ -533,6 +533,7 @@
     const datasetType = canonicalType(type);
     if (!datasetType) throw new Error('Unknown CoachTools dataset: ' + type);
     const meta = { ...(metadata || {}) };
+    const forceSourceReplacement = Boolean(meta.forceSourceReplacement || data?.meta?.forceSourceReplacement || ['weeklyRetail','weeklyReferral'].includes(datasetType));
     const importedAt = meta.importedAt || new Date().toISOString();
     const sourcePeriod = meta.detectedPeriod || data && data.meta && data.meta.detectedPeriod;
     const detectedPeriod = normalizedPeriod(sourcePeriod, { ...meta, importedAt });
@@ -562,7 +563,7 @@
       const [duplicateRecords, samePeriodRecords, current, latestVersions] = await Promise.all([
         idbRequest(duplicateRequest), idbRequest(samePeriodRequest), idbRequest(currentRequest), latestVersionPromise
       ]);
-      const duplicate = await readableDuplicate(db, duplicateRecords);
+      const duplicate = forceSourceReplacement ? null : await readableDuplicate(db, duplicateRecords);
       if (duplicate) {
         const pointerCandidate = { ...compactMetadata(duplicate), datasetId: duplicate.id, updatedAt: importedAt };
         const shouldBecomeCurrent = compareCurrent(pointerCandidate, current);
@@ -594,9 +595,10 @@
         }
         return { status: 'duplicate', dataset: compactMetadata(duplicate), current: shouldBecomeCurrent ? compactMetadata(pointerCandidate) : compactMetadata(current) };
       }
+      const replacedRecords = forceSourceReplacement ? await idbRequest(db.transaction(DATASET_STORE,'readonly').objectStore(DATASET_STORE).index('datasetType').getAll(datasetType)) : [];
       const samePeriod = (samePeriodRecords || []).filter(record => !record.supersededBy).sort((a, b) => String(b.importedAt).localeCompare(String(a.importedAt)))[0];
       const version = (Number(latestVersions && latestVersions[0] && latestVersions[0].version) || 0) + 1;
-      const id = `${datasetType}:${periodKey}:${fingerprint}:${Date.now().toString(36)}`;
+      const id = `${datasetType}:${periodKey}:${fingerprint}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2,8)}`;
       const storedData = prepareStoredData(data, id, { ...meta, rowCount: meta.rowCount || data && data.meta && data.meta.totalRows });
       const record = {
         id,
@@ -629,10 +631,15 @@
         data: storedData.data
       };
       const pointerCandidate = { ...compactMetadata(record), datasetId: id, updatedAt: importedAt };
-      const shouldBecomeCurrent = compareCurrent(pointerCandidate, current);
+      const shouldBecomeCurrent = forceSourceReplacement || compareCurrent(pointerCandidate, current);
       const tx = db.transaction([DATASET_STORE, DATASET_CHUNK_STORE, CURRENT_STORE, IMPORT_STORE], 'readwrite');
       const writeDatasetStore = tx.objectStore(DATASET_STORE);
-      if (samePeriod) writeDatasetStore.put({ ...samePeriod, supersededBy: id });
+      for (const old of replacedRecords) {
+        writeDatasetStore.delete(old.id);
+        const cursorRequest=tx.objectStore(DATASET_CHUNK_STORE).index('datasetId').openCursor(old.id);
+        cursorRequest.onsuccess=()=>{const cursor=cursorRequest.result;if(cursor){cursor.delete();cursor.continue();}};
+      }
+      if (samePeriod && !forceSourceReplacement) writeDatasetStore.put({ ...samePeriod, supersededBy: id });
       writeDatasetStore.put(record);
       for (const chunk of storedData.chunks) tx.objectStore(DATASET_CHUNK_STORE).put(chunk);
       if (shouldBecomeCurrent) tx.objectStore(CURRENT_STORE).put(pointerCandidate);
@@ -640,7 +647,7 @@
         ...compactMetadata(record),
         id: `import_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
         datasetId: id,
-        action: samePeriod ? 'replacement' : 'imported'
+        action: forceSourceReplacement ? 'source-override' : samePeriod ? 'replacement' : 'imported'
       });
       await transactionDone(tx);
       if (shouldBecomeCurrent) {
@@ -652,7 +659,7 @@
       }
       persistMetadataSnapshot();
       notifyDataUpdated(datasetType, { reason: samePeriod ? 'replacement' : 'imported', datasetId: id, version });
-      return { status: samePeriod ? 'replacement' : 'imported', dataset: compactMetadata(record), current: shouldBecomeCurrent ? compactMetadata(pointerCandidate) : compactMetadata(current) };
+      return { status: forceSourceReplacement || samePeriod ? 'replacement' : 'imported', dataset: compactMetadata(record), current: shouldBecomeCurrent ? compactMetadata(pointerCandidate) : compactMetadata(current) };
     } finally {
       db.close();
       if (diagnostics) diagnostics.end('IndexedDB write', { datasetType, periodKey });
@@ -682,7 +689,8 @@
       periodSort: detectedPeriod.sortKey,
       importedAt
     };
-    if (['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'compCoaching'].includes(datasetType) && (!sourcePeriod || !sourcePeriod.sortKey || sourcePeriod.periodKey === 'current')) {
+    if (meta.forceSourceReplacement || data?.meta?.forceSourceReplacement || ['weeklyRetail','weeklyReferral'].includes(datasetType)) return {status:'updated',reason:'Source override: replace the stored source with the incoming file.',becomesCurrent:true,candidate};
+    if (['monthlyRetail', 'monthlyReferral', 'compCoaching'].includes(datasetType) && (!sourcePeriod || !sourcePeriod.sortKey || sourcePeriod.periodKey === 'current')) {
       return { status: 'needs-review', reason: 'The reporting period could not be detected safely.', becomesCurrent: false, candidate };
     }
     if (databaseUnavailable) return { status: currentData.has(datasetType) ? 'needs-review' : 'new', reason: 'IndexedDB comparison history is unavailable.', becomesCurrent: !currentData.has(datasetType), candidate };

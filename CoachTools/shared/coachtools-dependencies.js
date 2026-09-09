@@ -423,7 +423,7 @@
 
   function installUploadGuidance() {
     if (!root.document) return;
-    bindStorageGuide();
+    // Clean Upload opens the native file picker directly, from any folder.
     if (root.document.readyState === 'loading') {
       root.document.addEventListener('DOMContentLoaded', () => {
         ensureGuidanceStyles();

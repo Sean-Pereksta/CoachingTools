@@ -953,7 +953,10 @@
         }
         if (periods.size === 1) period = [...periods.values()][0];
       }
-      if (!period?.sortKey || period.periodKey === 'current') throw new Error('Could not determine a unique reporting period from the filename, worksheet names, or report headings.');
+      if (!period?.sortKey || period.periodKey === 'current') {
+        if (['weeklyRetail','weeklyReferral'].includes(type)) period={label:'Current weekly upload',periodKey:'current',sortKey:''};
+        else throw new Error('Could not determine a unique reporting period from the filename, worksheet names, or report headings.');
+      }
       entry.classification.detectedPeriod = period;
     }
 
@@ -964,13 +967,11 @@
     return prepared;
   }
 
-  async function saveRecognizedEntry(entry, options) {
-    if (!entry || !entry.classification || !entry.classification.id) throw new Error('The file has not been safely classified.');
-    if (!root.CoachToolsData || typeof root.CoachToolsData.importDataset !== 'function') throw new Error('The central CoachTools data API is unavailable.');
-    const type = entry.classification.id;
-    const prepared = await prepareRecognizedEntry(entry, options);
+  async function storePreparedEntry(entry, prepared, options) {
+    const type=entry.classification.id;
     const dataset = prepared.dataset;
     return root.CoachToolsData.importDataset(type, dataset, {
+      ...(options || {}),
       originalFileName: entry.file && entry.file.name || dataset.meta && dataset.meta.fileName || '',
       fileSize: entry.file && entry.file.size || dataset.meta && dataset.meta.fileSize || 0,
       fileModifiedDate: entry.file && entry.file.lastModified ? new Date(entry.file.lastModified).toISOString() : dataset.meta && dataset.meta.fileModifiedDate || '',
@@ -985,6 +986,33 @@
       scopeMatchDiagnostics: prepared.diagnostics,
       scopedFingerprint: prepared.scopedFingerprint
     });
+  }
+
+  async function prepareOverrideEntry(entry, options, error) {
+    const type=entry.classification.id, weekly=['weeklyRetail','weeklyReferral'].includes(type);
+    if (!weekly && !(root.confirm && root.confirm(`Could not upload ${entry.file.name}: ${error.message || error}\n\nReplace the old ${SOURCES[type].label} data with this file? This deletes only that source's old stored data. Other sources are unchanged.`))) throw error;
+    const parsed=await parseFile(entry.file);
+    if (!parsed.meta.totalRows) throw new Error('The incoming file has no readable rows to store.');
+    const scope=await resolveScopeSnapshot(options?.scope || root.CoachToolsStorage?.getScope?.() || {mode:'all'});
+    let prepared=prepareScopedDataset(parsed,type,scope,{detectedPeriod:entry.classification.detectedPeriod});
+    if (!prepared.valid) throw new Error(prepared.reason);
+    prepared.dataset.meta.overrideReason=String(error.message || error);
+    prepared.dataset.meta.forceSourceReplacement=true;
+    return prepared;
+  }
+
+  async function overrideEntry(entry, options, error) {
+    const prepared=await prepareOverrideEntry(entry,options,error);
+    return storePreparedEntry(entry,prepared,{...options,forceSourceReplacement:true});
+  }
+
+  async function saveRecognizedEntry(entry, options) {
+    if (!entry?.classification?.id) throw new Error('The file has not been safely classified.');
+    if (!root.CoachToolsData?.importDataset) throw new Error('The central CoachTools data API is unavailable.');
+    try {
+      const prepared=await prepareRecognizedEntry(entry,options);
+      return await storePreparedEntry(entry,prepared,options);
+    } catch(error) { return overrideEntry(entry,options,error); }
   }
 
   async function saveRecognizedFiles(files, options) {
@@ -1051,6 +1079,9 @@
     analyzeFiles,
     prepareRecognizedEntry,
     saveRecognizedEntry,
+    storePreparedEntry,
+    overrideEntry,
+    prepareOverrideEntry,
     saveRecognizedFiles
   });
 
