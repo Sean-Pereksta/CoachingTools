@@ -283,7 +283,7 @@
     }
     prompt.replaceChildren();
     const title = createElement(doc, 'strong', `Could not load: ${issue.fileName || 'Uploaded file'}`);
-    const ask = createElement(doc, 'div', 'This file could not be loaded automatically. Please reach out to Sean for assistance.');
+    const ask = createElement(doc, 'div', 'Please snip the report showing its column headers and a few example rows, along with this error, and send it to Sean.');
     const detail = createElement(doc, 'small', `Source: ${issue.datasetLabel} · Reason: ${issue.message}`);
     Object.assign(detail.style, { opacity: '.78', lineHeight: '1.45' });
     const actions = createElement(doc, 'div');
@@ -371,7 +371,7 @@
         });
         recoveryBox.append(
           createElement(doc, 'b', 'Upload error recovery suggested'),
-          createElement(doc, 'div', `Could not load: ${issue.fileName || "Uploaded file"} · Source: ${issue.datasetLabel}. This file could not be loaded automatically. Please reach out to Sean for assistance.`),
+          createElement(doc, 'div', `Could not load: ${issue.fileName || "Uploaded file"} · Source: ${issue.datasetLabel}. Please snip the report showing its column headers and a few example rows, along with this error, and send it to Sean.`),
           createElement(doc, 'small', `${issue.errorCode}: ${issue.message} · IndexedDB ${issue.database} · ${issue.stores.join(', ')}`)
         );
         body.appendChild(recoveryBox);

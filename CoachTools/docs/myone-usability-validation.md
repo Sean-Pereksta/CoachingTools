@@ -18,3 +18,13 @@ Passed: All-Star suite; direct-file update planning; scope synchronization; data
 Two broader-suite failures were reproduced in a separate checkout of unchanged main at `7db286f`: duplicate `kpi-impact` application IDs stop manifest validation; `identity-profile-sync.test.js:126` expects 1.5 but receives NaN.
 
 Browser layout verification was unavailable: Chromium is absent and the Playwright download timed out. Density rules and generated files were checked in code; live screenshot QA remains advisable with real team data, especially unusually large metric selections. No HTML previews were generated for delivery.
+
+## Follow-up: manual source recovery
+
+Unidentified readable files now offer a per-file source selector across all eight existing sources. Clean Upload, direct-file updates, launcher scans, and All-Star's shared import use this review. Each selection is validated before it joins the upload population; users can correct a confirmed selection or skip unresolved files. Manual selection occurs before scope discovery/update planning, and an explicitly chosen source is not silently excluded by an older source baseline.
+
+Format diagnostics now enumerate missing field groups and their accepted column names. Scope failures identify accepted ownership headers. Recovery messages ask users to snip the report headers, example rows, and error and send them to Sean. Unreadable workbooks and files still missing required information remain blocked from replacing good data.
+
+Launcher scans now use the same incoming preparation/validation as Clean and Update. Validation, comparison, and write failures are isolated per file and surfaced in progress details.
+
+Additional passing coverage: DOM-based source selection, invalid-source rejection, retry/change/skip, filename text safety, actual XLSX discovery and manual scope preparation, and explicit manual destinations outside the old update source baseline. Run `npm run test:myone`; its new `linkedom` dependency is test-only. No live-browser validation or HTML preview was performed for this follow-up.

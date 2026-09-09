@@ -867,7 +867,7 @@ async function stageCoachToolsImportFiles(files){
   if(!window.CoachToolsImport) return alert('Shared CoachTools import utilities are unavailable.');
   showProgress('Analyzing CoachTools files...',5);
   try{
-    state.coachToolsImportBatch=await window.CoachToolsImport.analyzeFiles(files,{onProgress:progress=>updateProgress(`Reading ${progress.fileName||'file'}${progress.sheetName?' · '+progress.sheetName:''}`,10+Math.round(70*((progress.fileIndex+(progress.total?progress.current/progress.total:0))/Math.max(1,progress.fileCount))))});
+    state.coachToolsImportBatch=await window.CoachToolsImport.analyzeFiles(files,{manualSourceSelection:true,onProgress:progress=>updateProgress(`Reading ${progress.fileName||'file'}${progress.sheetName?' · '+progress.sheetName:''}`,10+Math.round(70*((progress.fileIndex+(progress.total?progress.current/progress.total:0))/Math.max(1,progress.fileCount))))});
     renderCoachToolsImportReview(); updateProgress('Files analyzed',100,{force:true});
   }finally{ hideProgress(); }
 }

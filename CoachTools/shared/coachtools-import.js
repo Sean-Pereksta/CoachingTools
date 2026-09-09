@@ -478,23 +478,115 @@
     return names.some(name => headers.has(normalizeHeader(name)));
   }
 
+  const FORMAT_HELP = 'Please snip the report showing its column headers and a few example rows, along with this error, and send it to Sean.';
+  function sourceRequirements(datasetType) {
+    const identity = ['Sheet','Representative','Associate Name','Agent Name','AgentName','Job Coach','Coach Assigned','Team'];
+    const requirements = {
+      weeklyRetail: [['representative or team column', ['Sheet','Representative','Associate Name','Agent Name']]],
+      weeklyReferral: [['representative or team column', ['Sheet','Representative','Associate Name','Agent Name']]],
+      monthlyRetail: [['identity or appointment field', [...identity,'Appt Summary','Cash Appointment Rate','Phone_ID']]],
+      monthlyReferral: [['identity or referral field', [...identity,'KPI Summary','Referral','Phone_ID']]],
+      qa: [['team or agent column', ['Team','Agent Name','AgentName']], ['evaluation field', ['Score %','Score%','Evaluation Score','Assigned Date','Interaction Start Time']]],
+      documentedCoaching: [['coach column', ['Job Coach','Coach Assigned','Coach']], ['representative or coaching date column', ['Associate Name','Representative','Agent Name','Coaching Date','Date']]],
+      checklist: [['coach column', ['Coach Assigned','Coach','Job Coach']], ['representative or checklist field', ['Associate Name','Representative','Agent Name','Action','Item','Status']]],
+      compCoaching: [['representative column', ['CSR/SSR Name','CSR/SSR Name (This is the person being complimented)','Representative','Associate Name']], ['compliment or coach field', ['Compliment','Comments','Notes','CSR Team/Coach','Coach Assigned']]]
+    };
+    return requirements[datasetType] || [];
+  }
   function validateClassification(datasetType, parsed) {
     const headers = workbookHeaderSet(parsed);
     const rows = Number(parsed && parsed.meta && parsed.meta.totalRows) || 0;
-    if (!rows || !headers.size) return { valid: false, reason: 'The workbook did not contain readable rows and headers.' };
-    const identity = hasAny(headers, ['Sheet', 'Representative', 'Associate Name', 'Associate name', 'Agent Name', 'AgentName', 'Job Coach', 'Coach Assigned', 'Team']);
-    const validators = {
-      weeklyRetail: () => identity && (hasAny(headers, ['Sheet']) || hasAny(headers, ['Representative', 'Associate Name', 'Agent Name'])),
-      weeklyReferral: () => identity && (hasAny(headers, ['Sheet']) || hasAny(headers, ['Representative', 'Associate Name', 'Agent Name'])),
-      monthlyRetail: () => identity || hasAny(headers, ['Appt Summary', 'Cash Appointment Rate', 'Phone_ID']),
-      monthlyReferral: () => identity || hasAny(headers, ['KPI Summary', 'Referral', 'Phone_ID']),
-      qa: () => hasAny(headers, ['Team', 'Agent Name', 'AgentName']) && hasAny(headers, ['Score %', 'Score%', 'Evaluation Score', 'Assigned Date', 'Interaction Start Time']),
-      documentedCoaching: () => hasAny(headers, ['Job Coach', 'Coach Assigned', 'Coach']) && hasAny(headers, ['Associate name', 'Associate Name', 'Representative', 'Agent Name', 'Coaching Date', 'Date']),
-      checklist: () => hasAny(headers, ['Coach Assigned', 'Coach', 'Job Coach']) && hasAny(headers, ['Associate Name', 'Representative', 'Agent Name', 'Action', 'Item', 'Status']),
-      compCoaching: () => hasAny(headers, ['CSR/SSR Name', 'CSR/SSR Name (This is the person being complimented)', 'Representative', 'Associate Name']) && hasAny(headers, ['Compliment', 'Comments', 'Notes', 'CSR Team/Coach', 'Coach Assigned'])
-    };
-    const valid = validators[datasetType] ? Boolean(validators[datasetType]()) : false;
-    return { valid, reason: valid ? '' : `Expected ${SOURCES[datasetType] && SOURCES[datasetType].label || datasetType} fields were not found.` };
+    const requirements = sourceRequirements(datasetType);
+    const missing = requirements.filter(group => !hasAny(headers, group[1])).map(([label, alternatives]) => ({label, alternatives}));
+    const valid = Boolean(rows && headers.size && requirements.length && !missing.length);
+    let reason = '';
+    if (!valid) {
+      if (!requirements.length) reason = 'Unknown CoachTools data source.';
+      else if (!rows || !headers.size) reason = 'The workbook did not contain readable rows and headers.';
+      else reason = `Expected ${SOURCES[datasetType].label} fields were not found. ` + missing.map(group => `Missing ${group.label}: include at least one of ${group.alternatives.join(', ')}.`).join(' ');
+    }
+    return { valid, reason, missing, checkedSheets: parsed?.workbook?.sheets || [] };
+  }
+
+  function uploadFailureMessage(entry, error) {
+    const classification = entry && entry.classification || {};
+    const source = classification.id || classification.predictedId;
+    const reason = String(error?.message || error || classification.validation?.reason || 'Could not determine a unique source from filename and headers.');
+    return `Could not load: ${entry?.file?.name || 'Uploaded file'} · Source: ${SOURCES[source]?.label || 'Not identified'} · Reason: ${reason} ${FORMAT_HELP}`;
+  }
+
+  async function assignSource(entry, datasetType) {
+    if (!SOURCES[datasetType] || !DATASET_ORDER.includes(datasetType)) throw new Error('Choose a supported data source.');
+    const validation = validateClassification(datasetType, entry && entry.parsed);
+    if (!validation.valid) {
+      const error = new Error(validation.reason);
+      error.name = 'CoachToolsFormatError';
+      error.validation = validation;
+      throw error;
+    }
+    // Rebuild coach discovery when a lightweight workbook is retained. A failed
+    // attempt leaves the original entry intact and never writes imported data.
+    const resolved = entry.rawWorkbook ? await discoverFile(entry.file, { datasetType }) : { ...entry };
+    if (resolved.classification?.id !== datasetType && entry.rawWorkbook) throw new Error(resolved.classification?.validation?.reason || 'Could not validate the selected source.');
+    resolved.classification = { id:datasetType, validation, confidence:'high', reason:'manual+headers', classificationMethod:'manual+headers', manualSourceSelection:true, detectedPeriod:detectPeriod(entry.file,datasetType) };
+    return resolved;
+  }
+
+  async function resolveUnidentifiedFiles(analysis, options) {
+    if (!analysis.needsReview.length || !root.document?.body || options?.manualSourceSelection === false) return analysis;
+    const doc = root.document, previousFocus = doc.activeElement;
+    const dialog = doc.createElement('dialog');
+    dialog.setAttribute('aria-label', 'Choose a data source for unidentified files');
+    dialog.style.cssText = 'position:fixed;inset:0;margin:auto;width:min(760px,92vw);max-height:85vh;overflow:auto;border:2px solid #2563eb;border-radius:14px;padding:20px;background:#fff;color:#0f172a;z-index:2147483647;box-shadow:0 16px 60px #0006;font:14px/1.5 system-ui';
+    const element = (tag, text) => { const node=doc.createElement(tag); if(text!=null) node.textContent=text; return node; };
+    dialog.append(element('h2','Choose where each file belongs'),element('p','These files could not be identified automatically. Select a data source and check its format. Validated files will continue through the normal upload and coach scope.'));
+    let activeChecks = 0;
+    for (const entry of analysis.needsReview.slice()) {
+      const card=element('section');
+      card.style.cssText='border:1px solid #cbd5e1;border-radius:9px;padding:12px;margin:12px 0';
+      let resolvedEntry=null;
+      const name=element('strong',entry.file?.name || 'Uploaded file');
+      const select=element('select'); select.setAttribute('aria-label',`Data source for ${entry.file?.name || 'file'}`);
+      select.style.cssText='display:block;width:100%;padding:9px;margin:8px 0;background:#eff6ff;color:#0f172a;border:1px solid #2563eb;border-radius:6px';
+      const placeholder=element('option','Choose a data source…'); placeholder.value=''; select.append(placeholder);
+      for(const id of DATASET_ORDER){const option=element('option',SOURCES[id].label);option.value=id;select.append(option);}
+      const hint=Array.from(select.options).find(option=>option.value===entry.classification?.predictedId); if(hint) hint.selected=true;
+      const detail=element('div'); detail.setAttribute('role','status');detail.style.cssText='white-space:pre-wrap;margin:8px 0';
+      const guidance=()=>{ const validation=select.value?validateClassification(select.value,entry.parsed):null;detail.textContent=validation?(validation.valid?'The required fields for this source were found. Select “Use this source” to confirm.':validation.reason+' '+FORMAT_HELP):'Select the destination for this file. Nothing has been replaced.'; };
+      select.addEventListener('change',guidance);guidance();
+      const use=element('button','Use this source');use.type='button';use.style.cssText='padding:8px 12px;border:0;border-radius:6px;background:#2563eb;color:white;font-weight:700';
+      use.addEventListener('click',async()=>{
+        if(resolvedEntry){
+          analysis.recognized=analysis.recognized.filter(item=>item!==resolvedEntry);
+          analysis.needsReview.push(entry);resolvedEntry=null;select.disabled=false;use.textContent='Use this source';guidance();select.focus();return;
+        }
+        if(!select.value){detail.textContent='Choose a data source first.';select.focus();return;}
+        activeChecks+=1;use.disabled=true;select.disabled=true;finish.disabled=true;detail.textContent='Checking this source…';
+        try{
+          const resolved=await assignSource(entry,select.value);
+          resolvedEntry=resolved;analysis.recognized.push(resolved);
+          analysis.needsReview=analysis.needsReview.filter(item=>item!==entry);
+          detail.textContent=`Validated as ${SOURCES[select.value].label}. Ready to continue uploading.`;
+          use.textContent='Change source';use.disabled=false;
+        }catch(error){
+          entry.classification={...entry.classification,predictedId:select.value,validation:error.validation || {valid:false,reason:error.message || String(error)}};
+          detail.textContent=uploadFailureMessage(entry,error);
+          use.disabled=false;select.disabled=false;
+        }finally{activeChecks-=1;finish.disabled=activeChecks>0;}
+      });
+      card.append(name,select,detail,use);dialog.append(card);
+    }
+    const finish=element('button','Continue with validated files');finish.type='button';finish.style.cssText='padding:10px 14px;border:0;border-radius:7px;background:#166534;color:white;font-weight:700';
+    dialog.append(element('p','Any files still unresolved will be skipped. Existing stored data is retained.'),finish);
+    await new Promise(resolve=>{
+      const close=()=>{if(activeChecks)return;if(dialog.open&&dialog.close)dialog.close();dialog.remove();previousFocus?.focus?.();resolve();};
+      finish.addEventListener('click',close);
+      dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
+      doc.body.append(dialog);
+      if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','');
+      dialog.querySelector('select')?.focus();
+    });
+    return analysis;
   }
 
   function datePartsFromName(fileName, fallbackYear) {
@@ -782,7 +874,7 @@
     };
     if (narrow && !headerFound) {
       diagnostics.warnings.push(`Required scope column not found. Expected ${source === 'qa' ? 'Team' : (OWNERSHIP_HEADERS[source] || []).join(', ')}.`);
-      return finish({ valid: false, needsReview: true, reason: `Scoped import failed validation: required ${source === 'qa' ? 'Team' : 'ownership'} column not found. No replacement was performed.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics });
+      return finish({ valid: false, needsReview: true, reason: `Scoped import failed validation: required ${source === 'qa' ? 'Team' : 'ownership'} column not found. Accepted headers: ${(OWNERSHIP_HEADERS[source] || []).join(', ')}. No replacement was performed.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics });
     }
     if (narrow && matchedRows === 0 && !(options && options.allowZeroRows)) {
       diagnostics.warnings.push('The scoped source contained zero matching rows. The existing dataset must be retained until the scope is reviewed.');
@@ -834,7 +926,8 @@
         else needsReview.push(entry);
       } catch (error) { errors.push({ file, error }); }
     }
-    return { recognized, needsReview, errors };
+    const analysis = { recognized, needsReview, errors };
+    return options?.manualSourceSelection ? resolveUnidentifiedFiles(analysis, options) : analysis;
   }
 
   async function prepareRecognizedEntry(entry, options) {
@@ -939,6 +1032,11 @@
     inspectSourceHeaders,
     workbookHeaderSet,
     validateClassification,
+    FORMAT_HELP,
+    sourceRequirements,
+    uploadFailureMessage,
+    assignSource,
+    resolveUnidentifiedFiles,
     detectPeriod,
     classifyFile,
     convertCoachingDateHeader,
