@@ -109,3 +109,170 @@
     evaluate, inputValue, fromInput, format
   });
 })(typeof window !== 'undefined' ? window : globalThis);
+
+(function installPerformanceScorecardMissingColumnFilter(root) {
+  'use strict';
+
+  const doc = root.document || null;
+  const STORAGE_KEY = 'coachtools.performanceScorecard.missingColumns.v1';
+  const CONTROL_ID = 'missingColumnThresholdSel';
+  const WRAPPED_FLAG = '__coachtoolsMissingColumnFilterWrapped';
+  const INSTALL_RETRY_MS = 100;
+  const MAX_INSTALL_ATTEMPTS = 120;
+  let threshold = loadThreshold();
+  let lastStats = { before: 0, after: 0, columns: 0, threshold: 0 };
+  let tableObserver = null;
+
+  function loadThreshold() {
+    try {
+      const value = Number(root.localStorage?.getItem(STORAGE_KEY));
+      return Number.isFinite(value) && value >= 1 ? Math.floor(value) : 0;
+    } catch (_) { return 0; }
+  }
+  function saveThreshold() {
+    try {
+      if (threshold > 0) root.localStorage?.setItem(STORAGE_KEY, String(threshold));
+      else root.localStorage?.removeItem(STORAGE_KEY);
+    } catch (_) {}
+  }
+  function scorecardReady() {
+    if (!doc) return false;
+    const meta = doc.querySelector('meta[name="coachtools-id"]');
+    if (!meta || meta.content !== 'performance-scorecard') return false;
+    return typeof getRows === 'function' && typeof render === 'function' && typeof sortValue === 'function' &&
+      typeof visibleColumn === 'function' && typeof state === 'object' && Boolean(state && state.config) &&
+      Boolean(doc.querySelector('#scorecardWorkspace .workspaceTools'));
+  }
+  function selectedDataColumns() {
+    if (!scorecardReady()) return [];
+    const department = doc.getElementById('departmentSel')?.value || 'All';
+    return (state.config?.columns || []).filter(id => id && id !== 'representative' && visibleColumn(id, department));
+  }
+  function columnAppliesToRow(row, id) {
+    try {
+      const builtin = typeof BUILTINS === 'object' && BUILTINS ? BUILTINS[id] : null;
+      const requiredDepartment = builtin?.dept;
+      if (!requiredDepartment || typeof personDepartment !== 'function') return true;
+      return personDepartment(row.rep) === requiredDepartment;
+    } catch (_) { return true; }
+  }
+  function valueIsPresent(row, id) {
+    let value;
+    try { value = sortValue(row, id); } catch (_) { return false; }
+    if (Number.isFinite(value)) return true;
+    return typeof value === 'string' && value.trim() !== '';
+  }
+  function missingCount(row, columns) {
+    return (columns || selectedDataColumns()).reduce((count, id) => {
+      if (!columnAppliesToRow(row, id)) return count;
+      return count + (valueIsPresent(row, id) ? 0 : 1);
+    }, 0);
+  }
+  function applyFilter(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const columns = selectedDataColumns();
+    const active = threshold > 0 && columns.length > 0;
+    const filtered = active ? list.filter(row => missingCount(row, columns) < threshold) : list;
+    lastStats = { before: list.length, after: filtered.length, columns: columns.length, threshold };
+    queueControlSync();
+    return filtered;
+  }
+  function setThreshold(value, rerender = true) {
+    const numeric = Number(value);
+    threshold = Number.isFinite(numeric) && numeric >= 1 ? Math.floor(numeric) : 0;
+    saveThreshold();
+    syncControl();
+    if (rerender && scorecardReady()) render();
+    return threshold;
+  }
+  function thresholdOptions(columnCount) {
+    const max = Math.max(0, Number(columnCount) || 0);
+    const values = Array.from({ length: max }, (_, index) => index + 1);
+    if (threshold > max && threshold > 0) values.push(threshold);
+    return ['<option value="0">Off — show all</option>', ...values.map(value => {
+      const selected = value === threshold ? ' selected' : '';
+      const suffix = value > max ? ` (${max} columns shown)` : '';
+      return `<option value="${value}"${selected}>${value}+ missing${suffix}</option>`;
+    })].join('');
+  }
+  function ensureControl() {
+    if (!scorecardReady()) return null;
+    const tools = doc.querySelector('#scorecardWorkspace .workspaceTools');
+    if (!tools) return null;
+    let control = doc.getElementById('missingColumnFilterControl');
+    if (!control) {
+      control = doc.createElement('div');
+      control.id = 'missingColumnFilterControl';
+      control.className = 'sortCtl';
+      control.title = 'Hide a representative when this many displayed statistic columns have no data. A real zero counts as data. Columns that do not apply to that representative are ignored.';
+      control.innerHTML = `Missing columns <select id="${CONTROL_ID}" aria-label="Hide representatives by missing column count"></select><span id="missingColumnFilterMeta" style="font-size:11px;opacity:.72;white-space:nowrap"></span>`;
+      const sortControl = tools.querySelector('.sortCtl');
+      tools.insertBefore(control, sortControl || null);
+      doc.getElementById(CONTROL_ID)?.addEventListener('change', event => setThreshold(event.target.value, true));
+    }
+    return control;
+  }
+  function syncControl() {
+    const control = ensureControl();
+    if (!control) return;
+    const select = doc.getElementById(CONTROL_ID);
+    const columns = selectedDataColumns();
+    if (select) {
+      const next = thresholdOptions(columns.length);
+      if (select.innerHTML !== next) select.innerHTML = next;
+      select.value = String(threshold);
+    }
+    const meta = doc.getElementById('missingColumnFilterMeta');
+    if (meta) {
+      const hidden = Math.max(0, (lastStats.before || 0) - (lastStats.after || 0));
+      if (threshold <= 0) meta.textContent = `${columns.length} stats`;
+      else if (threshold > columns.length) meta.textContent = `0 hidden · only ${columns.length} stats shown`;
+      else meta.textContent = `${hidden} hidden`;
+    }
+  }
+  function queueControlSync() {
+    if (!doc) return;
+    if (typeof root.queueMicrotask === 'function') root.queueMicrotask(syncControl);
+    else root.setTimeout(syncControl, 0);
+  }
+  function wrapRows() {
+    if (getRows && getRows[WRAPPED_FLAG]) return;
+    const original = getRows;
+    const wrapped = function coachtoolsFilteredScorecardRows() {
+      return applyFilter(original.apply(this, arguments));
+    };
+    Object.defineProperty(wrapped, WRAPPED_FLAG, { value: true });
+    Object.defineProperty(wrapped, '__coachtoolsOriginalGetRows', { value: original });
+    getRows = wrapped;
+  }
+  function observeScorecard() {
+    if (tableObserver || !root.MutationObserver) return;
+    const tableBody = doc.getElementById('tableBody');
+    if (!tableBody) return;
+    tableObserver = new root.MutationObserver(queueControlSync);
+    tableObserver.observe(tableBody, { childList: true, subtree: false });
+  }
+  function install(attempt = 0) {
+    if (!scorecardReady()) {
+      if (attempt < MAX_INSTALL_ATTEMPTS) root.setTimeout(() => install(attempt + 1), INSTALL_RETRY_MS);
+      return;
+    }
+    wrapRows();
+    ensureControl();
+    observeScorecard();
+    syncControl();
+    render();
+    root.CoachToolsPerformanceScorecardMissingColumns = Object.freeze({
+      STORAGE_KEY,
+      getThreshold: () => threshold,
+      setThreshold,
+      selectedDataColumns: () => selectedDataColumns().slice(),
+      missingCount: row => missingCount(row),
+      stats: () => ({ ...lastStats })
+    });
+  }
+
+  if (!doc) return;
+  if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', () => install(), { once: true });
+  else install();
+})(typeof window !== 'undefined' ? window : globalThis);
