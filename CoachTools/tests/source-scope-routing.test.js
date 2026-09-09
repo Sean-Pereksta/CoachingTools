@@ -20,6 +20,35 @@ let stored = null;
 const storage = new Map();
 const normalizeName = value => String(value == null ? '' : value).trim().replace(/\s+/g, ' ').toLowerCase();
 
+function checkedInput(value) {
+  return {
+    closest() {
+      return {
+        querySelector() { return { textContent: value }; }
+      };
+    }
+  };
+}
+
+function sourceSection(label, values) {
+  return {
+    querySelector(selector) {
+      if (selector === '.smart-import-source-heading strong') return { textContent: label };
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === 'input[type="checkbox"]:checked') return values.map(checkedInput);
+      return [];
+    }
+  };
+}
+
+const chooserSections = [
+  sourceSection('Retail Weekly', ['Angela Johnson']),
+  sourceSection('Checklist', ['Angie Johnson']),
+  sourceSection('Documented Coaching', ['Angie Johnson'])
+];
+
 const baseImporter = {
   VERSION: 'test',
   SOURCES: {
@@ -31,11 +60,12 @@ const baseImporter = {
   },
   normalizeName,
   async resolveScopeSnapshot(scope) {
+    const mode = scope && scope.mode || 'coach';
     return {
       schemaVersion: 1,
-      mode: scope && scope.mode || 'coach',
+      mode,
       label: scope && scope.label || 'Angie Johnson',
-      personId: 'coach-angie',
+      personId: mode === 'coach' ? 'coach-angie' : '',
       coaches: ['Angie Johnson'],
       coachPersonIds: ['coach-angie'],
       coachKeys: ['angie johnson'],
@@ -43,7 +73,9 @@ const baseImporter = {
       team: '',
       department: '',
       coordinator: '',
-      scopeHash: scope && scope.scopeHash || 'scope-shared'
+      // Reproduce Smart Import's real two-pass behavior: team selection and
+      // canonical single-coach resolution have different hashes.
+      scopeHash: mode === 'team' ? 'scope-team-pass' : 'scope-coach-pass'
     };
   },
   validateClassification() { return { valid: true }; },
@@ -81,7 +113,11 @@ const context = {
       setItem(key, value) { storage.set(key, String(value)); },
       removeItem(key) { storage.delete(key); }
     },
-    document: { querySelectorAll: () => [] },
+    document: {
+      querySelectorAll(selector) {
+        return selector === '#smartImportSources .smart-import-source' ? chooserSections : [];
+      }
+    },
     confirm: () => true
   },
   console,
@@ -99,11 +135,11 @@ context.globalThis = context;
 vm.runInNewContext(script, context, { filename: 'coachtools-source-scope.js' });
 
 const importer = context.window.CoachToolsImport;
-assert.strictEqual(importer.SOURCE_SCOPE_ROUTING_VERSION, '1.0.0');
+assert.strictEqual(importer.SOURCE_SCOPE_ROUTING_VERSION, '1.0.1');
 
 function entry(type) {
   return {
-    file: { name: type === 'weeklyRetail' ? 'Retail Weekly.xlsx' : 'Checklist.xlsx', lastModified: 0 },
+    file: { name: type === 'weeklyRetail' ? 'Retail Weekly.csv' : 'Checklist.xlsx', lastModified: 0 },
     classification: {
       id: type,
       detectedPeriod: type === 'weeklyRetail' ? { label: 'Current weekly upload', periodKey: 'current', sortKey: '' } : null,
@@ -114,38 +150,50 @@ function entry(type) {
   };
 }
 
-const authoritativeScope = {
-  mode: 'coach',
-  label: 'Angie Johnson',
-  scopeHash: 'scope-shared',
-  coaches: ['Angie Johnson'],
-  sourceSelections: {
-    weeklyRetail: ['Angela Johnson'],
-    checklist: ['Angie Johnson']
-  }
-};
-
 (async () => {
+  // This is the exact Smart Import sequence that caused the reported bug.
+  const firstPass = await importer.resolveScopeSnapshot({
+    mode: 'team',
+    label: 'Selected coaches',
+    coaches: ['Angie Johnson', 'Angela Johnson']
+  });
+  assert.strictEqual(firstPass.scopeHash, 'scope-team-pass');
+  assert.deepStrictEqual(firstPass.sourceSelections.weeklyRetail, ['Angela Johnson']);
+  assert.deepStrictEqual(firstPass.sourceSelections.checklist, ['Angie Johnson']);
+
+  const canonicalPass = await importer.resolveScopeSnapshot({
+    mode: 'coach',
+    personId: 'coach-angie',
+    label: 'Angie Johnson',
+    coaches: ['Angie Johnson']
+  });
+  assert.strictEqual(canonicalPass.scopeHash, 'scope-coach-pass', 'Second pass should intentionally have a different hash in this regression.');
+  assert.deepStrictEqual(
+    canonicalPass.sourceSelections.weeklyRetail,
+    ['Angela Johnson'],
+    'Canonical second-pass resolution must retain the Retail Weekly spelling chosen in the first pass.'
+  );
+  assert.deepStrictEqual(canonicalPass.sourceSelections.checklist, ['Angie Johnson']);
+
   preparedCalls.length = 0;
-  const retailPrepared = await importer.prepareRecognizedEntry(entry('weeklyRetail'), { scope: authoritativeScope });
+  const retailPrepared = await importer.prepareRecognizedEntry(entry('weeklyRetail'), { scope: canonicalPass });
   assert.deepStrictEqual(preparedCalls[0].scope.coaches, ['Angela Johnson'], 'Retail Weekly must filter with the exact Retail Weekly selection.');
   assert.deepStrictEqual(preparedCalls[0].scope.coachKeys, ['angela johnson']);
-  assert.strictEqual(retailPrepared.scopeHash, 'scope-shared', 'Retail Weekly should retain the canonical shared scope hash after source filtering.');
+  assert.strictEqual(preparedCalls[0].scope.label, 'Angela Johnson', 'Retail Weekly diagnostics should name the source-specific value, not canonical Angie.');
+  assert.strictEqual(retailPrepared.scopeHash, 'scope-coach-pass', 'Retail Weekly should retain the canonical shared scope hash after source filtering.');
   assert.deepStrictEqual(retailPrepared.dataset.meta.sourceScopeSelection, ['Angela Johnson']);
-  assert.strictEqual(retailPrepared.dataset.meta.sourceScopeDataset, 'weeklyRetail');
 
-  const checklistPrepared = await importer.prepareRecognizedEntry(entry('checklist'), { scope: authoritativeScope });
+  const checklistPrepared = await importer.prepareRecognizedEntry(entry('checklist'), { scope: canonicalPass });
   assert.deepStrictEqual(preparedCalls[1].scope.coaches, ['Angie Johnson'], 'Checklist must use its own selected spelling instead of Retail Weekly\'s spelling.');
   assert.deepStrictEqual(checklistPrepared.dataset.meta.sourceScopeSelection, ['Angie Johnson']);
-  assert.strictEqual(checklistPrepared.scopeHash, 'scope-shared');
 
   storage.set('coachtools.desktop.cleanUploadBaseline.v1', JSON.stringify({
     version: 3,
-    scopeHash: 'scope-shared',
-    scope: authoritativeScope,
+    scopeHash: 'scope-coach-pass',
+    scope: canonicalPass,
     datasetTypes: ['weeklyRetail', 'checklist']
   }));
-  const updateScopeWithoutSelections = { mode: 'coach', label: 'Angie Johnson', scopeHash: 'scope-shared', coaches: ['Angie Johnson'] };
+  const updateScopeWithoutSelections = { mode: 'coach', label: 'Angie Johnson', scopeHash: 'scope-coach-pass', coaches: ['Angie Johnson'] };
   const updatePrepared = await importer.prepareRecognizedEntry(entry('weeklyRetail'), { scope: updateScopeWithoutSelections });
   assert.deepStrictEqual(preparedCalls[2].scope.coaches, ['Angela Johnson'], 'Update Data must replay the source-specific Clean Upload selection from the baseline.');
   assert.deepStrictEqual(updatePrepared.dataset.meta.sourceScopeSelection, ['Angela Johnson']);
@@ -153,7 +201,7 @@ const authoritativeScope = {
   await assert.rejects(
     () => importer.prepareRecognizedEntry(entry('weeklyRetail'), {
       scope: {
-        ...authoritativeScope,
+        ...canonicalPass,
         sourceSelections: { weeklyRetail: [], checklist: ['Angie Johnson'] }
       }
     }),
@@ -162,10 +210,10 @@ const authoritativeScope = {
   );
 
   stored = null;
-  await importer.saveRecognizedEntry(entry('weeklyRetail'), { scope: authoritativeScope });
+  await importer.saveRecognizedEntry(entry('weeklyRetail'), { scope: canonicalPass });
   assert(stored, 'saveRecognizedEntry should persist the prepared source-routed dataset.');
   assert.deepStrictEqual(stored.prepared.dataset.meta.sourceScopeSelection, ['Angela Johnson']);
-  assert.strictEqual(stored.prepared.scopeHash, 'scope-shared');
+  assert.strictEqual(stored.prepared.scopeHash, 'scope-coach-pass');
 
   console.log('Source-specific coach scope routing regression checks passed.');
 })().catch(error => {
