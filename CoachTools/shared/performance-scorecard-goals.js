@@ -148,6 +148,14 @@
     const department = doc.getElementById('departmentSel')?.value || 'All';
     return (state.config?.columns || []).filter(id => id && id !== 'representative' && visibleColumn(id, department));
   }
+  function columnAppliesToRow(row, id) {
+    try {
+      const builtin = typeof BUILTINS === 'object' && BUILTINS ? BUILTINS[id] : null;
+      const requiredDepartment = builtin?.dept;
+      if (!requiredDepartment || typeof personDepartment !== 'function') return true;
+      return personDepartment(row.rep) === requiredDepartment;
+    } catch (_) { return true; }
+  }
   function valueIsPresent(row, id) {
     let value;
     try { value = sortValue(row, id); } catch (_) { return false; }
@@ -155,7 +163,10 @@
     return typeof value === 'string' && value.trim() !== '';
   }
   function missingCount(row, columns) {
-    return (columns || selectedDataColumns()).reduce((count, id) => count + (valueIsPresent(row, id) ? 0 : 1), 0);
+    return (columns || selectedDataColumns()).reduce((count, id) => {
+      if (!columnAppliesToRow(row, id)) return count;
+      return count + (valueIsPresent(row, id) ? 0 : 1);
+    }, 0);
   }
   function applyFilter(rows) {
     const list = Array.isArray(rows) ? rows : [];
@@ -193,7 +204,7 @@
       control = doc.createElement('div');
       control.id = 'missingColumnFilterControl';
       control.className = 'sortCtl';
-      control.title = 'Hide a representative when this many displayed statistic columns have no data. A real zero counts as data.';
+      control.title = 'Hide a representative when this many displayed statistic columns have no data. A real zero counts as data. Columns that do not apply to that representative are ignored.';
       control.innerHTML = `Missing columns <select id="${CONTROL_ID}" aria-label="Hide representatives by missing column count"></select><span id="missingColumnFilterMeta" style="font-size:11px;opacity:.72;white-space:nowrap"></span>`;
       const sortControl = tools.querySelector('.sortCtl');
       tools.insertBefore(control, sortControl || null);
