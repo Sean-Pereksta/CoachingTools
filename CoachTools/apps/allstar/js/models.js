@@ -644,6 +644,7 @@ function showProgress(text='Working...', pct=0, opts={}){
 }
 let lastProgressUpdateAt=0, lastProgressText='', lastProgressPct=-1;
 function updateProgress(text,pct, opts={}){
+  if(state.activeImportJob){ assertAllStarImportActive(); state.activeImportJob.lastProgressAt=Date.now(); state.activeImportJob.lastProgress=String(text); }
   if(state.lifecycle?.closing) return false;
   const job=activeAllStarProgressJob();
   if(opts.job && job!==opts.job) return false;
@@ -719,7 +720,7 @@ function estimateResearchItemWork(item){
 }
 const RESEARCH_BATCH_SIZE=1000;
 const PERCENT_BUILDER_PREP_BATCH_SIZE=2500;
-function yieldToBrowser(){ return new Promise(resolve=>setTimeout(resolve,0)); }
+function yieldToBrowser(){ return new Promise((resolve,reject)=>setTimeout(()=>{ try{ if(typeof assertAllStarImportActive==='function') assertAllStarImportActive(); resolve(); }catch(error){reject(error);} },0)); }
 const IMPORT_CHUNK_SIZE=1000;
 function importTiming(label){
   const t0=performance.now(), marks=[];
@@ -764,9 +765,10 @@ async function forEachChunked(items, fn, label='Processing', start=0, end=100, c
 }
 function loadModels(){
   try{ const raw=localStorage.getItem(MODEL_KEY); state.models=raw?JSON.parse(raw):[]; }catch(e){ state.models=[]; }
-  state.models=(state.models||[]).map(normalizeModelForStorage);
+  state.models=(Array.isArray(state.models)?state.models:[]).map(normalizeModelForStorage);
+  localStorage.setItem('allstarModelSchemaVersion',String(allstarModelSchemaVersion));
   if(!state.models.length){
-    state.models=[defaultQAModel()];
+    state.models=clonePlain(ALLSTAR_DEFAULT_MODELS.models).map(normalizeModelForStorage);
     localStorage.setItem(MODEL_KEY,JSON.stringify(state.models));
   }
 }
@@ -2459,4 +2461,13 @@ function saveEditModel(exit){
 }
 function downloadText(filename, text){
   const blob=new Blob([text],{type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},0);
+}
+
+function addMissingDefaultModels(){
+  const existing=new Set(state.models.map(model=>model.id));
+  const names=new Set(state.models.map(model=>norm(model.name)));
+  const missing=clonePlain(ALLSTAR_DEFAULT_MODELS.models).filter(model=>!existing.has(model.id)&&!names.has(norm(model.name)));
+  state.models.push(...missing.map(normalizeModelForStorage));
+  saveModels();
+  alert(`${missing.length} missing default models added. Existing models were kept.`);
 }

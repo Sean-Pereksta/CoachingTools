@@ -5,14 +5,16 @@
 
 async function readFileWorkbook(file){
   const timing=importTiming('file parsing/loading');
+  if(state.activeImportJob) importJobStage(state.activeImportJob,'Parsing');
   updateProgress(`Loading file... ${file?.name||''}`,5);
   await yieldToBrowser();
-  const buf=await file.arrayBuffer();
+  const buf=await readAllStarFileBuffer(file);
   timing.mark('file parsing/loading', `${file?.name||''} buffer ${Number(buf.byteLength||0).toLocaleString()} bytes`);
   updateProgress('Loading file... parsing workbook',10);
   await yieldToBrowser();
-  const wb=XLSX.read(buf,{type:'array',cellDates:true,raw:false});
+  const wb=await parseAllStarWorkbook(buf);
   timing.end(`${(wb.SheetNames||[]).length} sheets`);
+  if(state.activeImportJob) importJobStage(state.activeImportJob,'Parsed');
   return wb;
 }
 const workbookAoaCache=new WeakMap();
@@ -550,12 +552,13 @@ function categorizationSourceAffects(source){
   return !!source && source!==QA_DIRECT_SOURCE && !isCategorizedSource(source) && !TEAM_TOTAL_SOURCE_KEYS.includes(source);
 }
 function categorizationIsStale(){
-  return !!(state.categorized?.stale || state.categorizationPending);
+  return !!(state.categorized?.stale || state.categorizationPending || Number(state.categorized?.latestDataRevision||0)>Number(state.categorized?.latestCategorizedRevision||0));
 }
 function markCategorizationNeeded(reason='source data changed', sources=[]){
   state.categorized=state.categorized||{};
   const changed=new Set(state.categorized.changedSources||[]);
   (Array.isArray(sources)?sources:[sources]).filter(categorizationSourceAffects).forEach(source=>changed.add(source));
+  state.categorized.latestDataRevision=Number(state.categorized.latestDataRevision||0)+1;
   state.categorized.stale=true;
   state.categorized.staleReason=String(reason||'source data changed');
   state.categorized.changedSources=[...changed];
@@ -565,6 +568,7 @@ function markCategorizationNeeded(reason='source data changed', sources=[]){
   if(!state.coachToolsBatchImportRunning&&!state.centralSyncStageActive&&typeof renderCategorizedSummary==='function') renderCategorizedSummary();
 }
 function clearCategorizationNeeded(){
+  state.categorized.latestCategorizedRevision=Number(state.categorized.latestDataRevision||0);
   state.categorized.stale=false;
   state.categorized.staleReason='';
   state.categorized.changedSources=[];
@@ -612,6 +616,7 @@ async function finishSingleSourceIntake(source, reason, timing, counts, options=
   timing.end('shared staged intake complete; team/categorized/research indexes remain lazy');
 }
 async function processImportedSource(source, file, options={}){
+  if(!options.batch) return runAllStarImport(source,file,options,opts=>processImportedSource(source,file,opts));
   const label=options.label||labelSource(source), timing=importTiming(`${label} intake`), counts={workbookParse:0,rowNormalization:0,teamRebuild:0,categorizedRebuild:0,indexRebuild:0,cacheSave:0,render:0};
   const manageProgress=options.manageProgress!==false;
   if(manageProgress) showProgress(`Reading ${label} file...`,3);
@@ -634,14 +639,17 @@ async function processImportedSource(source, file, options={}){
     if((pack.detected || pack.fullRow) && m.sourceSettings?.[settingSource]){ m.sourceSettings[settingSource].headerRow=pack.headerRow+1; m.sourceSettings[settingSource].startCol=pack.startCol+1; cfg.headerRow=pack.headerRow+1; cfg.startCol=pack.startCol+1; }
     const meta=buildHeaderMetadata(settingSource,pack.headers,cfg,pack);
     timing.mark('Detect headers', `${pack.headers.length} headers`);
+    if(state.activeImportJob){state.activeImportJob.parsed=pack.rows.length;importJobStage(state.activeImportJob,'Normalizing');}
     const rows=await mapRowsChunked(pack.rows,r=>normalizeImportedRowOnce(r,pack.headers,cfg,source,meta,counts.rowNormalization++),(r)=>source==='qa'||source===QA_DIRECT_SOURCE?(r._repKey||r._team||Number.isFinite(r._score)):(r._repKey||r._team),`Normalizing ${label} rows`,42,70);
+    if(!pack.headers.length || !rows.length) throw new Error('No usable rows were found. Check the selected sheet and source mappings.');
+    if(state.activeImportJob){ state.activeImportJob.parsed=pack.rows.length; state.activeImportJob.normalized=rows.length; state.activeImportJob.counts=counts; importJobStage(state.activeImportJob,'Normalized'); }
     timing.mark(`Normalize ${rows.length.toLocaleString()} rows`, 'identity/team/date fields resolved once per row');
     commitImportedSource(source,file,pack,rows,cfg,meta,{diagnostics:{counts}});
     const nameEl=sourceNameElement(source); if(nameEl) nameEl.textContent=`${file.name} · ${sn}${source===QA_DIRECT_SOURCE?' · direct mode source':''}`;
     await finishSingleSourceIntake(source,`${label} import`,timing,counts,options);
-    if(!options.fromCentral) await saveAllStarWorkbookToCoachTools(sharedDatasetTypeForAllStarSource(source),file,wb,`allstar-${source}`);
+    // Individual uploads stay in the authoritative Allstar store.
     return true;
-  }catch(err){ if(err?.cancelled && options.batch) throw err; console.error(err); if(!options.silent && !state.lifecycle?.closing && !state.lifecycle?.hidden) alert(`${label} import failed. Check the console for details.`); return false; }
+  }catch(err){ if(options.throwErrors || (err?.cancelled && options.batch)) throw err; console.error(err); if(!options.silent && !state.lifecycle?.closing && !state.lifecycle?.hidden) alert(`${label} import failed. Check the console for details.`); return false; }
   finally{ if(!options.batch) state.dataUpdateBatch=null; if(manageProgress) hideProgress(); }
 }
 
@@ -775,6 +783,7 @@ function invalidateAllStarCentralBatch(changedDatasets,options={}){
   return {sources,teamsChanged};
 }
 async function syncAllStarFromCoachToolsData(options={}){
+  if(state.activeImportJob || state.centralSyncStageActive) return {changed:false,busy:true};
   if(!window.CoachToolsData || state.lifecycle?.closing) return {changed:false,cancelled:!!state.lifecycle?.closing};
   const syncGeneration=++state.centralSyncGeneration;
   const lifecycleGeneration=Number(options.generation??state.lifecycle?.generation??0);
@@ -796,15 +805,13 @@ async function syncAllStarFromCoachToolsData(options={}){
   if(options.allowLegacyBackfill===true) Object.assign(synced,await backfillCoachToolsDataFromAllStar());
   const changed=[], nextSync={...synced}; let compared=0,reused=0;
   for(let index=0;index<mappings.length;index++){
-    if(!active()) return {changed:false,cancelled:true,compared,reused};
+    if(!active() || state.activeImportJob) return {changed:false,cancelled:true,compared,reused};
     const [datasetType]=mappings[index], meta=window.CoachToolsData.getDatasetVersion(datasetType); compared++;
     if(job) updateAllStarStartupProgress(job,`Comparing ${datasetType}…`,45+Math.round(25*((index+1)/mappings.length)));
     if(!meta) continue;
     const identity=allStarCentralSyncIdentity(meta);
-    const slotReady=typeof window.CoachToolsSync?.allStarSlotHasData==='function'
-      ? window.CoachToolsSync.allStarSlotHasData(datasetType,state)
-      : allStarSourcesForDataset(datasetType).some(source=>(getRowsRaw(source)||[]).length>0);
-    if(slotReady && sameAllStarCentralIdentity(synced[datasetType],identity)){ reused++; continue; }
+    const slotReady=allStarSourcesForDataset(datasetType).some(source=>(getRowsRaw(source)||[]).length>0 || state.sourceMeta?.[source]?.status==='ready');
+    if(slotReady){ reused++; continue; }
     changed.push({datasetType,identity});
   }
   if(!changed.length){
@@ -813,6 +820,7 @@ async function syncAllStarFromCoachToolsData(options={}){
     return {changed:false,changedDatasets:[],...diagnostics};
   }
   if(job) setAllStarStartupPhase(job,70,90,'Refreshing changed shared sources…');
+  if(state.activeImportJob) return {changed:false,busy:true};
   const stage=beginAllStarCentralStage(), applied=[]; state.centralSyncStageActive=true;
   try{
     for(let index=0;index<changed.length;index++){
@@ -837,7 +845,7 @@ async function syncAllStarFromCoachToolsData(options={}){
       markCategorizationNeeded(options.reason||'central IndexedDB synchronization',invalidation.sources);
     }
     if(!active()) throw Object.assign(new Error('Central synchronization cancelled.'),{cancelled:true});
-    const saved=options.persist===false?true:await flushImportCacheSave('central CoachTools batch complete',{dirtyOnly:true,noCompaction:true,noRender:true,mutateRows:false,deferIndexes:!!job||!!options.deferIndexes});
+    const saved=options.persist===false?true:await flushImportCacheSave('central CoachTools batch complete',{dirtyOnly:true,noCompaction:true,noRender:true,mutateRows:false,deferIndexes:!!job||!!options.deferIndexes,verifySources:invalidation.sources,noRetry:true});
     if(!saved) throw new Error('The refreshed Allstar data could not be committed to IndexedDB.');
     try{ localStorage.setItem(ALLSTAR_SYNC_KEY,JSON.stringify(nextSync)); }catch(_){}
     if(options.render!==false) renderAllStarAfterDataBatch({sourcesChanged:invalidation.sources,teamsChanged:invalidation.teamsChanged,reason:'central CoachTools batch'});
@@ -1118,6 +1126,7 @@ function buildCategorizedHeaderMaps(packs){
   return maps;
 }
 function renderCategorizedSummary(){
+  updateCategorizeImportButton();
   if(!els.categorizedDataSummary) return;
   const nd=state.categorized.nondated, dt=state.categorized.dated, built=nd.builtAt||dt.builtAt;
   const warnings=(state.categorized.warnings||[]).slice(0,2);
@@ -1234,7 +1243,7 @@ async function categorizeImportedData(options={}){
     console.info('[All Star] Automatic categorization request blocked; press Categorize Data.');
     return false;
   }
-  if(state.coachToolsBatchImportRunning){ alert('The import is still being applied. Finish the import, then press Categorize Data.'); return false; }
+  if(state.coachToolsBatchImportRunning || state.activeImportJob){ alert('The import is still being applied. Finish the import, then press Categorize Data.'); return false; }
   const manageProgress=options.manageProgress!==false;
   const generation=Number(options.generation??state.lifecycle?.generation??0);
   const active=()=>!state.lifecycle?.closing && !state.lifecycle?.hidden && generation===Number(state.lifecycle?.generation||0);
@@ -1317,7 +1326,7 @@ async function categorizeImportedData(options={}){
     return true;
   }catch(err){
     if(!committed){ state.categorized=categorizedBefore; state.categorizedFragments=categorizedFragmentsBefore; state.categorizationPending=categorizationPendingBefore; state.categorizationPendingReason=categorizationPendingReasonBefore; if(typeof renderCategorizedSummary==='function') renderCategorizedSummary(); }
-    if(err?.cancelled && options.batch) throw err; console.error(err); if(!options.silent && !state.lifecycle?.closing && !state.lifecycle?.hidden) alert('Categorize failed. The previous categorized data was kept. Check the console for details.'); return false;
+    if(options.throwErrors || (err?.cancelled && options.batch)) throw err; console.error(err); if(!options.silent && !state.lifecycle?.closing && !state.lifecycle?.hidden) alert('Categorize failed. The previous categorized data was kept. Check the console for details.'); return false;
   }
   finally{ if(button) button.disabled=false; if(manageProgress) hideProgress(); }
 }
@@ -2111,6 +2120,7 @@ function applyModelSourceSettings(model){
 }
 
 async function loadRetailFile(file,options={}){
+  if(!options.batch) return runAllStarImport('retail',file,options,opts=>loadRetailFile(file,opts));
   const manageProgress=options.manageProgress!==false;
   if(manageProgress) showProgress('Reading retail file...',3);
   try{
@@ -2138,9 +2148,9 @@ async function loadRetailFile(file,options={}){
     markRetailPersistenceDirty('retail import complete');
     if(!options.batch) await finishDataChanged('retail import',55);
     if(options.persist!==false){ updateProgress('Saving retail import to IndexedDB...',97,{force:true}); await flushImportCacheSave('retail import complete'); }
-    if(!options.fromCentral) await saveAllStarWorkbookToCoachTools('monthlyRetail',file,wb,'allstar-retail');
+    // Individual uploads stay in the authoritative Allstar store.
     return true;
-  }catch(err){ if(err?.cancelled && options.batch) throw err; console.error(err); if(!options.silent && !state.lifecycle?.closing && !state.lifecycle?.hidden) alert('Retail import failed. Check the console for details.'); return false; }
+  }catch(err){ if(options.throwErrors || (err?.cancelled && options.batch)) throw err; console.error(err); if(!options.silent && !state.lifecycle?.closing && !state.lifecycle?.hidden) alert('Retail import failed. Check the console for details.'); return false; }
   finally{ if(manageProgress) hideProgress(); }
 }
 
@@ -2207,6 +2217,7 @@ function attachItacToReferralSv2(sv2Rows,itacRows,sv2Headers){
 }
 
 async function loadReferralFile(file,options={}){
+  if(!options.batch) return runAllStarImport('referral',file,options,opts=>loadReferralFile(file,opts));
   const manageProgress=options.manageProgress!==false;
   if(manageProgress) showProgress('Reading referral file...',3);
   try{
@@ -2241,9 +2252,9 @@ async function loadReferralFile(file,options={}){
     markReferralPersistenceDirty('referral import complete');
     if(!options.batch) await finishDataChanged('referral import',55);
     if(options.persist!==false){ updateProgress('Saving referral import to IndexedDB...',97,{force:true}); await flushImportCacheSave('referral import complete'); }
-    if(!options.fromCentral) await saveAllStarWorkbookToCoachTools('monthlyReferral',file,wb,'allstar-referral');
+    // Individual uploads stay in the authoritative Allstar store.
     return true;
-  }catch(err){ if(err?.cancelled && options.batch) throw err; console.error(err); if(!options.silent && !state.lifecycle?.closing && !state.lifecycle?.hidden) alert('Referral import failed. Check the console for details.'); return false; }
+  }catch(err){ if(options.throwErrors || (err?.cancelled && options.batch)) throw err; console.error(err); if(!options.silent && !state.lifecycle?.closing && !state.lifecycle?.hidden) alert('Referral import failed. Check the console for details.'); return false; }
   finally{ if(manageProgress) hideProgress(); }
 }
 function findHeaderFromExpected(headers, preferred, fallbacks){

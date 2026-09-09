@@ -101,6 +101,7 @@
   <div class="modal">
     <div class="modalHead"><div class="modalTitle">Import Data</div><button class="dark" data-close="importModal">Close</button></div>
     <div class="modalBody">
+      <div class="panel"><button id="categorizeDataBtn" class="green primaryDataAction" type="button">Categorize Data</button><span id="allstarImportStatus" role="status" aria-live="polite"></span></div>
       <section class="panel importSection currentDataSection">
         <div class="panelTitle">Current CoachingTools Data</div>
         <div id="sourceHealthOverview"><div class="hint">Connected source metadata will appear when Import opens.</div></div>
@@ -145,7 +146,6 @@
         <div class="dataToolGrid">
           <button id="openTroubleshootBtn" class="dark" type="button">Troubleshoot Headers</button>
           <button id="fixTeamsBtn" class="dark" type="button">Fix Teams</button>
-          <button id="categorizeDataBtn" class="green" type="button">Categorize Data</button>
           <button id="viewSpreadsheetDataBtn" class="dark" type="button">View Spreadsheet Data</button>
           <button id="packageDataBtn" class="dark" type="button">Package Data</button>
         </div>
@@ -344,6 +344,7 @@
     <div class="modalBody">
       <div class="row">
         <button id="createModelBtn" class="green">Create New Model</button>
+        <button id="addMissingDefaultModelsBtn" class="dark" type="button">Add Missing Default Models</button>
         <button id="exportModelsBtn" class="dark">Export TXT</button>
         <button id="coachingDiagnosticsBtn" class="dark">Coaching Rule Tracer</button>
         <input id="importModelsFile" type="file" accept=".txt,.json">
@@ -748,10 +749,12 @@
 
 
 <!-- Ordered classic scripts preserve file:// compatibility. -->
+<script src="js/default-models.js"></script>
 <script src="js/core.js"></script>
 <script src="js/persistence.js"></script>
 <script src="js/models.js"></script>
 <script src="js/imports.js"></script>
+<script src="js/import-jobs.js"></script>
 <script src="js/calculations.js"></script>
 <script src="js/coaching-diagnostics.js"></script>
 <script src="js/reports.js"></script>
