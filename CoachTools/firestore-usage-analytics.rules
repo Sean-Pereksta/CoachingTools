@@ -99,6 +99,36 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /coachtoolsUsageAppDaily/{docId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['date', 'appId', 'name', 'opens', 'uniqueVisitors'])
+        && request.resource.data.date is string
+        && request.resource.data.date.size() == 10
+        && request.resource.data.appId is string
+        && request.resource.data.appId.size() > 0
+        && request.resource.data.appId.size() <= 80
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.opens is int
+        && request.resource.data.opens == 1
+        && request.resource.data.get('uniqueVisitors', 0) is int
+        && request.resource.data.get('uniqueVisitors', 0) >= 0
+        && request.resource.data.get('uniqueVisitors', 0) <= 1;
+      allow update: if request.resource.data.keys().hasOnly(['date', 'appId', 'name', 'opens', 'uniqueVisitors'])
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.appId == resource.data.appId
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.opens is int
+        && resource.data.opens is int
+        && request.resource.data.opens >= resource.data.opens
+        && request.resource.data.opens <= resource.data.opens + 1
+        && request.resource.data.get('uniqueVisitors', 0) is int
+        && request.resource.data.get('uniqueVisitors', 0) >= resource.data.get('uniqueVisitors', 0)
+        && request.resource.data.get('uniqueVisitors', 0) <= resource.data.get('uniqueVisitors', 0) + 1;
+      allow delete: if false;
+    }
+
     match /coachtoolsUsageInitials/{labelId} {
       allow read: if true;
       allow create: if request.resource.data.keys().hasOnly(['label', 'distinctApps', 'appOpenEvents', 'uploadActions', 'filesUploaded'])
