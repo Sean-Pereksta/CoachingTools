@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#0b1420">
+  <meta name="theme-color" content="#08111b">
   <title>CoachTools Usage Diagnostics</title>
   <style>
     :root {
@@ -11,55 +11,82 @@
       --bg: #08111b;
       --panel: #101d2a;
       --panel-2: #142536;
+      --panel-3: #0c1824;
       --line: #294056;
+      --line-soft: rgba(41, 64, 86, .62);
       --text: #edf5fb;
       --muted: #91a8bb;
       --good: #65d49b;
       --warn: #f0c36a;
       --bad: #f07070;
       --accent: #72b7ff;
+      --accent-2: #a78bfa;
     }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at top, #11273a 0, var(--bg) 42%); color: var(--text); }
     button, select { font: inherit; }
-    .shell { width: min(1500px, calc(100% - 36px)); margin: 0 auto; padding: 34px 0 60px; }
-    .topbar { display: flex; gap: 24px; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; }
+    .shell { width: min(1600px, calc(100% - 36px)); margin: 0 auto; padding: 34px 0 60px; }
+    .topbar { display: flex; gap: 24px; align-items: flex-end; justify-content: space-between; margin-bottom: 18px; }
     .eyebrow { margin: 0 0 6px; color: var(--accent); text-transform: uppercase; letter-spacing: .16em; font-size: 11px; font-weight: 800; }
-    h1, h2 { margin: 0; }
+    h1, h2, h3 { margin: 0; }
     h1 { font-size: clamp(28px, 4vw, 44px); letter-spacing: -.035em; }
     h2 { font-size: 18px; }
-    .subtitle { margin: 8px 0 0; color: var(--muted); max-width: 780px; }
+    h3 { font-size: 14px; }
+    .subtitle { margin: 8px 0 0; color: var(--muted); max-width: 850px; }
     .controls { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
     .controls label { color: var(--muted); }
     select, button { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 9px; padding: 9px 12px; }
     button { cursor: pointer; }
     button:hover { border-color: var(--accent); }
+    button:disabled { opacity: .55; cursor: default; }
     .status { display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: rgba(16, 29, 42, .82); }
     .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 4px rgba(240, 195, 106, .08); }
     .status.good .dot { background: var(--good); box-shadow: 0 0 0 4px rgba(101, 212, 155, .08); }
     .status.bad .dot { background: var(--bad); box-shadow: 0 0 0 4px rgba(240, 112, 112, .08); }
-    .metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
-    .metric, .panel { border: 1px solid var(--line); background: linear-gradient(180deg, rgba(20, 37, 54, .94), rgba(12, 24, 36, .94)); border-radius: 15px; box-shadow: 0 18px 44px rgba(0,0,0,.18); }
-    .metric { padding: 18px; min-height: 118px; }
+    .notice { display: flex; gap: 12px; align-items: flex-start; padding: 12px 15px; margin-bottom: 14px; border: 1px solid rgba(114,183,255,.28); background: rgba(114,183,255,.07); border-radius: 12px; color: #cfe5f8; }
+    .notice strong { color: var(--text); }
+    .metrics { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .metric, .panel, .insight { border: 1px solid var(--line); background: linear-gradient(180deg, rgba(20, 37, 54, .94), rgba(12, 24, 36, .94)); border-radius: 15px; box-shadow: 0 18px 44px rgba(0,0,0,.18); }
+    .metric { padding: 16px; min-height: 112px; }
     .metric small { display: block; color: var(--muted); font-weight: 700; margin-bottom: 10px; }
-    .metric strong { font-size: 30px; letter-spacing: -.04em; }
+    .metric strong { display: block; font-size: 28px; letter-spacing: -.04em; white-space: nowrap; }
     .metric span { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
-    .grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 14px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .panel { padding: 20px; min-width: 0; }
-    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
     .panel-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
-    canvas { width: 100%; height: 330px; display: block; border-radius: 10px; background: rgba(4, 12, 20, .3); }
+    .panel-head strong { white-space: nowrap; }
     .wide { grid-column: 1 / -1; }
-    table { width: 100%; border-collapse: collapse; }
+    canvas { width: 100%; height: 330px; display: block; border-radius: 10px; background: rgba(4, 12, 20, .3); }
+    #appDailyChart { height: 410px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; max-height: 112px; overflow: auto; padding-right: 4px; }
+    .legend-item { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-soft); background: rgba(8,17,27,.55); border-radius: 999px; padding: 5px 9px; color: var(--muted); font-size: 11px; }
+    .legend-swatch { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+    .insights { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 14px 0; }
+    .insight { padding: 16px; min-height: 126px; }
+    .insight small { display: block; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+    .insight strong { display: block; font-size: 20px; letter-spacing: -.025em; }
+    .insight p { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+    .trend-up { color: var(--good) !important; }
+    .trend-down { color: var(--bad) !important; }
+    .trend-flat { color: var(--muted) !important; }
+    .section-title { margin: 24px 0 10px; display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+    .section-title p { color: var(--muted); margin: 3px 0 0; font-size: 12px; }
+    .table-wrap { overflow: auto; border-radius: 10px; }
+    table { width: 100%; border-collapse: collapse; min-width: 820px; }
     th, td { padding: 11px 10px; border-bottom: 1px solid rgba(41, 64, 86, .7); text-align: left; }
-    th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+    th { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; position: sticky; top: 0; background: #101d2a; z-index: 1; }
     td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     tbody tr:hover { background: rgba(114, 183, 255, .045); }
+    .app-name { font-weight: 750; }
+    .subtle { color: var(--muted); font-size: 11px; }
     .initial-badge { display: inline-grid; place-items: center; width: 38px; height: 30px; border-radius: 8px; background: #1a3146; border: 1px solid #31536e; font-weight: 900; letter-spacing: .08em; }
     .empty { color: var(--muted); padding: 22px 8px; text-align: center; }
     .foot { margin-top: 15px; color: var(--muted); font-size: 12px; }
-    @media (max-width: 1100px) { .metrics { grid-template-columns: repeat(3, 1fr); } .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
-    @media (max-width: 700px) { .shell { width: min(100% - 20px, 1500px); padding-top: 20px; } .topbar { align-items: flex-start; flex-direction: column; } .controls { justify-content: flex-start; } .metrics { grid-template-columns: repeat(2, 1fr); } canvas { height: 270px; } }
+    .pill { display: inline-block; border-radius: 999px; padding: 3px 7px; border: 1px solid var(--line-soft); color: var(--muted); font-size: 10px; }
+    @media (max-width: 1350px) { .metrics { grid-template-columns: repeat(4, 1fr); } .insights { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } .topbar { align-items: flex-start; flex-direction: column; } .controls { justify-content: flex-start; } }
+    @media (max-width: 700px) { .shell { width: min(100% - 20px, 1600px); padding-top: 20px; } .metrics { grid-template-columns: repeat(2, 1fr); } .insights { grid-template-columns: 1fr 1fr; } canvas { height: 280px; } #appDailyChart { height: 340px; } }
   </style>
   <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -70,10 +97,17 @@
       <div>
         <p class="eyebrow">Private aggregate analytics</p>
         <h1>CoachTools Usage Diagnostics</h1>
-        <p class="subtitle">Anonymous adoption and application-use counts only. No uploaded file contents, filenames, employee names, email addresses, device fingerprints, or detailed user histories are read by this portal.</p>
+        <p class="subtitle">A working adoption and usage dashboard built only from anonymous aggregate counters. No uploaded contents, filenames, employee names, email addresses, device fingerprints, or detailed user histories are displayed.</p>
       </div>
       <div class="controls">
         <span id="connectionStatus" class="status"><span class="dot"></span><span id="connectionText">Connecting…</span></span>
+        <label for="rangeDays">Window</label>
+        <select id="rangeDays" aria-label="Dashboard date range">
+          <option value="14">14 days</option>
+          <option value="30" selected>30 days</option>
+          <option value="60">60 days</option>
+          <option value="90">90 days</option>
+        </select>
         <label for="refreshMinutes">Check every</label>
         <select id="refreshMinutes" aria-label="Refresh interval">
           <option value="1">1 minute</option>
@@ -87,41 +121,79 @@
       </div>
     </header>
 
+    <div id="appDailyNotice" class="notice">
+      <span>ℹ</span>
+      <div><strong>Per-app daily trends are aggregate-only.</strong> Historical lifetime app totals remain intact. The daily app series begins populating once the new aggregate daily-app telemetry is available; older per-app daily history cannot be reconstructed from the existing lifetime counters.</div>
+    </div>
+
     <section class="metrics" aria-label="Usage totals">
       <article class="metric"><small>Unique visitors</small><strong id="uniqueVisitors">—</strong><span>Approximate installations</span></article>
       <article class="metric"><small>Sessions</small><strong id="sessions">—</strong><span>Launcher opens</span></article>
       <article class="metric"><small>App opens</small><strong id="appOpenEvents">—</strong><span>All application opens</span></article>
       <article class="metric"><small>Upload actions</small><strong id="uploadActions">—</strong><span>Import selections</span></article>
       <article class="metric"><small>Files selected</small><strong id="filesUploaded">—</strong><span>Count only, never filenames</span></article>
-      <article class="metric"><small>Apps / visitor</small><strong id="appsPerVisitor">—</strong><span>Average distinct apps</span></article>
+      <article class="metric"><small>Apps / visitor</small><strong id="appsPerVisitor">—</strong><span>Average distinct apps tried</span></article>
+      <article class="metric"><small>Opens / session</small><strong id="opensPerSession">—</strong><span>Application engagement depth</span></article>
+      <article class="metric"><small>Files / upload</small><strong id="filesPerUpload">—</strong><span>Average files per import action</span></article>
     </section>
 
     <section class="grid">
+      <article class="panel wide">
+        <div class="panel-head">
+          <div><h2>App usage by day</h2><p>Daily app opens for every application recorded in CoachTools.</p></div>
+          <strong id="appDailyRange">Collecting</strong>
+        </div>
+        <canvas id="appDailyChart" aria-label="Daily application usage line graph"></canvas>
+        <div id="appLegend" class="legend" aria-label="Application chart legend"></div>
+      </article>
+
       <article class="panel">
-        <div class="panel-head"><div><h2>Visitors over time</h2><p>Daily anonymous unique visitors</p></div><strong id="dailyRange"></strong></div>
+        <div class="panel-head"><div><h2>Visitors over time</h2><p>Daily anonymous visitor-days within the selected window.</p></div><strong id="dailyRange"></strong></div>
         <canvas id="visitorChart" aria-label="Daily unique visitor graph"></canvas>
       </article>
 
       <article class="panel">
-        <div class="panel-head"><div><h2>Application usage</h2><p>Total opens by application</p></div><strong id="appCount"></strong></div>
+        <div class="panel-head"><div><h2>Application usage</h2><p>Lifetime opens by application.</p></div><strong id="appCount"></strong></div>
         <canvas id="appChart" aria-label="Application usage bar graph"></canvas>
-      </article>
-
-      <article class="panel wide">
-        <div class="panel-head">
-          <div><h2>Anonymous initials</h2><p>Random local labels with aggregate breadth of usage. These are not employees’ real initials.</p></div>
-          <strong id="initialCount"></strong>
-        </div>
-        <div style="overflow:auto">
-          <table>
-            <thead><tr><th>Initials</th><th class="num">Distinct apps</th><th class="num">App opens</th><th class="num">Upload actions</th><th class="num">Files selected</th></tr></thead>
-            <tbody id="initialRows"><tr><td colspan="5" class="empty">Waiting for analytics…</td></tr></tbody>
-          </table>
-        </div>
       </article>
     </section>
 
-    <p class="foot"><span id="lastChecked">Not checked yet.</span> <span id="lastChanged"></span> The dashboard redraws only when aggregate values change.</p>
+    <section class="insights" aria-label="Usage diagnostics">
+      <article class="insight"><small>7-day app-open trend</small><strong id="sevenDayOpens">—</strong><p id="sevenDayOpensNote">Waiting for data.</p></article>
+      <article class="insight"><small>7-day visitor trend</small><strong id="sevenDayVisitors">—</strong><p id="sevenDayVisitorsNote">Daily visitor-days vs prior 7 days.</p></article>
+      <article class="insight"><small>Busiest usage day</small><strong id="busiestDay">—</strong><p id="busiestDayNote">Highest app-open day in window.</p></article>
+      <article class="insight"><small>Top application</small><strong id="topApp">—</strong><p id="topAppNote">Share of all lifetime app opens.</p></article>
+      <article class="insight"><small>Top-3 concentration</small><strong id="topThreeShare">—</strong><p id="topThreeNote">How concentrated usage is in the three most-used apps.</p></article>
+      <article class="insight"><small>Multi-app adoption</small><strong id="multiAppAdoption">—</strong><p id="multiAppNote">Anonymous labels that have tried 4+ apps.</p></article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div><h2>Application diagnostics</h2><p>Lifetime adoption plus recent daily activity. Recent metrics populate from the new aggregate app-by-day counters.</p></div>
+        <strong id="appDiagnosticCount"></strong>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Application</th><th class="num">Lifetime opens</th><th class="num">Visitors tried</th><th class="num">Adoption</th><th class="num">Usage share</th><th class="num">Opens / visitor</th><th class="num">Window opens</th><th class="num">Avg / day</th><th class="num">Recent trend</th></tr></thead>
+          <tbody id="appRows"><tr><td colspan="9" class="empty">Waiting for analytics…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="section-title">
+      <div><h2>Anonymous usage breadth</h2><p>Random local labels used only to measure breadth and aggregate activity. These are not employees’ real initials.</p></div>
+      <strong id="initialCount"></strong>
+    </div>
+    <section class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Initials</th><th class="num">Distinct apps</th><th class="num">App opens</th><th class="num">Upload actions</th><th class="num">Files selected</th><th>Usage breadth</th></tr></thead>
+          <tbody id="initialRows"><tr><td colspan="6" class="empty">Waiting for analytics…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="foot"><span id="lastChecked">Not checked yet.</span> <span id="lastChanged"></span> The dashboard redraws only when aggregate values or the selected window change.</p>
   </main>
 
   <script>
@@ -146,29 +218,77 @@
 
       function number(value) { return Number(value) || 0; }
       function formatNumber(value) { return number(value).toLocaleString(); }
+      function ratio(a, b) { return number(b) ? number(a) / number(b) : 0; }
+      function percent(value, digits) { return `${(number(value) * 100).toFixed(digits == null ? 1 : digits)}%`; }
+      function dateLabel(value, options) {
+        const date = new Date(`${value}T00:00:00`);
+        return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleDateString([], options || { month: 'short', day: 'numeric' });
+      }
+      function dateKey(date) {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      }
+      function todayKey() { return dateKey(new Date()); }
       function setConnection(kind, text) {
         $('connectionStatus').className = `status ${kind || ''}`.trim();
         $('connectionText').textContent = text;
       }
-
       function timestampText() {
         return new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
       }
+      function selectedDays() { return Math.max(14, Number($('rangeDays').value) || 30); }
+      function dayCutoff(days) {
+        const date = new Date();
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() - Math.max(0, days - 1));
+        return dateKey(date);
+      }
+      function filterWindow(items, days) {
+        const cutoff = dayCutoff(days);
+        return items.filter(item => String(item.date || '') >= cutoff && String(item.date || '') <= todayKey());
+      }
+      function sum(items, key) { return items.reduce((total, item) => total + number(item[key]), 0); }
+      function trend(current, prior) {
+        if (!prior) return current ? null : 0;
+        return (current - prior) / prior;
+      }
+      function trendText(value) {
+        if (value == null) return 'New activity';
+        const sign = value > 0 ? '+' : '';
+        return `${sign}${(value * 100).toFixed(1)}%`;
+      }
+      function trendClass(value) {
+        if (value == null || Math.abs(value) < .005) return 'trend-flat';
+        return value > 0 ? 'trend-up' : 'trend-down';
+      }
+      function calendarPair(items, key, days) {
+        const currentStart = dayCutoff(days);
+        const priorStart = dayCutoff(days * 2);
+        const current = items.filter(item => String(item.date || '') >= currentStart && String(item.date || '') <= todayKey());
+        const prior = items.filter(item => String(item.date || '') >= priorStart && String(item.date || '') < currentStart);
+        return { current: sum(current, key), prior: sum(prior, key) };
+      }
+      function dateSpan(startKey, endKey) {
+        const start = new Date(`${startKey}T00:00:00`);
+        const end = new Date(`${endKey}T00:00:00`);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return [];
+        const values = [];
+        for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) values.push(dateKey(cursor));
+        return values;
+      }
 
       function resizeCanvas(canvas) {
-        const ratio = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const ratioValue = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
         const rect = canvas.getBoundingClientRect();
         const width = Math.max(320, Math.floor(rect.width));
         const height = Math.max(220, Math.floor(rect.height));
-        if (canvas.width !== Math.floor(width * ratio) || canvas.height !== Math.floor(height * ratio)) {
-          canvas.width = Math.floor(width * ratio);
-          canvas.height = Math.floor(height * ratio);
+        if (canvas.width !== Math.floor(width * ratioValue) || canvas.height !== Math.floor(height * ratioValue)) {
+          canvas.width = Math.floor(width * ratioValue);
+          canvas.height = Math.floor(height * ratioValue);
         }
         const ctx = canvas.getContext('2d');
-        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.setTransform(ratioValue, 0, 0, ratioValue, 0, 0);
         return { ctx, width, height };
       }
-
       function drawEmpty(canvas, text) {
         const { ctx, width, height } = resizeCanvas(canvas);
         ctx.clearRect(0, 0, width, height);
@@ -177,18 +297,9 @@
         ctx.textAlign = 'center';
         ctx.fillText(text, width / 2, height / 2);
       }
-
-      function drawVisitorChart(items) {
-        const canvas = $('visitorChart');
-        if (!items.length) return drawEmpty(canvas, 'No daily visitor data yet.');
-        const { ctx, width, height } = resizeCanvas(canvas);
-        ctx.clearRect(0, 0, width, height);
-        const pad = { left: 42, right: 18, top: 20, bottom: 42 };
-        const graphW = width - pad.left - pad.right;
+      function drawGrid(ctx, width, height, pad, maxValue) {
         const graphH = height - pad.top - pad.bottom;
-        const max = Math.max(1, ...items.map(item => number(item.uniqueVisitors)));
-
-        ctx.strokeStyle = 'rgba(145,168,187,.18)';
+        ctx.strokeStyle = 'rgba(145,168,187,.16)';
         ctx.lineWidth = 1;
         ctx.fillStyle = '#91a8bb';
         ctx.font = '11px system-ui';
@@ -196,31 +307,41 @@
         for (let step = 0; step <= 4; step += 1) {
           const y = pad.top + graphH * step / 4;
           ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
-          ctx.fillText(String(Math.round(max * (1 - step / 4))), pad.left - 8, y + 4);
+          ctx.fillText(String(Math.round(maxValue * (1 - step / 4))), pad.left - 8, y + 4);
         }
+      }
+      function colorFor(value) {
+        let hash = 0;
+        const text = String(value || 'app');
+        for (let i = 0; i < text.length; i += 1) hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+        return `hsl(${Math.abs(hash) % 360} 72% 64%)`;
+      }
 
+      function drawVisitorChart(items) {
+        const canvas = $('visitorChart');
+        if (!items.length) return drawEmpty(canvas, 'No visitor activity in this window.');
+        const { ctx, width, height } = resizeCanvas(canvas);
+        ctx.clearRect(0, 0, width, height);
+        const pad = { left: 42, right: 18, top: 20, bottom: 42 };
+        const graphW = width - pad.left - pad.right;
+        const graphH = height - pad.top - pad.bottom;
+        const max = Math.max(1, ...items.map(item => number(item.uniqueVisitors)));
+        drawGrid(ctx, width, height, pad, max);
         const points = items.map((item, index) => ({
           x: pad.left + (items.length === 1 ? graphW / 2 : graphW * index / (items.length - 1)),
-          y: pad.top + graphH - (number(item.uniqueVisitors) / max) * graphH,
+          y: pad.top + graphH - ratio(item.uniqueVisitors, max) * graphH,
           item
         }));
-
-        ctx.strokeStyle = '#72b7ff';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
+        ctx.strokeStyle = '#72b7ff'; ctx.lineWidth = 2.5; ctx.beginPath();
         points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
         ctx.stroke();
         ctx.fillStyle = '#72b7ff';
-        points.forEach(point => { ctx.beginPath(); ctx.arc(point.x, point.y, 3.5, 0, Math.PI * 2); ctx.fill(); });
-
-        ctx.fillStyle = '#91a8bb';
-        ctx.textAlign = 'center';
+        points.forEach(point => { ctx.beginPath(); ctx.arc(point.x, point.y, 3.2, 0, Math.PI * 2); ctx.fill(); });
+        ctx.fillStyle = '#91a8bb'; ctx.textAlign = 'center';
         const labelStep = Math.max(1, Math.ceil(items.length / 7));
         points.forEach((point, index) => {
           if (index % labelStep && index !== points.length - 1) return;
-          const date = new Date(`${point.item.date}T00:00:00`);
-          const label = Number.isNaN(date.getTime()) ? point.item.date : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-          ctx.fillText(label, point.x, height - 16);
+          ctx.fillText(dateLabel(point.item.date), point.x, height - 16);
         });
       }
 
@@ -230,102 +351,240 @@
         if (!top.length) return drawEmpty(canvas, 'No application opens yet.');
         const { ctx, width, height } = resizeCanvas(canvas);
         ctx.clearRect(0, 0, width, height);
-        const left = Math.min(155, Math.max(105, width * .34));
-        const right = 50;
-        const topPad = 18;
-        const bottom = 12;
+        const left = Math.min(175, Math.max(115, width * .35));
+        const right = 55;
+        const topPad = 14;
+        const bottom = 10;
         const graphW = width - left - right;
         const rowH = (height - topPad - bottom) / top.length;
         const max = Math.max(1, ...top.map(item => number(item.opens)));
         ctx.font = '11px system-ui';
-
         top.forEach((item, index) => {
           const y = topPad + index * rowH;
-          const barH = Math.max(8, rowH * .54);
+          const barH = Math.max(7, rowH * .5);
           const barY = y + (rowH - barH) / 2;
-          const barW = graphW * number(item.opens) / max;
-          ctx.fillStyle = '#72b7ff';
-          ctx.fillRect(left, barY, barW, barH);
-          ctx.fillStyle = '#edf5fb';
-          ctx.textAlign = 'right';
+          const barW = graphW * ratio(item.opens, max);
+          ctx.fillStyle = colorFor(item.appId); ctx.fillRect(left, barY, barW, barH);
+          ctx.fillStyle = '#edf5fb'; ctx.textAlign = 'right';
           const label = String(item.name || item.appId || 'App');
-          ctx.fillText(label.length > 20 ? label.slice(0, 18) + '…' : label, left - 8, barY + barH / 2 + 4);
-          ctx.textAlign = 'left';
-          ctx.fillStyle = '#91a8bb';
+          ctx.fillText(label.length > 23 ? `${label.slice(0, 21)}…` : label, left - 8, barY + barH / 2 + 4);
+          ctx.textAlign = 'left'; ctx.fillStyle = '#91a8bb';
           ctx.fillText(formatNumber(item.opens), Math.min(width - right + 5, left + barW + 7), barY + barH / 2 + 4);
         });
+      }
+
+      function drawAppDailyChart(appDaily, apps, days) {
+        const canvas = $('appDailyChart');
+        const legend = $('appLegend');
+        legend.innerHTML = '';
+        const windowItems = filterWindow(appDaily, days);
+        if (!windowItems.length) {
+          $('appDailyRange').textContent = 'Collecting';
+          return drawEmpty(canvas, 'Daily per-app trend data will appear here as new usage is recorded.');
+        }
+        const earliestTracked = windowItems.map(item => String(item.date || '')).sort()[0];
+        const start = earliestTracked > dayCutoff(days) ? earliestTracked : dayCutoff(days);
+        const dates = dateSpan(start, todayKey());
+        const appMap = new Map(apps.map(app => [app.appId, app]));
+        for (const item of windowItems) if (!appMap.has(item.appId)) appMap.set(item.appId, { appId: item.appId, name: item.name || item.appId, opens: 0 });
+        const series = Array.from(appMap.values()).map(app => {
+          const byDate = new Map(windowItems.filter(item => item.appId === app.appId).map(item => [item.date, number(item.opens)]));
+          return { app, values: dates.map(date => byDate.get(date) || 0), total: dates.reduce((t, date) => t + (byDate.get(date) || 0), 0) };
+        }).sort((a, b) => b.total - a.total || String(a.app.name).localeCompare(String(b.app.name)));
+
+        const { ctx, width, height } = resizeCanvas(canvas);
+        ctx.clearRect(0, 0, width, height);
+        const pad = { left: 46, right: 20, top: 22, bottom: 44 };
+        const graphW = width - pad.left - pad.right;
+        const graphH = height - pad.top - pad.bottom;
+        const max = Math.max(1, ...series.flatMap(item => item.values));
+        drawGrid(ctx, width, height, pad, max);
+        const xFor = index => pad.left + (dates.length === 1 ? graphW / 2 : graphW * index / (dates.length - 1));
+        series.forEach(item => {
+          const color = colorFor(item.app.appId);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = item.total ? 2 : 1;
+          ctx.globalAlpha = item.total ? .9 : .22;
+          ctx.beginPath();
+          item.values.forEach((value, index) => {
+            const x = xFor(index);
+            const y = pad.top + graphH - ratio(value, max) * graphH;
+            index ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+          });
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+          const chip = document.createElement('span');
+          chip.className = 'legend-item';
+          const swatch = document.createElement('span');
+          swatch.className = 'legend-swatch'; swatch.style.background = color;
+          const label = document.createElement('span');
+          label.textContent = `${item.app.name || item.app.appId} · ${formatNumber(item.total)}`;
+          chip.append(swatch, label); legend.appendChild(chip);
+        });
+        ctx.fillStyle = '#91a8bb'; ctx.textAlign = 'center'; ctx.font = '11px system-ui';
+        const labelStep = Math.max(1, Math.ceil(dates.length / 8));
+        dates.forEach((date, index) => {
+          if (index % labelStep && index !== dates.length - 1) return;
+          ctx.fillText(dateLabel(date), xFor(index), height - 16);
+        });
+        $('appDailyRange').textContent = `${dates.length} tracked days`;
       }
 
       function renderInitials(items) {
         const body = $('initialRows');
         body.innerHTML = '';
         if (!items.length) {
-          body.innerHTML = '<tr><td colspan="5" class="empty">No anonymous initials have been recorded yet.</td></tr>';
+          body.innerHTML = '<tr><td colspan="6" class="empty">No anonymous labels have been recorded yet.</td></tr>';
           return;
         }
         for (const item of items) {
           const row = document.createElement('tr');
           const label = document.createElement('td');
           const badge = document.createElement('span');
-          badge.className = 'initial-badge';
-          badge.textContent = item.label || '---';
-          label.appendChild(badge);
-          row.appendChild(label);
+          badge.className = 'initial-badge'; badge.textContent = item.label || '---'; label.appendChild(badge); row.appendChild(label);
           for (const key of ['distinctApps', 'appOpenEvents', 'uploadActions', 'filesUploaded']) {
-            const cell = document.createElement('td');
-            cell.className = 'num';
-            cell.textContent = formatNumber(item[key]);
-            row.appendChild(cell);
+            const cell = document.createElement('td'); cell.className = 'num'; cell.textContent = formatNumber(item[key]); row.appendChild(cell);
           }
+          const breadth = document.createElement('td');
+          const distinct = number(item.distinctApps);
+          breadth.innerHTML = `<span class="pill">${distinct >= 7 ? 'Broad explorer' : distinct >= 4 ? 'Multi-app' : distinct >= 2 ? 'Developing' : 'Single-app'}</span>`;
+          row.appendChild(breadth); body.appendChild(row);
+        }
+      }
+
+      function renderAppRows(payload, windowDaily, days) {
+        const body = $('appRows'); body.innerHTML = '';
+        const totalOpens = number(payload.summary.appOpenEvents);
+        const visitors = number(payload.summary.uniqueVisitors);
+        if (!payload.apps.length) {
+          body.innerHTML = '<tr><td colspan="9" class="empty">No applications have been recorded yet.</td></tr>';
+          return;
+        }
+        const allTrackedDates = payload.appDaily.map(item => String(item.date || '')).filter(Boolean).sort();
+        const trackingStart = allTrackedDates.length ? (allTrackedDates[0] > dayCutoff(days) ? allTrackedDates[0] : dayCutoff(days)) : '';
+        const trackedDays = trackingStart ? Math.max(1, dateSpan(trackingStart, todayKey()).length) : 0;
+        for (const app of payload.apps) {
+          const appDaily = windowDaily.filter(item => item.appId === app.appId);
+          const recent = sum(appDaily, 'opens');
+          const perDay = trackedDays ? recent / trackedDays : 0;
+          const allAppDaily = payload.appDaily.filter(item => item.appId === app.appId);
+          const pair = calendarPair(allAppDaily, 'opens', 7);
+          const value = trend(pair.current, pair.prior);
+          const hasRecent = allAppDaily.length > 0;
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td><div class="app-name">${escapeHtml(app.name || app.appId)}</div><div class="subtle">${escapeHtml(app.appId || '')}</div></td>
+            <td class="num">${formatNumber(app.opens)}</td>
+            <td class="num">${formatNumber(app.uniqueVisitors)}</td>
+            <td class="num">${visitors ? percent(ratio(app.uniqueVisitors, visitors)) : '—'}</td>
+            <td class="num">${totalOpens ? percent(ratio(app.opens, totalOpens)) : '—'}</td>
+            <td class="num">${number(app.uniqueVisitors) ? ratio(app.opens, app.uniqueVisitors).toFixed(1) : '—'}</td>
+            <td class="num">${hasRecent ? formatNumber(recent) : 'Collecting'}</td>
+            <td class="num">${hasRecent && trackedDays ? perDay.toFixed(1) : '—'}</td>
+            <td class="num ${hasRecent ? trendClass(value) : ''}">${hasRecent ? trendText(value) : '—'}</td>`;
           body.appendChild(row);
         }
       }
 
+      function escapeHtml(value) {
+        return String(value == null ? '' : value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
+      }
+
+      function renderDiagnostics(payload, windowDaily) {
+        const opensPair = calendarPair(payload.daily, 'appOpenEvents', 7);
+        const opensTrend = trend(opensPair.current, opensPair.prior);
+        $('sevenDayOpens').textContent = formatNumber(opensPair.current);
+        $('sevenDayOpens').className = trendClass(opensTrend);
+        $('sevenDayOpensNote').textContent = `${trendText(opensTrend)} vs the prior 7 calendar days.`;
+
+        const visitorPair = calendarPair(payload.daily, 'uniqueVisitors', 7);
+        const visitorTrend = trend(visitorPair.current, visitorPair.prior);
+        $('sevenDayVisitors').textContent = formatNumber(visitorPair.current);
+        $('sevenDayVisitors').className = trendClass(visitorTrend);
+        $('sevenDayVisitorsNote').textContent = `${trendText(visitorTrend)} visitor-day change vs prior 7 calendar days.`;
+
+        const busiest = windowDaily.slice().sort((a, b) => number(b.appOpenEvents) - number(a.appOpenEvents))[0];
+        $('busiestDay').textContent = busiest ? dateLabel(busiest.date, { weekday: 'short', month: 'short', day: 'numeric' }) : '—';
+        $('busiestDayNote').textContent = busiest ? `${formatNumber(busiest.appOpenEvents)} app opens and ${formatNumber(busiest.sessions)} sessions.` : 'No activity in this window.';
+
+        const top = payload.apps[0];
+        $('topApp').textContent = top ? top.name || top.appId : '—';
+        $('topAppNote').textContent = top && number(payload.summary.appOpenEvents) ? `${percent(ratio(top.opens, payload.summary.appOpenEvents))} of all lifetime app opens.` : 'No app usage yet.';
+
+        const topThree = payload.apps.slice(0, 3).reduce((total, app) => total + number(app.opens), 0);
+        $('topThreeShare').textContent = number(payload.summary.appOpenEvents) ? percent(ratio(topThree, payload.summary.appOpenEvents)) : '—';
+        $('topThreeNote').textContent = payload.apps.length > 3 ? 'Lower means usage is spread across more tools.' : 'Current app portfolio is small.';
+
+        const multi = payload.initials.filter(item => number(item.distinctApps) >= 4).length;
+        $('multiAppAdoption').textContent = payload.initials.length ? percent(ratio(multi, payload.initials.length)) : '—';
+        $('multiAppNote').textContent = `${formatNumber(multi)} of ${formatNumber(payload.initials.length)} anonymous labels have tried 4+ apps.`;
+      }
+
       function render(payload) {
         const summary = payload.summary || {};
+        const days = selectedDays();
+        const windowDaily = filterWindow(payload.daily, days);
+        const windowAppDaily = filterWindow(payload.appDaily, days);
         $('uniqueVisitors').textContent = formatNumber(summary.uniqueVisitors);
         $('sessions').textContent = formatNumber(summary.sessions);
         $('appOpenEvents').textContent = formatNumber(summary.appOpenEvents);
         $('uploadActions').textContent = formatNumber(summary.uploadActions);
         $('filesUploaded').textContent = formatNumber(summary.filesUploaded);
         const visitorCount = number(summary.uniqueVisitors);
-        const distinctTotal = payload.initials.reduce((sum, item) => sum + number(item.distinctApps), 0);
-        $('appsPerVisitor').textContent = visitorCount ? (distinctTotal / visitorCount).toFixed(1) : '0.0';
+        const distinctTotal = payload.initials.reduce((total, item) => total + number(item.distinctApps), 0);
+        $('appsPerVisitor').textContent = visitorCount ? ratio(distinctTotal, visitorCount).toFixed(1) : '0.0';
+        $('opensPerSession').textContent = number(summary.sessions) ? ratio(summary.appOpenEvents, summary.sessions).toFixed(1) : '0.0';
+        $('filesPerUpload').textContent = number(summary.uploadActions) ? ratio(summary.filesUploaded, summary.uploadActions).toFixed(1) : '0.0';
         $('appCount').textContent = `${payload.apps.length} apps`;
+        $('appDiagnosticCount').textContent = `${payload.apps.length} apps`;
         $('initialCount').textContent = `${payload.initials.length} labels`;
-        $('dailyRange').textContent = payload.daily.length ? `${payload.daily.length} days` : 'No data';
-        drawVisitorChart(payload.daily);
+        $('dailyRange').textContent = windowDaily.length ? `${windowDaily.length} active days` : 'No data';
+        drawVisitorChart(windowDaily);
         drawAppChart(payload.apps);
+        drawAppDailyChart(payload.appDaily, payload.apps, days);
+        renderDiagnostics(payload, windowDaily);
+        renderAppRows(payload, windowAppDaily, days);
         renderInitials(payload.initials);
+
+        if (payload.appDaily.length) {
+          const firstDate = payload.appDaily.map(item => item.date).sort()[0];
+          $('appDailyNotice').innerHTML = `<span>ℹ</span><div><strong>Daily app tracking active.</strong> Aggregate per-app history currently begins ${escapeHtml(dateLabel(firstDate, { month: 'long', day: 'numeric', year: 'numeric' }))}. Earlier lifetime totals are preserved but cannot be split accurately by day.</div>`;
+        }
+      }
+
+      async function fetchAppDaily() {
+        try {
+          const snap = await db.collection('coachtoolsUsageAppDaily').orderBy('date', 'desc').limit(10000).get();
+          return snap.docs.map(doc => doc.data()).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.appId || '').localeCompare(String(b.appId || '')));
+        } catch (_) {
+          return [];
+        }
       }
 
       async function fetchPayload() {
-        const [summarySnap, dailySnap, appsSnap, initialsSnap] = await Promise.all([
+        const [summarySnap, dailySnap, appsSnap, initialsSnap, appDaily] = await Promise.all([
           db.collection('coachtoolsUsage').doc('summary').get(),
-          db.collection('coachtoolsUsageDaily').orderBy('date', 'asc').limit(90).get(),
+          db.collection('coachtoolsUsageDaily').orderBy('date', 'desc').limit(180).get(),
           db.collection('coachtoolsUsageApps').get(),
-          db.collection('coachtoolsUsageInitials').get()
+          db.collection('coachtoolsUsageInitials').get(),
+          fetchAppDaily()
         ]);
         const summary = summarySnap.exists ? summarySnap.data() : {};
         const daily = dailySnap.docs.map(doc => doc.data()).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
         const apps = appsSnap.docs.map(doc => doc.data()).sort((a, b) => number(b.opens) - number(a.opens));
-        const initials = initialsSnap.docs.map(doc => doc.data()).sort((a, b) => number(b.distinctApps) - number(a.distinctApps) || String(a.label || '').localeCompare(String(b.label || '')));
-        return { summary, daily, apps, initials };
+        const initials = initialsSnap.docs.map(doc => doc.data()).sort((a, b) => number(b.distinctApps) - number(a.distinctApps) || number(b.appOpenEvents) - number(a.appOpenEvents) || String(a.label || '').localeCompare(String(b.label || '')));
+        return { summary, daily, apps, initials, appDaily };
       }
 
       async function checkForChanges(force) {
         if (!db || inFlight) return;
-        inFlight = true;
-        $('refreshNow').disabled = true;
-        setConnection('', 'Checking…');
+        inFlight = true; $('refreshNow').disabled = true; setConnection('', 'Checking…');
         try {
           const payload = await fetchPayload();
           const signature = JSON.stringify(payload);
           const changed = force || signature !== lastSignature;
           if (changed) {
-            render(payload);
-            lastPayload = payload;
-            lastSignature = signature;
+            render(payload); lastPayload = payload; lastSignature = signature;
             $('lastChanged').textContent = `Last change: ${timestampText()}.`;
           }
           $('lastChecked').textContent = `Last checked: ${timestampText()}.`;
@@ -334,8 +593,7 @@
           setConnection('bad', 'Firebase unavailable');
           $('lastChecked').textContent = `Last check failed: ${error && error.message ? error.message : error}.`;
         } finally {
-          inFlight = false;
-          $('refreshNow').disabled = false;
+          inFlight = false; $('refreshNow').disabled = false;
         }
       }
 
@@ -354,10 +612,10 @@
             : window.firebase.initializeApp(firebaseConfig, 'coachtools-usage-diagnostics');
           db = app.firestore();
           $('refreshMinutes').addEventListener('change', schedule);
+          $('rangeDays').addEventListener('change', () => { if (lastPayload) render(lastPayload); });
           $('refreshNow').addEventListener('click', () => checkForChanges(true));
           window.addEventListener('resize', () => { if (lastPayload) render(lastPayload); });
-          schedule();
-          await checkForChanges(true);
+          schedule(); await checkForChanges(true);
         } catch (error) {
           setConnection('bad', 'Firebase unavailable');
           $('lastChecked').textContent = `Could not start diagnostics: ${error && error.message ? error.message : error}.`;

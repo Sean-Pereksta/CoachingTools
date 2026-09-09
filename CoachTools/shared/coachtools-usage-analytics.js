@@ -1,7 +1,7 @@
 (function attachCoachToolsUsageAnalytics(root) {
   'use strict';
 
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const STATE_KEY = 'coachtools.usageAnalytics.private.v1';
   const FIREBASE_APP_URL = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js';
   const FIREBASE_FIRESTORE_URL = 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js';
@@ -23,7 +23,9 @@
     flushing: false,
     pendingNewVisitor: false,
     pendingVisitDay: '',
-    pendingApps: new Set()
+    pendingApps: new Set(),
+    pendingDailyApps: new Set(),
+    appDailyDisabled: false
   };
 
   function todayKey() {
@@ -44,6 +46,16 @@
     return Array.from(bytes, value => alphabet[value % alphabet.length]).join('');
   }
 
+  function cleanDayMap(value) {
+    if (!value || typeof value !== 'object') return {};
+    const result = {};
+    for (const [appId, day] of Object.entries(value)) {
+      if (!appId || !/^\d{4}-\d{2}-\d{2}$/.test(String(day || ''))) continue;
+      result[String(appId).slice(0, 80)] = String(day);
+    }
+    return result;
+  }
+
   function loadState() {
     try {
       const parsed = JSON.parse(root.localStorage.getItem(STATE_KEY) || 'null');
@@ -52,11 +64,18 @@
           anonymousInitials: /^[A-Z]{3}$/.test(String(parsed.anonymousInitials || '')) ? parsed.anonymousInitials : randomAnonymousInitials(),
           visitorRegistered: parsed.visitorRegistered === true,
           lastVisitDay: /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.lastVisitDay || '')) ? parsed.lastVisitDay : '',
-          seenApps: parsed.seenApps && typeof parsed.seenApps === 'object' ? parsed.seenApps : {}
+          seenApps: parsed.seenApps && typeof parsed.seenApps === 'object' ? parsed.seenApps : {},
+          lastAppVisitDay: cleanDayMap(parsed.lastAppVisitDay)
         };
       }
     } catch (_) {}
-    return { anonymousInitials: randomAnonymousInitials(), visitorRegistered: false, lastVisitDay: '', seenApps: {} };
+    return {
+      anonymousInitials: randomAnonymousInitials(),
+      visitorRegistered: false,
+      lastVisitDay: '',
+      seenApps: {},
+      lastAppVisitDay: {}
+    };
   }
 
   const localState = loadState();
@@ -132,6 +151,7 @@
     runtime.pendingNewVisitor = false;
     runtime.pendingVisitDay = '';
     runtime.pendingApps.clear();
+    runtime.pendingDailyApps.clear();
   }
 
   async function writeSession(event) {
@@ -156,6 +176,32 @@
     saveState();
     if (event.newVisitor) runtime.pendingNewVisitor = false;
     if (runtime.pendingVisitDay === event.day) runtime.pendingVisitDay = '';
+  }
+
+  async function writeAppDaily(event) {
+    if (runtime.appDailyDisabled) return;
+    const key = `${event.day}__${event.appId}`;
+    const dailyApp = runtime.db.collection('coachtoolsUsageAppDaily').doc(key);
+    try {
+      await dailyApp.set({
+        date: event.day,
+        appId: event.appId,
+        name: event.appName || event.appId,
+        opens: increment(1),
+        ...(event.firstForVisitorToday ? { uniqueVisitors: increment(1) } : {})
+      }, { merge: true });
+
+      if (event.firstForVisitorToday) {
+        localState.lastAppVisitDay[event.appId] = event.day;
+        runtime.pendingDailyApps.delete(key);
+        saveState();
+      }
+    } catch (_) {
+      // The existing lifetime analytics must keep working even if the new
+      // aggregate-daily collection has not had its Firestore rule deployed yet.
+      runtime.appDailyDisabled = true;
+      runtime.pendingDailyApps.clear();
+    }
   }
 
   async function writeAppOpen(event) {
@@ -186,6 +232,8 @@
       runtime.pendingApps.delete(event.appId);
       saveState();
     }
+
+    await writeAppDaily(event);
   }
 
   async function writeUpload(event) {
@@ -243,14 +291,19 @@
   function trackAppOpen(appId, appName) {
     const id = safeId(appId);
     if (!id || id === 'unknown') return;
+    const day = todayKey();
+    const dailyKey = `${day}__${id}`;
     const firstForVisitor = !localState.seenApps[id] && !runtime.pendingApps.has(id);
+    const firstForVisitorToday = localState.lastAppVisitDay[id] !== day && !runtime.pendingDailyApps.has(dailyKey);
     if (firstForVisitor) runtime.pendingApps.add(id);
+    if (firstForVisitorToday) runtime.pendingDailyApps.add(dailyKey);
     enqueue({
       type: 'app-open',
-      day: todayKey(),
+      day,
       appId: id,
       appName: String(appName || appNameFor(id) || id).slice(0, 100),
-      firstForVisitor
+      firstForVisitor,
+      firstForVisitorToday
     });
   }
 
@@ -302,7 +355,12 @@
     trackAppOpen,
     trackUpload,
     anonymousInitials: () => localState.anonymousInitials,
-    status: () => ({ ready: runtime.ready, disabled: runtime.disabled, queued: runtime.queue.length })
+    status: () => ({
+      ready: runtime.ready,
+      disabled: runtime.disabled,
+      queued: runtime.queue.length,
+      appDailyDisabled: runtime.appDailyDisabled
+    })
   });
 
   if (document.readyState === 'complete') start();
