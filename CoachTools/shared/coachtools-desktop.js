@@ -1244,6 +1244,7 @@
     const totalFiles = selectedFiles.length;
     try {
       const analysis = await importer.analyzeFiles(selectedFiles, {
+        manualSourceSelection: true,
         onProgress(progress) {
           const sheetFraction = progress.total ? progress.current / progress.total : 0;
           const completed = Number(progress.fileIndex) + sheetFraction;
@@ -1255,6 +1256,7 @@
       setProgressStep('Saving to IndexedDB', 'active');
       const imported = [];
       const errors = analysis.errors.map(entry => `${entry.file && entry.file.name || 'File'}: ${entry.error && entry.error.message || entry.error}`);
+      for (const entry of [...analysis.errors, ...analysis.needsReview]) setProgressStep(importer.uploadFailureMessage(entry, entry.error), 'warning');
       for (let index = 0; index < analysis.recognized.length; index += 1) {
         const entry = analysis.recognized[index];
         const type = entry.classification.id;
@@ -1264,6 +1266,7 @@
           imported.push({ id: type, fileName: entry.file.name, status: result.status });
         } catch (error) {
           errors.push(`${entry.file.name}: ${error && error.message || error}`);
+          setProgressStep(importer.uploadFailureMessage(entry,error), 'warning');
         }
       }
 
@@ -1408,9 +1411,18 @@
         parsedEntries.push({ metadata, file, parsed, classification });
       } catch (error) {
         ambiguous.push(`${metadata.filename} (${error && error.message || error})`);
+        setProgressStep(importer.uploadFailureMessage({file:{name:metadata.filename}},error),'warning');
       }
     }
     if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end('Changed file parsing', { parsed: parsedEntries.length, files: listedFiles.length });
+    const sourceReview = {
+      recognized: parsedEntries.filter(entry=>entry.classification.id),
+      needsReview: parsedEntries.filter(entry=>!entry.classification.id),
+      errors: []
+    };
+    await importer.resolveUnidentifiedFiles(sourceReview, {manualSourceSelection:true});
+    parsedEntries.splice(0,parsedEntries.length,...sourceReview.recognized,...sourceReview.needsReview);
+    for(const entry of sourceReview.needsReview) setProgressStep(importer.uploadFailureMessage(entry),'warning');
 
     setProgressStep('Reading files', 'success');
     setProgressStep('Identifying sources', 'active');
@@ -1427,26 +1439,36 @@
       }
       setImportProgress(48 + ((index + 1) / Math.max(1, parsedEntries.length)) * 23, `Comparing ${importer.SOURCES[id].label}`, entry.metadata.filename, `${index + 1} of ${parsedEntries.length}`);
       await nextPaint();
-      const prepared = importer.prepareScopedDataset(entry.parsed, id, scope, { detectedPeriod: entry.classification.detectedPeriod });
-      if (!prepared.valid) {
-        ambiguous.push(`${entry.metadata.filename} (${prepared.reason})`);
-        scanResults.push({ id, fileName: entry.metadata.filename, status: 'needs-review', reason: prepared.reason, period: entry.classification.detectedPeriod && entry.classification.detectedPeriod.periodKey || '', scopeHash, diagnostics: prepared.diagnostics });
+      let prepared;
+      try {
+        prepared = await importer.prepareRecognizedEntry(entry, {scope});
+      } catch(error) {
+        ambiguous.push(`${entry.metadata.filename} (${error.message || error})`);
+        setProgressStep(importer.uploadFailureMessage(entry,error),'warning');
+        scanResults.push({id,fileName:entry.metadata.filename,status:'needs-review',reason:error.message || String(error),scopeHash});
         continue;
       }
       const dataset = prepared.dataset;
-      const inspection = await root.CoachToolsData.inspectDataset(id, dataset, {
-        originalFileName: entry.metadata.filename,
-        fileSize: entry.metadata.size,
-        fileModifiedDate: entry.metadata.modifiedTime,
-        detectedPeriod: entry.classification.detectedPeriod,
-        automaticImport: true,
-        scopeSnapshot: prepared.scopeSnapshot,
-        scopeHash: prepared.scopeHash,
-        scopeMode: prepared.scopeSnapshot.mode,
-        scopedRowCount: prepared.matchedRows,
-        scopeMatchDiagnostics: prepared.diagnostics,
-        scopedFingerprint: prepared.scopedFingerprint
-      });
+      let inspection;
+      try {
+        inspection = await root.CoachToolsData.inspectDataset(id, dataset, {
+          originalFileName: entry.metadata.filename,
+          fileSize: entry.metadata.size,
+          fileModifiedDate: entry.metadata.modifiedTime,
+          detectedPeriod: entry.classification.detectedPeriod,
+          automaticImport: true,
+          scopeSnapshot: prepared.scopeSnapshot,
+          scopeHash: prepared.scopeHash,
+          scopeMode: prepared.scopeSnapshot.mode,
+          scopedRowCount: prepared.matchedRows,
+          scopeMatchDiagnostics: prepared.diagnostics,
+          scopedFingerprint: prepared.scopedFingerprint
+        });
+      } catch(error) {
+        ambiguous.push(`${entry.metadata.filename} (${error.message || error})`);
+        setProgressStep(importer.uploadFailureMessage(entry,error),'warning');
+        continue;
+      }
       const inspected = { id, ...entry, dataset, prepared, inspection };
       if (!candidatesBySource.has(id)) candidatesBySource.set(id, []);
       candidatesBySource.get(id).push(inspected);
@@ -1463,7 +1485,10 @@
       if (actionable[0]) selected.push(actionable[0]);
       for (const entry of candidates) {
         if (entry === actionable[0]) continue;
-        if (entry.inspection.status === 'needs-review') ambiguous.push(`${entry.metadata.filename} (${entry.inspection.reason})`);
+        if (entry.inspection.status === 'needs-review') {
+          ambiguous.push(`${entry.metadata.filename} (${entry.inspection.reason})`);
+          setProgressStep(importer.uploadFailureMessage(entry,entry.inspection.reason),'warning');
+        }
         else skipped.push(`${entry.metadata.filename} · ${entry.inspection.status}`);
       }
     }
@@ -1511,6 +1536,7 @@
         rememberStorageFile(processedFiles, entry.metadata, { datasetType: entry.id, scopeHash, scopedFingerprint: entry.prepared.scopedFingerprint, scopedRowCount: entry.prepared.matchedRows, datasetId: result.dataset && (result.dataset.datasetId || result.dataset.id) || '' });
       } catch (error) {
         writeErrors.push(`${entry.metadata.filename}: ${error && error.message || error}`);
+        setProgressStep(importer.uploadFailureMessage(entry,error),'warning');
       }
     }
 

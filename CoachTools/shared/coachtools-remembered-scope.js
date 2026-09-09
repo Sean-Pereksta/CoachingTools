@@ -275,7 +275,7 @@
 
     for (const entry of recognized) {
       const type = entry && entry.classification && entry.classification.id;
-      entry._coachtoolsBaselineSkip = Boolean(selected && !selected.has(type));
+      entry._coachtoolsBaselineSkip = Boolean(selected && !selected.has(type) && !entry.classification.manualSourceSelection);
       entry._coachtoolsUpdatePlan = null;
       if (entry._coachtoolsBaselineSkip) {
         entry.parsed = null;
@@ -406,6 +406,7 @@
     async analyzeFiles(files, options) {
       const requestedMode = mode;
       const result = await analyzeFilesResponsive(files, options);
+      if (options?.manualSourceSelection && importer.resolveUnidentifiedFiles) await importer.resolveUnidentifiedFiles(result, options);
       if (requestedMode === 'clean') {
         await beginCleanSession(result);
         result.cleanMode = true;

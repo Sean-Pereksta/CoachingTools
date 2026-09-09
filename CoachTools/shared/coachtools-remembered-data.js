@@ -396,6 +396,7 @@
     ]);
 
     const analysis = await importer.analyzeFiles(matched.map(record => record.file), {
+      manualSourceSelection: true,
       onProgress(progress) {
         const fileIndex = Math.max(0, Number(progress.fileIndex) || 0);
         const sheetFraction = progress.total ? Number(progress.current || 0) / Number(progress.total) : 0;
@@ -466,7 +467,7 @@
       { label: 'Finding Clean Upload source files', status: 'success' },
       { label: 'Reading matched files', status: analysis.errors.length || ignoredReview ? 'warning' : 'success' },
       { label: 'Saving with Clean Upload scope', status: errors.length ? 'warning' : 'success' },
-      ...fileFailures.map(item => ({label:`Could not load: ${item.fileName} · Source: ${item.type ? sourceLabel(item.type) : 'Not identified'} · Reason: ${item.reason}. This file could not be loaded automatically. Please reach out to Sean for assistance.`,status:'warning'})),
+      ...fileFailures.map(item => ({label:`Could not load: ${item.fileName} · Source: ${item.type ? sourceLabel(item.type) : 'Not identified'} · Reason: ${item.reason}. Please snip the report showing its column headers and a few example rows, along with this error, and send it to Sean.`,status:'warning'})),
       { label: 'Ready', status: warning ? 'warning' : 'success' }
     ]);
     finishProgress(`${parts.join(' · ')}.`, { warning, count: `${counts.ready} of ${counts.total}` });

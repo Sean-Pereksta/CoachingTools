@@ -149,6 +149,23 @@ function clickAction(action) {
   assert.strictEqual(baseline.scopeHash, 'scope-a');
   assert.deepStrictEqual(storedScopes.map(([kind, scope]) => [kind, scope.scopeHash]), [['global', 'scope-a'], ['clean', 'scope-a']], 'A successful Clean Update should persist the same authoritative scope globally and as the last-clean scope.');
 
+  importer.resolveUnidentifiedFiles = async result => {
+    calls.push('manual-source-selection');
+    for (const entry of result.needsReview) {
+      entry.classification = { ...qaClassification, id:'checklist', manualSourceSelection:true };
+      result.recognized.push(entry);
+    }
+    result.needsReview=[];
+  };
+  const unrecognizedFile={...updatedFile,name:'Unidentified update.xlsx',classification:{id:null}};
+  clickAction('update-data');
+  const manualAnalysis=await context.CoachToolsImport.analyzeFiles([unrecognizedFile],{manualSourceSelection:true});
+  assert.strictEqual(manualAnalysis.recognized.length,1);
+  assert.strictEqual(manualAnalysis.recognized[0]._coachtoolsBaselineSkip,false,'An explicit manual destination must not be silently skipped by the old source set.');
+  const manualResult=await context.CoachToolsImport.saveRecognizedEntry(manualAnalysis.recognized[0],{scope:{mode:'all'}});
+  assert.strictEqual(manualResult.status,'replacement');
+  assert(calls.includes('manual-source-selection'),'Manual selection must be resolved before update planning.');
+
   console.log('CoachTools direct-file update planning tests passed.');
 })().catch(error => {
   console.error(error);

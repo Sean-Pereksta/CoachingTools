@@ -170,7 +170,7 @@
         });
         recoveryBox.append(
           element('b', 'Upload error recovery suggested'),
-          element('div', `Could not load: ${issue.fileName || 'Uploaded file'} · Source: ${issue.datasetLabel || 'Not identified'}. This file could not be loaded automatically. Please reach out to Sean for assistance.`),
+          element('div', `Could not load: ${issue.fileName || 'Uploaded file'} · Source: ${issue.datasetLabel || 'Not identified'}. Please snip the report showing its column headers and a few example rows, along with this error, and send it to Sean.`),
           element('small', `${issue.errorCode || 'UploadError'}: ${issue.message || 'The upload failed.'} · IndexedDB ${issue.database || details.database} · ${(issue.stores || details.stores).join(', ')}`)
         );
         body.appendChild(recoveryBox);

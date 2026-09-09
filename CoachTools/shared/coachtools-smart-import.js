@@ -573,6 +573,7 @@
 
     try {
       const analysis = await importer.analyzeFiles(selectedFiles, {
+        manualSourceSelection: true,
         onProgress(progress) {
           const fraction = progress.total ? progress.current / progress.total : 0;
           const completed = Number(progress.fileIndex) + fraction;
@@ -588,6 +589,14 @@
       });
 
       setStep('Reading selected files', analysis.errors.length ? 'warning' : 'success');
+      if (!analysis.recognized.length) {
+        state.reviewFiles=analysis.needsReview.map(entry=>entry.file);
+        for(const entry of [...analysis.errors,...analysis.needsReview]) setStep(importer.uploadFailureMessage(entry,entry.error),'warning');
+        root.CoachToolsCleanUploadBaseline?.cancelPending?.();
+        finishProgress('No files were ready to upload. Existing stored data was retained. See the file details below.',{warning:true,review:state.reviewFiles.length>0,count:'0 saved'});
+        return;
+      }
+
       if (analysis.updateScopeNeedsReview) throw new Error(analysis.updateScopeReason || 'Update needs scope review. Existing data was retained.');
       setStep('Finding coach / team values', 'active');
       if (!analysis.updateMode) {
@@ -625,7 +634,7 @@
       const errors = analysis.errors.map(item => `${item.file && item.file.name || 'File'}: ${item.error && item.error.message || item.error}`);
       for (const item of [...analysis.errors, ...analysis.needsReview]) {
         const type = item.classification && (item.classification.id || item.classification.predictedId);
-        setStep(`Could not load: ${item.file.name} · Source: ${SOURCE_SHORT_LABELS[type] || type || 'Not identified'} · Reason: ${item.error?.message || item.classification?.validation?.reason || 'Could not determine a unique source from filename and headers.'} This file could not be loaded automatically. Please reach out to Sean for assistance.`, 'warning');
+        setStep(`Could not load: ${item.file.name} · Source: ${SOURCE_SHORT_LABELS[type] || type || 'Not identified'} · Reason: ${item.error?.message || item.classification?.validation?.reason || 'Could not determine a unique source from filename and headers.'} Please snip the report showing its column headers and a few example rows, along with this error, and send it to Sean.`, 'warning');
       }
       const entries = analysis.recognized.slice().sort((a, b) => Number(b.parsed && b.parsed.meta && b.parsed.meta.totalRows || 0) - Number(a.parsed && a.parsed.meta && a.parsed.meta.totalRows || 0));
 
@@ -648,7 +657,7 @@
           imported.push({ id: type, fileName: entry.file.name, status: result.status, filtered: scope && scope.mode !== 'all', matchedRows: Number(result && result.dataset && result.dataset.scopedRowCount) || 0 });
         } catch (error) {
           errors.push(`${entry.file.name}: ${error && error.message || error}`);
-          setStep(`Could not load: ${entry.file.name} · Source: ${sourceLabel} · Reason: ${error.message || error}. This file could not be loaded automatically. Please reach out to Sean for assistance.`, 'warning');
+          setStep(`Could not load: ${entry.file.name} · Source: ${sourceLabel} · Reason: ${error.message || error}. Please snip the report showing its column headers and a few example rows, along with this error, and send it to Sean.`, 'warning');
         }
         setProgress(62 + ((index + 1) / Math.max(1, entries.length)) * 34, `Processed ${sourceLabel}`, entry.file.name, `${index + 1} of ${entries.length}`);
         await nextPaint();
