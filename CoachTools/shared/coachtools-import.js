@@ -348,6 +348,14 @@
         ? { id: requestedType, confidence: 'high', reason: 'manual+headers', classificationMethod: 'manual+headers', candidates: [requestedType], validation, detectedPeriod: detectPeriod(file, requestedType) }
         : { id: null, predictedId: requestedType, confidence: 'needs-review', reason: 'header-validation-failed', classificationMethod: 'manual', candidates: [requestedType], validation, needsReview: true, detectedPeriod: detectPeriod(file, requestedType) };
     } else classification = classifyFile(file, parsed);
+    if (!classification.id) {
+      // Unusual exports can place headers below the lightweight discovery window.
+      for (const name of sheets) data[name] = { aoa: trimAOAInPlace(root.XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '' })) };
+      if (requestedType && SOURCES[requestedType]) {
+        const validation = validateClassification(requestedType, parsed);
+        if (validation.valid) classification = { id: requestedType, validation, confidence: 'high', classificationMethod: 'manual+full-headers', detectedPeriod: detectPeriod(file, requestedType) };
+      } else classification = classifyFile(file, parsed);
+    }
     if (diagnostics) diagnostics.end('File classification', { fileName: file.name, datasetType: classification.id || classification.predictedId || '' });
     const ownershipByKey = new Map();
     const source = classification.id;
@@ -428,7 +436,7 @@
 
   function findHeader(aoa, wanted) {
     const normalizedWanted = normalizeHeader(wanted);
-    for (let rowIndex = 0; rowIndex < Math.min(50, aoa && aoa.length || 0); rowIndex += 1) {
+    for (let rowIndex = 0; rowIndex < Math.min(200, aoa && aoa.length || 0); rowIndex += 1) {
       const row = aoa[rowIndex];
       if (!Array.isArray(row)) continue;
       for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
@@ -456,7 +464,7 @@
     const headers = new Set();
     for (const sheetName of parsed && parsed.workbook && parsed.workbook.sheets || []) {
       const aoa = parsed.workbook.data[sheetName] && parsed.workbook.data[sheetName].aoa || [];
-      for (let rowIndex = 0; rowIndex < Math.min(50, aoa.length); rowIndex += 1) {
+      for (let rowIndex = 0; rowIndex < Math.min(200, aoa.length); rowIndex += 1) {
         for (const cell of Array.isArray(aoa[rowIndex]) ? aoa[rowIndex] : []) {
           const normalized = normalizeHeader(cell);
           if (normalized) headers.add(normalized);
@@ -538,12 +546,13 @@
       ['checklist', /\bcheck\s*list\b|\bchecklist\b|\ball\s+items\b/],
       ['qa', /(?:^|[^a-z])qa(?:[^a-z]|$)|\bquality\b|\b90\s*day\b|\bevaluations?\b/]
     ];
+    let filenameFailure = null;
     for (const [id, pattern] of filenameHints) {
       if (pattern.test(name)) {
         const validation = validateClassification(id, parsed);
-        return validation.valid
-          ? { id, confidence: 'high', reason: 'filename+headers', classificationMethod: 'filename+headers', candidates: [id], validation, detectedPeriod: detectPeriod(originalName, id) }
-          : { id: null, predictedId: id, confidence: 'needs-review', reason: 'header-validation-failed', classificationMethod: 'filename', candidates: [id], validation, needsReview: true, detectedPeriod: detectPeriod(originalName, id) };
+        if (validation.valid) return { id, confidence: 'high', reason: 'filename+headers', classificationMethod: 'filename+headers', candidates: [id], validation, detectedPeriod: detectPeriod(originalName, id) };
+        filenameFailure = { id: null, predictedId: id, confidence: 'needs-review', reason: 'header-validation-failed', classificationMethod: 'filename', candidates: [id], validation, needsReview: true, detectedPeriod: detectPeriod(originalName, id) };
+        break;
       }
     }
 
@@ -553,7 +562,7 @@
         ? { id, confidence: 'high', reason: 'header', classificationMethod: 'headers', candidates: [id], validation, detectedPeriod: detectPeriod(originalName, id) }
         : { id: null, predictedId: id, confidence: 'needs-review', reason: 'header-validation-failed', classificationMethod: 'headers', candidates: [id], validation, needsReview: true, detectedPeriod: detectPeriod(originalName, id) };
     };
-    const found = inspectSourceHeaders(parsed);
+    const found = new Set([...inspectSourceHeaders(parsed)].filter(id => validateClassification(id, parsed).valid));
     if (found.has('documentedCoaching')) return headerClassification('documentedCoaching');
     if (found.has('checklist')) return headerClassification('checklist');
     if (found.has('qa') && !found.has('weeklyRetail') && !found.has('weeklyReferral')) {
@@ -561,6 +570,7 @@
     }
     const candidates = DATASET_ORDER.filter(id => found.has(id));
     if (candidates.length === 1) return headerClassification(candidates[0]);
+    if (!candidates.length && filenameFailure) return filenameFailure;
     return {
       id: null,
       confidence: candidates.length ? 'ambiguous' : 'unknown',
@@ -827,19 +837,45 @@
     return { recognized, needsReview, errors };
   }
 
-  async function saveRecognizedEntry(entry, options) {
-    if (!entry || !entry.classification || !entry.classification.id) throw new Error('The file has not been safely classified.');
-    if (!root.CoachToolsData || typeof root.CoachToolsData.importDataset !== 'function') throw new Error('The central CoachTools data API is unavailable.');
+  async function prepareRecognizedEntry(entry, options) {
+    if (!entry?.classification?.id) throw new Error('The file has not been safely classified.');
     const type = entry.classification.id;
     const requestedScope = options && Object.prototype.hasOwnProperty.call(options, 'scope') && options.scope
       ? options.scope
       : root.CoachToolsStorage && typeof root.CoachToolsStorage.getScope === 'function' ? root.CoachToolsStorage.getScope() : { mode: 'all', label: 'All people' };
     const scopeSnapshot = await resolveScopeSnapshot(requestedScope || { mode: 'all', label: 'All people' });
     const parsed = entry.rawWorkbook ? await materializeDiscoveredEntry(entry, scopeSnapshot, options) : entry.parsed;
+    const validation = validateClassification(type, parsed);
+    if (!validation.valid) throw new Error(validation.reason);
+    if (['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral','compCoaching'].includes(type)) {
+      let period = entry.classification.detectedPeriod;
+      if (!period?.sortKey || period.periodKey === 'current') {
+        const periods = new Map();
+        for (const sheetName of parsed.workbook.sheets || []) {
+          const headings = [sheetName, ...(parsed.workbook.data[sheetName]?.aoa || []).slice(0,10).map(row => row.join(' '))];
+          for (const heading of headings) {
+            const found = detectPeriod({name:heading,lastModified:entry.file?.lastModified}, type);
+            if (found.sortKey && found.periodKey !== 'current') periods.set(found.periodKey,found);
+          }
+        }
+        if (periods.size === 1) period = [...periods.values()][0];
+      }
+      if (!period?.sortKey || period.periodKey === 'current') throw new Error('Could not determine a unique reporting period from the filename, worksheet names, or report headings.');
+      entry.classification.detectedPeriod = period;
+    }
+
     entry.parsed = parsed;
     entry.rawWorkbook = null;
     const prepared = prepareScopedDataset(parsed, type, scopeSnapshot, { ...(options || {}), detectedPeriod: entry.classification.detectedPeriod });
     if (!prepared.valid) throw scopeValidationError(prepared.reason, prepared.diagnostics);
+    return prepared;
+  }
+
+  async function saveRecognizedEntry(entry, options) {
+    if (!entry || !entry.classification || !entry.classification.id) throw new Error('The file has not been safely classified.');
+    if (!root.CoachToolsData || typeof root.CoachToolsData.importDataset !== 'function') throw new Error('The central CoachTools data API is unavailable.');
+    const type = entry.classification.id;
+    const prepared = await prepareRecognizedEntry(entry, options);
     const dataset = prepared.dataset;
     return root.CoachToolsData.importDataset(type, dataset, {
       originalFileName: entry.file && entry.file.name || dataset.meta && dataset.meta.fileName || '',
@@ -861,7 +897,18 @@
   async function saveRecognizedFiles(files, options) {
     const analysis = await analyzeFiles(files, options);
     const results = [];
-    for (const entry of analysis.recognized) results.push({ entry, result: await saveRecognizedEntry(entry, options) });
+    for (const entry of analysis.recognized) {
+      try { results.push({ entry, result: await saveRecognizedEntry(entry, options) }); }
+      catch (error) { analysis.errors.push({ file: entry.file, classification: entry.classification, error }); }
+    }
+    for (const item of [...analysis.errors, ...analysis.needsReview]) {
+      const type = item.classification && (item.classification.id || item.classification.predictedId) || '';
+      const error = item.error || new Error(item.classification?.validation?.reason || 'Could not determine a unique source from filename and headers.');
+      try {
+        const recovery = root.CoachToolsDataRecovery || root.parent?.CoachToolsDataRecovery;
+        if (recovery) recovery.reportIssue(type, error, { fileName: item.file && item.file.name });
+      } catch (_) { /* Parent may be cross-origin in an embedded app. */ }
+    }
     return { ...analysis, results };
   }
 
@@ -904,6 +951,7 @@
     prepareDataset,
     packDataset,
     analyzeFiles,
+    prepareRecognizedEntry,
     saveRecognizedEntry,
     saveRecognizedFiles
   });

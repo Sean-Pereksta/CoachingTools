@@ -75,25 +75,34 @@ body[data-scorecard-detail="advanced"] .metricCell{min-width:170px}
 .metricInlineBasic b{font-size:13px}
 .metricInlineAdvanced{font-size:7.5px}
 .zeroMonitorBadge{display:inline-flex;align-items:center;width:max-content;padding:2px 6px;border:1px solid var(--bad);border-radius:999px;background:rgba(198,61,82,.14);color:var(--bad);font-family:var(--font-display);font-size:7px;font-weight:950;letter-spacing:.035em;text-transform:uppercase}
-body[data-scorecard-density="condensed"] .main{padding-top:7px}
-body[data-scorecard-density="condensed"] .summaryGrid{gap:5px;margin-bottom:6px}
-body[data-scorecard-density="condensed"] .summary{padding:7px 9px;border-radius:10px}
+/* Condensed is a readable team-chat card; wrap details instead of forcing width. */
+body[data-scorecard-density="condensed"] .main{padding:7px;max-width:1120px}
+body[data-scorecard-density="condensed"] .summaryGrid{gap:4px;margin-bottom:6px}
+body[data-scorecard-density="condensed"] .summary{padding:6px 8px;border-radius:8px}
 body[data-scorecard-density="condensed"] .summary .v{font-size:18px;margin-top:2px}
-body[data-scorecard-density="condensed"] .summary .volume,body[data-scorecard-density="condensed"] .summary .s{font-size:7px;margin-top:1px}
+body[data-scorecard-density="condensed"] .summary .volume,body[data-scorecard-density="condensed"] .summary .s{font-size:10px;margin-top:1px}
 body[data-scorecard-density="condensed"] .quickFilters{margin-bottom:6px}
-body[data-scorecard-density="condensed"] th{padding:4px 6px;font-size:7px}
-body[data-scorecard-density="condensed"] td{padding:2px 6px;height:27px;font-size:9px}
-body[data-scorecard-density="condensed"] .repCell{min-width:155px;display:flex;align-items:center;gap:5px}
-body[data-scorecard-density="condensed"] .repBtn{font-size:9px;max-width:145px;white-space:nowrap}
-body[data-scorecard-density="condensed"] .repMeta{font-size:7px;margin:0;white-space:nowrap}
-body[data-scorecard-density="condensed"] .metricCell{min-width:118px}
-body[data-scorecard-density="condensed"][data-scorecard-detail="basic"] td{height:23px;padding-top:1px;padding-bottom:1px}
-body[data-scorecard-density="condensed"][data-scorecard-detail="normal"] td{height:27px}
-body[data-scorecard-density="condensed"][data-scorecard-detail="advanced"] td{height:31px;min-width:220px}
-body[data-scorecard-density="condensed"] .statusWrap{min-width:105px;display:flex;gap:4px;align-items:center}
-body[data-scorecard-density="condensed"] .statusBadge{padding:2px 5px;font-size:7px}
+body[data-scorecard-density="condensed"] .workspaceHead{padding:7px 9px;gap:6px}
+body[data-scorecard-density="condensed"] .tableWrap{max-height:none}
+body[data-scorecard-density="condensed"] table{min-width:0;table-layout:fixed}
+body[data-scorecard-density="condensed"] th{padding:5px;font-size:10px;white-space:normal;overflow-wrap:anywhere;letter-spacing:0}
+body[data-scorecard-density="condensed"] td{padding:4px 5px;height:auto;font-size:11px;min-width:0;overflow-wrap:anywhere}
+body[data-scorecard-density="condensed"] .repCell{min-width:0;display:block}
+body[data-scorecard-density="condensed"] .repBtn{font-size:12px;max-width:100%;white-space:normal}
+body[data-scorecard-density="condensed"] .repMeta{font-size:10px;margin:1px 0;white-space:normal}
+body[data-scorecard-density="condensed"] .metricCell{min-width:0}
+body[data-scorecard-density="condensed"] .metricInline{display:flex;flex-wrap:wrap;gap:2px 4px;white-space:normal;font-size:10px;line-height:1.3}
+body[data-scorecard-density="condensed"] .metricInline b{font-size:13px}
+body[data-scorecard-density="condensed"] .metricInline span{min-width:0;overflow-wrap:anywhere}
+body[data-scorecard-density="condensed"] .statusWrap{min-width:0;display:flex;flex-wrap:wrap;gap:3px}
+body[data-scorecard-density="condensed"] .statusBadge{padding:2px 4px;font-size:10px;white-space:normal}
 body[data-scorecard-density="condensed"] .statusReason{display:none}
-body[data-scorecard-density="condensed"] .overallRankCol{min-width:78px}
+body[data-scorecard-density="condensed"] .overallRankCol{min-width:0}
+.control.search{border:2px solid var(--accent);background:var(--active-bg);padding:9px 11px}
+.control.search input{font-size:13px;min-width:190px;color:var(--ink)}
+
+
+body.scorecardExportSafe .zeroMonitorBadge{background:var(--panel2)!important;border-color:var(--bad)!important;color:var(--bad)!important}
 
 body.scorecardExportSafe .zeroMonitorBadge{background:var(--panel2)!important;border-color:var(--bad)!important;color:var(--bad)!important}
 @media(max-width:620px){.goalEditor{grid-template-columns:1fr 1fr 28px}.metricInlineAdvanced{white-space:normal}.columnsGoalsHeading{align-items:flex-start;flex-direction:column}}

@@ -215,8 +215,9 @@ function individualScopeIndex(){
   for(const setName of ['includeRepKeys','excludeRepKeys']) for(const key of [...selection[setName]]) if(!index.repByKey.has(key)) selection[setName].delete(key);
   return index;
 }
+function individualNameAllowed(rep){ return !document.getElementById('individualExcludeNumericNames')?.checked || !/^\d+$/.test(String(rep.fullName||'').trim()); }
 function individualRepresentativeCatalog(){ return individualScopeIndex().representatives; }
-function individualResolvedScope(){ return QualtricsIndividualMessages.resolveScope(individualScopeIndex(),individualScopeSelection()); }
+function individualResolvedScope(){ return QualtricsIndividualMessages.resolveScope(individualScopeIndex(),individualScopeSelection()).filter(individualNameAllowed); }
 function individualScopeSummary(){
   const reps=individualResolvedScope(), coachKeys=new Set(), organizationIds=new Set();
   for(const rep of reps){ if(rep.coachKey) coachKeys.add(rep.coachKey); for(const id of rep.organizationIds||[]) organizationIds.add(id); }
@@ -244,7 +245,7 @@ function individualRepScopeMode(repKey){ const selection=individualScopeSelectio
 function renderIndividualRepresentativeOptions(){
   if(!els.individualRepresentativeOptions) return;
   const index=individualScopeIndex(), query=QualtricsIndividualMessages.normalizeName(els.individualRepresentativeSearch?.value||'');
-  const matches=index.representatives.filter(item=>!query||item.normalizedSearch.includes(query)), visible=matches.slice(0,160);
+  const matches=index.representatives.filter(item=>individualNameAllowed(item)&&(!query||item.normalizedSearch.includes(query))), visible=matches.slice(0,160);
   els.individualRepresentativeOptions.innerHTML=visible.map(rep=>`<div class="individualRepScopeRow"><span><strong>${esc(rep.fullName)}</strong><small>${esc([rep.coach,rep.team,...(rep.organizationNames||[])].filter(Boolean).join(' • ')||'No coach or organization')}</small></span><select data-individual-rep="${esc(rep.repKey)}" aria-label="Scope behavior for ${esc(rep.fullName)}"><option value="automatic"${individualRepScopeMode(rep.repKey)==='automatic'?' selected':''}>Use group scope</option><option value="include"${individualRepScopeMode(rep.repKey)==='include'?' selected':''}>Always include</option><option value="exclude"${individualRepScopeMode(rep.repKey)==='exclude'?' selected':''}>Exclude</option></select></div>`).join('')+individualScopeListNote(matches.length,visible.length)||'<div class="empty compact">No representatives match.</div>';
   els.individualRepresentativeOptions.querySelectorAll('[data-individual-rep]').forEach(select=>select.onchange=()=>{ const key=select.dataset.individualRep, scope=individualScopeSelection(); scope.includeRepKeys.delete(key); scope.excludeRepKeys.delete(key); if(select.value==='include'){ if(!scope.organizationIds.size&&!scope.coachKeys.size) scope.allByDefault=false; scope.includeRepKeys.add(key); } if(select.value==='exclude') scope.excludeRepKeys.add(key); invalidateIndividualRunCache('review scope changed'); renderIndividualScopeSummary(); });
 }
@@ -621,6 +622,7 @@ function bindIndividualMessages(){
   els.individualRuleSearch?.addEventListener('input',renderIndividualRuleOptions);
   els.individualOrganizationSearch?.addEventListener('input',renderIndividualOrganizationOptions);
   els.individualCoachSearch?.addEventListener('input',renderIndividualCoachOptions);
+  document.getElementById('individualExcludeNumericNames')?.addEventListener('change',()=>{ state.individualReviewRun?.controller.abort(); invalidateIndividualRunCache('numeric-name exclusion changed'); renderIndividualRepresentativeOptions(); renderIndividualScopeSummary(); });
   els.individualRepresentativeSearch?.addEventListener('input',renderIndividualRepresentativeOptions);
   els.cancelIndividualReviewBtn?.addEventListener('click',()=>state.individualReviewRun?.controller?.abort());
   els.expandAllIndividualBtn?.addEventListener('click',()=>{ state.individualCardsExpanded=true; els.individualReview?.querySelectorAll('.individualReviewCard').forEach(card=>card.open=true); });

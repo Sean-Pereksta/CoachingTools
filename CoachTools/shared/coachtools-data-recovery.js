@@ -65,10 +65,10 @@
     refreshInjectedManagers();
   }
 
-  function removeRecoveryForDataset(datasetType) {
+  function removeRecoveryForDataset(datasetType, fileName) {
     const state = readRecovery();
     if (!state) return;
-    const issues = state.issues.filter(issue => issue.datasetType !== datasetType);
+    const issues = state.issues.filter(issue => issue.datasetType !== datasetType || (fileName && issue.fileName !== fileName));
     if (!issues.length) {
       clearRecovery();
       return;
@@ -174,7 +174,9 @@
     const wrapper = cloneApi(api);
     const wrapWrite = methodName => async function wrappedDatasetWrite(type, data, metadata) {
       try {
-        return await api[methodName](type, data, metadata);
+        const result = await api[methodName](type, data, metadata);
+        removeRecoveryForDataset(type, display(metadata && (metadata.originalFileName || metadata.fileName)));
+        return result;
       } catch (error) {
         reportIssue(type, error, metadata || {}, api);
         throw error;
@@ -193,6 +195,9 @@
       wrapper.analyzeFiles = async function wrappedAnalyzeFiles(files, options) {
         try {
           const result = await api.analyzeFiles(files, options);
+          for (const entry of result && result.needsReview || []) {
+            reportIssue(entry.classification && entry.classification.predictedId, new Error(entry.classification?.validation?.reason || 'Could not determine a unique source from the filename and workbook headers.'), { fileName: entry.file && entry.file.name }, dataApiBacking);
+          }
           for (const item of result && result.errors || []) {
             const fileName = display(item && item.file && item.file.name);
             reportIssue(inferDatasetTypeFromFileName(fileName), item && item.error || new Error('File analysis failed.'), { fileName }, dataApiBacking);
@@ -277,9 +282,9 @@
       card.appendChild(prompt);
     }
     prompt.replaceChildren();
-    const title = createElement(doc, 'strong', 'Data storage error detected');
-    const ask = createElement(doc, 'div', `${issue.datasetLabel} failed during ${issue.operation}. Please open Data Manager and delete the current stored data before retrying.`);
-    const detail = createElement(doc, 'small', `Source: ${issue.datasetLabel}${issue.fileName ? ` · ${issue.fileName}` : ''} · IndexedDB: ${issue.database} · Stores: ${issue.stores.join(', ')} · ${issue.errorCode}: ${issue.message}`);
+    const title = createElement(doc, 'strong', `Could not load: ${issue.fileName || 'Uploaded file'}`);
+    const ask = createElement(doc, 'div', 'This file could not be loaded automatically. Please reach out to Sean for assistance.');
+    const detail = createElement(doc, 'small', `Source: ${issue.datasetLabel} · Reason: ${issue.message}`);
     Object.assign(detail.style, { opacity: '.78', lineHeight: '1.45' });
     const actions = createElement(doc, 'div');
     Object.assign(actions.style, { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' });
@@ -366,7 +371,7 @@
         });
         recoveryBox.append(
           createElement(doc, 'b', 'Upload error recovery suggested'),
-          createElement(doc, 'div', `${issue.operation} reported an error for ${issue.datasetLabel}${issue.fileName ? ` (${issue.fileName})` : ''}. Recommended recovery: use Delete All Data below, confirm YES, then retry the upload.`),
+          createElement(doc, 'div', `Could not load: ${issue.fileName || "Uploaded file"} · Source: ${issue.datasetLabel}. This file could not be loaded automatically. Please reach out to Sean for assistance.`),
           createElement(doc, 'small', `${issue.errorCode}: ${issue.message} · IndexedDB ${issue.database} · ${issue.stores.join(', ')}`)
         );
         body.appendChild(recoveryBox);

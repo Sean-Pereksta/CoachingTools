@@ -384,13 +384,11 @@
     }
 
     const rememberedNames = readJson(SOURCE_NAMES_KEY, {});
-    const matched = selectBaselineCandidates(records, baseline, rememberedNames);
-    if (!matched.length) {
-      const expected = candidateTemplates(baseline, rememberedNames).slice(0, 5).join(', ');
-      finishProgress(`No files matched the Clean Upload source names${expected ? ` (${expected})` : ''}. Existing data was retained.`, { warning: true });
-      showToast('No matching Clean Upload exports were found in the selected folder.', 6500);
-      return;
-    }
+    const preferred = selectBaselineCandidates(records, baseline, rememberedNames);
+    // Filename families prioritize discovery; changed export names still get
+    // the same header validation as Clean Upload before source/scope selection.
+    const preferredFiles = new Set(preferred.map(record => record.file));
+    const matched = [...preferred, ...records.filter(record => !preferredFiles.has(record.file))];
 
     setSteps([
       { label: 'Finding Clean Upload source files', status: 'success' },
@@ -407,13 +405,13 @@
           'Reading matched Clean Upload files',
           `${progress.fileName || ''}${progress.sheetName ? ` · ${progress.sheetName}` : ''}`,
           `${Math.min(matched.length, fileIndex + 1)} of ${matched.length}`,
-          'Only files matching the Clean Upload source-name families are being analyzed.'
+          'Checking filenames and workbook headers; only the saved source set and coach scope can be updated.'
         );
       }
     });
 
     const recognizedAllowed = analysis.recognized.filter(entry => allowedTypes.has(entry.classification && entry.classification.id));
-    const entries = newestEntriesByType(recognizedAllowed);
+    const entries = analysis.updateMode ? analysis.recognized : newestEntriesByType(recognizedAllowed);
     const recognizedTypes = new Set(entries.map(entry => entry.classification.id));
     const missingTypes = baseline.datasetTypes.filter(type => !recognizedTypes.has(type));
 
@@ -426,6 +424,7 @@
     const imported = [];
     const errors = analysis.errors.map(item => `${item.file && item.file.name || 'File'}: ${item.error && item.error.message || item.error}`);
     const ignoredReview = analysis.needsReview.length;
+    const fileFailures = [...analysis.errors, ...analysis.needsReview].map(item => ({fileName:item.file.name, type:item.classification?.id || item.classification?.predictedId, reason:item.error?.message || item.classification?.validation?.reason || 'Could not determine a unique source from filename and headers.'}));
     for (let index = 0; index < entries.length; index += 1) {
       const entry = entries[index];
       const type = entry.classification.id;
@@ -439,10 +438,13 @@
       );
       try {
         const result = await importer.saveRecognizedEntry(entry, { scope });
-        imported.push({ type, fileName: entry.file.name, status: result && result.status || 'saved' });
-        rememberSourceName(type, entry.file.name);
+        if (!result.skippedByCleanUploadBaseline) {
+          imported.push({ type, fileName: entry.file.name, status: result && result.status || 'saved' });
+          if (!result.skippedByUpdatePlan) rememberSourceName(type, entry.file.name);
+        }
       } catch (error) {
         errors.push(`${entry.file.name}: ${error && error.message || error}`);
+        fileFailures.push({fileName:entry.file.name,type,reason:error.message || String(error)});
       }
     }
 
@@ -464,6 +466,7 @@
       { label: 'Finding Clean Upload source files', status: 'success' },
       { label: 'Reading matched files', status: analysis.errors.length || ignoredReview ? 'warning' : 'success' },
       { label: 'Saving with Clean Upload scope', status: errors.length ? 'warning' : 'success' },
+      ...fileFailures.map(item => ({label:`Could not load: ${item.fileName} · Source: ${item.type ? sourceLabel(item.type) : 'Not identified'} · Reason: ${item.reason}. This file could not be loaded automatically. Please reach out to Sean for assistance.`,status:'warning'})),
       { label: 'Ready', status: warning ? 'warning' : 'success' }
     ]);
     finishProgress(`${parts.join(' · ')}.`, { warning, count: `${counts.ready} of ${counts.total}` });
