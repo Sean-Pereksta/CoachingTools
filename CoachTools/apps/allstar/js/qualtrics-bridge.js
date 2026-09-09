@@ -142,12 +142,71 @@ function validateQualtricsGeneratorHtml(html){
   for(const marker of ['els.qaInput.onchange=e=>loadQA','els.coachingInput.onchange=e=>loadCoaching','els.checklistInput.onchange=e=>loadChecklist','els.weeklyStatsInput.onchange=e=>loadWeeklyStats']) if(!html.includes(marker)) throw new Error(`The Qualtrics generator is missing an Add 4 Key Files handler: ${marker}.`);
   return html;
 }
+function qualtricsActionEmailNameFilterInstaller(){
+  const exportButton=document.getElementById('exportEmailsBtn');
+  if(!exportButton||document.getElementById('actionExcludeInvalidNumericNames')) return;
+  const storageKey='coachingEmailGeneratorActionExcludeNumericNames';
+  const isInvalidRepresentativeName=name=>{
+    const value=String(name??'').trim();
+    if(!value) return false;
+    if(/^\d+(?:\.0+)?$/.test(value)) return true;
+    return (value.match(/\d/g)||[]).length>1;
+  };
+  const label=document.createElement('label');
+  label.className='small-note';
+  label.style.marginLeft='8px';
+  label.title='Excludes numeric-only representative names and names containing two or more digits.';
+  const checkbox=document.createElement('input');
+  checkbox.id='actionExcludeInvalidNumericNames';
+  checkbox.type='checkbox';
+  let enabled=true;
+  try{
+    const saved=localStorage.getItem(storageKey);
+    enabled=saved==null?true:saved==='true';
+  }catch{}
+  checkbox.checked=enabled;
+  label.append(checkbox,document.createTextNode(' Exclude Number-Only Names'));
+  exportButton.insertAdjacentElement('afterend',label);
+  checkbox.addEventListener('change',()=>{
+    try{ localStorage.setItem(storageKey,String(checkbox.checked)); }catch{}
+  });
+  exportButton.addEventListener('click',async event=>{
+    if(!checkbox.checked||typeof exportEmails!=='function') return;
+    const report=state?.report;
+    if(!report||!Array.isArray(report.flagged)||!report.flagged.length) return;
+    const originalFlagged=report.flagged;
+    const filteredFlagged=originalFlagged.filter(row=>!isInvalidRepresentativeName(row?.rep));
+    if(filteredFlagged.length===originalFlagged.length) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    report.flagged=filteredFlagged;
+    try{ await exportEmails(); }
+    finally{ report.flagged=originalFlagged; }
+  },true);
+}
+function installQualtricsActionEmailNameFilter(){
+  try{
+    const frame=els.qualtricsEmailFrame, doc=frame?.contentDocument;
+    if(!doc?.body||doc.getElementById('actionExcludeInvalidNumericNames')) return;
+    const script=doc.createElement('script');
+    script.textContent=`(${qualtricsActionEmailNameFilterInstaller.toString()})();`;
+    doc.body.appendChild(script);
+    script.remove();
+  }catch(err){ console.warn('[Qualtrics Generator] Could not install Action Report representative-name filter',err); }
+}
+function ensureQualtricsActionEmailNameFilterHook(){
+  const frame=els.qualtricsEmailFrame;
+  if(!frame||frame.dataset.actionEmailNameFilterHook==='1') return;
+  frame.dataset.actionEmailNameFilterHook='1';
+  frame.addEventListener('load',()=>setTimeout(installQualtricsActionEmailNameFilter,0));
+}
 function mountQualtricsGeneratorHtml(html){
   if(!els.qualtricsEmailFrame) throw new Error('The Qualtrics iframe is unavailable.');
   els.qualtricsEmailFrame.srcdoc=validateQualtricsGeneratorHtml(html);
 }
 function loadQualtricsGeneratorFrame(){
   if(qualtricsGeneratorLoadPromise) return qualtricsGeneratorLoadPromise;
+  ensureQualtricsActionEmailNameFilterHook();
   qualtricsGeneratorLoadPromise=new Promise(resolve=>{
     let finished=false;
     const fallback=reason=>{
@@ -195,7 +254,7 @@ function openQualtricsEmailWorkspace(){
 
 function handleQualtricsMessage(event){
   if(event.source!==els.qualtricsEmailFrame?.contentWindow) return; const data=event.data||{};
-  if(data.type==='qualtrics-generator-ready'){ clearTimeout(qualtricsGeneratorReadyTimer); qualtricsGeneratorReadyTimer=null; state.qualtricsReady=true; sendQualtricsCoreFiles(false); return; }
+  if(data.type==='qualtrics-generator-ready'){ clearTimeout(qualtricsGeneratorReadyTimer); qualtricsGeneratorReadyTimer=null; state.qualtricsReady=true; installQualtricsActionEmailNameFilter(); sendQualtricsCoreFiles(false); return; }
   if(data.type==='qualtrics-hire-date-source-request'){ sendQualtricsHireDateSource(data); return; }
   if(data.type==='qualtrics-key-files-progress'){ if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=data.message||'Connecting All-Star data…'; return; }
   if(data.type==='qualtrics-key-files-complete'){ const c=data.counts||{}; state.qualtricsCoreConnectedSignature=state.qualtricsCorePendingSignature||qualtricsCoreSourceSignature(); state.qualtricsCorePendingSignature=''; if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=`Connected: ${Number(c.qa||0).toLocaleString()} KPI · ${Number(c.coaching||0).toLocaleString()} coaching · ${Number(c.checklist||0).toLocaleString()} checklist. Weekly Stats remain manual. Nothing was previewed or generated.`; return; }
