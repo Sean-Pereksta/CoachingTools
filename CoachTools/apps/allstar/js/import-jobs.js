@@ -119,6 +119,15 @@ async function parseAllStarWorkbook(buffer){
   // same vendor source inline; hosted builds resolve their bundled vendor URL.
   if(typeof Worker==='undefined' || typeof Blob==='undefined') return XLSX.read(buffer,{type:'array',cellDates:true,raw:false});
   const embedded=document.querySelector('script[data-allstar-vendor="xlsx.full.min.js"]');
+  // Blob workers cannot import a file:// dependency in desktop browsers.
+  // Choose the already-loaded page parser before transferring the buffer.
+  // Embedded portable builds can still use their self-contained worker.
+  if(!embedded?.textContent && new URL(document.baseURI).protocol==='file:'){
+    updateProgress('Parsing local workbook with the loaded spreadsheet library…',10,{force:true});
+    await yieldToBrowser();
+    assertAllStarImportActive();
+    return XLSX.read(buffer,{type:'array',cellDates:true,raw:false});
+  }
   const library=embedded?.textContent || `importScripts(${JSON.stringify(new URL('../../vendor/xlsx.full.min.js',document.baseURI).href)});`;
   const code=library+'\nself.onmessage=function(event){try{self.postMessage({workbook:XLSX.read(event.data,{type:"array",cellDates:true,raw:false})});}catch(error){self.postMessage({error:String(error.message||error)});}};';
   const url=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));
