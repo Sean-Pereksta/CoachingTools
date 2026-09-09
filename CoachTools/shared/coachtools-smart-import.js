@@ -669,8 +669,9 @@
       if (analysis.needsReview.length) setStep(`${analysis.needsReview.length} file${analysis.needsReview.length === 1 ? '' : 's'} need review`, 'warning');
 
       const statuses = root.CoachToolsStorage && root.CoachToolsStorage.getDatasetStatus ? root.CoachToolsStorage.getDatasetStatus() : [];
-      const ready = statuses.filter(item => item.ready).length;
-      const total = statuses.length || importer.DATASET_ORDER.length;
+      const selectedTypes=new Set(analysis.recognized.map(entry=>entry.classification.id));
+      const ready = statuses.filter(item => item.ready && selectedTypes.has(item.id || item.datasetType)).length;
+      const total = selectedTypes.size;
       const duplicates = imported.filter(item => item.status === 'duplicate').length;
       const saved = imported.length - duplicates;
       const filteredRows = imported.filter(item => item.filtered).reduce((sum, item) => sum + item.matchedRows, 0);

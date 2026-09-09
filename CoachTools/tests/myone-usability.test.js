@@ -54,5 +54,16 @@ const file=(name,aoa)=>({name,type:'text/csv',text:async()=>JSON.stringify({Shee
   const storage=read('shared/coachtools-storage.js');
   vm.runInContext(storage.slice(storage.indexOf('  function compareCurrent'),storage.indexOf('  function cacheCurrentRecord')),context);
   assert(context.compareCurrent({periodKey:'current',importedAt:'2026-09-09'},{periodKey:'current'}),'legacy metadata without import time must not block valid current data');
+  const undated={file:{name:'Retail Weekly.csv'},classification:{id:'weeklyRetail'},parsed:{meta:{totalRows:2},workbook:{sheets:['Data'],data:{Data:{aoa:[['Sheet','Representative'],['A','Jane']]}}}}};
+  await api.prepareRecognizedEntry(undated,{scope:{mode:'all'}});
+  assert.equal(undated.classification.detectedPeriod.periodKey,'current','Retail Weekly.csv must not require filename/report dates');
+  let overrideWrites=0;
+  importerContext.CoachToolsData={importDataset:async(type,data,metadata)=>{assert(metadata.forceSourceReplacement);overrideWrites++;return {status:'replacement'}}};
+  const malformed=file('Checklist.csv',[['Unexpected Header'],['Incoming value']]);
+  const overrideCandidate={file:malformed,classification:{id:'checklist'},parsed:{meta:{totalRows:2},workbook:{sheets:['Data'],data:{Data:{aoa:[['Unexpected Header'],['Incoming value']]}}}}};
+  importerContext.confirm=()=>false;
+  await assert.rejects(()=>api.overrideEntry(overrideCandidate,{scope:{mode:'all'}},new Error('Old data conflict')),/Old data conflict/);assert.equal(overrideWrites,0);
+  importerContext.confirm=()=>true;
+  await api.overrideEntry(overrideCandidate,{scope:{mode:'all'}},new Error('Old data conflict'));assert.equal(overrideWrites,1,'Other sources require approval before replacement');
   console.log('MyOne usability and shared import regressions passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

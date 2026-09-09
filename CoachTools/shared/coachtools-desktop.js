@@ -1314,7 +1314,13 @@
       state.startupScanActive = true;
       setStartupProgress(14, 'Checking shared data', 'Comparing shared files with local IndexedDB history…', null);
     }
-    const statuses = currentDatasetStatuses();
+    const baseline=root.CoachToolsCleanUploadBaseline?.getBaseline?.();
+    if (!baseline?.datasetTypes?.length) {
+      if(manual) showToast('Use Clean Upload to choose your files from any folder first.');
+      if(startup) setStartupProgress(50,'Ready','Use Clean Upload to choose the source files you want.',null);
+      return;
+    }
+    const statuses = currentDatasetStatuses().filter(item=>baseline.datasetTypes.includes(item.datasetType || item.id));
     const datasetTypes = statuses.map(item => item.datasetType || item.id);
     const totalSources = datasetTypes.length || datasetTotal(statuses);
     const readyBefore = statuses.filter(item => item.ready).length;
@@ -1348,7 +1354,9 @@
       if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end('Storage listing');
     }
 
-    const allListedFiles = Array.isArray(listing && listing.files) ? listing.files : [];
+    const folderFiles = Array.isArray(listing && listing.files) ? listing.files : [];
+    const candidates=folderFiles.map(metadata=>({file:{name:metadata.filename,lastModified:Date.parse(metadata.modifiedTime)||0,size:metadata.size},path:metadata.url,metadata}));
+    const allListedFiles=(root.CoachToolsRememberedData?.selectBaselineCandidates?.(candidates,baseline,{}) || []).map(item=>item.metadata);
     const scopeResolution = root.CoachToolsData && typeof root.CoachToolsData.resolveUpdateScope === 'function'
       ? await root.CoachToolsData.resolveUpdateScope(datasetTypes)
       : { needsReview: false, scope: storage && storage.getScope ? storage.getScope() : { mode: 'all', label: 'All people' }, source: 'global-scope' };
@@ -1440,13 +1448,14 @@
       setImportProgress(48 + ((index + 1) / Math.max(1, parsedEntries.length)) * 23, `Comparing ${importer.SOURCES[id].label}`, entry.metadata.filename, `${index + 1} of ${parsedEntries.length}`);
       await nextPaint();
       let prepared;
-      try {
-        prepared = await importer.prepareRecognizedEntry(entry, {scope});
-      } catch(error) {
-        ambiguous.push(`${entry.metadata.filename} (${error.message || error})`);
-        setProgressStep(importer.uploadFailureMessage(entry,error),'warning');
-        scanResults.push({id,fileName:entry.metadata.filename,status:'needs-review',reason:error.message || String(error),scopeHash});
-        continue;
+      try { prepared=await importer.prepareRecognizedEntry(entry,{scope}); }
+      catch(error) {
+        try { prepared=await importer.prepareOverrideEntry(entry,{scope},error); }
+        catch(failure) {
+          ambiguous.push(`${entry.metadata.filename} (${failure.message || failure})`);
+          setProgressStep(importer.uploadFailureMessage(entry,failure),'warning');
+          continue;
+        }
       }
       const dataset = prepared.dataset;
       let inspection;
@@ -1465,11 +1474,18 @@
           scopedFingerprint: prepared.scopedFingerprint
         });
       } catch(error) {
-        ambiguous.push(`${entry.metadata.filename} (${error.message || error})`);
-        setProgressStep(importer.uploadFailureMessage(entry,error),'warning');
-        continue;
+        try {
+          prepared=await importer.prepareOverrideEntry(entry,{scope},error);
+          inspection={status:'updated',becomesCurrent:true,candidate:{periodSort:entry.classification.detectedPeriod?.sortKey || ''}};
+        } catch(failure) { ambiguous.push(`${entry.metadata.filename} (${failure.message || failure})`);setProgressStep(importer.uploadFailureMessage(entry,failure),'warning');continue; }
       }
-      const inspected = { id, ...entry, dataset, prepared, inspection };
+      if(inspection.status==='needs-review') {
+        try {
+          prepared=await importer.prepareOverrideEntry(entry,{scope},new Error(inspection.reason));
+          inspection={...inspection,status:'updated',becomesCurrent:true};
+        } catch(error) { ambiguous.push(`${entry.metadata.filename} (${error.message || error})`);setProgressStep(importer.uploadFailureMessage(entry,error),'warning');continue; }
+      }
+      const inspected = { id, ...entry, dataset:prepared.dataset, prepared, inspection };
       if (!candidatesBySource.has(id)) candidatesBySource.set(id, []);
       candidatesBySource.get(id).push(inspected);
       scanResults.push({ id, fileName: entry.metadata.filename, status: inspection.status, reason: inspection.reason, period: inspection.candidate && inspection.candidate.periodKey || '', scopeHash, scopedRowCount: prepared.matchedRows, outOfScopeRows: prepared.diagnostics && prepared.diagnostics.outOfScopeRows || 0 });
@@ -1535,17 +1551,23 @@
         written.push({ id: entry.id, fileName: entry.metadata.filename, status: entry.inspection.status, datasetId: result.dataset && result.dataset.id || '' });
         rememberStorageFile(processedFiles, entry.metadata, { datasetType: entry.id, scopeHash, scopedFingerprint: entry.prepared.scopedFingerprint, scopedRowCount: entry.prepared.matchedRows, datasetId: result.dataset && (result.dataset.datasetId || result.dataset.id) || '' });
       } catch (error) {
-        writeErrors.push(`${entry.metadata.filename}: ${error && error.message || error}`);
-        setProgressStep(importer.uploadFailureMessage(entry,error),'warning');
+        try {
+          const result=await importer.overrideEntry(entry,{scope},error);
+          written.push({id:entry.id,fileName:entry.metadata.filename,status:'updated',datasetId:result.dataset?.id || ''});
+          rememberStorageFile(processedFiles,entry.metadata,{datasetType:entry.id,scopeHash,datasetId:result.dataset?.id || ''});
+        } catch(failure) {
+          writeErrors.push(`${entry.metadata.filename}: ${failure.message || failure}`);
+          setProgressStep(importer.uploadFailureMessage(entry,failure),'warning');
+        }
       }
     }
 
     setProgressStep('Saving shared data', writeErrors.length ? 'warning' : 'success');
     setProgressStep('Ready', ambiguous.length || writeErrors.length ? 'warning' : 'success');
     renderDataStatus();
-    const after = storage.getDatasetStatus();
+    const after = storage.getDatasetStatus().filter(item=>datasetTypes.includes(item.id || item.datasetType));
     const readyCount = after.filter(item => item.ready).length;
-    const missingLabels = after.filter(item => !item.ready).map(item => item.label);
+    const missingLabels = [];
     const newCount = written.filter(entry => entry.status === 'new').length, updatedCount = written.filter(entry => entry.status === 'updated').length;
     const actions = [newCount ? `${newCount} new` : '', updatedCount ? `${updatedCount} updated` : ''].filter(Boolean).join(' · ');
     const scopedUnchanged = scanResults.filter(entry => ['current', 'duplicate', 'older'].includes(entry.status)).length + unchangedFiles.length;

@@ -1,0 +1,17 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const {parseHTML}=require('linkedom');
+const {document}=parseHTML('<html><head></head><body><button data-action="clean-upload-data">Clean Upload</button><button data-action="quick-upload-data">Upload</button><input id="quickDataInput" type="file" webkitdirectory></body></html>');
+const values=new Map();
+const context=vm.createContext({document,console,setTimeout,clearTimeout,URL,location:{protocol:'file:',href:'file:///anywhere/CoachTools/index.html'},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},addEventListener(){},showDirectoryPicker(){throw Error('Clean Upload must not use a folder scanner');}});context.window=context;
+const root=path.resolve(__dirname,'..');
+for(const file of ['coachtools-import.js','coachtools-dependencies.js','coachtools-remembered-scope.js','coachtools-remembered-data.js'])vm.runInContext(fs.readFileSync(path.join(root,'shared',file),'utf8'),context);
+let pickerClicks=0;const input=document.getElementById('quickDataInput');input.click=()=>pickerClicks++;
+document.querySelector('[data-action="clean-upload-data"]').click();assert.equal(pickerClicks,1);assert.equal(document.getElementById('coachtoolsStorageGuide'),null);assert.equal(input.hasAttribute('webkitdirectory'),false);assert.equal(input.multiple,true);
+document.querySelector('[data-action="quick-upload-data"]').click();assert.equal(pickerClicks,2);
+const chosen=['QA.csv','Retail Weekly.csv','All_Items.csv','MyOne2view.csv'];
+const records=[...chosen,'qualtrics_concern_history_2026-08-31.xlsx','Retail Monthly.xlsx','Referral Weekly.csv','Compliments.xlsx'].map(name=>({file:{name,lastModified:1,size:5},path:name}));
+const baseline={files:chosen.map(name=>({name})),datasetTypes:['qa','weeklyRetail','checklist','documentedCoaching']};
+const matches=context.CoachToolsRememberedData.selectBaselineCandidates(records,baseline,{monthlyRetail:['Retail Monthly.xlsx'],weeklyReferral:['Referral Weekly.csv']});
+assert.deepEqual(Array.from(matches,entry=>entry.file.name).sort(),chosen.sort(),'Only the four selected source families should be read; old source names and concern history must be ignored');
+console.log('Clean Upload opens an unrestricted multi-file picker directly; Update matches only the selected source set.');

@@ -378,6 +378,7 @@
     const type = entry.classification.id;
     const plan = entry._coachtoolsUpdatePlan;
     if (plan && plan.inspection && plan.inspection.status === 'needs-review') {
+      if (importer.overrideEntry) return importer.overrideEntry(entry, options, plan.error || new Error(plan.inspection.reason || 'Update needs review.'));
       throw plan.error || new Error(plan.inspection.reason || 'Update needs review. The existing dataset was retained.');
     }
     if (plan && !plan.selected) {
@@ -392,7 +393,9 @@
     const prepared = plan && plan.prepared || await prepareUpdateDataset(entry, options);
     const dataset = prepared.dataset;
     await nextPaint();
-    const result = await root.CoachToolsData.importDataset(type, dataset, plan && plan.metadata || updateMetadata(entry, prepared));
+    let result;
+    try { result = await root.CoachToolsData.importDataset(type, dataset, plan && plan.metadata || updateMetadata(entry, prepared)); }
+    catch(error) { if(!importer.overrideEntry) throw error; result=await importer.overrideEntry(entry,options,error); }
     // Once IndexedDB owns the update, release the parsed workbook before the next
     // file is prepared. This keeps multi-file updates from accumulating huge trees.
     entry.parsed = null;
@@ -503,13 +506,15 @@
     root.document.addEventListener('click', event => {
       const actionElement = event.target && event.target.closest && event.target.closest('[data-action]');
       const action = actionElement && actionElement.dataset.action;
-      if (action === 'clean-upload-data') {
+      if (action === 'clean-upload-data' || action === 'quick-upload-data') {
         event.preventDefault();
+        event.stopImmediatePropagation?.();
+        updateSession = null;
         mode = 'clean';
         pendingScope = null;
         pendingFiles = [];
         const input = $('quickDataInput');
-        if (input) input.click();
+        if (input) { input.removeAttribute?.('webkitdirectory'); input.removeAttribute?.('directory'); input.multiple=true; input.value=''; input.click(); }
       } else if (action === 'update-data' && root.location.protocol === 'file:') {
         mode = 'update';
       }

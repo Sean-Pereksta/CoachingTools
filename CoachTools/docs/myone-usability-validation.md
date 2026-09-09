@@ -28,3 +28,11 @@ Format diagnostics now enumerate missing field groups and their accepted column 
 Launcher scans now use the same incoming preparation/validation as Clean and Update. Validation, comparison, and write failures are isolated per file and surfaced in progress details.
 
 Additional passing coverage: DOM-based source selection, invalid-source rejection, retry/change/skip, filename text safety, actual XLSX discovery and manual scope preparation, and explicit manual destinations outside the old update source baseline. Run `npm run test:myone`; its new `linkedom` dependency is test-only. No live-browser validation or HTML preview was performed for this follow-up.
+
+## Correction: file selection and weekly override
+
+This supersedes the earlier broad renamed-file scanning and weekly period/history behavior described above. Clean Upload and quick upload open the native multiple-file picker directly, with no folder restriction or Storage guidance interception. Update and launcher scans match only the source filenames/templates established by Clean Upload. Four selected sources produce a four-source update; unrelated concern-history exports and unselected sources are ignored.
+
+Retail and Referral weekly uploads accept an undated report as the current weekly upload. Each incoming weekly source overrides all prior records/chunks for that source and becomes current, even when previous dates or duplicate metadata would have blocked it. Deletion, replacement, and pointer update share one IndexedDB transaction: an aborted write retains the prior committed copy. Other sources are unaffected. Weekly replacement is automatic under the user's explicit authorization; other recognized-source failures offer an in-app confirmation before replacing that source's history. The incoming file must still be readable, and selected coach scope is preserved. An unreadable file or unavailable database cannot be made writable by deleting good data.
+
+Passing regression coverage includes the unrestricted native picker, selected-source-only matching, undated weekly preparation, consent/decline for nonweekly replacement, weekly chunk cleanup/current-pointer replacement, preservation of unrelated data, and transaction rollback. `test:myone` includes these checks. Root and desktop index files remain unchanged.

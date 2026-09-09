@@ -73,7 +73,8 @@
     for (const file of baseline && Array.isArray(baseline.files) ? baseline.files : []) {
       if (file && file.name) names.push(file.name);
     }
-    for (const values of Object.values(rememberedNames || {})) {
+    for (const type of baseline?.datasetTypes || []) {
+      const values = rememberedNames?.[type];
       if (Array.isArray(values)) names.push(...values);
     }
     return Array.from(new Set(names.map(display).filter(Boolean)));
@@ -384,11 +385,8 @@
     }
 
     const rememberedNames = readJson(SOURCE_NAMES_KEY, {});
-    const preferred = selectBaselineCandidates(records, baseline, rememberedNames);
-    // Filename families prioritize discovery; changed export names still get
-    // the same header validation as Clean Upload before source/scope selection.
-    const preferredFiles = new Set(preferred.map(record => record.file));
-    const matched = [...preferred, ...records.filter(record => !preferredFiles.has(record.file))];
+    const matched = selectBaselineCandidates(records, baseline, rememberedNames);
+    if (!matched.length) { finishProgress('No matching files found for your selected sources. Existing data is unchanged.',{warning:false}); return; }
 
     setSteps([
       { label: 'Finding Clean Upload source files', status: 'success' },
@@ -449,16 +447,15 @@
       }
     }
 
-    const counts = currentReadyCount();
+    const counts = {ready:imported.length,total:entries.length};
     const savedCount = imported.filter(item => !['duplicate', 'current'].includes(item.status)).length;
     const currentCount = imported.length - savedCount;
-    const warning = Boolean(errors.length || missingTypes.length || ignoredReview);
+    const warning = Boolean(errors.length || ignoredReview);
     const parts = [
       `Clean Upload scope preserved: ${scopeName}`,
       `${counts.ready} of ${counts.total} data sources ready`,
       savedCount ? `${savedCount} source${savedCount === 1 ? '' : 's'} refreshed` : '',
       currentCount ? `${currentCount} already current` : '',
-      missingTypes.length ? `missing: ${missingTypes.map(sourceLabel).join(', ')}` : '',
       ignoredReview ? `${ignoredReview} matched file${ignoredReview === 1 ? '' : 's'} could not be classified` : '',
       errors.length ? `${errors.length} error${errors.length === 1 ? '' : 's'}` : ''
     ].filter(Boolean);
@@ -525,6 +522,7 @@
     runUpdate,
     refreshAvailabilityNote,
     clearSavedHandle,
+    selectBaselineCandidates,
     _test: Object.freeze({ normalizeFamily, nameMatchScore, selectBaselineCandidates, newestEntriesByType })
   });
 
