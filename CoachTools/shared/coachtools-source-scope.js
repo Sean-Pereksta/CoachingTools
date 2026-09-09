@@ -5,9 +5,10 @@
   if (!base || typeof base.resolveScopeSnapshot !== 'function' || typeof base.prepareScopedDataset !== 'function') return;
 
   const BASELINE_KEY = 'coachtools.desktop.cleanUploadBaseline.v1';
-  const ROUTING_VERSION = '1.0.0';
+  const ROUTING_VERSION = '1.0.1';
   let pendingChooserSelections = null;
   let pendingChooserScopeHash = '';
+  let pendingChooserPersonIds = [];
   let pendingChooserExpiresAt = 0;
 
   function display(value) {
@@ -35,6 +36,15 @@
       }
     }
     return Object.keys(result).length ? result : null;
+  }
+
+  function normalizePersonIds(values) {
+    return Array.from(new Set((values || []).map(display).filter(Boolean))).sort();
+  }
+
+  function samePersonIds(left, right) {
+    const a = normalizePersonIds(left), b = normalizePersonIds(right);
+    return Boolean(a.length && a.length === b.length && a.every((value, index) => value === b[index]));
   }
 
   function readBaseline() {
@@ -111,11 +121,14 @@
       if (selections) {
         pendingChooserSelections = clone(selections);
         pendingChooserScopeHash = display(resolved.scopeHash);
-        pendingChooserExpiresAt = Date.now() + 15000;
+        pendingChooserPersonIds = normalizePersonIds(resolved.coachPersonIds);
+        pendingChooserExpiresAt = Date.now() + 30000;
       }
     }
     if (!selections && pendingChooserSelections && Date.now() <= pendingChooserExpiresAt) {
-      if (!pendingChooserScopeHash || !resolved.scopeHash || pendingChooserScopeHash === resolved.scopeHash) selections = clone(pendingChooserSelections);
+      const sameHash = Boolean(pendingChooserScopeHash && resolved.scopeHash && pendingChooserScopeHash === resolved.scopeHash);
+      const sameIdentity = samePersonIds(pendingChooserPersonIds, resolved.coachPersonIds);
+      if (sameHash || sameIdentity) selections = clone(pendingChooserSelections);
     }
     if (!selections) selections = baselineSelectionsFor(resolved);
     return attachSelections(resolved, selections);
@@ -144,7 +157,7 @@
       route,
       scope: {
         mode: route.names.length === 1 ? 'coach' : 'team',
-        label: authoritativeScope.label || (route.names.length === 1 ? route.names[0] : `${route.names.length} selected coaches`),
+        label: route.names.length === 1 ? route.names[0] : `${route.names.length} selected coaches`,
         coaches: route.names.slice(),
         coachKeys,
         coachPersonIds: [],
@@ -284,6 +297,6 @@
     overrideEntry,
     saveRecognizedEntry,
     saveRecognizedFiles,
-    _sourceScopeRouting: Object.freeze({ normalizeSelectionMap, routedSelection, sourceFilterScope })
+    _sourceScopeRouting: Object.freeze({ normalizeSelectionMap, normalizePersonIds, samePersonIds, routedSelection, sourceFilterScope })
   });
 })(window);
