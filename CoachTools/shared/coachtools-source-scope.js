@@ -145,6 +145,7 @@
     const route = routedSelection(authoritativeScope, type);
     if (!route.explicit) return { scope: authoritativeScope, route };
     if (!route.names.length) {
+      if (['weeklyRetail','weeklyReferral'].includes(type)) return {scope:{mode:'all',label:'All people'},route};
       const label = base.SOURCES && base.SOURCES[type] && base.SOURCES[type].label || type;
       const error = new Error(`No coach value was selected for ${label}. Coach names selected in other files will not be substituted for this source.`);
       error.name = 'CoachToolsSourceScopeError';
@@ -251,6 +252,7 @@
     if (!weekly && !(root.confirm && root.confirm(`Could not upload ${entry.file.name}: ${error.message || error}\n\nReplace the old ${base.SOURCES[type].label} data with this file? This deletes only that source's old stored data. Other sources are unchanged.`))) throw error;
     const parsed = await base.parseFile(entry.file);
     if (!parsed.meta.totalRows) throw new Error('The incoming file has no readable rows to store.');
+    if (weekly) { const validation=base.validateClassification(type,parsed); if (!validation.valid) throw new Error(validation.reason); }
     const requestedScope = options && options.scope || root.CoachToolsStorage && root.CoachToolsStorage.getScope && root.CoachToolsStorage.getScope() || { mode: 'all', label: 'All people' };
     const authoritativeScope = await resolveScopeSnapshot(requestedScope);
     const routed = sourceFilterScope(authoritativeScope, type);

@@ -431,6 +431,7 @@ async function evaluateIndividualMessages(){
     state.individualTemplate=individualTemplateFromForm(); const reportDate=parseDate(els.reportDate?.value)||new Date(), signature=individualReviewSignature(representatives,selectedRules,selectedReportFiles,state.individualTemplate,reportDate);
     if(state.individualRunCache?.signature===signature){
       state.individualEvaluation=state.individualRunCache.evaluation; state.individualResults=state.individualRunCache.results; state.individualResultsStale=false; state.individualPerformance={timings:{'Scope resolution':timings['Scope resolution'],'Active run cache':0,'Total':performance.now()-totalStarted},cacheHit:true};
+      await queueConcernHistory(()=>incrementConcernAppearances(state.individualResults.filter(result=>result.concerns?.length),run));
       setIndividualReviewProgress(95,'Rendering review',`${state.individualResults.length.toLocaleString()} cached representatives`); renderIndividualSummary(); renderIndividualReview(); renderIndividualPerformance(); setIndividualReviewProgress(100,'Review ready','Reused the completed active review');
       setStatus(`Reviewed ${state.individualResults.length.toLocaleString()} selected representatives from the active cache. Nothing was sent.`); await new Promise(resolve=>setTimeout(resolve,160)); return;
     }
@@ -446,6 +447,8 @@ async function evaluateIndividualMessages(){
     setIndividualReviewProgress(87,'Building messages','Deduplicating and preparing review blocks'); await individualYieldToBrowser();
     started=performance.now(); state.individualEvaluation=evaluation; state.individualResults=results; state.individualResultsStale=false; state.individualRenderLimit=80; mark('Message model',started);
     setIndividualReviewProgress(95,'Rendering review',`${results.length.toLocaleString()} representative blocks`);
+    individualThrowIfCancelled(controller.signal);
+    await queueConcernHistory(()=>incrementConcernAppearances(results.filter(result=>result.concerns?.length),run));
     started=performance.now(); renderIndividualSummary(); renderIndividualReview(); mark('Initial render',started);
     timings.Total=performance.now()-totalStarted; state.individualPerformance={timings,cacheHit:false}; renderIndividualPerformance();
     const slowStages=Object.entries(timings).filter(([label,value])=>label!=='Total'&&value>=1000); if(slowStages.length) console.warn('Individual Review slow stage(s)',Object.fromEntries(slowStages));

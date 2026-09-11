@@ -198,5 +198,23 @@
     }
     return {occurrences,byRepRule};
   }
-  return {selectDocumentedCoachingDate,descriptionContains,normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,formatDisplayText,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel,normalizeConcernIdentity,normalizeConcernName,summarizeConcernNameCounts,concernReportIdentity,concernRepReportKey,summarizeConcernReportCounts,concernOccurrenceKey,classifyConcernHistory,summarizeConcernHistory};
+  // Summary counts are totals; details count unique representative/run pairs.
+  function canonicalConcernNames(rows){
+    const groups=new Map(); let skipped=0;
+    for(const row of rows||[]){
+      const name=String(row.repName??row.Representative??row['Representative Name']??row['Agent Name']??row['Associate Name']??row.Rep??row.Name??'').trim().replace(/\s+/g,' '), key=normalizeConcernName(name);
+      if(!key){ skipped++; continue; }
+      const run=String(row.runId??row.RunID??row['Run ID']??row.ReportPeriod??row.reportDate??row.ReportDate??row['Report Date']??'').trim();
+      const raw=row.Count??row.count??row['Concern Count']??row.Appearances??row.X??row.AppearanceCount??row['Appearance Count'];
+      const hasCount=raw!=null&&String(raw).trim()!=='',value=hasCount?String(raw).trim().replace(/x$/i,'').trim():'';
+      if(!run&&hasCount&&(!/^\d+$/.test(value)||!Number.isSafeInteger(Number(value)))){ skipped++; continue; }
+      if(!groups.has(key)) groups.set(key,{key,name,count:0,runs:new Set(),explicit:null});
+      const item=groups.get(key);
+      if(run){ if(!item.runs.has(run)){ item.runs.add(run); item.count++; } }
+      else if(hasCount) item.explicit=Math.max(item.explicit??0,Number(value));
+      else item.count++;
+    }
+    return {names:[...groups.values()].map(item=>({key:item.key,name:item.name,count:item.explicit??item.count})),skipped};
+  }
+  return {canonicalConcernNames,selectDocumentedCoachingDate,descriptionContains,normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,formatDisplayText,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel,normalizeConcernIdentity,normalizeConcernName,summarizeConcernNameCounts,concernReportIdentity,concernRepReportKey,summarizeConcernReportCounts,concernOccurrenceKey,classifyConcernHistory,summarizeConcernHistory};
 });

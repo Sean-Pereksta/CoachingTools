@@ -389,7 +389,7 @@
     const source = entry.classification && entry.classification.id;
     if (!source) throw new Error('The file has not been safely classified.');
     const snapshot = normalizeScopeSnapshot(scope || { mode: 'all', label: 'All people' }, options);
-    const narrow = isNarrowScope(snapshot), selectedNames = new Set(scopeNames(snapshot));
+    const narrow = !['weeklyRetail','weeklyReferral'].includes(source) && isNarrowScope(snapshot), selectedNames = new Set(scopeNames(snapshot));
     const corrections = new Map((options && options.nameCorrections || []).map(item => [normalizeName(item && item.from), display(item && item.to)]).filter(item => item[0] && item[1]));
     const corrected = value => corrections.get(normalizeName(value)) || value;
     const workbook = entry.rawWorkbook, sheets = workbook.SheetNames || [];
@@ -762,6 +762,18 @@
       }
       return result;
     };
+    // Keep weekly rows available for authoritative replacement when scope fails.
+    const weekly = ['weeklyRetail','weeklyReferral'].includes(source);
+    if (weekly) {
+      const validation = validateClassification(source, parsed);
+      if (!validation.valid) throw new Error(validation.reason);
+    }
+    const acceptWeeklyFallback = reason => {
+      const result = prepareScopedDataset(parsed, source, {mode:'all',label:'All people'}, options);
+      result.diagnostics.warnings.push(reason + ' The full validated weekly file was accepted.');
+      result.dataset.meta.scopeFallback = true;
+      return finish(result);
+    };
     const scopeSnapshot = normalizeScopeSnapshot(scope || { mode: 'all', label: 'All people' }, options);
     const narrow = isNarrowScope(scopeSnapshot);
     const selectedNames = new Set(scopeNames(scopeSnapshot));
@@ -793,6 +805,7 @@
     fingerprint.update(`source:${source}`).update(`scope:${scopeSnapshot.scopeHash}`);
 
     if (narrow && !selectedNames.size) {
+      if (weekly) return acceptWeeklyFallback('The selected weekly scope did not match the incoming file.');
       const diagnostics = { headerFound: false, ownershipColumn: '', matchedCoachKeys: [], unmatchedCoachKeys: [], sheetsChecked: [], warnings: ['The selected scope did not resolve to a canonical coach identity.'] };
       return finish({ valid: false, needsReview: true, reason: 'Update needs review — the selected scope could not be safely restored.', dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows: 0, sourceRows: 0, scopedFingerprint: '', diagnostics });
     }
@@ -873,10 +886,12 @@
       outOfScopeRows: narrow ? Math.max(0, sourceRows - matchedRows) : 0
     };
     if (narrow && !headerFound) {
+      if (weekly) return acceptWeeklyFallback('The selected weekly scope did not match the incoming file.');
       diagnostics.warnings.push(`Required scope column not found. Expected ${source === 'qa' ? 'Team' : (OWNERSHIP_HEADERS[source] || []).join(', ')}.`);
       return finish({ valid: false, needsReview: true, reason: `Scoped import failed validation: required ${source === 'qa' ? 'Team' : 'ownership'} column not found. Accepted headers: ${(OWNERSHIP_HEADERS[source] || []).join(', ')}. No replacement was performed.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics });
     }
     if (narrow && matchedRows === 0 && !(options && options.allowZeroRows)) {
+      if (weekly) return acceptWeeklyFallback('The selected weekly scope did not match the incoming file.');
       diagnostics.warnings.push('The scoped source contained zero matching rows. The existing dataset must be retained until the scope is reviewed.');
       return finish({ valid: false, needsReview: true, reason: `Update needs review — no rows matched ${scopeSnapshot.label || 'the selected scope'}.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics });
     }
@@ -993,6 +1008,7 @@
     if (!weekly && !(root.confirm && root.confirm(`Could not upload ${entry.file.name}: ${error.message || error}\n\nReplace the old ${SOURCES[type].label} data with this file? This deletes only that source's old stored data. Other sources are unchanged.`))) throw error;
     const parsed=await parseFile(entry.file);
     if (!parsed.meta.totalRows) throw new Error('The incoming file has no readable rows to store.');
+    if (weekly) { const validation=validateClassification(type,parsed); if (!validation.valid) throw new Error(validation.reason); }
     const scope=await resolveScopeSnapshot(options?.scope || root.CoachToolsStorage?.getScope?.() || {mode:'all'});
     let prepared=prepareScopedDataset(parsed,type,scope,{detectedPeriod:entry.classification.detectedPeriod});
     if (!prepared.valid) throw new Error(prepared.reason);
