@@ -22,10 +22,12 @@
 <script src="../shared/coachtools-identity.js"></script>
 <script src="../shared/coachtools-profile-data.js"></script>
 <script src="../shared/performance-scorecard-goals.js"></script>
+<script src="../shared/performance-scorecard-zoom.js" defer></script>
 <script src="../shared/coachtools-weekly-index.js"></script>
 <script src="../shared/coachtools-shell.js"></script>
 
 <style>
+.main,#psUploadResults{zoom:var(--scorecard-zoom,1)}
 :root{
   --bg:#f4f7fb;--bg2:#edf2f8;--panel:#fff;--panel2:#f8fafc;--ink:#0f172a;--muted:#64748b;--line:#dfe7ef;
   --accent:#6d28d9;--accent2:#a855f7;--accent3:#2563eb;--good:#138a62;--warn:#bd7a00;--bad:#c63d52;--cyan:#0891b2;
@@ -202,6 +204,7 @@ body.scorecardExportSafe .zeroMonitorBadge{background:var(--panel2)!important;bo
     <div class="brand"><div class="mark">PS</div><div><h1>Performance Scorecard</h1><small>Team stats · coaching context · representative briefs</small></div></div>
     <div class="controls">
       <div class="control"><label for="completenessMode">Data completeness</label><select id="completenessMode"><option value="none">No completeness filter</option><option value="populated">Hide X or fewer populated columns</option><option value="missing">Hide X or more missing columns</option></select><label for="completenessThreshold">X</label><input id="completenessThreshold" type="number" min="0" step="1" value="0" style="width:55px;min-width:55px" /></div>
+      <div class="control" role="group" aria-label="Scorecard zoom"><span class="workspaceMeta">Zoom</span><button class="btn small" type="button" data-scorecard-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button class="btn small" type="button" data-scorecard-zoom="reset" aria-label="Zoom 100 percent. Reset to 100 percent" title="Reset zoom to 100%">100%</button><button class="btn small" type="button" data-scorecard-zoom="in" aria-label="Zoom in" title="Zoom in">+</button></div>
       <span id="completenessSummary" class="workspaceMeta" aria-live="polite"></span>
       <div class="control search"><label for="searchInp">Find a representative</label><input id="searchInp" type="search" placeholder="Representative…" /></div>
       <div class="control"><label>Department</label><select id="departmentSel"><option value="Retail">Retail</option><option value="Referral">Referral</option><option value="All">All</option></select></div>
