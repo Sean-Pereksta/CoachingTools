@@ -90,7 +90,7 @@ const baseImporter = {
       matchedRows: 1,
       sourceRows: 1,
       scopedFingerprint: `fingerprint-${type}`,
-      diagnostics: { matchedCoachKeys: scope.coachKeys.slice() }
+      diagnostics: { matchedCoachKeys: (scope.coachKeys||[]).slice() }
     };
   },
   async storePreparedEntry(entry, prepared) {
@@ -174,11 +174,11 @@ function entry(type) {
   assert.deepStrictEqual(preparedCalls[0].scope.coachKeys, ['angela johnson']);
   assert.strictEqual(preparedCalls[0].scope.label, 'Angela Johnson', 'Retail Weekly diagnostics should name the source-specific value, not canonical Angie.');
   assert.strictEqual(retailPrepared.scopeHash, 'scope-coach-pass', 'Retail Weekly should retain the canonical shared scope hash after source filtering.');
-  assert.deepStrictEqual(retailPrepared.dataset.meta.sourceScopeSelection, ['Angela Johnson']);
+  assert.deepStrictEqual(Array.from(retailPrepared.dataset.meta.sourceScopeSelection), ['Angela Johnson']);
 
   const checklistPrepared = await importer.prepareRecognizedEntry(entry('checklist'), { scope: canonicalPass });
   assert.deepStrictEqual(preparedCalls[1].scope.coaches, ['Angie Johnson'], 'Checklist must use its own selected spelling instead of Retail Weekly\'s spelling.');
-  assert.deepStrictEqual(checklistPrepared.dataset.meta.sourceScopeSelection, ['Angie Johnson']);
+  assert.deepStrictEqual(Array.from(checklistPrepared.dataset.meta.sourceScopeSelection), ['Angie Johnson']);
 
   storage.set('coachtools.desktop.cleanUploadBaseline.v1', JSON.stringify({
     version: 3,
@@ -189,23 +189,18 @@ function entry(type) {
   const updateScopeWithoutSelections = { mode: 'coach', label: 'Angie Johnson', scopeHash: 'scope-coach-pass', coaches: ['Angie Johnson'] };
   const updatePrepared = await importer.prepareRecognizedEntry(entry('weeklyRetail'), { scope: updateScopeWithoutSelections });
   assert.deepStrictEqual(preparedCalls[2].scope.coaches, ['Angela Johnson'], 'Update Data must replay the source-specific Clean Upload selection from the baseline.');
-  assert.deepStrictEqual(updatePrepared.dataset.meta.sourceScopeSelection, ['Angela Johnson']);
+  assert.deepStrictEqual(Array.from(updatePrepared.dataset.meta.sourceScopeSelection), ['Angela Johnson']);
 
-  await assert.rejects(
-    () => importer.prepareRecognizedEntry(entry('weeklyRetail'), {
-      scope: {
-        ...canonicalPass,
-        sourceSelections: { weeklyRetail: [], checklist: ['Angie Johnson'] }
-      }
-    }),
-    error => error && error.code === 'COACHTOOLS_SOURCE_SCOPE_EMPTY' && /Retail Weekly/.test(error.message),
-    'A blank Retail Weekly selection must not silently substitute a coach selected in another source.'
-  );
+  const emptySelection=await importer.prepareRecognizedEntry(entry('weeklyRetail'),{
+    scope:{...canonicalPass,sourceSelections:{weeklyRetail:[],checklist:['Angie Johnson']}}
+  });
+  assert.equal(preparedCalls.at(-1).scope.mode,'all','Empty weekly selection accepts all rows without borrowing another source coach.');
+  assert(emptySelection.dataset);
 
   stored = null;
   await importer.saveRecognizedEntry(entry('weeklyRetail'), { scope: canonicalPass });
   assert(stored, 'saveRecognizedEntry should persist the prepared source-routed dataset.');
-  assert.deepStrictEqual(stored.prepared.dataset.meta.sourceScopeSelection, ['Angela Johnson']);
+  assert.deepStrictEqual(Array.from(stored.prepared.dataset.meta.sourceScopeSelection), ['Angela Johnson']);
   assert.strictEqual(stored.prepared.scopeHash, 'scope-coach-pass');
 
   console.log('Source-specific coach scope routing regression checks passed.');

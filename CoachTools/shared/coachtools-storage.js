@@ -1212,7 +1212,7 @@
   async function resolveUpdateScope(datasetTypes) {
     await readyPromise;
     const requested = (Array.isArray(datasetTypes) && datasetTypes.length ? datasetTypes : DATASET_TYPES).map(canonicalType).filter(Boolean);
-    const pointers = requested.map(type => currentPointers.get(type)).filter(Boolean);
+    const pointers = requested.filter(type => !['weeklyRetail','weeklyReferral'].includes(type)).map(type => currentPointers.get(type)).filter(Boolean);
     const unrecoverable = pointers.filter(pointer => pointer.scopeMode && !['all', 'legacy-unscoped'].includes(pointer.scopeMode) && (!pointer.scopeSnapshot || !pointer.scopeHash));
     if (unrecoverable.length) {
       return { needsReview: true, scope: null, source: 'active-dataset', reason: 'Update needs review — the current dataset is scoped, but its original scope could not be safely restored.' };

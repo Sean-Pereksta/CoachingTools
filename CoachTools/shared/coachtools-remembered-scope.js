@@ -442,7 +442,7 @@
           if (!nextOptions.scope) throw new Error('Clean Upload is waiting for a new coach or All people selection. The previous scope was not applied.');
           nextOptions.scope = await adoptCleanScope(nextOptions.scope);
         }
-        if (session && session.resolution && session.resolution.needsReview) throw new Error(session.resolution.reason || 'Update needs scope review.');
+        if (session && session.resolution && session.resolution.needsReview && !['weeklyRetail','weeklyReferral'].includes(entry?.classification?.id)) throw new Error(session.resolution.reason || 'Update needs scope review.');
         if (entry && entry._coachtoolsBaselineSkip) {
           result = { status: 'duplicate', comparisonStatus: 'skipped', skippedByCleanUploadBaseline: true };
           return result;

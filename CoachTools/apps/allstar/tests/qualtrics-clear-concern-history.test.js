@@ -1,108 +1,50 @@
 #!/usr/bin/env node
 'use strict';
-
-const assert=require('node:assert/strict');
-const fs=require('node:fs');
-const path=require('node:path');
-const vm=require('node:vm');
-
-const generator=fs.readFileSync(path.join(__dirname,'../qualtrics/generator.html'),'utf8');
-assert.match(generator,/<button class="btn bad" id="clearConcernHistoryBtn" type="button">Clear Concern History<\/button>/);
-assert.match(generator,/els\.clearConcernHistoryBtn\.onclick=clearConcernHistory/);
-
-const start=generator.indexOf('async function clearConcernHistory(){');
-const end=generator.indexOf('async function loadConcernHistorySnapshot(){',start);
-assert.ok(start>=0&&end>start,'The dedicated clearConcernHistory function must be present.');
-const functionSource=generator.slice(start,end);
-
-function makeHarness(confirmResult=true){
-  const stores={
-    problemHistory:new Map([
-      ['one',{id:'one',repName:'John Smith',ruleId:'rule-a'}],
-      ['two',{id:'two',repName:'John Smith',ruleId:'rule-a'}],
-      ['three',{id:'three',repName:'Jane Doe',ruleId:'rule-b'}]
-    ]),
-    settings:new Map([
-      ['concernHistoryLoadedFile.v1',{key:'concernHistoryLoadedFile.v1',names:[{name:'John Smith',count:2}]}],
-      ['report-settings',{key:'report-settings',audience:'all'}]
-    ]),
-    rules:new Map([
-      ['rule-a',{id:'rule-a',title:'Rule A',coaching:{mode:'descriptionContains',descriptionPhrases:['Needs follow-up']}}],
-      ['rule-b',{id:'rule-b',title:'Rule B'}]
-    ])
-  };
-  const sourceRows={qaRows:[1,2],coachingRows:[1,2,3],checklistRows:[1],weeklyStatsRows:[1,2,3,4]};
-  const state={
-    history:[...stores.problemHistory.values()],
-    historyIndex:{occurrences:new Map([['old',{}]]),nameCounts:new Map([['john smith',2]]),reportCounts:new Map([['john smith\u001fname:rule a',2]]),rowsByRepRule:new Map([['john\u001frule-a',[{}]]])},
-    concernHistoryLoad:{fileName:'loaded.xlsx',counts:new Map([['john smith',2]])},
-    concernHistoryExpanded:true,
-    historyWarnings:['old warning'],
-    report:{flagged:[{repName:'John Smith',concernHistory:{appearanceCount:3,appearanceLabel:'3X',status:'Undercoached'}}]},
-    ...sourceRows
-  };
-  const events=[], viewerClasses=new Set(), attributes={};
-  const context={
-    window:{confirm:()=>{ events.push('confirm'); return confirmResult; }},
-    console,
-    STORES:{history:'problemHistory',settings:'settings',rules:'rules'},
-    CONCERN_HISTORY_LOAD_KEY:'concernHistoryLoadedFile.v1',
-    state,
-    els:{
-      concernHistoryViewer:{classList:{add:value=>viewerClasses.add(value)}},
-      concernHistoryStatusBtn:{setAttribute:(key,value)=>{ attributes[key]=value; }}
-    },
-    clearStore:async store=>{ events.push(`clear:${store}`); stores[store].clear(); },
-    del:async (store,key)=>{ events.push(`delete:${store}:${key}`); stores[store].delete(key); },
-    rebuildConcernHistoryIndex:()=>{
-      events.push('rebuild');
-      state.historyIndex={occurrences:new Map(),nameCounts:new Map(),reportCounts:new Map(),rowsByRepRule:new Map()};
-    },
-    renderConcernHistoryStatus:()=>events.push('status'),
-    refreshReportConcernHistory:()=>{
-      events.push('refresh');
-      state.report.flagged[0].concernHistory={appearanceCount:1,appearanceLabel:'1X',status:'New'};
-    },
-    toast:message=>events.push(`toast:${message}`)
-  };
-  vm.createContext(context);
-  vm.runInContext(`${functionSource}\nthis.runClear=clearConcernHistory;`,context);
-  return {context,stores,state,events,viewerClasses,attributes,sourceRows};
-}
-
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const {indexedDB}=require('fake-indexeddb');
+const insights=require('../qualtrics/insights.js');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../qualtrics/generator.html'),'utf8');
+function section(start,end){return source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));}
+const transaction=(db,store,action)=>new Promise((resolve,reject)=>{const tx=db.transaction(store,'readwrite');action(tx.objectStore(store));tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error);});
 (async()=>{
-  const cancelled=makeHarness(false);
-  const cancelledSnapshot=JSON.stringify([...cancelled.stores.problemHistory]);
-  await cancelled.context.runClear();
-  assert.deepEqual(cancelled.events,['confirm'],'Cancel must perform no work or show a success toast.');
-  assert.equal(JSON.stringify([...cancelled.stores.problemHistory]),cancelledSnapshot);
-  assert.ok(cancelled.stores.settings.has('concernHistoryLoadedFile.v1'));
-  assert.equal(cancelled.state.report.flagged[0].concernHistory.appearanceLabel,'3X');
-
-  const cleared=makeHarness(true);
-  const rulesBefore=structuredClone([...cleared.stores.rules]);
-  const sourcesBefore=Object.fromEntries(Object.entries(cleared.sourceRows).map(([key,rows])=>[key,rows.length]));
-  await cleared.context.runClear();
-  assert.equal(cleared.stores.problemHistory.size,0,'Saved detailed history must be cleared.');
-  assert.ok(!cleared.stores.settings.has('concernHistoryLoadedFile.v1'),'The loaded spreadsheet snapshot must be deleted.');
-  assert.deepEqual(cleared.stores.settings.get('report-settings'),{key:'report-settings',audience:'all'},'Unrelated settings must remain.');
-  assert.deepEqual([...cleared.stores.rules],rulesBefore,'Rules, including description phrases, must remain byte-for-byte equivalent.');
-  assert.deepEqual(Object.fromEntries(Object.entries(cleared.sourceRows).map(([key,rows])=>[key,rows.length])),sourcesBefore,'All source row collections must remain unchanged.');
-  assert.equal(cleared.state.history.length,0);
-  assert.equal(cleared.state.concernHistoryLoad,null);
-  assert.equal(cleared.state.concernHistoryExpanded,false);
-  assert.equal(cleared.state.historyWarnings.length,0);
-  for(const key of ['occurrences','nameCounts','reportCounts','rowsByRepRule']) assert.equal(cleared.state.historyIndex[key].size,0,`${key} must be empty.`);
-  assert.equal(cleared.state.report.flagged[0].concernHistory.appearanceLabel,'1X','The current report must recalculate from an empty baseline.');
-  assert.ok(cleared.viewerClasses.has('hidden'));
-  assert.equal(cleared.attributes['aria-expanded'],'false');
-  assert.ok(cleared.events.includes('toast:Concern History cleared. Rules and source data were kept.'));
-
-  const alreadyEmpty=makeHarness(true);
-  alreadyEmpty.stores.problemHistory.clear();
-  alreadyEmpty.stores.settings.delete('concernHistoryLoadedFile.v1');
-  alreadyEmpty.state.history=[];
-  alreadyEmpty.state.concernHistoryLoad=null;
-  await assert.doesNotReject(()=>alreadyEmpty.context.runClear());
-  console.log('PASS Qualtrics clear Concern History tests');
-})().catch(error=>{ console.error(error); process.exitCode=1; });
+ const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('concern-test',1);r.onupgradeneeded=()=>{r.result.createObjectStore('settings',{keyPath:'key'});r.result.createObjectStore('problemHistory',{keyPath:'id'});};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+ const key='concernHistoryLoadedFile.v1';
+ const read=store=>new Promise((resolve,reject)=>{const r=db.transaction(store).objectStore(store).getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+ const events=[],state={db,history:[],rules:[],report:null};let confirmed=true;
+ const context=vm.createContext({console,Map,Set,Date,Promise,QualtricsInsights:insights,state,STORES:{settings:'settings',history:'problemHistory'},CONCERN_HISTORY_LOAD_KEY:key,
+ displayName:v=>String(v||'').trim().replace(/\s+/g,' '),getAll:read,toast:message=>events.push(message),window:{confirm:()=>confirmed},
+ els:{concernHistoryViewer:{classList:{add(){},remove(){}}},concernHistoryStatusBtn:{setAttribute(){}},importProblemRepsInput:{}},
+ rebuildConcernHistoryIndex:()=>{},renderConcernHistoryStatus:()=>events.push('refresh'),refreshReportConcernHistory:()=>{},historyRowsForCurrentReport:()=>[],normalizeConcernHistoryRow:()=>null,
+ readFileAsWorkbookRows:async file=>file.parsed,concernHistoryImportSheet:parsed=>({sheet:parsed.sheets[0],header:'Representative'})});
+ vm.runInContext(section('function normalizeConcernHistoryLoad','function activeConcernHistoryNameSummary')+section('async function clearConcernHistory','function rebuildConcernHistoryIndex')+section('async function importProblemReps(file)','function debounce'),context);
+ const run=(records,cycle={})=>context.queueConcernHistory(()=>context.incrementConcernAppearances(records,cycle));
+ await transaction(db,'settings',store=>store.put({key:'rules-and-settings',value:'keep'}));
+ await transaction(db,'problemHistory',store=>store.put({id:'stale',repName:'Old Rep'}));state.history=[{id:'stale',repName:'Old Rep'}];
+ const imported={name:'history.xlsx',parsed:{fileName:'history.xlsx',sheets:[{sheetName:'Summary',rows:[{Representative:'John Doe',Count:'3X'},{Representative:'Jane Doe',Count:7},{Representative:'Alex Smith',Count:1},{Representative:'broken',Count:'oops'}]}]}};
+ await context.importProblemReps(imported);
+ assert.equal((await read('problemHistory')).length,0);
+ assert.equal(state.concernHistoryLoad.counts.get('john doe'),3);assert.equal(state.concernHistoryLoad.counts.get('jane doe'),7);
+ assert(events.some(e=>/1 invalid row/.test(e)));
+ const cycle={};await run([{repName:' JOHN  DOE ',ruleId:'a'},{repName:'john doe',ruleId:'b'},{repName:'Jane Doe'}],cycle);
+ assert.equal(state.concernHistoryLoad.counts.get('john doe'),4);assert.equal(state.concernHistoryLoad.counts.get('jane doe'),8);assert.equal(state.concernHistoryLoad.counts.get('alex smith'),1);
+ await run([{repName:'John Doe'}],cycle);assert.equal(state.concernHistoryLoad.counts.get('john doe'),4);
+ await run([{repName:'John Doe'}]);assert.equal(state.concernHistoryLoad.counts.get('john doe'),5);
+ state.concernHistoryLoad=null;await context.loadConcernHistorySnapshot();assert.equal(state.concernHistoryLoad.counts.get('john doe'),5);
+ await Promise.all([run([{fullName:'John Doe'}]),run([{repName:'John Doe'}])]);assert.equal(state.concernHistoryLoad.counts.get('john doe'),7);
+ await context.importProblemReps(imported);assert.equal(state.concernHistoryLoad.counts.get('john doe'),3);
+ confirmed=false;await context.clearConcernHistory();assert.equal(state.concernHistoryLoad.counts.get('john doe'),3);
+ confirmed=true;await context.clearConcernHistory();assert.equal(state.concernHistoryLoad.counts.size,0);assert.equal((await read('problemHistory')).length,0);
+ assert((await read('settings')).some(row=>row.key==='rules-and-settings'));
+ await context.loadConcernHistorySnapshot();assert.equal(state.concernHistoryLoad.counts.size,0);
+ await assert.rejects(()=>context.commitConcernHistory(()=>({names:[{key:'bad',name:'Bad',count:99}]}),{details:[{}]}));
+ assert.equal(state.concernHistoryLoad.counts.size,0);
+ await context.loadConcernHistorySnapshot();assert.equal(state.concernHistoryLoad.counts.size,0,'Aborted transaction rolls back saved totals');
+ const savedDb=state.db;state.db={transaction(){throw new Error('storage unavailable');}};
+ await assert.rejects(()=>run([{repName:'John Doe'}]),/storage unavailable/);assert.equal(state.concernHistoryLoad.counts.size,0);state.db=savedDb;
+ const roundTrip=insights.canonicalConcernNames([{Representative:'John Doe',Count:'3X'},{Representative:'JOHN  DOE',Count:3},{Representative:'Zero Person',Count:0}]);
+ assert.deepEqual(roundTrip.names.map(n=>n.count),[3,0]);
+ const detail=insights.canonicalConcernNames([{Representative:'John Doe',RunID:'a',RuleID:'1',AppearanceCount:20},{Representative:'John Doe',RunID:'a',RuleID:'2'},{Representative:'John Doe',RunID:'b',RuleID:'1'}]);
+ assert.equal(detail.names[0].count,2);
+ assert(source.includes('await incrementConcernAppearances(flagged,report)'));
+ db.close();console.log('PASS canonical Concern History: authoritative import, cycles, reload, concurrency, clear, failed writes, legacy counts');
+})().catch(error=>{console.error(error);process.exitCode=1;});

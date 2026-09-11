@@ -1321,7 +1321,7 @@
       return;
     }
     const statuses = currentDatasetStatuses().filter(item=>baseline.datasetTypes.includes(item.datasetType || item.id));
-    const datasetTypes = statuses.map(item => item.datasetType || item.id);
+    let datasetTypes = statuses.map(item => item.datasetType || item.id);
     const totalSources = datasetTypes.length || datasetTotal(statuses);
     const readyBefore = statuses.filter(item => item.ready).length;
     if (location.protocol === 'file:') {
@@ -1357,9 +1357,14 @@
     const folderFiles = Array.isArray(listing && listing.files) ? listing.files : [];
     const candidates=folderFiles.map(metadata=>({file:{name:metadata.filename,lastModified:Date.parse(metadata.modifiedTime)||0,size:metadata.size},path:metadata.url,metadata}));
     const allListedFiles=(root.CoachToolsRememberedData?.selectBaselineCandidates?.(candidates,baseline,{}) || []).map(item=>item.metadata);
-    const scopeResolution = root.CoachToolsData && typeof root.CoachToolsData.resolveUpdateScope === 'function'
+    let scopeResolution = root.CoachToolsData && typeof root.CoachToolsData.resolveUpdateScope === 'function'
       ? await root.CoachToolsData.resolveUpdateScope(datasetTypes)
       : { needsReview: false, scope: storage && storage.getScope ? storage.getScope() : { mode: 'all', label: 'All people' }, source: 'global-scope' };
+    if (scopeResolution.needsReview && datasetTypes.some(type=>['weeklyRetail','weeklyReferral'].includes(type))) {
+      setProgressStep('Other sources need scope review. Weekly uploads will continue with the incoming files.', 'warning');
+      datasetTypes=datasetTypes.filter(type=>['weeklyRetail','weeklyReferral'].includes(type));
+      scopeResolution={needsReview:false,scope:{mode:'all',label:'All people'},source:'weekly-authoritative'};
+    }
     if (scopeResolution.needsReview) {
       state.autoScanRunning = false;
       const summary = scopeResolution.reason || 'Update needs scope review. Existing data was retained.';
