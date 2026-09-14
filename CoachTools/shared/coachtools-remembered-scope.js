@@ -157,16 +157,16 @@
       try {
         let entry;
         if (typeof importer.discoverFile === 'function') {
-          entry = await importer.discoverFile(file, options && options.onProgress ? {
+          entry = await importer.discoverFile(file, { ...options, ...(options && options.onProgress ? {
             onProgress: progress => options.onProgress({ ...progress, fileIndex: index, fileCount: list.length })
-          } : null);
+          } : {}) });
         } else {
           const parsed = await parseFileResponsive(file, options && options.onProgress ? {
             onProgress: progress => options.onProgress({ ...progress, fileIndex: index, fileCount: list.length })
           } : null);
           const diagnostics = root.CoachToolsDiagnostics;
           if (diagnostics) diagnostics.start('File classification', { fileName: file.name });
-          const classification = importer.classifyFile(file, parsed);
+          const classification = importer.classifyFile(file, parsed, options);
           if (diagnostics) diagnostics.end('File classification', { fileName: file.name, datasetType: classification.id || classification.predictedId || '' });
           entry = { file, parsed, classification };
           if (options && typeof options.onProgress === 'function') options.onProgress({ phase: 'classified', fileName: file.name, datasetType: classification.id || '', fileIndex: index, fileCount: list.length, current: 1, total: 1 });
@@ -217,20 +217,8 @@
     cleanSession = null;
     pendingFiles = [];
     pendingScope = null;
-    if (session.failed || session.successfulTypes.size !== session.datasetTypes.length) {
-      showToast('Clean Upload needs review · the previous authoritative scope was retained because one or more sources did not save.', 7000);
-      return null;
-    }
-    const baseline = {
-      version: 3,
-      createdAt: new Date().toISOString(),
-      scope: clone(session.scope),
-      scopeHash: session.scope && session.scope.scopeHash || '',
-      datasetTypes: Array.from(session.successfulTypes),
-      files: session.files,
-      completedWithWarnings: Boolean(session.failed)
-    };
-    writeBaseline(baseline);
+    if (!session.successfulTypes.size) return null;
+    const baseline = readBaseline();
     const storage = root.CoachToolsStorage;
     if (storage && typeof storage.setScope === 'function') storage.setScope(baseline.scope);
     if (storage && typeof storage.setLastCleanScope === 'function') storage.setLastCleanScope(baseline.scope);
@@ -239,13 +227,25 @@
     return baseline;
   }
 
+  function rememberCleanEntry(entry, scope) {
+    const previous = readBaseline() || {};
+    const type = entry.classification.id;
+    const sourceScopes = { ...(previous.sourceScopes || {}) };
+    for (const id of previous.datasetTypes || []) {
+      if (!sourceScopes[id]) sourceScopes[id] = clone(previous.scope);
+    }
+    sourceScopes[type] = clone(entry._coachtoolsSavedScope || scope);
+    const files = (previous.files || []).filter(file => (file.datasetType || importer.classifyFile?.(file, null, { authoritativeCleanUpload: true })?.id) !== type);
+    files.push({ name: entry.file.name, size: Number(entry.file.size) || 0,
+      lastModified: Number(entry.file.lastModified) || 0, datasetType: type });
+    writeBaseline({ version: 4, createdAt: new Date().toISOString(),
+      scope: clone(scope), scopeHash: scope && scope.scopeHash || '', sourceScopes,
+      datasetTypes: Array.from(new Set([...(previous.datasetTypes || []), type])), files });
+  }
+
   async function adoptCleanScope(scope) {
     if (!cleanSession || !scope) return scope;
     const normalized = typeof importer.resolveScopeSnapshot === 'function' ? await importer.resolveScopeSnapshot(scope) : clone(scope);
-    if (cleanSession.successfulTypes.size && cleanSession.scope && cleanSession.scope.scopeHash !== normalized.scopeHash) {
-      cleanSession.failed = true;
-      throw new Error('Clean Upload used more than one scope. The previous authoritative scope was retained.');
-    }
     cleanSession.scope = normalized;
     return normalized;
   }
@@ -271,6 +271,10 @@
     const resolution = root.CoachToolsData && typeof root.CoachToolsData.resolveUpdateScope === 'function'
       ? await root.CoachToolsData.resolveUpdateScope(selected ? Array.from(selected) : undefined)
       : { needsReview: false, scope: reusableScope(baseline && baseline.scope) || reusableScope(currentScope()), source: baseline ? 'clean-baseline' : 'global-scope' };
+    if (resolution.needsReview && recognized.every(entry => baseline?.sourceScopes?.[entry.classification.id])) {
+      resolution.needsReview = false;
+      resolution.scope = clone(baseline.scope);
+    }
     updateSession = { baseline: baseline || null, resolution, remaining: recognized.length, plannedAt: new Date().toISOString() };
 
     for (const entry of recognized) {
@@ -289,7 +293,7 @@
       if (entry._coachtoolsBaselineSkip) continue;
       const type = entry.classification.id;
       try {
-        const prepared = await prepareUpdateDataset(entry, { scope: resolution.scope });
+        const prepared = await prepareUpdateDataset(entry, { scope: baseline?.sourceScopes?.[type] || resolution.scope });
         const metadata = updateMetadata(entry, prepared);
         const inspection = root.CoachToolsData && typeof root.CoachToolsData.inspectDataset === 'function'
           ? await root.CoachToolsData.inspectDataset(type, prepared.dataset, metadata)
@@ -408,8 +412,9 @@
     ...importer,
     async analyzeFiles(files, options) {
       const requestedMode = mode;
-      const result = await analyzeFilesResponsive(files, options);
-      if (options?.manualSourceSelection && importer.resolveUnidentifiedFiles) await importer.resolveUnidentifiedFiles(result, options);
+      const analysisOptions = requestedMode === 'clean' ? { ...options, authoritativeCleanUpload: true, manualSourceSelection: true } : options;
+      const result = await analyzeFilesResponsive(files, analysisOptions);
+      if (analysisOptions?.manualSourceSelection && importer.resolveUnidentifiedFiles) await importer.resolveUnidentifiedFiles(result, analysisOptions);
       if (requestedMode === 'clean') {
         await beginCleanSession(result);
         result.cleanMode = true;
@@ -436,13 +441,15 @@
         nextOptions.scope = baselineScope || cleanScope || reusableScope(currentScope());
       }
 
+      if (session && savedBaseline?.sourceScopes?.[entry?.classification?.id]) nextOptions.scope = clone(savedBaseline.sourceScopes[entry.classification.id]);
       let result = null;
       try {
         if (cleanSession) {
-          if (!nextOptions.scope) throw new Error('Clean Upload is waiting for a new coach or All people selection. The previous scope was not applied.');
+          nextOptions.authoritativeCleanUpload = true;
+          if (!nextOptions.scope) nextOptions.scope = { mode: 'all', label: 'All people' };
           nextOptions.scope = await adoptCleanScope(nextOptions.scope);
         }
-        if (session && session.resolution && session.resolution.needsReview && !['weeklyRetail','weeklyReferral'].includes(entry?.classification?.id)) throw new Error(session.resolution.reason || 'Update needs scope review.');
+        if (session && session.resolution && session.resolution.needsReview && !savedBaseline?.sourceScopes?.[entry?.classification?.id] && !['weeklyRetail','weeklyReferral'].includes(entry?.classification?.id)) throw new Error(session.resolution.reason || 'Update needs scope review.');
         if (entry && entry._coachtoolsBaselineSkip) {
           result = { status: 'duplicate', comparisonStatus: 'skipped', skippedByCleanUploadBaseline: true };
           return result;
@@ -462,7 +469,10 @@
         throw error;
       } finally {
         if (cleanSession && cleanSession.remaining > 0) {
-          if (result && entry && entry.classification && entry.classification.id) cleanSession.successfulTypes.add(entry.classification.id);
+          if (result && entry && entry.classification && entry.classification.id) {
+            cleanSession.successfulTypes.add(entry.classification.id);
+            rememberCleanEntry(entry, nextOptions.scope);
+          }
           cleanSession.remaining -= 1;
           if (cleanSession.remaining <= 0) finalizeCleanSession();
         }

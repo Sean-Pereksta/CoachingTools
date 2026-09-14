@@ -1034,13 +1034,58 @@
     const pointer = currentPointers.get(canonicalType(type));
     return pointer ? { datasetId: pointer.datasetId, version: pointer.version, fingerprint: pointer.fingerprint, scopedFingerprint: pointer.scopedFingerprint || pointer.fingerprint, scopeHash: pointer.scopeHash || '', scopeMode: pointer.scopeMode || 'legacy-unscoped', scopedRowCount: Number(pointer.scopedRowCount) || 0, importedAt: pointer.importedAt } : null;
   }
+  function forgetEstablishedDock(type) {
+    const key = 'coachtools.desktop.cleanUploadBaseline.v1';
+    const baseline = safeJson(safeGet(key), null);
+    if (!baseline) return;
+    baseline.datasetTypes = (baseline.datasetTypes || []).filter(id => id !== type);
+    if (baseline.sourceScopes) delete baseline.sourceScopes[type];
+    baseline.files = (baseline.files || []).filter(file => {
+      const id = file.datasetType || root.CoachToolsImport?.classifyFile?.(file, null, { authoritativeCleanUpload: true })?.id;
+      return id !== type;
+    });
+    safeSet(key, JSON.stringify(baseline));
+  }
+
+  function renderPeopleSelection(status) {
+    const node = root.document.createElement('div');
+    if (!status || !status.ready) return node;
+    const scope = status.scopeSnapshot;
+    const diagnostics = status.scopeMatchDiagnostics || {};
+    const selected = diagnostics.uploadPeopleSelection;
+    const names = Array.from(new Set((selected?.names || scope?.sourceSelections?.[status.id || status.datasetType]
+      || (diagnostics.sourceScoped ? diagnostics.selectedSourceValues : null)
+      || [...(scope?.coaches || []), ...(scope?.representatives || [])]).filter(Boolean)));
+    const all = selected ? selected.mode === 'all' : scope?.mode === 'all';
+    if (all) node.textContent = 'People: All';
+    else if (selected || names.length) {
+      const details = root.document.createElement('details');
+      const summary = root.document.createElement('summary');
+      summary.textContent = `People: ${names.length} selected`;
+      const list = root.document.createElement('ul');
+      for (const name of names) {
+        const item = root.document.createElement('li');
+        item.textContent = name;
+        list.appendChild(item);
+      }
+      details.append(summary, list);
+      node.appendChild(details);
+    } else node.textContent = 'People: Selection not recorded';
+    if (selected?.includesAllRows || diagnostics.peopleFilterFallback) {
+      const note = root.document.createElement('small');
+      note.textContent = 'All rows included: the selected people filter could not be applied.';
+      node.appendChild(note);
+    }
+    return node;
+  }
+
   async function removeDataset(type, datasetId) {
     await readyPromise;
     const datasetType = canonicalType(type);
     if (!datasetType || databaseUnavailable) return false;
     const history = await getHistory(datasetType, { includeSuperseded: true, storageRecords: true });
     const targets = datasetId ? history.filter(record => record.id === datasetId) : history;
-    if (!targets.length) return false;
+    if (!targets.length) { if (!datasetId) forgetEstablishedDock(datasetType); return false; }
     const targetIds = new Set(targets.map(target => target.id));
     const survivors = history.filter(record => !targetIds.has(record.id)).map(record => ({ ...record })), restored = [];
     for (const target of targets) {
@@ -1065,6 +1110,7 @@
       else {
         currentPointers.delete(datasetType);
       }
+      if (!remaining.length) forgetEstablishedDock(datasetType);
       persistMetadataSnapshot();
       notifyDataUpdated(datasetType, { reason: 'removed' });
       return true;
@@ -1313,6 +1359,7 @@
         for (const value of [status.label, status.fileName || '—', status.period || '—', status.ready ? 'Ready' : 'Missing']) {
           const cell = root.document.createElement('td'); cell.textContent = value; row.appendChild(cell);
         }
+        if (status.ready) row.children[1].appendChild(renderPeopleSelection(status));
         row.dataset.ready = String(status.ready); body.appendChild(row);
       }
       table.append(head, body); target.appendChild(table);
@@ -1368,7 +1415,7 @@
     getCurrent, streamRows, getHistory, getDatasetVersion, getImportHistory, inspectDataset, removeDataset, resolveUpdateScope,
     getStatus: async () => { await readyPromise; return centralStatus(); },
     getStatusSync: centralStatus,
-    mountStatus, subscribe: listener => subscribe(listener), subscribeScope: listener => subscribe(listener, { scope: true }),
+    mountStatus, renderPeopleSelection, subscribe: listener => subscribe(listener), subscribeScope: listener => subscribe(listener, { scope: true }),
     notifyDataUpdated
   });
   const CoachToolsStorage = Object.freeze({

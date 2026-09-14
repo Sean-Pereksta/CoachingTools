@@ -344,17 +344,17 @@
     const requestedType = options && options.datasetType;
     if (requestedType && SOURCES[requestedType]) {
       const validation = validateClassification(requestedType, parsed);
-      classification = validation.valid
+      classification = (options?.authoritativeCleanUpload || validation.valid)
         ? { id: requestedType, confidence: 'high', reason: 'manual+headers', classificationMethod: 'manual+headers', candidates: [requestedType], validation, detectedPeriod: detectPeriod(file, requestedType) }
         : { id: null, predictedId: requestedType, confidence: 'needs-review', reason: 'header-validation-failed', classificationMethod: 'manual', candidates: [requestedType], validation, needsReview: true, detectedPeriod: detectPeriod(file, requestedType) };
-    } else classification = classifyFile(file, parsed);
+    } else classification = classifyFile(file, parsed, options);
     if (!classification.id) {
       // Unusual exports can place headers below the lightweight discovery window.
       for (const name of sheets) data[name] = { aoa: trimAOAInPlace(root.XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '' })) };
       if (requestedType && SOURCES[requestedType]) {
         const validation = validateClassification(requestedType, parsed);
         if (validation.valid) classification = { id: requestedType, validation, confidence: 'high', classificationMethod: 'manual+full-headers', detectedPeriod: detectPeriod(file, requestedType) };
-      } else classification = classifyFile(file, parsed);
+      } else classification = classifyFile(file, parsed, options);
     }
     if (diagnostics) diagnostics.end('File classification', { fileName: file.name, datasetType: classification.id || classification.predictedId || '' });
     const ownershipByKey = new Map();
@@ -515,10 +515,10 @@
     return `Could not load: ${entry?.file?.name || 'Uploaded file'} · Source: ${SOURCES[source]?.label || 'Not identified'} · Reason: ${reason} ${FORMAT_HELP}`;
   }
 
-  async function assignSource(entry, datasetType) {
+  async function assignSource(entry, datasetType, options) {
     if (!SOURCES[datasetType] || !DATASET_ORDER.includes(datasetType)) throw new Error('Choose a supported data source.');
     const validation = validateClassification(datasetType, entry && entry.parsed);
-    if (!validation.valid) {
+    if (!options?.authoritativeCleanUpload && !validation.valid) {
       const error = new Error(validation.reason);
       error.name = 'CoachToolsFormatError';
       error.validation = validation;
@@ -526,7 +526,7 @@
     }
     // Rebuild coach discovery when a lightweight workbook is retained. A failed
     // attempt leaves the original entry intact and never writes imported data.
-    const resolved = entry.rawWorkbook ? await discoverFile(entry.file, { datasetType }) : { ...entry };
+    const resolved = entry.rawWorkbook ? await discoverFile(entry.file, { ...options, datasetType }) : { ...entry };
     if (resolved.classification?.id !== datasetType && entry.rawWorkbook) throw new Error(resolved.classification?.validation?.reason || 'Could not validate the selected source.');
     resolved.classification = { id:datasetType, validation, confidence:'high', reason:'manual+headers', classificationMethod:'manual+headers', manualSourceSelection:true, detectedPeriod:detectPeriod(entry.file,datasetType) };
     return resolved;
@@ -539,7 +539,7 @@
     dialog.setAttribute('aria-label', 'Choose a data source for unidentified files');
     dialog.style.cssText = 'position:fixed;inset:0;margin:auto;width:min(760px,92vw);max-height:85vh;overflow:auto;border:2px solid #2563eb;border-radius:14px;padding:20px;background:#fff;color:#0f172a;z-index:2147483647;box-shadow:0 16px 60px #0006;font:14px/1.5 system-ui';
     const element = (tag, text) => { const node=doc.createElement(tag); if(text!=null) node.textContent=text; return node; };
-    dialog.append(element('h2','Choose where each file belongs'),element('p','These files could not be identified automatically. Select a data source and check its format. Validated files will continue through the normal upload and coach scope.'));
+    dialog.append(element('h2','Choose where each file belongs'),element('p', options?.authoritativeCleanUpload ? 'Which data source should this file be assigned to? Your selection determines which dock will be replaced.' : 'These files could not be identified automatically. Select a data source and check its format. Validated files will continue through the normal upload and coach scope.'));
     let activeChecks = 0;
     for (const entry of analysis.needsReview.slice()) {
       const card=element('section');
@@ -552,7 +552,7 @@
       for(const id of DATASET_ORDER){const option=element('option',SOURCES[id].label);option.value=id;select.append(option);}
       const hint=Array.from(select.options).find(option=>option.value===entry.classification?.predictedId); if(hint) hint.selected=true;
       const detail=element('div'); detail.setAttribute('role','status');detail.style.cssText='white-space:pre-wrap;margin:8px 0';
-      const guidance=()=>{ const validation=select.value?validateClassification(select.value,entry.parsed):null;detail.textContent=validation?(validation.valid?'The required fields for this source were found. Select “Use this source” to confirm.':validation.reason+' '+FORMAT_HELP):'Select the destination for this file. Nothing has been replaced.'; };
+      const guidance=()=>{ const validation=select.value?validateClassification(select.value,entry.parsed):null;detail.textContent=options?.authoritativeCleanUpload ? 'Select the destination for this file. Your selection is authoritative.' : validation?(validation.valid?'The required fields for this source were found. Select “Use this source” to confirm.':validation.reason+' '+FORMAT_HELP):'Select the destination for this file. Nothing has been replaced.'; };
       select.addEventListener('change',guidance);guidance();
       const use=element('button','Use this source');use.type='button';use.style.cssText='padding:8px 12px;border:0;border-radius:6px;background:#2563eb;color:white;font-weight:700';
       use.addEventListener('click',async()=>{
@@ -563,10 +563,10 @@
         if(!select.value){detail.textContent='Choose a data source first.';select.focus();return;}
         activeChecks+=1;use.disabled=true;select.disabled=true;finish.disabled=true;detail.textContent='Checking this source…';
         try{
-          const resolved=await assignSource(entry,select.value);
+          const resolved=await assignSource(entry,select.value,options);
           resolvedEntry=resolved;analysis.recognized.push(resolved);
           analysis.needsReview=analysis.needsReview.filter(item=>item!==entry);
-          detail.textContent=`Validated as ${SOURCES[select.value].label}. Ready to continue uploading.`;
+          detail.textContent=`Assigned to ${SOURCES[select.value].label}. Ready to continue uploading.`;
           use.textContent='Change source';use.disabled=false;
         }catch(error){
           entry.classification={...entry.classification,predictedId:select.value,validation:error.validation || {valid:false,reason:error.message || String(error)}};
@@ -576,7 +576,7 @@
       });
       card.append(name,select,detail,use);dialog.append(card);
     }
-    const finish=element('button','Continue with validated files');finish.type='button';finish.style.cssText='padding:10px 14px;border:0;border-radius:7px;background:#166534;color:white;font-weight:700';
+    const finish=element('button', options?.authoritativeCleanUpload ? 'Continue with assigned files' : 'Continue with validated files');finish.type='button';finish.style.cssText='padding:10px 14px;border:0;border-radius:7px;background:#166534;color:white;font-weight:700';
     dialog.append(element('p','Any files still unresolved will be skipped. Existing stored data is retained.'),finish);
     await new Promise(resolve=>{
       const close=()=>{if(activeChecks)return;if(dialog.open&&dialog.close)dialog.close();dialog.remove();previousFocus?.focus?.();resolve();};
@@ -625,7 +625,7 @@
     return { label: ['qa', 'documentedCoaching', 'checklist'].includes(datasetType) ? 'Current' : '', periodKey: 'current', sortKey: '' };
   }
 
-  function classifyFile(file, parsed) {
+  function classifyFile(file, parsed, options) {
     const originalName = String(file && file.name || parsed && parsed.meta && parsed.meta.fileName || '');
     const name = normalizedFileName(originalName);
     const filenameHints = [
@@ -634,7 +634,7 @@
       ['monthlyRetail', /\bappointment\b.*\breport\b|\bretail\b.*\bmonthly\b|\bmonthly\b.*\bretail\b/],
       ['monthlyReferral', /\bkpi\b.*\breport\b|\breferral\b.*\bmonthly\b|\bmonthly\b.*\breferral\b/],
       ['compCoaching', /\bcomp\s*(?:calls?|coaching)\b|\bcomp(?:liment)?\b.*\bcoach(?:ing)?\b|\bcompliments?\b/],
-      ['documentedCoaching', /\bmyone\b|\bdocumented\b.*\bcoach(?:ing)?\b|\bcoach(?:ing)?\b.*\bdocumented\b|\bcoaching\b/],
+      ['documentedCoaching', /\bmyone(?:2view)?\b|\bdocumented\b.*\bcoach(?:ing)?\b|\bcoach(?:ing)?\b.*\bdocumented\b|\bcoaching\b/],
       ['checklist', /\bcheck\s*list\b|\bchecklist\b|\ball\s+items\b/],
       ['qa', /(?:^|[^a-z])qa(?:[^a-z]|$)|\bquality\b|\b90\s*day\b|\bevaluations?\b/]
     ];
@@ -642,7 +642,7 @@
     for (const [id, pattern] of filenameHints) {
       if (pattern.test(name)) {
         const validation = validateClassification(id, parsed);
-        if (validation.valid) return { id, confidence: 'high', reason: 'filename+headers', classificationMethod: 'filename+headers', candidates: [id], validation, detectedPeriod: detectPeriod(originalName, id) };
+        if (options?.authoritativeCleanUpload || validation.valid) return { id, confidence: 'high', reason: 'filename+headers', classificationMethod: 'filename+headers', candidates: [id], validation, detectedPeriod: detectPeriod(originalName, id) };
         filenameFailure = { id: null, predictedId: id, confidence: 'needs-review', reason: 'header-validation-failed', classificationMethod: 'filename', candidates: [id], validation, needsReview: true, detectedPeriod: detectPeriod(originalName, id) };
         break;
       }
@@ -764,7 +764,7 @@
     };
     // Keep weekly rows available for authoritative replacement when scope fails.
     const weekly = ['weeklyRetail','weeklyReferral'].includes(source);
-    if (weekly) {
+    if (weekly && !options?.authoritativeCleanUpload) {
       const validation = validateClassification(source, parsed);
       if (!validation.valid) throw new Error(validation.reason);
     }
@@ -805,7 +805,7 @@
     fingerprint.update(`source:${source}`).update(`scope:${scopeSnapshot.scopeHash}`);
 
     if (narrow && !selectedNames.size) {
-      if (weekly) return acceptWeeklyFallback('The selected weekly scope did not match the incoming file.');
+      if (weekly && !options?.authoritativeCleanUpload) return acceptWeeklyFallback('The selected weekly scope did not match the incoming file.');
       const diagnostics = { headerFound: false, ownershipColumn: '', matchedCoachKeys: [], unmatchedCoachKeys: [], sheetsChecked: [], warnings: ['The selected scope did not resolve to a canonical coach identity.'] };
       return finish({ valid: false, needsReview: true, reason: 'Update needs review — the selected scope could not be safely restored.', dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows: 0, sourceRows: 0, scopedFingerprint: '', diagnostics });
     }
@@ -886,12 +886,12 @@
       outOfScopeRows: narrow ? Math.max(0, sourceRows - matchedRows) : 0
     };
     if (narrow && !headerFound) {
-      if (weekly) return acceptWeeklyFallback('The selected weekly scope did not match the incoming file.');
+      if (weekly && !options?.authoritativeCleanUpload) return acceptWeeklyFallback('The selected weekly scope did not match the incoming file.');
       diagnostics.warnings.push(`Required scope column not found. Expected ${source === 'qa' ? 'Team' : (OWNERSHIP_HEADERS[source] || []).join(', ')}.`);
       return finish({ valid: false, needsReview: true, reason: `Scoped import failed validation: required ${source === 'qa' ? 'Team' : 'ownership'} column not found. Accepted headers: ${(OWNERSHIP_HEADERS[source] || []).join(', ')}. No replacement was performed.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics });
     }
     if (narrow && matchedRows === 0 && !(options && options.allowZeroRows)) {
-      if (weekly) return acceptWeeklyFallback('The selected weekly scope did not match the incoming file.');
+      if (weekly && !options?.authoritativeCleanUpload) return acceptWeeklyFallback('The selected weekly scope did not match the incoming file.');
       diagnostics.warnings.push('The scoped source contained zero matching rows. The existing dataset must be retained until the scope is reviewed.');
       return finish({ valid: false, needsReview: true, reason: `Update needs review — no rows matched ${scopeSnapshot.label || 'the selected scope'}.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics });
     }

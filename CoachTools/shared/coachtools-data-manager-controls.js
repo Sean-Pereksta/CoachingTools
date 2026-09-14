@@ -193,6 +193,7 @@
           : 'No current data stored');
         meta.className = 'hint';
         copy.append(name, meta);
+        if (status?.ready && api.renderPeopleSelection) copy.appendChild(api.renderPeopleSelection(status));
         const button = element('button', 'Delete');
         button.type = 'button';
         button.className = 'btn small danger';

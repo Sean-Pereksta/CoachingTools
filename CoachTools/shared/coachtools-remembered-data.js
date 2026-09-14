@@ -436,7 +436,7 @@
         `Applying the same Clean Upload scope: ${scopeName}.`
       );
       try {
-        const result = await importer.saveRecognizedEntry(entry, { scope });
+        const result = await importer.saveRecognizedEntry(entry, { scope: baseline.sourceScopes?.[entry.classification.id] || scope });
         if (!result.skippedByCleanUploadBaseline) {
           imported.push({ type, fileName: entry.file.name, status: result && result.status || 'saved' });
           if (!result.skippedByUpdatePlan) rememberSourceName(type, entry.file.name);

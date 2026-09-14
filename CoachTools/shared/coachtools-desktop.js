@@ -499,6 +499,7 @@
         ? [item.fileName, item.updatedAt ? formatDate(item.updatedAt) : '', itemScope ? `Scope: ${itemScope}` : '', item.scopeSnapshot ? `${Number(item.scopedRowCount || 0).toLocaleString()} scoped rows` : ''].filter(Boolean).join(' · ') || formatBytes(item.bytes)
         : 'No shared dataset loaded';
       copy.append(label, meta);
+      if (item.ready && root.CoachToolsData?.renderPeopleSelection) copy.appendChild(root.CoachToolsData.renderPeopleSelection(item));
       const value = document.createElement('strong');
       value.textContent = item.ready ? 'Ready' : 'Missing';
       row.append(copy, value);
