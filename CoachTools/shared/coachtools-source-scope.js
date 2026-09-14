@@ -269,9 +269,41 @@
     return base.storePreparedEntry(entry, prepared, { ...(options || {}), forceSourceReplacement: true });
   }
 
+  // Manual placement never compares headers, periods, or the previous dock.
+  async function saveCleanEntry(entry, options) {
+    const type = entry.classification.id;
+    const requestedScope = await resolveScopeSnapshot(options.scope || { mode: 'all', label: 'All people' });
+    // Read the complete workbook: discovery is only a preview, and filtering it
+    // before a scope fallback would permanently discard incoming rows.
+    const parsed = entry.rawWorkbook ? await base.parseFile(entry.file) : entry.parsed;
+    let routed;
+    try { routed = sourceFilterScope(requestedScope, type); }
+    catch (_) { routed = { scope: { mode: 'all', label: 'All people' }, route: routedSelection(requestedScope, type) }; }
+    const cleanOptions = { ...options, authoritativeCleanUpload: true, allowZeroRows: true };
+    let prepared = base.prepareScopedDataset(parsed, type, routed.scope, cleanOptions);
+    if (!prepared.valid || (requestedScope.mode !== 'all' && routed.scope.mode === 'all')) {
+      const reason = prepared.reason || 'No people were selected for this source.';
+      prepared = base.prepareScopedDataset(parsed, type, { mode: 'all', label: 'All people' }, cleanOptions);
+      prepared.diagnostics.warnings.push(reason + ' Clean Upload accepted all rows because the people filter could not be applied.');
+      prepared.diagnostics.peopleFilterFallback = true;
+    } else {
+      bindPreparedToAuthoritativeScope(prepared, requestedScope, type, routed.route);
+    }
+    prepared.diagnostics.uploadPeopleSelection = {
+      mode: requestedScope.mode === 'all' ? 'all' : 'selected',
+      names: requestedScope.mode === 'all' ? [] : (routed.route.explicit ? routed.route.names : [...(requestedScope.coaches || []), ...(requestedScope.representatives || [])]),
+      includesAllRows: Boolean(prepared.diagnostics.peopleFilterFallback)
+    };
+    entry.parsed = prepared.dataset;
+    entry.rawWorkbook = null;
+    entry._coachtoolsSavedScope = prepared.scopeSnapshot;
+    return base.storePreparedEntry(entry, prepared, { ...cleanOptions, forceSourceReplacement: true });
+  }
+
   async function saveRecognizedEntry(entry, options) {
     if (!entry || !entry.classification || !entry.classification.id) throw new Error('The file has not been safely classified.');
     if (!root.CoachToolsData || typeof root.CoachToolsData.importDataset !== 'function') throw new Error('The central CoachTools data API is unavailable.');
+    if (options?.authoritativeCleanUpload) return saveCleanEntry(entry, options);
     try {
       const prepared = await prepareRecognizedEntry(entry, options);
       return await base.storePreparedEntry(entry, prepared, options);
