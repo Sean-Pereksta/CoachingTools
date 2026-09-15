@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "entry": "index.html",
+  "sharedDocks": [
+    "myone2.dock.retail",
+    "myone2.dock.referral",
+    "myone2.dock.qa",
+    "myone2.dock.coaching",
+    "myone2.dock.checklist"
+  ],
+  "tools": [
+    {"id":"master","file":"tools/master-loader-generator.html","name":"Weekly Data Builder"},
+    {"id":"gaps","file":"tools/coaching-gaps.html","name":"Coaching Gaps"},
+    {"id":"timeline","file":"tools/coach-timeline.html","name":"Coach Timeline"},
+    {"id":"impact","file":"tools/kpi-impact.html","name":"KPI Impact"},
+    {"id":"qa","file":"tools/qa-scores.html","name":"QA Scores"},
+    {"id":"audit","file":"tools/audit-checklist-documentation.html","name":"Audit & Documentation"}
+  ]
+}
