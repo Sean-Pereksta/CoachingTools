@@ -56,8 +56,8 @@ for (const id of ['nova','circuit','copper','prism','mono']) {
 
 assert.ok(enhanced.includes('../vendor/html2canvas.min.js'), 'PNG/PDF scorecard snips should use the vendored html2canvas dependency');
 assert.ok(enhanced.includes('../vendor/jspdf.umd.min.js'), 'PDF scorecard snips should use the vendored jsPDF dependency');
-assert.ok(enhanced.includes('data-scorecard-export="png"'), 'scorecard should provide PNG snipping');
-assert.ok(enhanced.includes('data-scorecard-export="pdf"'), 'scorecard should provide PDF snipping');
+assert.ok(enhanced.includes('CoachToolsScorecardSharing.open(false)'), 'scorecard should provide PNG snipping');
+assert.ok(enhanced.includes('performance-scorecard-sharing.js'), 'scorecard should provide PDF snipping');
 assert.ok(enhanced.includes("cloneWrap.style.maxHeight='none'"), 'full-scorecard export should remove the viewport height clip');
 assert.ok(enhanced.includes('pixelBudget=28000000'), 'scorecard export should cap raster work to avoid large-capture freezes');
 assert.ok(enhanced.includes('for(let y=0;y<canvas.height;y+=slicePx)'), 'PDF export should paginate long scorecards instead of shrinking everything to one page');
