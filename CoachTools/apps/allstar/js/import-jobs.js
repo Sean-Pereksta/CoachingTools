@@ -81,7 +81,7 @@ async function runAllStarImport(source,file,options,loader){
     const message=`${job.label} — Complete · Parsed: ${job.parsed.toLocaleString()} · Normalized: ${job.normalized.toLocaleString()} · Excluded: ${Math.max(0,job.parsed-job.normalized).toLocaleString()} · Stored: ${job.stored.toLocaleString()}`;
     const node=el('allstarImportStatus'); if(node) node.textContent=message;
     state.importJobHistory=[...(state.importJobHistory||[]),{...job,transaction:undefined,cancelRead:undefined}].slice(-20);
-    try{ restoreImportFileLabels(); setStatus(); renderEditModelSafe(); renderTeamSelect(); renderCategorizedSummary(); }catch(error){ console.warn('Allstar import saved; display refresh failed.',error); }
+    try{ renderImportWorkspace(); setStatus(); renderEditModelSafe(); renderTeamSelect(); }catch(error){ console.warn('Allstar import saved; display refresh failed.',error); }
     return true;
   }catch(error){
     if(!committed) stage?.rollback();

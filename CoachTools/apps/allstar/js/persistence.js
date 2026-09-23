@@ -443,7 +443,11 @@ function restoreImportFileLabels(){
   set(els.packagedFileName, state.books.packaged.fileName ? `${state.books.packaged.fileName} · cached` : '');
   const area=els.rosterReassignmentArea?.value||'retail', areaData=state.data?.[area]||{};
   set(els.rosterReassignmentFileName, areaData.rosterFileName ? `${areaData.rosterFileName} · active roster override · ${(areaData.controlRoster||[]).length.toLocaleString()} representatives` : '');
-  ['retail','referral'].forEach(area=>{ const node=area==='retail'?els.retailFileName:els.referralFileName, meta=state.sourceMeta?.[area+'_sv2']; if(node && meta?.status==='ready') node.textContent+=` · ${(state.data[area].sv2.length+state.data[area].wiper.length).toLocaleString()} stats rows · ${meta.lastImportedAt||''} · Ready`; });
+  ['retail','referral'].forEach(area=>{
+    const node=area==='retail'?els.retailFileName:els.referralFileName, meta=state.sourceMeta?.[area+'_sv2'];
+    if(node && (state.data[area].fileName || state.books[area].fileName)) node.textContent+=` · ${teamTotalsSummaryText(area)}`;
+    if(node && meta?.status==='ready') node.textContent+=` · ${(state.data[area].sv2.length+state.data[area].wiper.length).toLocaleString()} stats rows · ${meta.lastImportedAt||''} · Ready`;
+  });
   ['qa','qa_direct','checklist','documented_coaching','comp_calls'].forEach(source=>{
     const node=sourceNameElement(source), meta=state.sourceMeta?.[source];
     if(node && meta?.status==='ready') node.textContent+=` · ${(meta.normalizedRows||0).toLocaleString()} rows · ${meta.lastImportedAt||''} · Ready`;
