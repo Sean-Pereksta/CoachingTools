@@ -1,0 +1,76 @@
+/* Scoped workspace presentation; legacy dialogs and controls retain their selectors. */
+body:has(.asWorkspaceHeader){background:#f3f5f8}
+.asWorkspaceHeader{background:#fff;border-bottom:1px solid #d9dee7;padding:14px clamp(12px,2.6vw,36px) 0;color:#172033}
+.asBrandRow,.asPageHeading,.asCommandHeading,.asCommandFooter{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.asBrand{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:800;letter-spacing:-.6px}
+.asBrand small{display:block;font-size:11px;font-weight:500;letter-spacing:.35px;color:#637086;margin-top:2px}
+.asBrandMark{display:grid;place-items:center;background:#a6192e;border-radius:12px;color:white;height:42px;width:44px;font-size:18px}
+.asWorkspaceHeader button,.asWorkspacePanel button,.asCommandBackdrop button,.asReportEmpty button{border:1px solid #d6dce5;border-radius:8px;padding:9px 12px;background:#fff;color:#25334a;min-height:38px;line-height:1.35}
+.asWorkspaceHeader button:focus-visible,.asWorkspacePanel button:focus-visible,.asCommandBackdrop button:focus-visible,.asCommandBackdrop input:focus-visible,.asLegacyTools summary:focus-visible{outline:3px solid #2563eb;outline-offset:2px}
+.asSearchButton{font-weight:500!important;text-align:left;min-width:min(340px,100%)}
+.asSearchButton kbd{font:11px Arial,sans-serif;color:#667085;border:1px solid #d6dce5;border-radius:4px;padding:3px;margin-left:15px}
+.asWorkspaceNav{display:flex;flex-wrap:wrap;gap:4px;margin-top:14px;padding-bottom:8px}
+.asWorkspaceNav button{border-color:transparent;background:transparent;font-size:13px;padding:8px 11px}
+.asWorkspaceNav button[aria-current]{background:#fff0f1;border-color:#efd2d7;color:#981b2d}
+.asWorkspaceNotice:empty{display:none}
+.asWorkspaceNotice{font-size:13px;color:#8c2921;padding:9px 0}
+.asWorkspaceHeader #topStatus{padding:2px 0 9px;font-size:12px;min-width:0;overflow-wrap:anywhere}
+.asLegacyTools{background:#fff;border-bottom:1px solid #d9dee7}
+.asLegacyTools>summary{cursor:pointer;color:#59667b;font-size:12px;padding:8px clamp(12px,2.6vw,36px)}
+.asLegacyTools .toolbar{position:static;border-bottom:0;background:#f5f6f9;padding:10px clamp(12px,2.6vw,36px);z-index:auto}
+.asLegacyTools .toolbarSelect,.asLegacyTools .toolbarBtn{border:1px solid #cbd3df!important;border-radius:6px;height:36px;min-width:112px;font-size:12px}
+.asWorkspacePanel{max-width:1480px;margin:auto;padding:28px clamp(12px,2.6vw,36px) 40px}
+.asWorkspacePanel[hidden],.asCommandBackdrop[hidden],#workArea[hidden]{display:none!important}
+.asPageHeading{align-items:flex-start;margin-bottom:22px}
+.asPageHeading h1,.asReportEmpty h1{font-size:clamp(22px,2.3vw,30px);line-height:1.25;letter-spacing:-.7px;margin:4px 0 8px;color:#172033}
+.asPageHeading p{margin:0;color:#65718a;font-size:14px;line-height:1.5}
+.asPageHeading .asEyebrow{font-size:10px;font-weight:800;letter-spacing:1.5px;color:#981b2d;margin-bottom:8px}
+button.asPrimary{background:#a6192e!important;color:#fff!important;border-color:#a6192e!important}
+.asStats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}
+.asStat,.asCard{border:1px solid #dce1e9;border-radius:12px;background:#fff;padding:19px;min-width:0}
+.asStat>span{font-size:12px;color:#67758b;font-weight:600}
+.asStat strong{display:block;font-size:clamp(22px,2.3vw,30px);font-weight:750;letter-spacing:-.7px;margin:9px 0 5px;color:#19243a}
+.asStat small,.asMuted{font-size:12px;line-height:1.6;color:#69758a}
+.asCard{margin-bottom:18px}
+.asCard h2{font-size:15px;color:#22304a;margin:0 0 14px}
+.asQuickActions{display:flex;gap:9px;flex-wrap:wrap}
+.asQuickActions button{font-size:12px}
+.asColumns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.asWorkItem{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #edf0f4;min-width:0}
+.asWorkItem:last-child{border-bottom:0}
+.asWorkItem>div{min-width:0}
+.asWorkItem>div>button{border:0;background:none;padding:2px 0;min-height:30px;font-size:13px;text-align:left;overflow-wrap:anywhere}
+.asWorkItem small{display:block;font-size:11px;color:#748096;line-height:1.6;overflow-wrap:anywhere}
+.asWorkItem .asFavorite{border:0;font-size:21px;color:#9a7130;flex-shrink:0}
+.asWorkItem .asFavorite[aria-pressed=true]{color:#a6192e}
+.asEmptyState{font-size:13px;line-height:1.7;color:#758094;padding:10px 0}
+button.asTextButton{border:0;background:none;color:#a6192e;font-size:12px;padding-left:0;margin-top:8px}
+.asHealthList{padding:0;margin:0;list-style:none}
+.asHealthList li{display:flex;justify-content:space-between;gap:15px;font-size:12px;padding:10px 0;border-bottom:1px solid #edf0f4}
+.asHealthList li strong{text-align:right;font-weight:600;max-width:65%}
+.asSourceList{max-height:310px;overflow:auto}
+.asSourceRow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:8px 0;border-bottom:1px solid #edf0f4;align-items:center}
+.asSourceRow button{border:0;padding:0;text-align:left;font-size:12px;min-height:28px}
+.asSourceRow>span{font-size:11px;color:#5d6a80}
+.asSourceRow>small{grid-column:1/-1;font-size:11px;color:#7d8797;overflow-wrap:anywhere}
+.asCommandBackdrop{position:fixed;inset:0;z-index:90000;display:flex;justify-content:center;align-items:flex-start;background:rgba(14,23,40,.58);padding:clamp(20px,8vh,85px) 14px 20px}
+.asCommandDialog{background:#fff;border-radius:14px;border:1px solid #d1d8e4;box-shadow:0 24px 90px #08132755;width:min(720px,100%);max-height:85vh;display:flex;flex-direction:column;gap:12px;padding:20px;overflow:auto}
+.asCommandHeading h2{font-size:18px;margin:0}
+.asCommandHeading button{font-size:12px}
+.asCommandDialog input{width:100%;border:1px solid #c3ccda;border-radius:8px;min-height:46px;font-size:15px;padding:12px}
+#asCommandResults{overflow:auto;min-height:70px;max-height:48vh;overscroll-behavior:contain}
+#asCommandResults [role=option]{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px;border-radius:8px;cursor:pointer}
+#asCommandResults [role=option][aria-selected=true]{background:#edf2fc;outline:1px solid #c6d4f0;outline-offset:-1px}
+#asCommandResults [role=option]>span:first-child{min-width:0}
+#asCommandResults strong{display:block;font-size:13px;overflow-wrap:anywhere}
+#asCommandResults small{display:block;font-size:11px;line-height:1.6;color:#68768b;overflow-wrap:anywhere}
+.asCommandCategory{font-size:10px;color:#7d3550;background:#fff0f2;border-radius:5px;padding:4px 6px;flex-shrink:0;max-width:120px}
+.asCommandFooter{border-top:1px solid #e7eaf0;padding-top:12px;font-size:11px;color:#6b778b}
+.asCommandFooter button{font-size:11px;padding:6px 9px}
+.asCommandDialog>p{margin:0}
+#asPerformanceData{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f7fa;border-radius:8px;padding:14px;font-size:11px;line-height:1.6}
+.asReportEmpty{max-width:800px;margin:0 auto;padding:50px 20px}
+.asReportEmpty p{font-size:14px;line-height:1.6;color:#69758a}
+@media(max-width:800px){.asStats{grid-template-columns:repeat(2,minmax(0,1fr))}.asColumns{grid-template-columns:1fr;gap:0}.asWorkspacePanel{padding-top:20px}.asBrandRow{gap:12px}.asSearchButton{min-width:0}.asSearchButton kbd{display:none}.asWorkspaceNav{gap:3px}.asWorkspaceNav button{font-size:12px;padding:7px 9px}.asStat,.asCard{padding:15px}}
+@media(max-width:420px){.asBrand{font-size:19px}.asBrandMark{height:35px;width:36px;font-size:16px}.asSearchButton{font-size:11px!important;max-width:48%}.asStat strong{font-size:23px}.asStats{gap:9px}.asCommandDialog{padding:14px}.asCommandCategory{max-width:80px;font-size:9px}}
+@media print{.asWorkspaceHeader,.asLegacyTools,.asWorkspacePanel,.asCommandBackdrop{display:none!important}#workArea[hidden]{display:block!important}}

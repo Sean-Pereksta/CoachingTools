@@ -12,17 +12,25 @@
     "sha256": "064131b17b773934be0a225be8da23abd829449d5047968c32ce03831cecd115"
   },
   "classicScriptExecutionOrder": [
+    "js/default-models.js",
     "js/core.js",
+    "js/analysis-engine.js",
     "js/persistence.js",
     "js/models.js",
     "js/imports.js",
+    "js/import-jobs.js",
     "js/calculations.js",
+    "js/coaching-diagnostics.js",
     "js/reports.js",
     "js/research.js",
     "js/organizations-core.js",
     "js/workflow.js",
     "js/list-tester.js",
     "js/qualtrics-bridge.js",
+    "js/research-charts.js",
+    "js/research-workspace.js",
+    "js/model-workspace.js",
+    "js/workspace-navigation.js",
     "js/app.js"
   ],
   "extractedRuntimeModules": [
@@ -96,5 +104,17 @@
     "Added generalized representative/team/coach lookup display fields with calculated values and ordered conditional formatting.",
     "Replaced new data-package export with a versioned normalized JSON contract while retaining legacy workbook import compatibility.",
     "Added prefix-based import inspection, selected-sheet materialization, per-workbook worksheet conversion reuse, and versioned Research filter/metric caching."
-  ]
+  ],
+  "analyticalModernization": {
+    "date": "2026-09-23",
+    "modules": [
+      "js/analysis-engine.js",
+      "js/research-workspace.js",
+      "js/research-charts.js",
+      "js/model-workspace.js",
+      "js/workspace-navigation.js"
+    ],
+    "compatibility": "Additive UI and storage; existing calculation modes and classic local-file order retained.",
+    "validation": "docs/modernization-validation.md"
+  }
 }

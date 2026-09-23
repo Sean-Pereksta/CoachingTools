@@ -20,8 +20,17 @@ function ensureSourceSettings(model){
   return model.sourceSettings;
 }
 function getSourceSetting(model, source){
-  const settings=ensureSourceSettings(model||{});
-  return settings[source] || sourceDefaults(source);
+  // Row readers request one source at a time. Normalizing every source in every
+  // row repeated the complete model settings migration thousands of times.
+  const target=model||{};
+  if(!target.sourceSettings) ensureSourceSettings(target);
+  const settings=target.sourceSettings;
+  const base=isCustomSource(source)?customSourceDefaultSettings(source):sourceDefaults(source), cur=settings[source]||{};
+  const normalized={...base,...cur,columns:{...(base.columns||{}),...(cur.columns||{})}};
+  normalized.headerRow=Math.max(1,Number(normalized.headerRow)||base.headerRow||1);
+  normalized.startCol=Math.max(1,Number(normalized.startCol)||base.startCol||1);
+  settings[source]=normalized;
+  return normalized;
 }
 function plainHeaderName(v){
   if(v===null||v===undefined) return '';
@@ -984,15 +993,23 @@ function rowDateMillisForSource(source,row){
   const h=sourceDateHeader(source,getHeaders(source)) || findHeader(getHeaders(source), source==='documented_coaching'?['Date','Coaching Date','Created Date','Completed Date','Documented Date']:checklistLikeDefaultDateHeaders(source));
   return h ? (parseDateOnly(row[h])?.getTime()||NaN) : (parseDateOnly(row._date)?.getTime()||NaN);
 }
+function sourceIndexDateReader(source){
+  if(source===DATED_SOURCE) return row=>parseDateOnly(row.Date||row._date)?.getTime()||NaN;
+  if(source===NONDATED_SOURCE) return ()=>NaN;
+  if(source==='qa'||source===QA_DIRECT_SOURCE) return row=>parseDateOnly(row._interactionDate||row._assignedDate||row._date)?.getTime()||NaN;
+  if(isCustomSource(source)) return row=>rowDateMillisForSource(source,row);
+  const headers=getHeaders(source)||[], header=sourceDateHeader(source,headers)||findHeader(headers,source==='documented_coaching'?['Date','Coaching Date','Created Date','Completed Date','Documented Date']:checklistLikeDefaultDateHeaders(source));
+  return header ? row=>parseDateOnly(row[header])?.getTime()||NaN : row=>parseDateOnly(row._date)?.getTime()||NaN;
+}
 function makeResearchSourceIndex(source, rows){
   const headers=getHeaders(source)||[], descHeaders=source==='documented_coaching'?sourceDescriptionHeaders(source):headers;
-  return {version:state.dataIndex?.version||0,rows,headers,descriptionHeaders:descHeaders,byRep:new Map(),byTeam:new Map(),byTeamKey:new Map(),byCoach:new Map(),byCoachKey:new Map(),bySourceName:new Map(),byCategory:new Map(),byDate:new Map(),byDateBucket:new Map(),byWeek:new Map(),byMonth:new Map(),byHeader:new Map(),byHeaderName:new Map(),byColumnValue:new Map(),byWord:new Map(),byRepWord:new Map(),byRepSortedDate:new Map(),byTeamSortedDate:new Map(),byRowId:new Map(),dateValues:[],dateSortedRows:[],searchText:new WeakMap(),tokens:new WeakMap(),rowMeta:new WeakMap(),lazyIndexes:new Map(),reps:new Map(),perf:{rowsIndexed:0,lazyBuilds:[]}};
+  return {source,dateReader:sourceIndexDateReader(source),entityTable:ensureResearchCanonicalEntityTable(),version:state.dataIndex?.version||0,rows,headers,descriptionHeaders:descHeaders,byRep:new Map(),byTeam:new Map(),byTeamKey:new Map(),byCoach:new Map(),byCoachKey:new Map(),bySourceName:new Map(),byCategory:new Map(),byDate:new Map(),byDateBucket:new Map(),byWeek:new Map(),byMonth:new Map(),byHeader:new Map(),byHeaderName:new Map(),byColumnValue:new Map(),byWord:new Map(),byRepWord:new Map(),byRepSortedDate:new Map(),byTeamSortedDate:new Map(),byRowId:new Map(),dateValues:[],dateSortedRows:[],searchText:new WeakMap(),tokens:new WeakMap(),rowMeta:new WeakMap(),lazyIndexes:new Map(),reps:new Map(),perf:{rowsIndexed:0,lazyBuilds:[]}};
 }
 function addResearchIndexedRow(idx,source,row,rowId){
-  const key=row._repKey||'', team=rowTeam(row), coach=team, ms=rowDateMillisForSource(source,row), day=researchDayBucket(ms), month=researchMonthBucket(ms), week=Number.isFinite(ms)?ymd(startOfWeekDate(new Date(ms),'sunday')):'';
+  const key=row._repKey||'', team=rowTeam(row), coach=team, ms=idx.dateReader?idx.dateReader(row):rowDateMillisForSource(source,row), day=researchDayBucket(ms), month=researchMonthBucket(ms), week=Number.isFinite(ms)?ymd(startOfWeekDate(new Date(ms),'sunday')):'';
   state.researchBuildingRowMeta=state.researchBuildingRowMeta instanceof WeakMap?state.researchBuildingRowMeta:new WeakMap(); state.researchBuildingRowMeta.set(row,{source,rowId});
   idx.rowMeta.set(row,{rowId,source});
-  const canonical=researchCanonicalEntityForRow(row,source,team);
+  const canonical=researchCanonicalEntityForRow(row,source,team,idx.entityTable);
   if(team && !row._team) row._team=team;
   pushMapArray(idx.byRep,key,row); pushMapArray(idx.byTeam,team,row); pushMapArray(idx.byCoach,coach,row);
   if(team) pushMapArray(idx.byTeamKey,normalizeIdentityName(team),row);
@@ -1037,8 +1054,8 @@ function ensureResearchCanonicalEntityTable(){
   });
   return table;
 }
-function researchCanonicalEntityForRow(row,source,knownTeam=''){
-  const table=ensureResearchCanonicalEntityTable(), rawTeam=knownTeam||rowTeam(row)||'', teamKey=coachNameKey(rawTeam)||normalizeIdentityName(rawTeam)||'(blank team)';
+function researchCanonicalEntityForRow(row,source,knownTeam='',preparedTable=null){
+  const table=preparedTable||ensureResearchCanonicalEntityTable(), rawTeam=knownTeam||rowTeam(row)||'', teamKey=coachNameKey(rawTeam)||normalizeIdentityName(rawTeam)||'(blank team)';
   let teamId=table.teamIdByKey.get(teamKey);
   if(!teamId){ teamId=researchStableEntityId('team',teamKey); table.teamIdByKey.set(teamKey,teamId); table.teamsById.set(teamId,{teamId,teamNumber:table.nextTeamId++,key:teamKey,name:canonicalCoachName(rawTeam)||rawTeam||'(blank team)',aliases:new Set(rawTeam?[rawTeam]:[])}); }
   const team=table.teamsById.get(teamId), rep=getRepIdentity(row,source), repKey=rep.normalizedName||row?._repKey||'';
@@ -1064,33 +1081,40 @@ function finalizeResearchSourceIndex(idx,source){
 function researchSourceIndexSignature(source){
   const rows=getRowsRaw(source)||[], headers=getHeaders(source)||[], cs=isCustomSource(source)?customSource(source):null;
   const fileName=cs?.fileName || (source.startsWith('retail')?state.data.retail.fileName:source.startsWith('referral')?state.data.referral.fileName:(state.data[source]?.fileName||''));
-  const sourceVersion=state.sourceMeta?.[source]?.sourceVersion||state.versions?.data||0;
-  return [RESEARCH_SOURCE_INDEX_SCHEMA_VERSION,source,sourceVersion,rows.length,headers.join('\u001f'),fileName,state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0].join('\u001e');
+  const sourceVersion=state.sourceMeta?.[source]?.sourceVersion??state.sourceMeta?.[source]?.version??state.versions?.data??0;
+  const importModel=activeModelForImport(); if(!importModel?.sourceSettings?.[source]) getSourceSetting(importModel,source);
+  return [RESEARCH_SOURCE_INDEX_SCHEMA_VERSION,source,sourceVersion,rows.length,headers.join('\u001f'),fileName,state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0,state.versions?.roster||0,stableSerialize({settings:importModel?.sourceSettings?.[source]||null,mapping:state.sourceMappings?.[source]||cs?.mappings||cs?.fieldMappings||null,columns:cs?.columns||null})].join('\u001e');
 }
 async function ensureResearchSourceIndex(source,opts={}){
   if(!source || isDynamicResearchSource(source)) return null;
   const global=dataIndexReady()?state.dataIndex.sources?.[source]:null;
-  if(global){ if(!global.compact) finalizeResearchSourceIndex(global,source); return global; }
+  if(global && global.rows===getRowsRaw(source) && (!global.signature||global.signature===researchSourceIndexSignature(source))){ if(opts.token?.cancelled) throw new Error('Research source preparation cancelled.'); if(!global.compact) finalizeResearchSourceIndex(global,source); return global; }
   state.researchSourceIndexes=state.researchSourceIndexes instanceof Map?state.researchSourceIndexes:new Map();
   state.researchSourceIndexJobs=state.researchSourceIndexJobs instanceof Map?state.researchSourceIndexJobs:new Map();
+  if(opts.token?.cancelled) throw new Error('Research source preparation cancelled.');
   const signature=researchSourceIndexSignature(source), cached=state.researchSourceIndexes.get(source);
-  if(cached?.signature===signature) return cached;
-  const active=state.researchSourceIndexJobs.get(source); if(active?.signature===signature) return active.promise;
+  if(cached?.signature===signature&&cached.rows===getRowsRaw(source)) return cached;
+  const active=state.researchSourceIndexJobs.get(source); if(active?.signature===signature&&active.rows===getRowsRaw(source)&&!active.token?.cancelled){ const shared=await active.promise; if(opts.token?.cancelled) throw new Error('Research source preparation cancelled.'); return shared; }
   const promise=(async()=>{
     const rows=getRowsRaw(source)||[], idx=makeResearchSourceIndex(source,rows); idx.version=(state.dataIndex?.version||0)+1;
     idx.signature=signature;
-    const chunk=Math.max(500,Number(opts.chunkSize)||1500), start=performance.now();
+    const chunk=Math.max(64,Number(opts.chunkSize)||1500), start=performance.now(); let sliceStarted=start;
     for(let i=0;i<rows.length;i++){
       addResearchIndexedRow(idx,source,rows[i],i);
-      if((i+1)%chunk===0){ if(opts.token?.cancelled) throw new Error('Research source preparation cancelled.'); if(opts.onProgress) opts.onProgress(source,i+1,rows.length); await yieldToBrowser(); }
+      if((i+1)%chunk===0 || ((i+1)%64===0&&performance.now()-sliceStarted>=8)){ if(opts.token?.cancelled) throw new Error('Research source preparation cancelled.'); if(opts.onProgress) opts.onProgress(source,i+1,rows.length); await yieldToBrowser(); sliceStarted=performance.now(); }
     }
     idx.byRepSortedDate.forEach(list=>list.sort((a,b)=>(idx.rowMeta.get(a)?.dateMs||0)-(idx.rowMeta.get(b)?.dateMs||0)));
     idx.byTeamSortedDate.forEach(list=>list.sort((a,b)=>(idx.rowMeta.get(a)?.dateMs||0)-(idx.rowMeta.get(b)?.dateMs||0)));
     idx.dateSortedRows.sort((a,b)=>(idx.rowMeta.get(a)?.dateMs||0)-(idx.rowMeta.get(b)?.dateMs||0));
+    // An import or mapping edit may occur while this sliced build yields. Never publish an obsolete index.
+    if(opts.token?.cancelled) throw new Error('Research source preparation cancelled.');
+    if(rows!==getRowsRaw(source) || signature!==researchSourceIndexSignature(source)) throw new Error('Source changed during preparation. Run the analysis again.');
     finalizeResearchSourceIndex(idx,source); idx.perf.prepareMs=Math.round(performance.now()-start);
-    state.researchSourceIndexes.set(source,idx); return idx;
+    state.researchSourceIndexes.set(source,idx);
+    if(typeof AllStarAnalysis!=='undefined') AllStarAnalysis.record('Source index construction','full calculation',performance.now()-start,{source,rows:rows.length});
+    return idx;
   })();
-  state.researchSourceIndexJobs.set(source,{signature,promise});
+  state.researchSourceIndexJobs.set(source,{signature,promise,token:opts.token,rows:getRowsRaw(source)});
   try{ return await promise; }catch(error){ const current=state.researchSourceIndexes.get(source); if(current?.signature===signature&&!current.compact) state.researchSourceIndexes.delete(source); throw error; }finally{ if(state.researchSourceIndexJobs.get(source)?.promise===promise) state.researchSourceIndexJobs.delete(source); }
 }
 function researchExecutionSources(item={}){
@@ -1132,9 +1156,10 @@ async function ensureResearchItemsExecutionIndexes(items,opts={}){
   return {sources,sourceDetails,totalRows,timings,totalMs:Math.round(performance.now()-started)};
 }
 function sourceIndex(source){
-  if(dataIndexReady()) return state.dataIndex.sources[source] || null;
+  const global=dataIndexReady()?state.dataIndex.sources[source]:null;
+  if(global && global.rows===getRowsRaw(source) && (!global.signature||global.signature===researchSourceIndexSignature(source))) return global;
   const scoped=state.researchSourceIndexes instanceof Map?state.researchSourceIndexes.get(source):null;
-  if(scoped) return scoped;
+  if(scoped && scoped.rows===getRowsRaw(source) && scoped.signature===researchSourceIndexSignature(source)) return scoped;
   const runIdx=state.runIndexes instanceof Map ? state.runIndexes.get(source) : null;
   if(runIdx) return runIdx;
   return state.indexes?.[source] || null;
