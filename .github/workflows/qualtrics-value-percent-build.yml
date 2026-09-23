@@ -1,0 +1,169 @@
+name: Qualtrics percentage format build
+on:
+  push:
+    branches: [agent/qualtrics-value-percent-formats]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Apply focused source changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('CoachTools')
+          engine_path=root/'apps/allstar/qualtrics/individual-messages.js'
+          source=engine_path.read_text()
+          def once(text, old, new):
+              count=text.count(old)
+              if count != 1:
+                  raise RuntimeError(f'Expected one patch anchor, found {count}: {old[:120]}')
+              return text.replace(old,new,1)
+          replacement=r'''
+            // Explicit percentage tokens always use the observation, not its display string.
+            // A literal percentage string already describes a fraction; numeric values do
+            // not use a magnitude heuristic (1 and values greater than 1 are valid inputs).
+            function percentageNumber(input){
+              let value=input;
+              if(value&&typeof value==='object'){
+                if(value.missing) return NaN;
+                value=typeof value.value==='number'?value.value:(value.raw??value.value);
+              }
+              if(typeof value==='number') return Number.isFinite(value)?value:NaN;
+              if(typeof value!=='string') return NaN;
+              const match=/^([+-]?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)(%)?$/i.exec(value.trim());
+              if(!match) return NaN;
+              const number=Number(match[1].replace(/,/g,''));
+              return Number.isFinite(number)?(match[2]?number/100:number):NaN;
+            }
+            function formatPercentageToken(value,modifier){
+              const number=percentageNumber(value), scaled=modifier==='%100'?number*100:number;
+              if(!Number.isFinite(scaled)) return null;
+              // Avoid floating-point tails such as 0.29 * 100 = 28.999999999999996.
+              return `${Number(scaled.toPrecision(12))}%`;
+            }
+            function rawValuesForResult(concern,strength){
+              return {ConcernValue:concern?.observation,OpportunityValue:concern?.observation,StrengthValue:strength?.observation};
+            }
+            function replaceVariables(template,values,knownNames,rawValues){
+              const errors=[], lookup=new Map(), rawLookup=new Map();
+              for(const [name,value] of Object.entries(values||{})) lookup.set(key(name),value==null?'':String(value));
+              for(const [name,value] of Object.entries(rawValues||{})) rawLookup.set(key(name),value);
+              const known=new Set((knownNames||[]).map(key));
+              // Parenthesized tokens accept the suffix inside or immediately outside the
+              // parentheses. Bare syntax is limited to the three explicit Value aliases.
+              const pattern=/\(([A-Za-z][A-Za-z0-9_]*)(%[A-Za-z0-9_%]*)?\)(%100(?![A-Za-z0-9_%])|%(?![A-Za-z0-9_%]))?|\b(StrengthValue|OpportunityValue|ConcernValue)(%[A-Za-z0-9_%]*)(?![A-Za-z0-9_%])/gi;
+              const text=cleanText(template).replace(pattern,function(token,insideName,insideModifier,outsideModifier,bareName,bareModifier){
+                const name=insideName||bareName, modifier=insideModifier||outsideModifier||bareModifier||'';
+                let normalized=key(name);
+                if(normalized==='opportunityvalue'&&!lookup.has(normalized)&&lookup.has('concernvalue')) normalized='concernvalue';
+                if(!lookup.has(normalized)){
+                  if(known.has(normalized)||known.has(key(name))) return '';
+                  errors.push(`Unresolved Variable: ${name}`); return token;
+                }
+                if(!modifier) return lookup.get(normalized);
+                if((insideModifier&&outsideModifier)||!['%','%100'].includes(modifier)){
+                  errors.push(`Invalid Percentage Format: ${name}${modifier}`); return token;
+                }
+                const display=lookup.get(normalized), value=rawLookup.has(normalized)?rawLookup.get(normalized):display;
+                // An absent outcome stays absent; never turn blanks/missing data into 0%.
+                if(value==null||(value&&typeof value==='object'&&value.missing)) return display;
+                if(typeof value==='string'&&!value.trim()) return '';
+                const formatted=formatPercentageToken(value,modifier);
+                if(formatted===null){ errors.push(`Invalid Percentage Value: ${name}`); return token; }
+                return formatted;
+              });
+              return {text,errors:[...new Set(errors)]};
+            }
+            function valuesForResult(rep,emailMatch,concern,strength){
+              const names=splitName(rep.fullName||rep.name||rep.repName||'');
+              return {
+                FirstName:names.firstName,LastName:names.lastName,FullName:names.fullName,
+                Email:emailMatch?.email||'',CoachName:rep.coach||rep.coachName||'',
+                ConcernName:concern?.title||'',ConcernValue:observationDisplay(concern?.observation),OpportunityValue:observationDisplay(concern?.observation),ConcernThreshold:concern?.side?.threshold||'',
+                StrengthName:strength?.title||'',StrengthValue:observationDisplay(strength?.observation),StrengthThreshold:strength?.side?.threshold||''
+              };
+            }
+          '''
+          start=source.index('  function replaceVariables(template,values,knownNames){')
+          end=source.index('  function resolveMessage(',start)
+          source=source[:start]+replacement.lstrip('\n')+source[end:]
+          source=once(source,"'StrengthName','StrengthValue','StrengthThreshold','CoachName'","'StrengthName','StrengthValue','StrengthThreshold','OpportunityValue','CoachName'")
+          source=once(source,'function resolveMessage(sideName,candidate,rep,emailMatch,baseValues,resolver){','function resolveMessage(sideName,candidate,rep,emailMatch,baseValues,resolver,baseRawValues){')
+          source=once(source,'const side=candidate.side, errors=[], values=Object.assign({},baseValues), known=BUILT_INS.slice();','const side=candidate.side, errors=[], values=Object.assign({},baseValues), rawValues=Object.assign({},baseRawValues), known=BUILT_INS.slice();')
+          source=once(source,'values[variable.name]=formatValue(observation,variable.format,observation.isPercent);','values[variable.name]=formatValue(observation,variable.format,observation.isPercent);\n      rawValues[variable.name]=observation;')
+          source=once(source,'const rendered=replaceVariables(side.message,values,known);','const rendered=replaceVariables(side.message,values,known,rawValues);')
+          source=once(source,'const rendered=resolveMessage(sideName,candidate,rep,emailMatch,values,resolver); errors.push(...rendered.errors);',"const rawValues=sideName==='Concern'?rawValuesForResult(candidate,otherCandidate):rawValuesForResult(otherCandidate,candidate);\n      const rendered=resolveMessage(sideName,candidate,rep,emailMatch,values,resolver,rawValues); errors.push(...rendered.errors);")
+          source=once(source,'const baseValues=valuesForResult(Object.assign({},rep,{fullName}),emailMatch,concern,strength);','const baseValues=valuesForResult(Object.assign({},rep,{fullName}),emailMatch,concern,strength);\n    const baseRawValues=rawValuesForResult(concern,strength);')
+          for field in ['header','concernHeading','strengthHeading','genericMessage','footer']:
+              source=once(source,f'replaceVariables(template.{field},baseValues,BUILT_INS)',f'replaceVariables(template.{field},baseValues,BUILT_INS,baseRawValues)')
+          engine_path.write_text(source)
+          generator_path=root/'apps/allstar/qualtrics/generator.html'
+          generator=generator_path.read_text()
+          old='Built in: (FirstName), (LastName), (FullName), (Email), (ConcernName), (ConcernValue), (StrengthName), (StrengthValue), (ConcernThreshold), (StrengthThreshold), and (CoachName).'
+          new='Built in: (FirstName), (LastName), (FullName), (Email), (ConcernName), (ConcernValue), (OpportunityValue), (StrengthName), (StrengthValue), (ConcernThreshold), (StrengthThreshold), and (CoachName). Percentages: (StrengthValue%) or (OpportunityValue%) adds % without scaling (0.436 &rarr; 0.436%); (StrengthValue%100) or (OpportunityValue%100) multiplies by 100 (0.436 &rarr; 43.6%). OpportunityValue is an alias for ConcernValue; the same formats work with ConcernValue. Names are case-insensitive.'
+          generator_path.write_text(once(generator,old,new))
+          package_path=root/'package.json'
+          package=package_path.read_text()
+          package=once(package,'node apps/allstar/tests/individual-messages.test.js &&','node apps/allstar/tests/individual-messages.test.js && node apps/allstar/tests/individual-message-percentage-tokens.test.js &&')
+          json.loads(package)
+          package_path.write_text(package)
+          (root/'docs/qualtrics-value-percentage-tokens.md').write_text('''# Qualtrics rule-message percentage values
+          
+          Existing `(StrengthValue)` and `(ConcernValue)` references keep their normal display formatting. `(OpportunityValue)` is also accepted as an alias for `(ConcernValue)`.
+          
+          | Rule message reference | Underlying value | Message output |
+          | --- | ---: | ---: |
+          | `(StrengthValue%)` | 0.436 | 0.436% |
+          | `(OpportunityValue%)` | 0.436 | 0.436% |
+          | `(StrengthValue%100)` | 0.436 | 43.6% |
+          | `(OpportunityValue%100)` | 0.436 | 43.6% |
+          
+          The modifier can also follow the closing parenthesis, such as `(StrengthValue)%100`. Bare `StrengthValue%`, `StrengthValue%100`, `OpportunityValue%`, and `OpportunityValue%100` work too. Names are case-insensitive. The same modifiers work on `ConcernValue` and on parenthesized custom numeric variables.
+          
+          Explicit formats use each finding's underlying numeric observation, not its previously formatted display string. A raw 43.6 is therefore 43.6% with `%`, or 4360% with `%100`. A numeric observation of 0.436 already displayed as 43.6% is still 43.6% with `%100`, never 4360%. Literal percent strings are parsed as fractions. Zero remains 0%; missing outcomes remain blank or N/A rather than becoming 0%. Non-numeric values and unsupported modifiers produce a template error and prevent send readiness.
+          
+          These formats apply to rule messages, headers, headings, footers, and generic message text in both synchronous previews and chunked mass-message generation. No saved-rule migration is needed. Floating-point noise is trimmed to 12 significant digits.
+          
+          Regression coverage: `node apps/allstar/tests/individual-message-percentage-tokens.test.js` after `node apps/allstar/build/build-portable.js`. This test is included in `npm run test:allstar` and `npm test`.
+          '''.replace('\n          ','\n'))
+          PY
+      - name: Install test dependencies
+        working-directory: CoachTools
+        run: npm ci --ignore-scripts
+      - name: Build portable and run focused regression tests
+        working-directory: CoachTools
+        run: |
+          node apps/allstar/build/build-portable.js
+          node apps/allstar/tests/individual-messages.test.js
+          node apps/allstar/tests/individual-message-percentage-tokens.test.js
+          node apps/allstar/tests/individual-review.test.js
+          node apps/allstar/tests/verify-package.js
+      - name: Run complete repository test suite
+        id: complete_suite
+        continue-on-error: true
+        working-directory: CoachTools
+        run: npm test
+      - name: Validate suite wiring
+        working-directory: CoachTools
+        run: npm run validate-suite
+      - name: Commit verified source and regenerated builds
+        shell: bash
+        run: |
+          git diff --check
+          git add CoachTools/apps/allstar/qualtrics/individual-messages.js CoachTools/apps/allstar/qualtrics/generator.html CoachTools/apps/allstar/qualtrics/generator-source.js CoachTools/apps/allstar/dist/All-Star-Portable.html CoachTools/package.json CoachTools/docs/qualtrics-value-percentage-tokens.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git diff --cached --quiet; then
+            git commit -m 'Support explicit percentage formats for Qualtrics rule message values'
+            git push origin HEAD:refs/heads/agent/qualtrics-value-percent-formats
+          fi
+          echo 'Complete suite outcome: ${{ steps.complete_suite.outcome }}' >> "$GITHUB_STEP_SUMMARY"
