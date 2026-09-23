@@ -24,7 +24,7 @@
   });
   const BUILT_INS=Object.freeze([
     'FirstName','LastName','FullName','Email','ConcernName','ConcernValue','ConcernThreshold',
-    'StrengthName','StrengthValue','StrengthThreshold','CoachName'
+    'StrengthName','StrengthValue','StrengthThreshold','OpportunityValue','CoachName'
   ]);
 
   function cleanText(value){ return String(value==null?'':value).trim(); }
@@ -273,15 +273,58 @@
     return formatValue(observation,'raw',observation.isPercent)||'N/A';
   }
 
-  function replaceVariables(template,values,knownNames){
-    const errors=[], lookup=new Map();
+  // Explicit percentage tokens always use the observation, not its display string.
+  // A literal percentage string already describes a fraction; numeric values do
+  // not use a magnitude heuristic (1 and values greater than 1 are valid inputs).
+  function percentageNumber(input){
+    let value=input;
+    if(value&&typeof value==='object'){
+      if(value.missing) return NaN;
+      value=typeof value.value==='number'?value.value:(value.raw??value.value);
+    }
+    if(typeof value==='number') return Number.isFinite(value)?value:NaN;
+    if(typeof value!=='string') return NaN;
+    const match=/^([+-]?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)(%)?$/i.exec(value.trim());
+    if(!match) return NaN;
+    const number=Number(match[1].replace(/,/g,''));
+    return Number.isFinite(number)?(match[2]?number/100:number):NaN;
+  }
+  function formatPercentageToken(value,modifier){
+    const number=percentageNumber(value), scaled=modifier==='%100'?number*100:number;
+    if(!Number.isFinite(scaled)) return null;
+    // Avoid floating-point tails such as 0.29 * 100 = 28.999999999999996.
+    return `${Number(scaled.toPrecision(12))}%`;
+  }
+  function rawValuesForResult(concern,strength){
+    return {ConcernValue:concern?.observation,OpportunityValue:concern?.observation,StrengthValue:strength?.observation};
+  }
+  function replaceVariables(template,values,knownNames,rawValues){
+    const errors=[], lookup=new Map(), rawLookup=new Map();
     for(const [name,value] of Object.entries(values||{})) lookup.set(key(name),value==null?'':String(value));
+    for(const [name,value] of Object.entries(rawValues||{})) rawLookup.set(key(name),value);
     const known=new Set((knownNames||[]).map(key));
-    const text=cleanText(template).replace(/\(([A-Za-z][A-Za-z0-9_]*)\)/g,function(token,name){
-      const normalized=key(name);
-      if(lookup.has(normalized)) return lookup.get(normalized);
-      if(known.has(normalized)) return '';
-      errors.push(`Unresolved Variable: ${name}`); return token;
+    // Parenthesized tokens accept the suffix inside or immediately outside the
+    // parentheses. Bare syntax is limited to the three explicit Value aliases.
+    const pattern=/\(([A-Za-z][A-Za-z0-9_]*)(%[A-Za-z0-9_%]*)?\)(%100(?![A-Za-z0-9_%])|%(?![A-Za-z0-9_%]))?|\b(StrengthValue|OpportunityValue|ConcernValue)(%[A-Za-z0-9_%]*)(?![A-Za-z0-9_%])/gi;
+    const text=cleanText(template).replace(pattern,function(token,insideName,insideModifier,outsideModifier,bareName,bareModifier){
+      const name=insideName||bareName, modifier=insideModifier||outsideModifier||bareModifier||'';
+      let normalized=key(name);
+      if(normalized==='opportunityvalue'&&!lookup.has(normalized)&&lookup.has('concernvalue')) normalized='concernvalue';
+      if(!lookup.has(normalized)){
+        if(known.has(normalized)||known.has(key(name))) return '';
+        errors.push(`Unresolved Variable: ${name}`); return token;
+      }
+      if(!modifier) return lookup.get(normalized);
+      if((insideModifier&&outsideModifier)||!['%','%100'].includes(modifier)){
+        errors.push(`Invalid Percentage Format: ${name}${modifier}`); return token;
+      }
+      const display=lookup.get(normalized), value=rawLookup.has(normalized)?rawLookup.get(normalized):display;
+      // An absent outcome stays absent; never turn blanks/missing data into 0%.
+      if(value==null||(value&&typeof value==='object'&&value.missing)) return display;
+      if(typeof value==='string'&&!value.trim()) return '';
+      const formatted=formatPercentageToken(value,modifier);
+      if(formatted===null){ errors.push(`Invalid Percentage Value: ${name}`); return token; }
+      return formatted;
     });
     return {text,errors:[...new Set(errors)]};
   }
@@ -290,21 +333,22 @@
     return {
       FirstName:names.firstName,LastName:names.lastName,FullName:names.fullName,
       Email:emailMatch?.email||'',CoachName:rep.coach||rep.coachName||'',
-      ConcernName:concern?.title||'',ConcernValue:observationDisplay(concern?.observation),ConcernThreshold:concern?.side?.threshold||'',
+      ConcernName:concern?.title||'',ConcernValue:observationDisplay(concern?.observation),OpportunityValue:observationDisplay(concern?.observation),ConcernThreshold:concern?.side?.threshold||'',
       StrengthName:strength?.title||'',StrengthValue:observationDisplay(strength?.observation),StrengthThreshold:strength?.side?.threshold||''
     };
   }
-  function resolveMessage(sideName,candidate,rep,emailMatch,baseValues,resolver){
+  function resolveMessage(sideName,candidate,rep,emailMatch,baseValues,resolver,baseRawValues){
     if(!candidate) return {text:'',errors:[]};
-    const side=candidate.side, errors=[], values=Object.assign({},baseValues), known=BUILT_INS.slice();
+    const side=candidate.side, errors=[], values=Object.assign({},baseValues), rawValues=Object.assign({},baseRawValues), known=BUILT_INS.slice();
     if(!side.message) errors.push(`Missing ${sideName} message`);
     for(const variable of side.variables||[]){
       known.push(variable.name);
       const observation=resolver.resolveVariable(rep,variable,candidate.rule,sideName,candidate);
       if(!observation||observation.missing){ errors.push(`Unresolved Variable: ${variable.name}`); continue; }
       values[variable.name]=formatValue(observation,variable.format,observation.isPercent);
+      rawValues[variable.name]=observation;
     }
-    const rendered=replaceVariables(side.message,values,known);
+    const rendered=replaceVariables(side.message,values,known,rawValues);
     return {text:rendered.text,errors:[...new Set(errors.concat(rendered.errors))]};
   }
   function rankCandidates(candidates){
@@ -323,7 +367,8 @@
     const seen=new Set(), messages=[], errors=[];
     for(const candidate of candidates){
       const values=sideName==='Concern'?valuesForResult(rep,emailMatch,candidate,otherCandidate):valuesForResult(rep,emailMatch,otherCandidate,candidate);
-      const rendered=resolveMessage(sideName,candidate,rep,emailMatch,values,resolver); errors.push(...rendered.errors);
+      const rawValues=sideName==='Concern'?rawValuesForResult(candidate,otherCandidate):rawValuesForResult(otherCandidate,candidate);
+      const rendered=resolveMessage(sideName,candidate,rep,emailMatch,values,resolver,rawValues); errors.push(...rendered.errors);
       const text=cleanText(rendered.text), normalized=text.replace(/\s+/g,' ').toLowerCase();
       if(text&&!seen.has(normalized)){ seen.add(normalized); messages.push(text); }
     }
@@ -351,13 +396,14 @@
     const rankedStrengths=template.maxStrengths?allRankedStrengths.slice(0,template.maxStrengths):allRankedStrengths;
     const concern=rankedConcerns[0]||null, strength=rankedStrengths[0]||null;
     const baseValues=valuesForResult(Object.assign({},rep,{fullName}),emailMatch,concern,strength);
+    const baseRawValues=rawValuesForResult(concern,strength);
     const concernRendered=uniqueRenderedMessages('Concern',rankedConcerns,rep,emailMatch,strength,resolver);
     const strengthRendered=uniqueRenderedMessages('Strength',rankedStrengths,rep,emailMatch,concern,resolver);
-    const greeting=replaceVariables(template.header,baseValues,BUILT_INS);
-    const concernHeading=concern?replaceVariables(template.concernHeading,baseValues,BUILT_INS):{text:'',errors:[]};
-    const strengthHeading=strength?replaceVariables(template.strengthHeading,baseValues,BUILT_INS):{text:'',errors:[]};
-    const generic=template.includeGeneric&&template.genericMessage?replaceVariables(template.genericMessage,baseValues,BUILT_INS):{text:'',errors:[]};
-    const closing=replaceVariables(template.footer,baseValues,BUILT_INS);
+    const greeting=replaceVariables(template.header,baseValues,BUILT_INS,baseRawValues);
+    const concernHeading=concern?replaceVariables(template.concernHeading,baseValues,BUILT_INS,baseRawValues):{text:'',errors:[]};
+    const strengthHeading=strength?replaceVariables(template.strengthHeading,baseValues,BUILT_INS,baseRawValues):{text:'',errors:[]};
+    const generic=template.includeGeneric&&template.genericMessage?replaceVariables(template.genericMessage,baseValues,BUILT_INS,baseRawValues):{text:'',errors:[]};
+    const closing=replaceVariables(template.footer,baseValues,BUILT_INS,baseRawValues);
     const wrapperParts=[greeting,concernHeading,strengthHeading,generic,closing];
     const errors=[...new Set(wrapperParts.flatMap(part=>part.errors||[]).concat(concernRendered.errors,strengthRendered.errors,generic.errors||[]))];
     const sections=[];
