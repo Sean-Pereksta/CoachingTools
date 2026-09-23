@@ -36,7 +36,7 @@ jobs:
           git worktree add --detach "$RUNNER_TEMP/qualtrics-baseline" origin/main
           python3 - <<'PY'
           from pathlib import Path
-          import os, subprocess, re
+          import os, subprocess
           changed=Path('CoachTools').resolve()
           baseline=Path(os.environ['RUNNER_TEMP'])/'qualtrics-baseline'/'CoachTools'
           for script,args in [('build/generate-app-manifest.js',['--check']),('build/validate-suite.js',[])]:
@@ -65,11 +65,11 @@ jobs:
           if [ "$result" -ne 0 ]; then
             grep -q 'Duplicate application id kpi-impact' "$RUNNER_TEMP/qualtrics-npm-test.log"
           fi
-      - name: Commit only the focused source and generated outputs
+      - name: Commit only the focused source and tracked generated outputs
         shell: bash
         run: |
           git diff --check
-          git add CoachTools/apps/allstar/qualtrics/individual-messages.js CoachTools/apps/allstar/qualtrics/generator.html CoachTools/apps/allstar/qualtrics/generator-source.js CoachTools/apps/allstar/dist/All-Star-Portable.html CoachTools/package.json CoachTools/docs/qualtrics-value-percentage-tokens.md
+          git add CoachTools/apps/allstar/qualtrics/individual-messages.js CoachTools/apps/allstar/qualtrics/generator.html CoachTools/apps/allstar/qualtrics/generator-source.js CoachTools/package.json CoachTools/docs/qualtrics-value-percentage-tokens.md
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           if ! git diff --cached --quiet; then
