@@ -346,19 +346,11 @@
     if (doc.getElementById('psUploadExportMenu')) return;
     const oldButton = doc.getElementById('psUploadSnip');
     if (!oldButton) return;
-    const details = doc.createElement('details');
-    details.id = 'psUploadExportMenu';
-    details.className = 'psWorkbookExportMenu';
-    details.innerHTML = '<summary class="psUploadBtn">✂ Snip</summary><div class="psWorkbookExportMenuList"><button class="psUploadBtn" type="button" data-ps-workbook-export="png">PNG image</button><button class="psUploadBtn" type="button" data-ps-workbook-export="pdf">PDF document</button></div>';
-    oldButton.replaceWith(details);
-    details.addEventListener('click', event => {
-      const button = event.target.closest('[data-ps-workbook-export]');
-      if (!button) return;
-      event.preventDefault();
-      event.stopPropagation();
-      details.removeAttribute('open');
-      runWorkbookExport(button.dataset.psWorkbookExport, button);
-    });
+    const button = doc.createElement('button');
+    button.id = 'psUploadExportMenu'; button.className = 'psUploadBtn'; button.type = 'button';
+    button.textContent = 'Share / Copy image';
+    button.onclick = () => root.CoachToolsScorecardSharing.open(true);
+    oldButton.replaceWith(button);
   }
   async function captureWorkbookCanvas() {
     const target = doc.querySelector('#psUploadOverlay .psUploadShell');

@@ -1,0 +1,18 @@
+/* Compact means less wasted space, while names and values stay legible. */
+body[data-scorecard-density="condensed"] #scorecardWorkspace table{table-layout:auto;min-width:780px}
+body[data-scorecard-density="condensed"] #scorecardWorkspace .repCell{min-width:150px}
+body[data-scorecard-density="condensed"] #scorecardWorkspace .metricCell{min-width:110px}
+#scorecardWorkspace td,.psUploadTable td{font-variant-numeric:tabular-nums}
+#scorecardWorkspace th{line-height:1.4}
+.scorecardShareDialog{width:min(1150px,94vw);max-height:90vh;overflow:auto;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:16px;padding:20px;background:#f8fafc;color:#172033;font:14px/1.5 Arial,sans-serif;box-shadow:0 24px 80px #0006}
+.scorecardShareDialog::backdrop{background:#0f172a99}
+.scorecardShareDialog form,.shareActions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.scorecardShareDialog form{justify-content:space-between;font-size:20px}
+.scorecardShareDialog button,.scorecardShareDialog select{border:1px solid #a6b4c6;border-radius:8px;padding:9px 12px;background:white;color:#172033;font:600 14px Arial;cursor:pointer}
+.scorecardShareDialog select{max-width:min(500px,75vw)}
+.scorecardShareDialog [data-share="copy"]{background:#1549b5;color:white;border-color:#1549b5}
+.scorecardShareDialog button:disabled{opacity:.5;cursor:wait}
+.scorecardShareDialog img{display:block;width:100%;height:auto;border:1px solid #cbd5e1;border-radius:8px}
+.scorecardShareDialog img:not([src]){display:none}
+.scorecardShareDialog [role="status"]{min-height:22px;font-weight:600}
+.scorecardShareDialog :focus-visible{outline:3px solid #3885f8;outline-offset:3px}
