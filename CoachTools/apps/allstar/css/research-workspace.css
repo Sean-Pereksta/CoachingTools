@@ -1,0 +1,40 @@
+/* Research workspace additions inherit the application's font and palette. */
+.rwEditorBar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 0;position:sticky;top:-16px;background:#fff;z-index:5;border-bottom:1px solid #e2e8f0;margin-bottom:12px}
+.rwMode{display:inline-flex;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden}
+.rwMode button{border:0;border-radius:0;background:#f8fafc;color:#334155;padding:9px 16px;font-weight:700}
+.rwMode button[aria-pressed=true]{background:#991b1b;color:#fff}
+#rwSaveState{margin-right:auto;font-size:12px;color:#64748b}
+.rwSteps{display:flex;gap:5px;flex-wrap:wrap;padding:8px 0 16px}
+.rwSteps button{display:flex;align-items:center;gap:6px;border:1px solid #e2e8f0;background:#fff;color:#475569;border-radius:20px;font-size:12px;padding:6px 10px}
+.rwSteps span{border-radius:50%;background:#f1f5f9;width:20px;height:20px;display:grid;place-items:center;color:#991b1b;font-weight:800}
+#researchEditorModal[data-workspace-mode=advanced] .guidedStep:not(#researchPopulationScopeSection):not(#guidedStepFilters):not(#guidedStepConditions),#researchEditorModal[data-workspace-mode=advanced] .guidedTemplateGrid,#researchEditorModal[data-workspace-mode=advanced] #guidedQuestionSummary,#researchEditorModal[data-workspace-mode=advanced] #guidedCalculationPreview{display:none}
+#researchEditorModal[data-workspace-mode=advanced] .researchBuilderIntro strong{font-size:0}
+#researchEditorModal[data-workspace-mode=advanced] .researchBuilderIntro strong:after{content:'Advanced Research';font-size:15px}
+.rwDraftRecovery{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fffbeb;border:1px solid #fde68a;padding:12px;border-radius:8px;margin-bottom:10px;font-size:12px}
+.rwDraftRecovery.hidden{display:none}
+.rwFieldPicker{position:fixed;z-index:100000;max-height:290px;overflow-y:auto;background:white;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 16px 40px #0f172a29;padding:5px;color:#0f172a}
+.rwPickerGroup{position:sticky;top:-5px;background:#f8fafc;padding:7px 9px;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-size:10px;font-weight:800}
+.rwFieldPicker button{display:block;width:100%;text-align:left;padding:9px 10px;border:0;background:#fff;color:#0f172a;border-radius:6px;white-space:normal}
+.rwFieldPicker button:hover,.rwFieldPicker button[aria-selected=true]{background:#fef2f2;color:#991b1b}
+.rwFieldPicker small{display:block;margin-top:3px;color:#64748b;font-size:11px}
+.rwPickerEmpty{padding:15px;font-size:12px;color:#64748b}
+.rwFilterSets{display:flex;align-items:end;gap:8px;flex-wrap:wrap;padding:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin:10px 0}
+.rwFilterSets label,.rwMetricMetadata label,.rwFormulaGrid label{display:grid;gap:6px;font-size:12px;font-weight:700;color:#475569}
+.rwFilterSets .hint{flex-basis:100%}
+.rwMetricMetadata{padding:14px 0;margin:8px 0;border-block:1px solid #e2e8f0}
+.rwMetricMetadata .researchStepGrid{margin-top:12px}
+.rwHealth summary{cursor:pointer;font-weight:800;margin-bottom:10px}
+.rwHealthItem{font-size:12px;line-height:1.6;padding:8px 10px;margin-top:6px;border-radius:6px;background:#f8fafc;border-left:3px solid #94a3b8}
+.rwHealthItem.blocking{background:#fef2f2;border-color:#dc2626}.rwHealthItem.warnings{background:#fffbeb;border-color:#d97706}
+.rwHealthItem strong{display:inline-block;min-width:82px}
+.rwDialogBackdrop{position:fixed;inset:0;background:#0f172a70;z-index:90000;display:grid;place-items:center;padding:16px}
+.rwDialog{background:white;border-radius:16px;padding:24px;width:min(760px,100%);max-height:90vh;overflow:auto;box-shadow:0 24px 80px #0004}
+.rwDialog h3{margin:0 0 10px}.rwDialog p{font-size:13px;color:#64748b;line-height:1.5}
+.rwFormulaGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:20px 0}
+.rwFormulaGrid input,.rwFormulaGrid select,.rwMetricMetadata input,.rwMetricMetadata select{width:100%;min-width:0;padding:9px;border:1px solid #cbd5e1;border-radius:6px;background:#fff}
+.rwFormulaOutput{display:block;background:#f1f5f9;border-radius:8px;padding:14px;overflow-wrap:anywhere;font-family:monospace;margin:16px 0}
+.rwEmptyStart{grid-column:1/-1;border:1px dashed #cbd5e1;border-radius:12px;padding:28px;text-align:center;background:#f8fafc}.rwEmptyStart strong{font-size:18px}.rwEmptyStart p{color:#64748b;font-size:13px}
+.rwSearchLabel{display:flex;gap:8px;align-items:center;margin-left:auto;font-size:12px}.rwSearchLabel input{width:min(240px,40vw)}
+.rwEditorBar button:focus-visible,.rwSteps button:focus-visible,.rwFieldPicker button:focus-visible,.rwDialog :focus-visible{outline:3px solid #2563eb;outline-offset:2px}
+#researchCanvas [data-research-card][hidden]{display:none!important}
+@media(max-width:680px){.rwFormulaGrid{grid-template-columns:1fr}.rwEditorBar{position:static}.rwSearchLabel{width:100%;margin:0}.rwSearchLabel input{flex:1;width:auto}.rwSteps{gap:4px}.rwSteps button{font-size:11px;padding:5px 7px}.rwDialog{padding:16px}.rwHealth summary .hint{display:block}}

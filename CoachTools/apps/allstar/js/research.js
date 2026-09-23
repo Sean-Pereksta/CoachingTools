@@ -82,7 +82,7 @@ async function saveMetrics(){
   try{
     const meta=await saveMetricsToIndexedDB(state.metrics);
     safeSetLocalStorage(METRICS_KEY,JSON.stringify({savedAt:meta.savedAt,count:state.metrics.length,storage:'indexeddb'}));
-    bumpVersion('metrics'); state.metricCache=new Map(); state.researchMetricCache=new Map(); selectiveResearchInvalidation({reason:'metric definitions changed',metrics:true});
+    bumpVersion('metrics'); state.metricCache=new Map(); selectiveResearchInvalidation({reason:'metric definitions changed',metrics:true});
     if(els.topStatus) els.topStatus.textContent='Metrics saved locally.';
     return true;
   }catch(err){
@@ -130,10 +130,11 @@ function metricRulePass(row,rule,source){ const gear={...researchGearDefault(),.
 function metricRows(metric,rows,source,warnings=[]){ metric=normalizeMetric(metric); let base=rows||[]; if(metric.field) base=applyMetricGear(base,source,metric.field,metric.gear||{selected:metric.selectedValues},warnings); const andRules=(metric.rules||[]).filter(r=>(r.join||'AND')!=='OR'), orRules=(metric.rules||[]).filter(r=>(r.join||'AND')==='OR'); const passAnd=r=>andRules.every(rule=>metricRulePass(r,rule,source)); if(!orRules.length) return base.filter(passAnd); const set=new Set(); const out=[]; const add=r=>{ if(passAnd(r)&&!set.has(r)){ set.add(r); out.push(r); } }; base.forEach(add); rows.forEach(r=>{ if(orRules.some(rule=>metricRulePass(r,rule,source))) add(r); }); return out; }
 function researchMetricRowSignature(rows,source){
   rows=rows||[];
-  if(rows===getRowsRaw(source)) return `${researchSourceIndexSignature(source)}|all`;
+  const sourceSignature=source+'|'+researchHashText(researchSourceIndexSignature(source));
+  if(rows===getRowsRaw(source)) return `${sourceSignature}|all`;
   state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap();
   let signature=state.researchCohortRowSignatures.get(rows);
-  if(!signature){ signature=`${researchSourceIndexSignature(source)}|cohort${++state.researchCohortSequence}|n${rows.length}`; state.researchCohortRowSignatures.set(rows,signature); }
+  if(!signature){ state.researchCohortSequence=Number(state.researchCohortSequence)||0; signature=`${sourceSignature}|cohort${++state.researchCohortSequence}|n${rows.length}`; state.researchCohortRowSignatures.set(rows,signature); }
   return signature;
 }
 function researchMetricCacheKey(metric,rows,source,item={},col={}){
@@ -152,8 +153,7 @@ function researchMetricCacheKey(metric,rows,source,item={},col={}){
     columnMode:col?.mode||'',
     columnField:col?.field||'',
     sourceVersion:researchSourceIndexSignature(actualSource),
-    metricVersion:state.versions?.metrics||0,
-    modelVersion:state.versions?.models||0,
+    definitions:researchDefinitionDependencies(normMetric).signature,
     rosterVersion:state.versions?.roster||0,
     mappingVersion:state.versions?.mappings||0
   };
@@ -162,7 +162,7 @@ function researchMetricCacheKey(metric,rows,source,item={},col={}){
 function evaluateResearchMetricCached(metric,rows,source,warnings=[],context={}){
   state.researchMetricCache=state.researchMetricCache||new Map();
   const key=researchMetricCacheKey(metric,rows,source,context.item||{},context.col||{});
-  const cached=state.researchMetricCache.get(key);
+  const cached=researchTouchCache(state.researchMetricCache,key);
   if(cached){
     (cached.warnings||[]).forEach(w=>{ if(warnings && !warnings.includes(w)) warnings.push(w); });
     return cached.value;
@@ -170,7 +170,7 @@ function evaluateResearchMetricCached(metric,rows,source,warnings=[],context={})
   const before=Array.isArray(warnings)?warnings.length:0;
   const value=evaluateMetric(metric,rows,source,warnings);
   const added=Array.isArray(warnings)?warnings.slice(before):[];
-  state.researchMetricCache.set(key,{value,warnings:added});
+  boundedMapSet(state.researchMetricCache,key,{value,warnings:added,dependencies:researchCacheDependencies({...metric,source:metric.source||source})},1200);
   return value;
 }
 function evaluateMetric(metric,rows,source,warnings=[]){
@@ -635,7 +635,15 @@ const COACH_IDENTITY_COLUMNS=['Coach','Coach Name','Job Coach','Team','Team Name
 function normalizeIdentityName(v,options={}){ let s=String(v??'').trim(); if(!s) return ''; if(options.lastFirst && /,/.test(s)){ const [last,...rest]=s.split(','); const first=rest.join(',').trim(); if(first&&last) s=(first+' '+last.trim()).trim(); } if(/@/.test(s)) s=s.split('@')[0].replace(/[._-]+/g,' '); return norm(s).replace(/[\s\p{P}]+/gu,' ').trim(); }
 function displayIdentityName(v){ return String(v??'').trim().replace(/\s+/g,' '); }
 function sourceConfiguredIdentityColumn(sourceKey,type){ const cs=customSource?.(sourceKey)||{}; const maps=cs.mappings||cs.fieldMappings||state.sourceMappings?.[sourceKey]||{}; const keys=type==='rep'?['rep','representative','agent','associate','name','person','employee','user','email']:['coach','team','manager','supervisor','leader']; for(const [k,v] of Object.entries(maps||{})){ if(keys.some(x=>String(k).toLowerCase().includes(x)) && v) return v; } return ''; }
-function detectIdentityColumn(row,sourceKey,type){ const headers=getHeaders(sourceKey)||Object.keys(row||{}); const configured=sourceConfiguredIdentityColumn(sourceKey,type); if(configured && headers.includes(configured)) return {column:configured,confidence:1}; const aliases=type==='rep'?REP_IDENTITY_COLUMNS:COACH_IDENTITY_COLUMNS; const normAliases=new Set(aliases.map(a=>normalizeIdentityName(a))); let best='', score=0; headers.forEach(h=>{ const nh=normalizeIdentityName(h); if(normAliases.has(nh)){ best=h; score=Math.max(score,.95); } else if(aliases.some(a=>nh.includes(normalizeIdentityName(a))||normalizeIdentityName(a).includes(nh))){ if(score<.75){ best=h; score=.75; } } }); return {column:best,confidence:score}; }
+function detectIdentityColumn(row,sourceKey,type){
+  const headers=getHeaders(sourceKey)||Object.keys(row||{}), configured=sourceConfiguredIdentityColumn(sourceKey,type), key=type+'|'+configured+'|'+headers.join('\u001f');
+  state.researchIdentityColumnCache=state.researchIdentityColumnCache||new Map();
+  const cached=state.researchIdentityColumnCache.get(key); if(cached) return cached;
+  if(configured&&headers.includes(configured)) return boundedMapSet(state.researchIdentityColumnCache,key,{column:configured,confidence:1},200);
+  const aliases=(type==='rep'?REP_IDENTITY_COLUMNS:COACH_IDENTITY_COLUMNS).map(alias=>normalizeIdentityName(alias)), exact=new Set(aliases); let best='',score=0;
+  headers.forEach(h=>{ const name=normalizeIdentityName(h); if(exact.has(name)){ best=h; score=Math.max(score,.95); } else if(score<.75&&aliases.some(alias=>name.includes(alias)||alias.includes(name))){ best=h; score=.75; } });
+  return boundedMapSet(state.researchIdentityColumnCache,key,{column:best,confidence:score},200);
+}
 function getRepIdentity(row,sourceKey,options={}){ const found=detectIdentityColumn(row,sourceKey,'rep'), rawName=found.column?row?.[found.column]:(row?._rep||row?._repKey||''); let normalizedName=normalizeIdentityName(rawName,{lastFirst:options.lastFirst}); const mapped=(state.repAliases?.get?.(aliasLookupKey(rawName))||state.repAliases?.get?.(normalizedName)||state.masterRepMap?.get?.(normalizedName)||''); if(mapped) normalizedName=normalizeIdentityName(mapped); return {rawName,normalizedName,displayName:displayIdentityName(mapped||rawName)||normalizedName,sourceKey,sourceRowIndex:researchRowSourceIndex?.(sourceKey,row),confidence:found.confidence,matchedColumn:found.column||'_rep'}; }
 function getCoachIdentity(row,sourceKey,options={}){
   sourceKey=rowSourceKey(row,sourceKey);
@@ -1094,16 +1102,34 @@ function attachModelReferencePicker(root=document){
     });
   });
 }
-function modelEntryRowsForResearchRows(rows){ const entries=new Map(); (rows||[]).forEach(r=>{ const k=personKeyFromRow(r)||researchRowTeam(r); if(k) entries.set(k,{kind:personKeyFromRow(r)?'rep':'team',key:k,name:r._rep||r['Agent Name']||r['Associate Name']||r['Representative']||k,team:researchRowTeam(r)||r._team||''}); }); return [...entries.values()]; }
+function modelEntryRowsForResearchRows(rows,item={}){
+  if(item.modelEntityKind==='team'){
+    // Opt in only: older Research definitions aggregate representative values,
+    // even when their display groups are teams. New model shortcuts can request
+    // the Model Runner's actual team calculation (for example a ratio of totals).
+    const teams=new Map();
+    for(const row of rows||[]){ const team=canonicalCoachName(researchRowTeam(row,item.source)||row._team||''), key=coachNameKey(team); if(key&&!teams.has(key)) teams.set(key,team); }
+    return teamEntries([...teams.values()]);
+  }
+  const entries=new Map();
+  for(const row of rows||[]){
+    const rep=personKeyFromRow(row), name=row._rep||row['Agent Name']||row['Associate Name']||row.Representative||rep, team=researchRowTeam(row)||row._team||'';
+    // Run indexes use fullNameIdentityKey/_repKey. Research join identity strips
+    // spaces and is not interchangeable with the Model Runner's entry key.
+    const key=rep?(row._repKey||fullNameIdentityKey(name)):team;
+    if(key) entries.set((rep?'rep:':'team:')+key,{kind:rep?'rep':'team',key,name:name||key,team});
+  }
+  return [...entries.values()];
+}
 function evaluateModelReferenceValue(ref,rows,item,mode='direct',warnings=[]){
   const model=findModelByNameOrId(ref.model); if(!model){ warnings.push(`Missing model: ${ref.model}`); return ''; }
   const criteria=ref.criteria?[findCriterionByNameOrId(model,ref.criteria)].filter(Boolean):(model.criteria||[]);
   if(ref.criteria&&!criteria.length){ warnings.push(`Missing model criteria: ${ref.model} / ${ref.criteria}`); return ''; }
   const opts={start:parseDateOnly(item.startDate),end:parseDateOnly(item.endDate),qaDateMode:els.runQADateSelect?.value||'interaction',_sourceRowsCache:new Map(),_entryRowsCache:new Map()};
-  const vals=[]; modelEntryRowsForResearchRows(rows).forEach(e=>criteria.forEach(c=>vals.push(criterionValue(c,e,opts))));
+  const entries=modelEntryRowsForResearchRows(rows,item), vals=[]; entries.forEach(e=>criteria.forEach(c=>vals.push(criterionValue(c,e,opts))));
   if(mode==='count') return vals.filter(v=>Number.isFinite(toNum(v))?toNum(v)>0:String(v??'').trim()).length;
-  if(mode==='unique') return new Set(modelEntryRowsForResearchRows(rows).map(e=>e.key)).size;
-  const nums=vals.map(toNum).filter(Number.isFinite); if(['sum','avg','min','max','percent_total','percent_parent','expression'].includes(mode)){ if(!nums.length){ warnings.push(`Model criteria returned text for numeric mode: ${ref.model}${ref.criteria?' / '+ref.criteria:''}`); return 0; } if(mode==='avg') return nums.reduce((a,b)=>a+b,0)/nums.length; if(mode==='min') return Math.min(...nums); if(mode==='max') return Math.max(...nums); return nums.reduce((a,b)=>a+b,0); }
+  if(mode==='unique') return new Set(entries.map(e=>e.key)).size;
+  const nums=vals.map(toNum).filter(Number.isFinite); if(['sum','avg','min','max','percent_total','percent_parent','expression'].includes(mode)){ if(!nums.length){ warnings.push(`Model criteria returned text for numeric mode: ${ref.model}${ref.criteria?' / '+ref.criteria:''}`); return 0; } if(mode==='avg') return nums.reduce((a,b)=>a+b,0)/nums.length; if(mode==='min') return researchMin(nums); if(mode==='max') return researchMax(nums); return nums.reduce((a,b)=>a+b,0); }
   return nums.length===vals.length&&nums.length ? nums.reduce((a,b)=>a+b,0) : vals.filter(v=>String(v??'').trim()).join(', ');
 }
 function researchExpressionAddWarning(warnings,message){ if(warnings && message && !warnings.includes(message)) warnings.push(message); }
@@ -1128,15 +1154,15 @@ function researchAggregateColumnValue(rows,item,field,fn='sum',warnings=[]){
   const bang=parseResearchBangField(field); let src=item.source, actualField=field, useRows=rows||[];
   if(bang){ src=bang.source; actualField=bang.field; useRows=researchRowsForCohort(src,rows,item.source,item); }
   else { const inferred=researchUniqueSourceForHeader(field,item.source); if(inferred && inferred.source!==item.source){ src=inferred.source; actualField=inferred.field; useRows=researchRowsForCohort(src,rows,item.source,item); } }
-  const vals=(useRows||[]).map(r=>researchFieldValue(r,actualField,src)).filter(v=>String(v??'').trim()!=='');
+  const vals=(useRows||[]).map(researchFieldReader(actualField,src)).filter(v=>String(v??'').trim()!=='');
   if(fn==='count') return vals.length;
   if(fn==='unique') return new Set(vals.map(v=>String(v??'').trim()).filter(Boolean)).size;
   const nums=vals.map(toNum).filter(Number.isFinite);
   if(vals.length && nums.length!==vals.length) researchExpressionAddWarning(warnings,`Expression requires numeric values: ${field}`);
   if(!nums.length) return 0;
   if(fn==='avg') return nums.reduce((a,b)=>a+b,0)/nums.length;
-  if(fn==='min') return Math.min(...nums);
-  if(fn==='max') return Math.max(...nums);
+  if(fn==='min') return researchMin(nums);
+  if(fn==='max') return researchMax(nums);
   return nums.reduce((a,b)=>a+b,0);
 }
 function researchExpressionAlias(v){ return normalizeResearchText(v).replace(/[^a-z0-9]/g,''); }
@@ -1677,6 +1703,33 @@ function researchFieldValue(row, field, source){
   if(Object.prototype.hasOwnProperty.call(row,raw)) return row[raw];
   try{ return evaluateRowExpression(raw,row,source,{}); }catch(_){ try{ return evaluateResearchExpression(row,raw); }catch(__){ return ''; } }
 }
+function researchFieldReader(field,source){
+  const raw=String(field||'').trim();
+  if(!raw||researchTypedMeasureDefinition(researchMeasureIdFromRef(raw))||findMetricByRef(raw)||parseModelRef(raw)) return row=>researchFieldValue(row,field,source);
+  const ref=parseResearchSourceFieldRef(raw);
+  if(ref){ if(!ref.missingSource&&!ref.missingField&&ref.source===source) return row=>Object.prototype.hasOwnProperty.call(row,ref.field)?row[ref.field]:''; return row=>researchFieldValue(row,field,source); }
+  const actual=resolveColumn(source,raw);
+  if(actual&&(getHeaders(source)||[]).includes(actual)) return row=>Object.prototype.hasOwnProperty.call(row,actual)?row[actual]:researchFieldValue(row,field,source);
+  return row=>researchFieldValue(row,field,source);
+}
+function researchNumericReader(field,source){
+  const raw=String(field||'').trim(), ref=parseResearchSourceFieldRef(raw);
+  if(ref&&ref.source!==source) return row=>evaluateResearchNumericField(row,field,source);
+  if(!ref&&!researchTypedMeasureDefinition(researchMeasureIdFromRef(raw))&&!findMetricByRef(raw)&&!parseModelRef(raw)){
+    const actual=resolveColumn(source,raw);
+    if(actual&&(getHeaders(source)||[]).includes(actual)){
+      const read=typeof AllStarAnalysis!=='undefined'?AllStarAnalysis.numberReader(source,actual):row=>toNum(row[actual]);
+      return row=>Object.prototype.hasOwnProperty.call(row,actual)?read(row):evaluateResearchNumericField(row,field,source);
+    }
+  }
+  const read=researchFieldReader(field,source); return row=>toNum(read(row));
+}
+function researchGroupLabelReader(item){
+  const cfg=researchGearGetForItem(item,'groupField');
+  if(cfg.valueLevel==='level1'&&item.groupField) return ()=>item.groupExpression||researchDisplayFieldLabel(item.groupField,item.groupField);
+  if(item.groupField&&!item.groupExpression&&!researchGroupDateField(item)&&!findMetricByRef(item.groupField)){ const read=researchFieldReader(item.groupField,item.source); return row=>String(read(row)||'(blank)')||'(blank)'; }
+  return row=>researchGroupLabel(item,row);
+}
 function evaluateResearchNumericField(row, field, source){ const ref=parseResearchSourceFieldRef(field); if(ref && !ref.missingSource && !ref.missingField && ref.source!==source){ const n=sumRowsColumn(ref.source,ref.field,crossRowsForRow(ref.source,row,{})); return Number.isFinite(n)?n:NaN; } const v=researchFieldValue(row,field,source); const n=toNum(v); return Number.isFinite(n)?n:NaN; }
 function researchNumericValidation(item, field, rows){
   item=effectiveResearchItem(item||{});
@@ -1745,7 +1798,8 @@ function ensureNumericColumnIndex(sourceOrIdx,column){
   const idx=typeof sourceOrIdx==='string'?sourceIndex(sourceOrIdx):sourceOrIdx; if(!idx||!column) return null;
   const actual=(idx.headers||[]).find(h=>plainHeaderName(h)===plainHeaderName(column))||column, key=`numeric|${idx.version}|${actual}`;
   if(idx.lazyIndexes?.has(key)) return idx.lazyIndexes.get(key);
-  const t0=performance.now(), values=[]; (idx.rows||[]).forEach((r,pos)=>{ const n=toNum(r[actual]); if(Number.isFinite(n)) values.push({n,pos}); }); values.sort((a,b)=>a.n-b.n||a.pos-b.pos);
+  const source=typeof sourceOrIdx==='string'?sourceOrIdx:(idx.source||idx.rows?.[0]?._sourceKey||''), numberFor=source&&typeof AllStarAnalysis!=='undefined'?AllStarAnalysis.numberReader(source,actual):r=>toNum(r[actual]);
+  const t0=performance.now(), values=[]; (idx.rows||[]).forEach((r,pos)=>{ const n=numberFor(r); if(Number.isFinite(n)) values.push({n,pos}); }); values.sort((a,b)=>a.n-b.n||a.pos-b.pos);
   const out={column:actual,values}; idx.lazyIndexes?.set(key,out); state.perfCounters.lazyIndexBuilds++; idx.perf?.lazyBuilds?.push({type:'numeric',column:actual,ms:Math.round(performance.now()-t0)}); return out;
 }
 function numericLowerBound(values,target,upper=false){ let lo=0,hi=values.length; while(lo<hi){ const mid=(lo+hi)>>1,n=values[mid].n; if(n<target || (upper&&n===target)) lo=mid+1; else hi=mid; } return lo; }
@@ -1772,8 +1826,16 @@ function ensureMonthIndex(sourceOrIdx,dateColumn){ return ensureDateBucketIndex(
 function ensureWeekIndex(sourceOrIdx,dateColumn){ return ensureDateBucketIndex(sourceOrIdx,dateColumn,'week'); }
 function ensureDateBucketIndex(sourceOrIdx,dateColumn,type){ const idx=typeof sourceOrIdx==='string'?sourceIndex(sourceOrIdx):sourceOrIdx; if(!idx) return null; const col=dateColumn||'_date', key=`${type}|${idx.version}|${col}`; if(idx.lazyIndexes.has(key)) return idx.lazyIndexes.get(key); const t0=performance.now(), map=new Map(); (idx.rows||[]).forEach((r,pos)=>{ const ms=parseDateOnly(researchFieldValue(r,col,r._sourceKey||''))?.getTime()||idx.rowMeta.get(r)?.dateMs; const b=type==='month'?researchMonthBucket(ms):(Number.isFinite(ms)?ymd(startOfWeekDate(new Date(ms),'sunday')):''); if(b) pushMapArray(map,b,pos); }); idx.lazyIndexes.set(key,map); state.perfCounters.lazyIndexBuilds++; console.info('[All Star Perf] lazy index build',{type,column:col,ms:Math.round(performance.now()-t0)}); return map; }
 function ensureHeaderIndex(sourceOrIdx,column){ const idx=typeof sourceOrIdx==='string'?sourceIndex(sourceOrIdx):sourceOrIdx; if(!idx) return null; const key=`header|${idx.version}|${plainHeaderName(column)}`; if(idx.lazyIndexes.has(key)) return idx.lazyIndexes.get(key); const actual=(idx.headers||[]).find(h=>plainHeaderName(h)===plainHeaderName(column))||column; const rows=(idx.rows||[]).map((_,i)=>i); idx.lazyIndexes.set(key,{column:actual,rows}); state.perfCounters.lazyIndexBuilds++; return idx.lazyIndexes.get(key); }
-function compiledFilterSignature(source,filters,context={}){ return stableSerialize({source,version:state.dataIndex?.version||0,start:ymd(context.start||context.startDate),end:ymd(context.end||context.endDate),dateColumn:context.dateColumn||'',qaDateMode:context.qaDateMode||'',filters:(filters||[]).map(f=>normalizeFilterForStorage(f,source)),scope:context.scope||''}); }
-function getCompiledFilterPredicate(source,filters,context={}){ const key=compiledFilterSignature(source,filters,context); state.compiledFilterCache=state.compiledFilterCache||new Map(); if(state.compiledFilterCache.has(key)){ state.perfCounters.filterCacheHits++; const v=state.compiledFilterCache.get(key); state.compiledFilterCache.delete(key); state.compiledFilterCache.set(key,v); return v; } const t0=performance.now(), normalized=(filters||[]).map(f=>normalizeFilterForStorage(f,source)); const predicate=(r)=>applyFilters([r],normalized,source,context).length===1; state.perfCounters.filterCompiles++; console.info('[All Star Perf] filter compiled',{source,count:normalized.length,ms:Math.round(performance.now()-t0)}); return boundedMapSet(state.compiledFilterCache,key,predicate,300); }
+function compiledFilterSignature(source,filters,context={}){
+  state.researchCompiledContextIds=state.researchCompiledContextIds||new WeakMap();
+  let contextId=state.researchCompiledContextIds.get(context);
+  if(!contextId){ contextId=(state.researchCompiledContextSequence||0)+1; state.researchCompiledContextSequence=contextId; state.researchCompiledContextIds.set(context,contextId); }
+  // Predicates close over per-run row caches. Never hand a later run the earlier
+  // run's context, even when its dates and filters happen to be identical.
+  const publicOptions=Object.fromEntries(Object.entries(context).filter(([key,value])=>!key.startsWith('_')&&typeof value!=='function').map(([key,value])=>[key,value instanceof Date?ymd(value):value]));
+  return stableSerialize({source,contextId,version:researchExecutionDataSignature({source,filters}),options:publicOptions,filters:(filters||[]).map(f=>normalizeFilterForStorage(f,source))});
+}
+function getCompiledFilterPredicate(source,filters,context={}){ const key=compiledFilterSignature(source,filters,context); state.compiledFilterCache=state.compiledFilterCache||new Map(); if(state.compiledFilterCache.has(key)){ state.perfCounters.filterCacheHits++; const v=state.compiledFilterCache.get(key); state.compiledFilterCache.delete(key); state.compiledFilterCache.set(key,v); return v; } const t0=performance.now(), normalized=(filters||[]).map(f=>normalizeFilterForStorage(f,source)); const predicate=typeof compileModelFilterPredicate==='function'?compileModelFilterPredicate(source,normalized,context):(r)=>applyFilters([r],normalized,source,context).length===1; state.perfCounters.filterCompiles++; console.info('[All Star Perf] filter compiled',{source,count:normalized.length,ms:Math.round(performance.now()-t0)}); return boundedMapSet(state.compiledFilterCache,key,predicate,300); }
 
 function indexRowsForExactFieldValue(idx,field,value){
   if(!idx || !field) return null;
@@ -1809,7 +1871,11 @@ function dateWithinRowPass(row,item,f){ const left=researchFieldValue(row,f.fiel
 function intersectRowsFast(a,b){ const set=new Set(b||[]); return (a||[]).filter(r=>set.has(r)); }
 function dateRangeRowsFromIndex(idx,start,end){
   if(!idx?.dateSortedRows?.length || (!start&&!end)) return null;
-  const s=start?parseDateOnly(start):null, e=end?parseDateOnly(end):null, lo=s?Date.UTC(s.getFullYear(),s.getMonth(),s.getDate()):-Infinity, hi=e?Date.UTC(e.getFullYear(),e.getMonth(),e.getDate())+86400000:Infinity;
+  const s=start?parseDateOnly(start):null, e=end?parseDateOnly(end):null;
+  // Indexed dates use parseDateOnly's local calendar clock. UTC bounds could
+  // discard the first day in positive UTC offsets; next-day handles DST as well.
+  const next=e?new Date(e.getTime()):null; if(next) next.setDate(next.getDate()+1);
+  const lo=s?s.getTime():-Infinity, hi=next?next.getTime():Infinity;
   return idx.dateSortedRows.slice(lowerBoundDateRows(idx.dateSortedRows,idx,lo),lowerBoundDateRows(idx.dateSortedRows,idx,hi));
 }
 function queryPlanNote(plan){ if(!plan) return ''; return `Query optimized: ${(plan.initialRows||0).toLocaleString()} rows → ${(plan.candidateRows??plan.finalRows??0).toLocaleString()} candidate rows.`; }
@@ -1817,7 +1883,8 @@ function queryPlanBadge(plan){ const note=queryPlanNote(plan); return note?`<div
 function isPersonTeamField(field){ const f=normalizeResearchText(field); return /(^| )(rep|representative|associate|agent|person|name|team|coach|job coach|coach assigned)( |$)/.test(f); }
 function researchQueryFilterCacheKey(source,opts={}){
   const item=opts.item||{}, orgSignature=researchHashText(stableSerialize((state.orgs||[]).map(o=>({id:o.id,name:o.name,coachNames:o.coachNames||[]}))));
-  return ['researchFilterV1',researchSourceIndexSignature(source),state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0,state.versions?.models||0,orgSignature,researchHashText(stableSerialize({dateColumn:opts.dateColumn||'',startDate:opts.startDate||'',endDate:opts.endDate||'',filters:opts.filters||[],populationScope:item.populationScope||{}}))].join('\u001f');
+  const filterContext={source,dateColumn:opts.dateColumn||'',startDate:opts.startDate||'',endDate:opts.endDate||'',filters:opts.filters||[],populationScope:item.populationScope||{},analysisGrain:item.analysisGrain||'auto',groupField:item.groupField||'',population:item.population||'',crossSourceJoinMode:item.crossSourceJoinMode||'grain',unmatchedBehavior:item.unmatchedBehavior||'',filterDuplicateReps:!!item.filterDuplicateReps};
+  return ['researchFilterV2',researchExecutionDataSignature(filterContext),state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0,state.versions?.roster||0,researchDefinitionDependencies(filterContext).signature,orgSignature,stableSerialize(filterContext)].join('\u001f');
 }
 function researchFilterCacheRows(cached,idx){
   if(Array.isArray(cached?.positions)&&idx?.rows) return cached.positions.map(i=>idx.rows[i]).filter(Boolean);
@@ -1865,7 +1932,7 @@ function buildQueryPlan(source, opts={}){
   remaining.forEach(f=>{
     const op=f.op||'contains', include=f.include||'include', field=resolveColumn(source,f.field)||f.field;
     if(include==='include' && op==='is' && field && idx){ const before=rows.length, ix=indexRowsForExactFieldValue(idx,field,f.value); if(ix){ const cand=intersectRowsFast(rows,ix); rows=cand.filter(r=>compareFilter(researchFieldValue(r,field,source),op,f.value,f.value2)); step('exact column/value filter',before,cand.length,rows.length,true); return; } }
-    if(include==='include' && ['greater than','greater/equal','less than','less/equal','between'].includes(op) && field && idx){ const before=rows.length, ix=numericIndexCandidateRows(idx,field,op,f.value,f.value2); if(ix){ const cand=intersectRowsFast(rows,ix); rows=cand.filter(r=>compareFilter(evaluateResearchNumericField(r,field,source),op,f.value,f.value2)); step('numeric range filter',before,cand.length,rows.length,true); return; } }
+    if(include==='include' && ['greater than','greater/equal','less than','less/equal','between'].includes(op) && field && idx){ const before=rows.length, ix=numericIndexCandidateRows(idx,field,op,f.value,f.value2); if(ix){ const cand=intersectRowsFast(rows,ix); const read=researchNumericReader(field,source); rows=cand.filter(r=>compareFilter(read(r),op,f.value,f.value2)); step('numeric range filter',before,cand.length,rows.length,true); return; } }
     next.push(f);
   });
   const last=[];
@@ -1881,8 +1948,8 @@ function buildQueryPlan(source, opts={}){
   plan.candidateRows=rows.length; plan.finalRows=rows.length;
   plan.rowsScanned=Math.max(plan.rowsScanned||0,(plan.steps||[]).reduce((n,s)=>n+Number(s.candidates||0),0));
   const positions=idx?.rowMeta?[...rows].map(r=>idx.rowMeta.get(r)?.rowId):[];
-  const cacheValue=positions.length===rows.length&&positions.every(Number.isInteger)?{positions,plan:{...plan}}:{rows:rows.slice(),plan:{...plan}};
-  state.researchFilterResultCache=state.researchFilterResultCache||new Map(); boundedMapSet(state.researchFilterResultCache,filterCacheKey,cacheValue,120);
+  const cacheValue=positions.length===rows.length&&positions.every(Number.isInteger)?{positions,plan:{...plan}}:{rows:rows.slice(),plan:{...plan}}; cacheValue.dependencies=researchCacheDependencies({...(opts.item||{}),source});
+  state.researchFilterResultCache=state.researchFilterResultCache||new Map(); researchBoundedRowsCacheSet(state.researchFilterResultCache,filterCacheKey,cacheValue);
   state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(rows,filterCacheKey);
   return {rows,plan};
 }
@@ -1973,18 +2040,30 @@ function buildResearchDuplicateRepMap(rowsBySource, researchItem, context={}){
   refs.forEach(src=>(rowsBySource.get(src)||[]).forEach(r=>{ const n=normalizeResearchDuplicateRepName(researchDuplicateRepNameFromRow(r)); if(!n) return; const k=researchDuplicateRepKey(r,src); if(!byName.has(n)) byName.set(n,new Set()); byName.get(n).add(k); }));
   const winnersByNormalizedName=new Map(), excludedRepKeys=new Set(), duplicateGroups=[];
   byName.forEach((keys,n)=>{ if(keys.size<2) return; const candidates=[...keys].map(k=>scoreDuplicateRepCandidate(k,rowsBySource,researchItem,{...context,referencedSources:refs})).sort((a,b)=>b.score-a.score || b.currentSourceRowCount-a.currentSourceRowCount || String(a.repKey).localeCompare(String(b.repKey))); const winner=candidates[0], excluded=candidates.slice(1); excluded.forEach(c=>excludedRepKeys.add(c.repKey)); winnersByNormalizedName.set(n,winner.repKey); duplicateGroups.push({normalizedName:n,winnerRepKey:winner.repKey,excludedRepKeys:excluded.map(c=>c.repKey),winner,excluded,reason:`Kept record with strongest linked data (${winner.reasons.join(', ')||'highest completeness score'}).`,scores:candidates}); });
-  const out={enabled:true,winnersByNormalizedName,excludedRepKeys,duplicateGroups}; if(!state.researchDuplicateRepCache) state.researchDuplicateRepCache=new Map(); state.researchDuplicateRepCache.set(cacheKey,out); return out;
+  const out={enabled:true,winnersByNormalizedName,excludedRepKeys,duplicateGroups}; if(!state.researchDuplicateRepCache) state.researchDuplicateRepCache=new Map(); boundedMapSet(state.researchDuplicateRepCache,cacheKey,out,80); return out;
 }
 function applyDuplicateRepFilterToRows(rows, sourceKey, duplicateMap, context={}){ if(!duplicateMap?.enabled || !duplicateMap.excludedRepKeys?.size) return (rows||[]).slice(); return (rows||[]).filter(r=>!duplicateMap.excludedRepKeys.has(researchDuplicateRepKey(r,sourceKey))); }
 function researchDuplicateRowsBySource(item, primaryRows){ const refs=researchDuplicateReferencedSources(item), m=new Map(); refs.forEach(src=>m.set(src, src===item.source?(primaryRows||[]).slice():researchRowsForCohort(src,primaryRows||[],item.source,{...item,filterDuplicateReps:false}))); return m; }
 function researchDuplicateWarning(map){ const n=map?.excludedRepKeys?.size||0; return n?`Duplicate rep filter applied: ${n.toLocaleString()} duplicate records excluded`:''; }
+function researchCohortIdentityReaders(source){
+  const repColumn=detectIdentityColumn({},source,'rep').column,coachColumn=detectIdentityColumn({},source,'coach').column;
+  const rep=row=>{ const raw=repColumn?row?.[repColumn]:(row?._rep||row?._repKey||''); let normalized=normalizeIdentityName(raw); const mapped=state.repAliases?.get?.(aliasLookupKey(raw))||state.repAliases?.get?.(normalized)||state.masterRepMap?.get?.(normalized)||''; return mapped?normalizeIdentityName(mapped):normalized; };
+  const team=row=>{
+    if(rowSourceKey(row,source)!==source) return getCoachIdentity(row,source).normalizedName;
+    let raw;
+    if(rowSkipsTeamBuild(row,source)) raw=state.repTeams?.get?.(rep(row))||'';
+    else {raw=coachColumn?row?.[coachColumn]:(row?._team||'');if(!raw)raw=state.repTeams?.get?.(rep(row))||'';}
+    return normalizeIdentityName(canonicalCoachName(raw));
+  };
+  return {rep,team};
+}
 function researchCohortKeys(rows,baseSource=''){
-  const reps=new Set(), teams=new Set(), repTeams=new Map();
+  const reps=new Set(), teams=new Set(), repTeams=new Map(), readers=researchCohortIdentityReaders(baseSource);
   (rows||[]).forEach(r=>{
-    const rep=getRepIdentity(r,baseSource), coach=getCoachIdentity(r,baseSource);
-    if(rep.normalizedName) reps.add(rep.normalizedName);
-    if(coach.normalizedName) teams.add(coach.normalizedName);
-    if(rep.normalizedName&&coach.normalizedName){ if(!repTeams.has(rep.normalizedName)) repTeams.set(rep.normalizedName,new Set()); repTeams.get(rep.normalizedName).add(coach.normalizedName); }
+    const rep=readers.rep(r),coach=readers.team(r);
+    if(rep) reps.add(rep);
+    if(coach) teams.add(coach);
+    if(rep&&coach){ if(!repTeams.has(rep)) repTeams.set(rep,new Set()); repTeams.get(rep).add(coach); }
   });
   return {reps,teams,repTeams};
 }
@@ -2012,42 +2091,66 @@ function researchRuntimeWarnings(item){
   return item._runtimeWarnings;
 }
 function attachResearchRuntime(item,warnings=[]){
-  try{ Object.defineProperty(item,'_runtimeWarnings',{value:warnings,writable:true,configurable:true,enumerable:false}); Object.defineProperty(item,'_joinStats',{value:{seen:new Set(),calls:0,matchedRows:0,missingReps:0,missingTeams:0,fallbackRows:0,modes:new Set(),bySource:new Map()},writable:true,configurable:true,enumerable:false}); }catch(_){}
+  try{ Object.defineProperty(item,'_runtimeWarnings',{value:warnings,writable:true,configurable:true,enumerable:false}); Object.defineProperty(item,'_joinStats',{value:{seen:new Set(),calls:0,matchedRows:0,missingReps:0,missingTeams:0,fallbackRows:0,ambiguousIdentities:0,ambiguityDetails:[],modes:new Set(),bySource:new Map()},writable:true,configurable:true,enumerable:false}); }catch(_){}
   return item;
 }
 function researchJoinStatsSnapshot(item){
   const x=item?._joinStats; if(!x) return null;
-  return {calls:x.calls||0,matchedRows:x.matchedRows||0,missingReps:x.missingReps||0,missingTeams:x.missingTeams||0,fallbackRows:x.fallbackRows||0,modes:[...(x.modes||[])],bySource:[...(x.bySource||new Map()).values()].map(v=>({...v,modes:[...(v.modes||[])]}))};
+  return {calls:x.calls||0,matchedRows:x.matchedRows||0,missingReps:x.missingReps||0,missingTeams:x.missingTeams||0,fallbackRows:x.fallbackRows||0,ambiguousIdentities:x.ambiguousIdentities||0,ambiguityDetails:x.ambiguityDetails||[],modes:[...(x.modes||[])],bySource:[...(x.bySource||new Map()).values()].map(v=>({...v,modes:[...(v.modes||[])]}))};
 }
 function noteResearchJoin(item,key,result){
   const x=item?._joinStats; if(!x||x.seen.has(key)) return;
-  x.seen.add(key); x.calls++; x.matchedRows+=result.rows.length; x.missingReps+=result.missingRepIdentities.length; x.missingTeams+=result.missingCoachIdentities.length; x.fallbackRows+=result.fallbackRows||0; x.modes.add(result.joinMode);
+  x.seen.add(key); x.calls++; x.matchedRows+=result.rows.length; x.missingReps+=result.missingRepIdentities.length; x.missingTeams+=result.missingCoachIdentities.length; x.fallbackRows+=result.fallbackRows||0; x.ambiguousIdentities=(x.ambiguousIdentities||0)+(result.ambiguousIdentities?.length||0); x.ambiguityDetails=[...(x.ambiguityDetails||[]),...(result.ambiguityDetails||[]).map(d=>({...d,source:result.targetSource}))].slice(0,50); x.modes.add(result.joinMode);
   const source=result.targetSource||'unknown'; if(!x.bySource.has(source)) x.bySource.set(source,{source,calls:0,matchedRows:0,missingReps:0,missingTeams:0,fallbackRows:0,modes:new Set()}); const detail=x.bySource.get(source); detail.calls++; detail.matchedRows+=result.rows.length; detail.missingReps+=result.missingRepIdentities.length; detail.missingTeams+=result.missingCoachIdentities.length; detail.fallbackRows+=result.fallbackRows||0; detail.modes.add(result.joinMode);
 }
 function researchJoinSummaryHtml(diag){
   if(!diag?.calls) return '';
   const mode=(diag.modes||[]).map(m=>m==='strict_rep'?'Representative':m==='strict_team'?'Team':m==='rep_then_team'?'Rep → disclosed team fallback':m).join(', ');
-  return `<div class="researchJoinHealth"><span class="badge">Cross-source join: ${esc(mode||'None')}</span><span class="badge">Matched rows: ${Number(diag.matchedRows||0).toLocaleString()}</span><span class="badge">Unmatched reps: ${Number(diag.missingReps||0).toLocaleString()}</span><span class="badge">Unmatched teams: ${Number(diag.missingTeams||0).toLocaleString()}</span>${diag.fallbackRows?`<span class="badge warn">Fallback rows: ${Number(diag.fallbackRows).toLocaleString()}</span>`:''}</div>`;
+  return `<div class="researchJoinHealth"><span class="badge">Cross-source join: ${esc(mode||'None')}</span><span class="badge">Matched rows: ${Number(diag.matchedRows||0).toLocaleString()}</span><span class="badge">Unmatched reps: ${Number(diag.missingReps||0).toLocaleString()}</span><span class="badge">Unmatched teams: ${Number(diag.missingTeams||0).toLocaleString()}</span>${diag.ambiguousIdentities?`<span class="badge warn">Ambiguous identities: ${Number(diag.ambiguousIdentities).toLocaleString()}</span><details><summary>Inspect ambiguous joins</summary>${(diag.ambiguityDetails||[]).map(d=>`<div>${esc(d.source||'')} · ${esc(d.identity)} · IDs: ${esc((d.ids||[]).join(', ')||'not supplied')} · teams: ${esc((d.teams||[]).join(', ')||'not supplied')}</div>`).join('')}</details>`:''}${diag.fallbackRows?`<span class="badge warn">Fallback rows: ${Number(diag.fallbackRows).toLocaleString()}</span>`:''}</div>`;
 }
-function researchCohortIdentityIndex(sourceKey,type){
+function* researchCohortIdentityBuild(sourceKey,type){
   const idx=sourceIndex(sourceKey), rows=idx?.rows||getRowsRaw(sourceKey)||[], key='cohortIdentityV2|'+type+'|'+(idx?.version||state.dataIndex?.version||0);
   if(idx?.lazyIndexes?.has(key)) return idx.lazyIndexes.get(key);
-  const map=new Map();
-  const addIndexedMap=indexed=>{
-    (indexed||new Map()).forEach((list,rawKey)=>{ const ident=normalizeIdentityName(rawKey); if(!ident) return; const existing=map.get(ident); if(!existing) map.set(ident,(list||[]).slice()); else { const seen=new Set(existing); (list||[]).forEach(r=>{ if(!seen.has(r)){ seen.add(r); existing.push(r); } }); } });
-  };
-  if(type==='rep'&&idx?.byRep?.size) addIndexedMap(idx.byRep);
-  else if(type==='team'&&(idx?.byCoachKey?.size||idx?.byTeamKey?.size)){ addIndexedMap(idx.byCoachKey); addIndexedMap(idx.byTeamKey); }
-  else rows.forEach(r=>{ const ident=type==='rep'?getRepIdentity(r,sourceKey).normalizedName:getCoachIdentity(r,sourceKey).normalizedName; if(ident) pushMapArray(map,ident,r); });
+  const map=new Map(),readers=researchCohortIdentityReaders(sourceKey); let processed=0;
+  const indexed=type==='rep'&&idx?.byRep?.size?[idx.byRep]:type==='team'&&(idx?.byCoachKey?.size||idx?.byTeamKey?.size)?[idx.byCoachKey,idx.byTeamKey]:null;
+  if(indexed){
+    for(const index of indexed) for(const [rawKey,list] of index||new Map()){
+      const identity=normalizeIdentityName(rawKey); if(!identity) continue;
+      const existing=map.get(identity)||[],seen=new Set(existing); if(!map.has(identity)) map.set(identity,existing);
+      for(const row of list||[]){ if(!seen.has(row)){seen.add(row);existing.push(row);} if(++processed%1000===0) yield processed; }
+    }
+  }else for(const row of rows){ const identity=type==='rep'?readers.rep(row):readers.team(row); if(identity) pushMapArray(map,identity,row); if(++processed%1000===0) yield processed; }
+  if(type==='rep'){
+    const idColumns=(getHeaders(sourceKey)||[]).filter(h=>/^(employee|agent|associate|representative|rep)[ _-]*(id|number)$|^(username|email|email address)$/i.test(h));
+    map.ambiguities=new Map();
+    for(const [identity,list] of map){
+      const ids=new Set(),teams=new Set(),valuesByColumn=idColumns.map(()=>new Set());
+      for(const row of list){
+        idColumns.forEach((column,i)=>{ const id=String(row[column]??'').trim().toLowerCase(); if(id){ids.add(column+': '+id);valuesByColumn[i].add(id);} });
+        const team=readers.team(row); if(team) teams.add(team);
+        if(++processed%1000===0) yield processed;
+      }
+      if(valuesByColumn.some(values=>values.size>1)||teams.size>1) map.ambiguities.set(identity,{ids:[...ids].slice(0,10),teams:[...teams].slice(0,10)});
+    }
+  }
   if(idx?.lazyIndexes) idx.lazyIndexes.set(key,map);
   return map;
+}
+function researchCohortIdentityIndex(sourceKey,type){ const work=researchCohortIdentityBuild(sourceKey,type); let step; do{step=work.next();}while(!step.done); return step.value; }
+async function prepareResearchJoinIndexes(item,token){
+  const sources=researchExecutionSources(item); if(sources.length<2) return;
+  for(const source of sources) for(const type of ['rep','team']){
+    const work=researchCohortIdentityBuild(source,type); let step;
+    do{ researchThrowIfCancelled(token); step=work.next(); if(!step.done) await yieldToBrowser(); }while(!step.done);
+  }
 }
 function resolveRowsForCohort(sourceKey, cohortContext, options = {}){
   const baseRows=cohortContext?.baseRows||cohortContext?.rows||[], baseSource=cohortContext?.baseSource||cohortContext?.source||'', item=cohortContext?.item||options.item||{};
   const targetSource=resolveDynamicResearchSource({...item,source:sourceKey}), joinMode=researchEffectiveJoinMode(item,baseRows), baseCohortSignature=researchMetricRowSignature(baseRows,baseSource);
   const dependencySignature=researchHashText(researchSourceIndexSignature(targetSource)+'//'+researchSourceIndexSignature(baseSource)), cacheKey=[dependencySignature,targetSource,baseSource,joinMode,baseCohortSignature].join('\u001f');
   state.researchCohortCache=state.researchCohortCache||new Map();
-  const cached=state.researchCohortCache.get(cacheKey); if(cached){ noteResearchJoin(item,cacheKey,cached); return cached; }
+  const cached=researchTouchCache(state.researchCohortCache,cacheKey); if(cached){ (cached.warnings||[]).forEach(w=>researchExpressionAddWarning(researchRuntimeWarnings(item),w)); noteResearchJoin(item,cacheKey,cached); return cached; }
+  const warningStart=researchRuntimeWarnings(item).length;
   const {reps,teams,repTeams}=researchCohortKeys(baseRows,baseSource);
   const repIndex=researchCohortIdentityIndex(targetSource,'rep'), teamIndex=researchCohortIdentityIndex(targetSource,'team'), picked=new Set(), matchedRepIdentities=new Set(), matchedCoachIdentities=new Set(), missingRepIdentities=[], missingCoachIdentities=[];
   const addRows=(list,set,key)=>{ if(list?.length){ list.forEach(r=>picked.add(r)); set.add(key); return list.length; } return 0; };
@@ -2065,17 +2168,23 @@ function resolveRowsForCohort(sourceKey, cohortContext, options = {}){
   }
   if(joinMode==='strict_rep'&&missingRepIdentities.length) researchRuntimeWarnings(item).push(`Cross-source representative join left ${missingRepIdentities.length} representative(s) unmatched; team rows were not substituted.`);
   if(joinMode==='strict_team'&&missingCoachIdentities.length) researchRuntimeWarnings(item).push(`Cross-source team join left ${missingCoachIdentities.length} team(s) unmatched.`);
-  const result={rows:[...picked],targetSource,baseSource,joinMode,cohortSignature:cacheKey,fallbackRows,matchedRepIdentities:[...matchedRepIdentities],matchedCoachIdentities:[...matchedCoachIdentities],missingRepIdentities,missingCoachIdentities,warnings:[]};
+  const result={rows:[...picked],targetSource,baseSource,joinMode,cohortSignature:cacheKey,fallbackRows,matchedRepIdentities:[...matchedRepIdentities],matchedCoachIdentities:[...matchedCoachIdentities],missingRepIdentities,missingCoachIdentities,ambiguousIdentities:[...reps].filter(rep=>repIndex.ambiguities?.has(rep)),ambiguityDetails:[...reps].filter(rep=>repIndex.ambiguities?.has(rep)).slice(0,50).map(rep=>({identity:rep,...repIndex.ambiguities.get(rep)})),warnings:[]};
+  if(result.ambiguousIdentities.length) researchExpressionAddWarning(researchRuntimeWarnings(item),`${result.ambiguousIdentities.length} representative identities in ${labelSource(targetSource)} have multiple IDs or team mappings; all matching rows are retained. Inspect join details.`);
   state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(result.rows,cacheKey);
-  boundedMapSet(state.researchCohortCache,cacheKey,result,600); noteResearchJoin(item,cacheKey,result); return result;
+  result.dependencies={sources:[targetSource,baseSource]}; result.warnings=researchRuntimeWarnings(item).slice(warningStart); researchBoundedRowsCacheSet(state.researchCohortCache,cacheKey,result,80); noteResearchJoin(item,cacheKey,result); return result;
 }
 function researchRowsForCohort(targetSource, baseRows, baseSource, item={}){
   targetSource=resolveDynamicResearchSource({...item,source:targetSource}); baseSource=resolveDynamicResearchSource({...item,source:baseSource});
-  if(!targetSource || targetSource===baseSource) return (baseRows||[]).slice();
+  if(!targetSource || targetSource===baseSource){ const copy=(baseRows||[]).slice(); state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(copy,researchMetricRowSignature(baseRows||[],baseSource)); return copy; }
   const resolved=resolveRowsForCohort(targetSource,{rows:baseRows,baseRows,baseSource,source:baseSource,item},{item});
   const opts={start:parseDateOnly(item.startDate),end:parseDateOnly(item.endDate),dateColumn:researchDefaultDateColumn({source:targetSource}),qaDateMode:els.runQADateSelect?.value||'interaction'};
+  const joinedKey=resolved.cohortSignature+'|date:'+stableSerialize({start:item.startDate||'',end:item.endDate||'',date:opts.dateColumn,qaDateMode:opts.qaDateMode,duplicates:!!item.filterDuplicateReps,definition:item.filterDuplicateReps?researchItemCacheKey(item,'duplicateReps'):''});
+  state.researchJoinedPopulationCache=state.researchJoinedPopulationCache||new Map();
+  const reused=researchTouchCache(state.researchJoinedPopulationCache,joinedKey); if(reused) return reused.rows;
   let filtered=filterRowsForSource(targetSource,resolved.rows,opts);
   if(item?.filterDuplicateReps){ const dm=buildResearchDuplicateRepMap(researchDuplicateRowsBySource({...item,source:baseSource},baseRows),{...item,source:baseSource},{}); filtered=applyDuplicateRepFilterToRows(filtered,targetSource,dm,{item}); }
+  state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(filtered,joinedKey);
+  researchBoundedRowsCacheSet(state.researchJoinedPopulationCache,joinedKey,{rows:filtered,dependencies:{sources:[targetSource,baseSource]}},60);
   return filtered;
 }
 function researchRowsMatchingToken(source,token,item={}){
@@ -2432,7 +2541,7 @@ function evaluatePercentBuilder(item,rows,col,ctx={}){
   return den?num/den*100:(pb.zeroDenominator==='blank'?null:0);
 }
 function evaluatePercentOf(item, rows){ const numRows=item.numeratorExpression?rows.filter(r=>!!evaluateResearchExpression(r,item.numeratorExpression,{source:item.source,context:'Numerator expression',row:r})):rows; let num=item.numeratorCount==='unique'?uniqueCount(numRows):numRows.length; let den=rows.length; if(item.denominator==='unique') den=uniqueCount(rows); if(item.denominator==='teamReps'){ const team=rows[0]?researchGroupKey(item,rows[0]):'', key=coachNameKey(team); let teamReps=(currentTeamIndex().repsByTeam?.get(team)||[]); if(!teamReps.length){ for(const [candidate,reps] of (currentTeamIndex().repsByTeam||new Map()).entries()){ if(coachNameKey(candidate)===key){ teamReps=reps; break; } } } den=teamReps.length||uniqueCount(rows); } if(item.denominator==='custom'&&item.denominatorExpression) den=rows.filter(r=>!!evaluateResearchExpression(r,item.denominatorExpression,{source:item.source,context:'Denominator expression',row:r})).length; return den?num/den*100:(item.zeroDenominator==='blank'?null:0); }
-function evaluateModelCriteriaResearchValue(item, rows){ const m=findModel(item.modelId), c=(m?.criteria||[]).find(x=>x.id===item.criteriaId); if(!m) throw new Error('Missing model'); if(!c) throw new Error('Missing model/criteria'); const opts={start:parseDateOnly(item.startDate),end:parseDateOnly(item.endDate),qaDateMode:els.runQADateSelect?.value||'interaction',_sourceRowsCache:new Map(),_entryRowsCache:new Map()}; const entries=new Map(); rows.forEach(r=>{ const k=personKeyFromRow(r); if(k) entries.set(k,{kind:'rep',key:k,name:r._rep||r['Agent Name']||r['Associate Name']||k,team:r._team||r.Team||''}); }); const vals=[...entries.values()].map(e=>criterionValue(c,e,opts)).filter(Number.isFinite); if(item.modelResult==='percentage') return entries.size?vals.filter(v=>v>0).length/entries.size*100:0; if(item.modelResult==='average') return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0; return vals.filter(v=>v>0).length; }
+function evaluateModelCriteriaResearchValue(item, rows){ const m=findModel(item.modelId), c=(m?.criteria||[]).find(x=>x.id===item.criteriaId); if(!m) throw new Error('Missing model'); if(!c) throw new Error('Missing model/criteria'); const opts={start:parseDateOnly(item.startDate),end:parseDateOnly(item.endDate),qaDateMode:els.runQADateSelect?.value||'interaction',_sourceRowsCache:new Map(),_entryRowsCache:new Map()}; const entries=new Map(modelEntryRowsForResearchRows(rows).filter(entry=>entry.kind==='rep').map(entry=>[entry.key,entry])); const vals=[...entries.values()].map(e=>criterionValue(c,e,opts)).filter(Number.isFinite); if(item.modelResult==='percentage') return entries.size?vals.filter(v=>v>0).length/entries.size*100:0; if(item.modelResult==='average') return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0; return vals.filter(v=>v>0).length; }
 function researchDateWithinCount(item,rows,field,compareField,days,warnings=[]){ const bounds=withinBoundsForConfig({...item,withinDays:item.withinDays||days}); return withinStatsForRows(rows,item.source,field,compareField,'date',bounds.low,bounds.high,warnings).within; }
 function evaluateResearchPercentItem(item,rows,field,denominatorField,warnings=[]){
   const num=researchAggregateColumnValue(rows,item,field,'sum',warnings);
@@ -2444,7 +2553,7 @@ function expandedResearchColumns(item){ const cols=item.outputType==='table'?(it
 function aggregateResearchValue(item, rows, col, ctx={}){
   const mode=col?.mode||item.valueMode||'count', field=col?.field||item.valueField, typed=researchTypedMeasureDefinition(col?.measureId||researchMeasureIdFromRef(field)||item.measureId); if(typed) return evaluateResearchTypedMeasure(typed,rows,item,col||{},ctx); const metric=findMetricByRef(field); if(metric){ const metricSource=metric.source||item.source; const metricRows=researchRowsForCohort(metricSource,rows,item.source,item); if(metricSource!==item.source&&!metricRows.length&&item.unmatchedBehavior==='blank') return null; return evaluateResearchMetricCached(metric,metricRows,metricSource,ctx.warnings||[],{item,col}); } const modelRef=parseModelRef(field); if(modelRef){ const cfgKey=col&&item.columns?('columnField:'+Math.max(0,(item.columns||[]).indexOf(col))):''; return evaluateModelReferenceValue(modelRef,rows,item,mode,ctx.warnings||[]); } if(col?._level2Field) rows=rows.filter(r=>String(researchFieldValue(r,col._level2Field,item.source)??'(blank)')===String(col._level2Value));
   let bang=parseResearchBangField(field); const inferred=!bang?researchUniqueSourceForHeader(field,item.source):null; if(inferred && inferred.source!==item.source) bang=inferred;
-  if(bang && bang.source && bang.source!==item.source){ const crossRows=researchRowsForCohort(bang.source,rows,item.source,item); if(!crossRows.length&&item.unmatchedBehavior==='blank') return null; if(mode==='count_by') return researchRowsWithFieldValue(crossRows,bang.field,bang.source).length; if(mode==='count') return crossRows.filter(r=>String(researchFieldValue(r,bang.field,bang.source)??'').trim()!=='').length; if(mode==='unique') return uniqueCount(crossRows,bang.field,bang.source); if(['sum','avg','min','max'].includes(mode)){ const vals=crossRows.map(r=>evaluateResearchNumericField(r,bang.field,bang.source)).filter(Number.isFinite); if(!vals.length) return 0; if(mode==='avg') return vals.reduce((a,b)=>a+b,0)/vals.length; if(mode==='min') return Math.min(...vals); if(mode==='max') return Math.max(...vals); return vals.reduce((a,b)=>a+b,0); } if(mode==='direct'||mode==='display') return crossRows[0]?researchFieldValue(crossRows[0],bang.field,bang.source):''; }
+  if(bang && bang.source && bang.source!==item.source){ const crossRows=researchRowsForCohort(bang.source,rows,item.source,item); if(!crossRows.length&&item.unmatchedBehavior==='blank') return null; if(mode==='count_by') return researchRowsWithFieldValue(crossRows,bang.field,bang.source).length; if(mode==='count') return crossRows.filter(r=>String(researchFieldValue(r,bang.field,bang.source)??'').trim()!=='').length; if(mode==='unique') return uniqueCount(crossRows,bang.field,bang.source); if(['sum','avg','min','max'].includes(mode)){ const vals=crossRows.map(researchNumericReader(bang.field,bang.source)).filter(Number.isFinite); if(!vals.length) return 0; if(mode==='avg') return vals.reduce((a,b)=>a+b,0)/vals.length; if(mode==='min') return researchMin(vals); if(mode==='max') return researchMax(vals); return vals.reduce((a,b)=>a+b,0); } if(mode==='direct'||mode==='display') return crossRows[0]?researchFieldValue(crossRows[0],bang.field,bang.source):''; }
   if(mode==='percent') return (col?.percentBuilder||item.percentBuilder)?evaluatePercentBuilder(item,rows,col,ctx):evaluatePercentOf(item,rows);
   if(mode==='percent_item') return evaluateResearchPercentItem(item,rows,field,col?.percentOfField||item.percentOfField,ctx.warnings||[]);
   if(mode==='model') return evaluateModelCriteriaResearchValue(item,rows);
@@ -2456,13 +2565,16 @@ function aggregateResearchValue(item, rows, col, ctx={}){
   if(['date_within','date_percent_within','value_within','value_percent_within'].includes(mode)){ const sourceCfg=col&&(col.withinCompareField||col.withinDays||col.withinRangeMin||col.withinRangeMax||col.withinUseRange!==undefined)?col:item; const bounds=withinBoundsForConfig(sourceCfg); const stats=withinStatsForRows(rows,item.source,field,col?.withinCompareField||item.withinCompareField,withinModeKind(mode),bounds.low,bounds.high,ctx.warnings); return withinModeIsPercent(mode)?stats.percent:stats.within; }
   if(mode==='expression'){ const out=evaluateResearchExpressionInContext(field,rows,item,ctx.warnings||[]); warnIfNumericText(out,ctx.warnings||[],{source:item.source,context:'Research value expression'}); return out; }
   if(mode==='direct'||mode==='display') return rows[0]?researchFieldValue(rows[0],field,item.source):'';
-  const vals=rows.map(r=>evaluateResearchNumericField(r,field,item.source)).filter(Number.isFinite);
+  const vals=rows.map(researchNumericReader(field,item.source)).filter(Number.isFinite);
   if(!vals.length) return 0;
   if(mode==='avg') return vals.reduce((a,b)=>a+b,0)/vals.length;
-  if(mode==='min') return Math.min(...vals);
-  if(mode==='max') return Math.max(...vals);
+  if(mode==='min') return researchMin(vals);
+  if(mode==='max') return researchMax(vals);
   return vals.reduce((a,b)=>a+b,0);
 }
+// Large populations can exceed the JavaScript argument limit with Math.min(...rows).
+function researchMin(values,initial=Infinity){ let value=initial; for(const next of values) value=Math.min(value,next); return value; }
+function researchMax(values,initial=-Infinity){ let value=initial; for(const next of values) value=Math.max(value,next); return value; }
 function researchHashText(value){
   const text=String(value??''); let h=2166136261;
   for(let i=0;i<text.length;i++){ h^=text.charCodeAt(i); h=Math.imul(h,16777619); }
@@ -2477,12 +2589,70 @@ function researchSourceCacheSignature(){
   }).join('|');
   return 'raw:'+researchHashText(raw);
 }
+// Derived caches contain references to authoritative rows; never persist these entries.
+// Bound by row references as well as entry count so large imports cannot fill memory
+// with hundreds of nearly identical populations.
+function researchBoundedRowsCacheSet(cache,key,value,limit=40,rowBudget=300000){
+  const weight=v=>Number(v?.rowWeight??((v?.rows?.length||v?.positions?.length||0)+(v?.universeRows?.length||0)));
+  cache.delete(key);
+  const size=weight(value); if(size>rowBudget) return value;
+  let used=0; for(const entry of cache.values()) used+=weight(entry);
+  while(cache.size && (cache.size>=limit||used+size>rowBudget)){ const oldest=cache.keys().next().value; used-=weight(cache.get(oldest)); cache.delete(oldest); }
+  cache.set(key,value); return value;
+}
+function researchTouchCache(cache,key){ const value=cache?.get(key); if(value!==undefined){ cache.delete(key); cache.set(key,value); } return value; }
+function researchDefinitionDependencies(config={}){
+  const metrics=new Map(), models=new Map(), strings=[], sources=new Set(), visited=new Set();
+  const collect=value=>{ if(typeof value==='string') strings.push(value); else if(value&&typeof value==='object'&&!visited.has(value)){ visited.add(value); for(const [key,v] of Object.entries(value)){ if(['renderedResult','_runtimeWarnings','_joinStats','chartAppearance'].includes(key)) continue; if(/source$/i.test(key)&&typeof v==='string'&&v) sources.add(v); collect(v); } } };
+  collect(config);
+  for(let cursor=0;cursor<strings.length;cursor++){
+    const text=strings[cursor], trimmed=text.trim(), compact=typeof researchExpressionAlias==='function'?researchExpressionAlias(trimmed):trimmed;
+    if(typeof splitCrossExpressionRefs==='function') splitCrossExpressionRefs(text).forEach(ref=>{if(ref.source)sources.add(ref.source);});
+    for(const metric of state.metrics||[]){
+      if(metrics.has(metric.id||metric.name)) continue;
+      const names=[metric.id,metric.name].filter(Boolean);
+      if(names.some(name=>trimmed==='@'+name||trimmed==='metric:'+name||trimmed===name||compact===researchExpressionAlias(name)||text.includes('@'+name)||(/[()+*/]/.test(text)&&text.includes(name)))){ metrics.set(metric.id||metric.name,metric); collect(metric); }
+    }
+    const implicit=typeof findModelCriterionReferenceByName==='function'?findModelCriterionReferenceByName(trimmed.replace(/^;/,'')):null;
+    const refs=[...text.matchAll(/model\(\s*["']([^"']+)["']\s*(?:,\s*["']([^"']+)["']\s*)?\)/gi)].map(m=>m[1]);
+    if(trimmed.startsWith(';')) refs.push(trimmed.slice(1).split('.')[0].trim());
+    if(config.modelId) refs.push(config.modelId); if(implicit) refs.push(implicit.model);
+    for(const ref of refs){ const model=findModelByNameOrId(ref); if(model&&!models.has(model.id||model.name)){ models.set(model.id||model.name,model); collect(model); if(typeof requiredRunSourcesForModel==='function') requiredRunSourcesForModel(model).forEach(source=>sources.add(source)); } }
+  }
+  // Duplicate resolution scores completeness against saved metrics by design.
+  if(config.filterDuplicateReps) for(const metric of state.metrics||[]) metrics.set(metric.id||metric.name,metric);
+  const definitions={metrics:[...metrics.values()].sort((a,b)=>String(a.id||a.name).localeCompare(String(b.id||b.name))),models:[...models.values()].sort((a,b)=>String(a.id||a.name).localeCompare(String(b.id||b.name)))};
+  return {...definitions,sources:[...sources],signature:stableSerialize(definitions)};
+}
+function researchThrowIfCancelled(token){
+  if(token?.parent?.cancelled) token.cancelled=true;
+  if(!token?.cancelled) return;
+  const error=new Error('Research calculation cancelled.'); error.name='AbortError'; throw error;
+}
+function researchResultLineage(item,result={}){
+  const normalized=effectiveResearchItem(normalizeResearchItem(item)), definitions=researchDefinitionDependencies(normalized);
+  return {schema:1,source:normalized.source,sources:researchExecutionSources(normalized).map(source=>({source,version:researchSourceIndexSignature(source),rows:(getRowsRaw(source)||[]).length})),fields:(result.columns||expandedResearchColumns(normalized)).map(c=>({field:c.field||'',measureId:c.measureId||'',aggregation:c.mode||normalized.valueMode||'count'})),filters:clonePlain(normalized.filters||[]),dateColumn:normalized.dateColumn||'',startDate:normalized.startDate||'',endDate:normalized.endDate||'',grain:researchAnalysisGrain(normalized),joinStrategy:researchEffectiveJoinMode(normalized),models:definitions.models.map(m=>({id:m.id,name:m.name})),metrics:definitions.metrics.map(m=>({id:m.id,name:m.name})),population:result.totalRowCount??null};
+}
+function researchHealthCheck(item,result={}){
+  const lineage=researchResultLineage(item,result), blocking=[], warnings=[...(result.warnings||[])], information=[];
+  if(!allSourceKeys().includes(lineage.source)) blocking.push(`Source ${lineage.source||'(not selected)'} is unavailable. Choose an imported source.`);
+  if(!(getRowsRaw(lineage.source)||[]).length) warnings.push(`No imported rows for ${labelSource(lineage.source)}.`);
+  for(const field of [item.dateColumn,item.groupField,item.secondaryGroupField,...(item.columns||[]).map(c=>c.field),item.valueField].filter(Boolean)){
+    if(researchFieldNeedsHeaderWarning(item,field)) blocking.push(`Research could not find the column "${field}" in ${labelSource(item.source)}. Choose a replacement column.`);
+    const ref=parseModelRef(field); if(ref&&!findModelByNameOrId(ref.model)) blocking.push(`Missing model: ${ref.model}. Choose a replacement model.`);
+    if(metricRefName(field)&&!findMetricByRef(field)) blocking.push(`Missing metric: ${metricRefName(field)}. Choose a replacement metric.`);
+  }
+  const join=result.joinDiagnostics;
+  if(join?.ambiguousIdentities) warnings.push(`${join.ambiguousIdentities} joined identities have multiple representative IDs or conflicting team mappings. Inspect the join details.`);
+  if(result.totalRowCount!=null) information.push(`${Number(result.totalRowCount).toLocaleString()} rows in the calculation population.`);
+  return {blocking:[...new Set(blocking)],warnings:[...new Set(warnings)],information,sources:lineage.sources,lineage};
+}
 function researchExecutionDataSignature(item){
-  const sources=researchExecutionSources(item);
+  const sources=[...new Set([...researchExecutionSources(item),...researchDefinitionDependencies(item).sources])].filter(source=>allSourceKeys().includes(source));
   return 'used:'+researchHashText(sources.sort().map(source=>researchSourceIndexSignature(source)).join('\u001d'));
 }
 function researchAnalysisCacheItem(item,kind){
-  const copy={...item}; ['title','cardSize','collapsed','renderedResult','textWrap','rowDensity','decimals','showPercent','showValues','showDateLabels','axisMin','axisMax','graphSort','topN','showSummaryLine','goalValue','rotateLabels','wrapLabels','showLegend','showGridlines','smoothLine','useDots','barOrientation','stackedBars','groupedBars','hideZeroGroups','highlightBest','highlightWorst','guidedDisplay'].forEach(key=>delete copy[key]);
+  const copy={...item}; ['title','cardSize','collapsed','renderedResult','textWrap','rowDensity','decimals','showPercent','showValues','showDateLabels','axisMin','axisMax','graphSort','topN','showSummaryLine','goalValue','rotateLabels','wrapLabels','showLegend','showGridlines','smoothLine','useDots','barOrientation','stackedBars','groupedBars','hideZeroGroups','highlightBest','highlightWorst','guidedDisplay','subtitle','lineThickness','pointSize','areaFill','chartAppearance','chartType','chartDesigner','favorite','updatedAt','createdAt'].forEach(key=>delete copy[key]);
   if(kind==='agg'&&copy.groupField&&!copy.groupMultiAdd&&['bar','line','pie','heatmap'].includes(copy.outputType)) copy.outputType='grouped_chart';
   if(kind==='agg'&&Array.isArray(copy.columns)) copy.columns=copy.columns.map(col=>{ const c={...col}; ['customTitle','displayTitle','width','formatRules','displayRules'].forEach(key=>delete c[key]); return c; });
   return copy;
@@ -2490,7 +2660,7 @@ function researchAnalysisCacheItem(item,kind){
 function researchItemCacheKey(item,kind){
   const normItem=normalizeResearchItem(item); const src=resolveDynamicResearchSource(normItem); const keyItem=src&&src!==normItem.source?{...normItem,source:src,_dynamicSource:normItem.source}:normItem;
   const orgSignature=researchHashText(stableSerialize((state.orgs||[]).map(o=>({id:o.id||'',name:o.name||'',coachNames:[...(o.coachNames||[])].map(canonicalCoachName).sort()})).sort((a,b)=>String(a.id).localeCompare(String(b.id)))));
-  return ['researchCacheV3',kind,researchExecutionDataSignature(keyItem),stableSerialize(researchAnalysisCacheItem(keyItem,kind)),'aliasesV'+(state.versions?.aliases||0),'teamsV'+(state.versions?.teams||0),'mappingsV'+(state.versions?.mappings||0),'metricsV'+(state.versions?.metrics||0),'modelsV'+(state.versions?.models||0),'orgsV'+orgSignature,keyItem.startDate||'',keyItem.endDate||'',keyItem.dateColumn||''].join('\u001f');
+  return ['researchCacheV3',kind,researchExecutionDataSignature(keyItem),stableSerialize(researchAnalysisCacheItem(keyItem,kind)),'aliasesV'+(state.versions?.aliases||0),'teamsV'+(state.versions?.teams||0),'mappingsV'+(state.versions?.mappings||0),'definitions:'+researchDefinitionDependencies(keyItem).signature,'rosterV'+(state.versions?.roster||0),'orgsV'+orgSignature,keyItem.startDate||'',keyItem.endDate||'',keyItem.dateColumn||''].join('\u001f');
 }
 function loadResearchResultCache(){
   try{ state.researchPersistentCache=JSON.parse(localStorage.getItem(RESEARCH_CACHE_KEY)||'{}')||{}; }catch(_){ state.researchPersistentCache={}; }
@@ -2509,23 +2679,42 @@ function saveResearchResultCache(){
   updateResearchCacheBadge();
 }
 
+function researchCacheDependencies(item){ return {sources:[...new Set([...researchExecutionSources(item),...researchDefinitionDependencies(item).sources])].filter(source=>allSourceKeys().includes(source))}; }
+function evictResearchSourceCaches(dep){
+  if(!dep.source&&!dep.aliases&&!dep.teams&&!dep.mappings) return;
+  const requested=String(dep.source||'').split(',').filter(Boolean), known=allSourceKeys(), sources=requested.filter(source=>known.includes(source));
+  const all=!!(dep.aliases||dep.teams||dep.mappings)||!sources.length||sources.length!==requested.length;
+  const affected=value=>all||!value?.dependencies?.sources||value.dependencies.sources.some(source=>sources.includes(source));
+  for(const name of ['researchResultCache','researchFilterResultCache','researchPopulationCache','researchCohortCache','researchJoinedPopulationCache','researchMetricCache']){
+    const cache=state[name]; if(!(cache instanceof Map)) continue;
+    for(const [key,value] of cache) if(affected(value)) cache.delete(key);
+  }
+  let changed=false; for(const [key,value] of Object.entries(state.researchPersistentCache||{})) if(affected(value)){ delete state.researchPersistentCache[key]; changed=true; }
+  if(changed) saveResearchResultCache();
+}
 function selectiveResearchInvalidation(dep={}){
+  for(const token of state.researchActiveCalculations?.values()||[]) token.cancelled=true;
   state.perfCounters.selectiveInvalidations++;
   const reason=dep.reason||'selective invalidation';
   if(dep.full) return clearResearchComputedCaches(reason);
+  evictResearchSourceCaches(dep);
   if(dep.researchDefinitions && !dep.source && !dep.metrics && !dep.models && !dep.aliases && !dep.teams && !dep.mappings){
     console.info('[All Star Perf] research definition changed; keyed results retained',{reason});
     if(!dep.silent) updateResearchCacheBadge(); return;
   }
-  state.researchResultCache=new Map();
-  if(dep.source || dep.aliases || dep.teams || dep.mappings || dep.models) state.researchFilterResultCache=new Map();
-  if(dep.metrics || dep.source){ state.researchMetricCache=new Map(); state.metricCache=new Map(); }
-  if(dep.aliases || dep.teams || dep.mappings || dep.source){ state.researchDuplicateRepCache=new Map(); state.researchCohortCache=new Map(); }
-  if(dep.source || dep.metrics || dep.aliases || dep.teams || dep.mappings) state.percentBuilderCache=new Map();
+  if(typeof AllStarAnalysis!=='undefined') AllStarAnalysis.invalidate(dep);
+  // Results, filtered populations and joins carry source/definition signatures.
+  // Retain unrelated entries; a changed dependency produces a different key.
+  if(dep.metrics || dep.source) state.metricCache=new Map();
+  if(dep.aliases || dep.teams || dep.mappings || dep.source) state.researchDuplicateRepCache=new Map();
+  if(dep.source || dep.metrics || dep.models || dep.aliases || dep.teams || dep.mappings) state.percentBuilderCache=new Map();
   console.info('[All Star Perf] selective invalidation',{reason,dep,versions:state.versions});
   if(!dep.silent) updateResearchCacheBadge();
 }
 function clearResearchComputedCaches(reason='cache cleared'){
+  for(const token of state.researchActiveCalculations?.values()||[]) token.cancelled=true;
+  if(typeof AllStarAnalysis!=='undefined') AllStarAnalysis.invalidate({full:true,reason});
+  state.researchPopulationCache=new Map(); state.researchJoinedPopulationCache=new Map();
   if(state.researchWarmToken) state.researchWarmToken.cancelled=true;
   state.researchResultCache=new Map();
   state.metricCache=new Map();
@@ -2544,19 +2733,24 @@ function compactResearchResultForStorage(key,out){
   if(!String(key).startsWith('researchCacheV3\u001fagg\u001f') || !Array.isArray(out.data)) return null;
   if(out.data.length>RESEARCH_PERSIST_MAX_GROUPS) return null;
   const data=out.data.map(r=>({label:r.label??'',secondary:r.secondary??'',panel:r.panel??'',values:[...(r.values||[])],xValue:r.xValue,box:r.box?{...r.box}:undefined,rows:Number(r.rows||0),dateValue:r.dateValue||0}));
-  return {valueOnly:true,data,warnings:out.warnings||[],columns:out.columns||[],hasSecondary:!!out.hasSecondary,totalValues:out.totalValues||[],totalRowCount:out.totalRowCount||0,joinDiagnostics:out.joinDiagnostics||null,reconciliation:out.reconciliation||null,perf:{...(out.perf||{}),cacheUsed:true,persistent:true},savedAt:Date.now()};
+  return {valueOnly:true,data,dependencies:out.dependencies||null,warnings:out.warnings||[],lineage:out.lineage||null,columns:out.columns||[],hasSecondary:!!out.hasSecondary,totalValues:out.totalValues||[],totalRowCount:out.totalRowCount||0,joinDiagnostics:out.joinDiagnostics||null,reconciliation:out.reconciliation||null,perf:{...(out.perf||{}),cacheUsed:true,persistent:true},savedAt:Date.now()};
+}
+function researchCachedPresentation(item,result){
+  const columns=expandedResearchColumns(item);
+  return columns.length===(result.columns||[]).length?{...result,columns}:result;
 }
 function researchCacheGet(key){
-  const v=state.researchResultCache?.get(key);
-  if(v){ state.researchCacheStats.hits++; state.perfCounters.researchResultCacheHits++; const out={...v,perf:{...(v.perf||{}),timings:{...(v.perf?.timings||{})},cacheUsed:true}}; updateResearchCacheBadge(); return out; }
+  const v=researchTouchCache(state.researchResultCache,key);
+  if(v){ state.researchCacheStats.hits++; state.perfCounters.researchResultCacheHits++; const out={...v,perf:{...(v.perf||{}),timings:{...(v.perf?.timings||{})},cacheUsed:true,calculationKind:'cache hit'}}; updateResearchCacheBadge(); return out; }
   const pv=state.researchPersistentCache?.[key];
-  if(pv){ state.researchCacheStats.hits++; state.perfCounters.researchResultCacheHits++; const out={...pv,perf:{...(pv.perf||{}),timings:{...(pv.perf?.timings||{})},cacheUsed:true,persistent:true}}; if(!state.researchResultCache) state.researchResultCache=new Map(); boundedMapSet(state.researchResultCache,key,out,RESEARCH_CACHE_LIMIT); updateResearchCacheBadge(); return out; }
+  if(pv){ state.researchCacheStats.hits++; state.perfCounters.researchResultCacheHits++; const out={...pv,perf:{...(pv.perf||{}),timings:{...(pv.perf?.timings||{})},cacheUsed:true,persistent:true,calculationKind:'cache hit'}}; if(!state.researchResultCache) state.researchResultCache=new Map(); boundedMapSet(state.researchResultCache,key,out,RESEARCH_CACHE_LIMIT); updateResearchCacheBadge(); return out; }
   return null;
 }
 function researchHasCache(key){ return !!(state.researchResultCache?.has(key) || state.researchPersistentCache?.[key]); }
-function researchCacheSet(key,value,perf){
+function researchCacheSet(key,value,perf,item){
   if(!state.researchResultCache) state.researchResultCache=new Map();
-  const out={...value,perf:{...(value.perf||{}),...(perf||{}),cacheUsed:false}};
+  const out={...value,dependencies:item?researchCacheDependencies(item):value.dependencies,perf:{...(value.perf||{}),...(perf||{}),cacheUsed:false,calculationKind:perf?.populationCacheHit||perf?.queryPlan?.cacheHit?'partial recalculation':'full calculation'}};
+  if(typeof AllStarAnalysis!=='undefined') AllStarAnalysis.record('Research calculation',out.perf.calculationKind,Number(perf?.totalComputeMs)||0,{rows:out.totalRowCount||out.rows?.length||0});
   boundedMapSet(state.researchResultCache,key,out,RESEARCH_CACHE_LIMIT);
   const compact=compactResearchResultForStorage(key,out);
   if(compact){ state.researchPersistentCache[key]=compact; state.researchCacheStats.writes++; saveResearchResultCache(); }
@@ -2595,7 +2789,7 @@ async function warmResearchCacheInBackground(token){
 }
 
 function researchDefaultDateColumn(item){ item=effectiveResearchItem(item||{}); const hs=getResearchHeaders(item.source); if(item.source===DATED_SOURCE) return findHeader(hs,['Date'])||'Date'; if(item.source===NONDATED_SOURCE) return ''; if(isCustomSource(item.source)){ const c=customSource(item.source)||{}, cols=c.columns||{}; return findHeader(hs,[cols.date,cols.week,cols.month,'Date','Week','Month','Interaction Start Time','Assigned Date','Created Date'].filter(Boolean))||''; } const opts=item.source==='qa'?['Interaction Start Time','Assigned Date','Date']:checklistLikeDefaultDateHeaders(item.source); return findHeader(hs,opts)||''; }
-function researchSortDateValue(item, rows){ item=effectiveResearchItem(item||{}); const idx=sourceIndex(item.source); if((rows||[]).length===1){ const ms=idx?.rowMeta?.get?.(rows[0])?.dateMs; if(Number.isFinite(ms)) return ms; } const col=item.dateColumn||researchDefaultDateColumn(item); const vals=(rows||[]).map(r=>idx?.rowMeta?.get?.(r)?.dateMs||parseDateOnly(researchFieldValue(r,col,item.source))?.getTime()).filter(Number.isFinite); return vals.length?Math.min(...vals):0; }
+function researchSortDateValue(item, rows){ item=effectiveResearchItem(item||{}); const idx=sourceIndex(item.source); if((rows||[]).length===1){ const ms=idx?.rowMeta?.get?.(rows[0])?.dateMs; if(Number.isFinite(ms)) return ms; } const col=item.dateColumn||researchDefaultDateColumn(item); const vals=(rows||[]).map(r=>idx?.rowMeta?.get?.(r)?.dateMs||parseDateOnly(researchFieldValue(r,col,item.source))?.getTime()).filter(Number.isFinite); return vals.length?researchMin(vals):0; }
 function researchGroupLabel(item,r){ const gcfg=researchGearGetForItem(item,'groupField'); if(gcfg.valueLevel==='level1' && item.groupField) return item.groupExpression||researchDisplayFieldLabel(item.groupField,item.groupField); if(!item.groupField&&!item.groupExpression){ const grain=researchAnalysisGrain(item,[r]); if(grain==='teams') return researchRowTeam(r,item.source)||'(blank team)'; if(grain==='representatives') return researchRowRepName(r,item.source)||'(blank representative)'; } return researchGroupKey(item,r); }
 function researchGearGetForItem(item,key){ return {...researchGearDefault(),...((item.gearFilters||{})[key]||{})}; }
 function researchColumnDisplayTitle(item,c){ return String(c?.customTitle||c?.displayTitle||'').trim() || researchColumnLabel(item,c); }
@@ -2634,6 +2828,18 @@ function researchApplyUnmatchedGroupBehavior(groups,item,warnings=[]){
   if(kept.length<groups.length) warnings.push(`${(groups.length-kept.length).toLocaleString()} group${groups.length-kept.length===1?' was':'s were'} excluded because a required cross-source join had no match.`);
   return kept;
 }
+async function researchApplyUnmatchedGroupBehaviorAsync(groups,item,warnings,token){
+  if(item.unmatchedBehavior!=='exclude') return groups;
+  const targets=researchExecutionSources(item).filter(source=>source!==item.source); if(!targets.length) return groups;
+  const kept=[]; let lastYield=performance.now();
+  for(const group of groups){
+    researchThrowIfCancelled(token);
+    if(targets.every(source=>researchRowsForCohort(source,group.rows||[],item.source,item).length>0)) kept.push(group);
+    if(performance.now()-lastYield>12){ await yieldToBrowser(); researchThrowIfCancelled(token); lastYield=performance.now(); }
+  }
+  if(kept.length<groups.length) warnings.push(`${(groups.length-kept.length).toLocaleString()} group${groups.length-kept.length===1?' was':'s were'} excluded because a required cross-source join had no match.`);
+  return kept;
+}
 function researchBoundedTopN(data,limit,compare){
   limit=Math.max(0,Math.floor(Number(limit)||0)); if(!limit||data.length<=limit) return data.slice().sort(compare);
   const heap=[], worse=(a,b)=>compare(a,b)>0;
@@ -2657,7 +2863,7 @@ function researchSortAndLimitData(data,item,hasSecondary){
 function buildResearchHistogramGroups(item,rows,universeRows,warnings=[]){
   const field=item.valueField||item.groupField, pairs=(rows||[]).map(r=>({r,n:evaluateResearchNumericField(r,field,item.source)})).filter(x=>Number.isFinite(x.n)), groups=new Map(), parentTotals=new Map();
   if(!pairs.length){ warnings.push('Histogram requires a numeric value field.'); return {groups,parentTotals}; }
-  const values=pairs.map(x=>x.n), min=Math.min(...values), max=Math.max(...values), auto=(max-min)/Math.max(1,Math.min(20,Math.ceil(Math.sqrt(values.length)))), size=Number(item.bucketSize)>0?Number(item.bucketSize):(auto||1), origin=Math.floor(min/size)*size;
+  const values=pairs.map(x=>x.n), min=researchMin(values), max=researchMax(values), auto=(max-min)/Math.max(1,Math.min(20,Math.ceil(Math.sqrt(values.length)))), size=Number(item.bucketSize)>0?Number(item.bucketSize):(auto||1), origin=Math.floor(min/size)*size;
   pairs.forEach(({r,n})=>{ const index=Math.floor((n-origin)/size), low=origin+index*size, high=low+size, label=`${Number(low.toFixed(6))} – ${Number(high.toFixed(6))}`; if(!groups.has(label)) groups.set(label,{primary:label,secondary:'',rows:[],dateValue:low,binLow:low,binHigh:high}); groups.get(label).rows.push(r); });
   [...groups.values()].sort((a,b)=>a.binLow-b.binLow).forEach(g=>parentTotals.set(g.primary,g.rows.length));
   return {groups:new Map([...groups.entries()].sort((a,b)=>a[1].binLow-b[1].binLow)),parentTotals};
@@ -2670,7 +2876,7 @@ function researchGroupOutput(item,g,outputColumns,ctx){
     return {values:[y],xValue:x};
   }
   if(item.outputType==='box'){
-    const nums=g.rows.map(r=>evaluateResearchNumericField(r,item.valueField,item.source)).filter(Number.isFinite).sort((a,b)=>a-b);
+    const nums=g.rows.map(researchNumericReader(item.valueField,item.source)).filter(Number.isFinite).sort((a,b)=>a-b);
     const box=nums.length?{min:nums[0],q1:researchQuantile(nums,.25),median:researchQuantile(nums,.5),q3:researchQuantile(nums,.75),max:nums[nums.length-1],count:nums.length}:{min:0,q1:0,median:0,q3:0,max:0,count:0};
     return {values:[box.median],box};
   }
@@ -2749,15 +2955,15 @@ function renderResearchDiagnosticsDrawer(){
   els.researchDiagnosticsBody.innerHTML=runs.length?runs.slice(0,10).map(run=>`<div class="researchDiagnosticsRun"><strong>${esc(run.title)}</strong><span class="hint">${new Date(run.at).toLocaleTimeString()} · ${Number(run.totalComputeMs||0).toLocaleString()} ms${run.cacheUsed?' · cached':''}</span><div class="researchTimingGrid">${researchTimingCardsHtml(run)}</div></div>`).join(''):'Run or refresh a Research item to see source preparation, cohort filtering, joining, grouping, calculation, sorting, rendering, and persistence timings.';
 }
 
-function evaluateResearchRawRows(item){ item=effectiveResearchItem(normalizeResearchItem(item)); const cacheKey=researchItemCacheKey(item,'raw'), cached=researchCacheGet(cacheKey); if(cached) return cached; const t0=performance.now(), perf={rowsScanned:0,indexesUsed:[],filters:[],cacheUsed:false,timings:{}}; const warnings=[]; perf.warnings=warnings; attachResearchRuntime(item,warnings); let planned=buildQueryPlan(item.source,{dateColumn:item.dateColumn,startDate:item.startDate,endDate:item.endDate,filters:item.filters||[],item,groupFields:[item.groupField,item.secondaryGroupField,item.panelField],valueFields:[...(item.columns||[]).flatMap(c=>[c.field,c.percentOfField,c.withinCompareField]).filter(Boolean)],customExpressions:[item.groupExpression,item.valueField,item.percentOfField]}); let rows=planned.rows; perf.queryPlan=planned.plan; perf.rowsScanned=planned.plan.initialRows||0; perf.indexesUsed.push(...(planned.plan.steps||[]).filter(s=>s.usedIndex).map(s=>s.name)); if(!rows.length && !getRowsRaw(item.source).length) warnings.push('No imported rows for selected source.'); addTeamFilterWarningsForItem(item,warnings); const hs=getResearchHeaders(item.source); if(item.dateColumn && researchFieldNeedsHeaderWarning(item,item.dateColumn)) warnings.push('Missing header: '+item.dateColumn); rows=applyResearchGearRowFilters(rows,item,warnings); const duplicateMap=buildResearchDuplicateRepMap(researchDuplicateRowsBySource(item,rows),item,{warnings}); rows=applyDuplicateRepFilterToRows(rows,item.source,duplicateMap,{item}); rows=applyGuidedQualificationForNonPercent(rows,item); const dupWarn=researchDuplicateWarning(duplicateMap); if(dupWarn) warnings.push(dupWarn); const cols=(item.columns||[]).filter(c=>c.field).map(c=>({label:c.label||c.field,field:c.field})); const displayCols=cols.length?cols:hs.slice(0,8).map(h=>({label:h,field:h})); const sort=item.sort||'default'; if(sort==='xAsc') rows.sort((a,b)=>String(a[displayCols[0]?.field]??'').localeCompare(String(b[displayCols[0]?.field]??''))); if(sort==='xDesc') rows.sort((a,b)=>String(b[displayCols[0]?.field]??'').localeCompare(String(a[displayCols[0]?.field]??''))); if(sort==='dateAsc'||sort==='dateDesc'){ const col=item.dateColumn||researchDefaultDateColumn(item); rows.sort((a,b)=>((parseDateOnly(researchFieldValue(a,col,item.source))?.getTime()||0)-(parseDateOnly(researchFieldValue(b,col,item.source))?.getTime()||0))*(sort==='dateDesc'?-1:1)); } if(item.rowLimit) rows=rows.slice(0,item.rowLimit); const prep=state.researchLastPreparation?.itemId===item.id?state.researchLastPreparation:null; perf.sourcePreparationMs=prep?.totalMs||0; perf.preparedSources=prep?.sources||[]; perf.totalComputeMs=Math.round(performance.now()-t0); perf.timings.queryPlanMs=perf.totalComputeMs; console.info('[Research Builder]',perf); return researchCacheSet(cacheKey,{rows,warnings,columns:displayCols,duplicateMap},perf); }
+function evaluateResearchRawRows(item){ item=effectiveResearchItem(normalizeResearchItem(item)); const cacheKey=researchItemCacheKey(item,'raw'), cached=researchCacheGet(cacheKey); if(cached) return cached; const t0=performance.now(), perf={rowsScanned:0,indexesUsed:[],filters:[],cacheUsed:false,timings:{}}; const warnings=[]; perf.warnings=warnings; attachResearchRuntime(item,warnings); let planned=buildQueryPlan(item.source,{dateColumn:item.dateColumn,startDate:item.startDate,endDate:item.endDate,filters:item.filters||[],item,groupFields:[item.groupField,item.secondaryGroupField,item.panelField],valueFields:[...(item.columns||[]).flatMap(c=>[c.field,c.percentOfField,c.withinCompareField]).filter(Boolean)],customExpressions:[item.groupExpression,item.valueField,item.percentOfField]}); let rows=planned.rows; perf.queryPlan=planned.plan; perf.rowsScanned=planned.plan.initialRows||0; perf.indexesUsed.push(...(planned.plan.steps||[]).filter(s=>s.usedIndex).map(s=>s.name)); if(!rows.length && !getRowsRaw(item.source).length) warnings.push('No imported rows for selected source.'); addTeamFilterWarningsForItem(item,warnings); const hs=getResearchHeaders(item.source); if(item.dateColumn && researchFieldNeedsHeaderWarning(item,item.dateColumn)) warnings.push('Missing header: '+item.dateColumn); rows=applyResearchGearRowFilters(rows,item,warnings); const duplicateMap=buildResearchDuplicateRepMap(item.filterDuplicateReps?researchDuplicateRowsBySource(item,rows):new Map(),item,{warnings}); rows=applyDuplicateRepFilterToRows(rows,item.source,duplicateMap,{item}); rows=applyGuidedQualificationForNonPercent(rows,item); const dupWarn=researchDuplicateWarning(duplicateMap); if(dupWarn) warnings.push(dupWarn); const cols=(item.columns||[]).filter(c=>c.field).map(c=>({label:c.label||c.field,field:c.field})); const displayCols=cols.length?cols:hs.slice(0,8).map(h=>({label:h,field:h})); const sort=item.sort||'default'; if(sort==='xAsc') rows.sort((a,b)=>String(a[displayCols[0]?.field]??'').localeCompare(String(b[displayCols[0]?.field]??''))); if(sort==='xDesc') rows.sort((a,b)=>String(b[displayCols[0]?.field]??'').localeCompare(String(a[displayCols[0]?.field]??''))); if(sort==='dateAsc'||sort==='dateDesc'){ const col=item.dateColumn||researchDefaultDateColumn(item); rows.sort((a,b)=>((parseDateOnly(researchFieldValue(a,col,item.source))?.getTime()||0)-(parseDateOnly(researchFieldValue(b,col,item.source))?.getTime()||0))*(sort==='dateDesc'?-1:1)); } if(item.rowLimit) rows=rows.slice(0,item.rowLimit); const prep=state.researchLastPreparation?.itemId===item.id?state.researchLastPreparation:null; perf.sourcePreparationMs=prep?.totalMs||0; perf.preparedSources=prep?.sources||[]; perf.totalComputeMs=Math.round(performance.now()-t0); perf.timings.queryPlanMs=perf.totalComputeMs; console.info('[Research Builder]',perf); return researchCacheSet(cacheKey,{rows,warnings,columns:displayCols,duplicateMap},perf,item); }
 function evaluateResearchItem(item){
   item=effectiveResearchItem(normalizeResearchItem(item));
-  const cacheKey=researchItemCacheKey(item,'agg'), cached=researchCacheGet(cacheKey); if(cached) return cached; const t0=performance.now(), perf={rowsScanned:0,indexesUsed:[],filters:[],cacheUsed:false,timings:{}};
+  const cacheKey=researchItemCacheKey(item,'agg'), cached=researchCacheGet(cacheKey); if(cached) return researchCachedPresentation(item,cached); const t0=performance.now(), perf={rowsScanned:0,indexesUsed:[],filters:[],cacheUsed:false,timings:{}};
   const warnings=[]; perf.warnings=warnings; attachResearchRuntime(item,warnings); let planned=buildQueryPlan(item.source,{dateColumn:item.dateColumn,startDate:item.startDate,endDate:item.endDate,filters:item.filters||[],item,groupFields:[item.groupField,item.secondaryGroupField,item.panelField],valueFields:[item.valueField,item.percentOfField,item.withinCompareField,...(item.columns||[]).flatMap(c=>[c.field,c.percentOfField,c.withinCompareField])].filter(Boolean),customExpressions:[item.groupExpression,item.numeratorExpression,item.denominatorExpression,item.percentOfField]}); let rows=planned.rows; perf.queryPlan=planned.plan; perf.rowsScanned=planned.plan.initialRows||0; perf.timings.queryPlanMs=Math.round(performance.now()-t0); const cohortStart=performance.now(); perf.indexesUsed.push(...(planned.plan.steps||[]).filter(s=>s.usedIndex).map(s=>s.name)); if(!rows.length && !getRowsRaw(item.source).length) warnings.push('No imported rows for selected source.'); addTeamFilterWarningsForItem(item,warnings); const hs=getResearchHeaders(item.source);
   [item.dateColumn,item.groupField,item.secondaryGroupField,item.panelField].filter(Boolean).forEach(h=>{ if(researchFieldNeedsHeaderWarning(item,h)) warnings.push('Missing header: '+h); });
   let universeRows=rows.slice();
   rows=applyResearchGearRowFilters(rows,item,warnings);
-  const duplicateMap=buildResearchDuplicateRepMap(researchDuplicateRowsBySource(item,rows),item,{warnings});
+  const duplicateMap=buildResearchDuplicateRepMap(item.filterDuplicateReps?researchDuplicateRowsBySource(item,rows):new Map(),item,{warnings});
   rows=applyDuplicateRepFilterToRows(rows,item.source,duplicateMap,{item});
   universeRows=applyDuplicateRepFilterToRows(universeRows,item.source,duplicateMap,{item});
   if(!researchItemUsesGuidedPercentage(item)){
@@ -2801,7 +3007,7 @@ function evaluateResearchItem(item){
   data=researchSortAndLimitData(data,item,hasSecondary); perf.timings.sortingMs=Math.round(performance.now()-sortingStart);
   const totalValues=(item.outputType==='table'&&item.totals)?outputColumns.map(c=>aggregateResearchValue(item,universeRows,c,{total:universeRows.length||1,parentTotal:universeRows.length||1,warnings})):[];
   const effectiveHasSecondary=hasSecondary || (item.outputType==='line' && item.groupMultiAdd);
-  const reconciliation=researchReconciliationResult(item,universeRows,outputColumns,groupList,warnings), prep=state.researchLastPreparation?.itemId===item.id?state.researchLastPreparation:null; perf.groupsCalculated=groupList.length; perf.sourcePreparationMs=prep?.totalMs||0; perf.preparedSources=prep?.sources||[]; perf.totalComputeMs=Math.round(performance.now()-t0); console.info('[Research Builder]',perf); return researchCacheSet(cacheKey,{valueOnly:true,data,warnings,columns:outputColumns,hasSecondary:effectiveHasSecondary,totalValues,totalRowCount:universeRows.length,duplicateMap,joinDiagnostics:researchJoinStatsSnapshot(item),reconciliation},perf);
+  const reconciliation=researchReconciliationResult(item,universeRows,outputColumns,groupList,warnings), prep=state.researchLastPreparation?.itemId===item.id?state.researchLastPreparation:null; perf.groupsCalculated=groupList.length; perf.sourcePreparationMs=prep?.totalMs||0; perf.preparedSources=prep?.sources||[]; perf.totalComputeMs=Math.round(performance.now()-t0); console.info('[Research Builder]',perf); return researchCacheSet(cacheKey,{valueOnly:true,data,warnings,columns:outputColumns,hasSecondary:effectiveHasSecondary,totalValues,totalRowCount:universeRows.length,duplicateMap,joinDiagnostics:researchJoinStatsSnapshot(item),reconciliation},perf,item);
 }
 
 function researchRowSourceIndex(source,row){ const building=state.researchBuildingRowMeta?.get?.(row); if(Number.isInteger(building?.rowId)&&(!source||building.source===source)) return building.rowId; const idx=sourceIndex(source), meta=idx?.rowMeta?.get?.(row); if(Number.isInteger(meta?.rowId)) return meta.rowId; const stored=row?._rowIndex??row?._sourceRow??row?._row; if(Number.isInteger(stored)) return stored; const rows=getRowsRaw(source)||[], i=rows.indexOf(row); return i>=0?i:null; }
@@ -2974,7 +3180,7 @@ function bindResearchConversationViewerActions(root=document){
 function researchConversationTopSummary(item,result){
   const rows=result.rows||[], dateCol=item.dateColumn||researchDefaultDateColumn(item), dates=rows.map(r=>parseDateOnly(researchFieldValue(r,dateCol,item.source))).filter(Boolean).map(d=>d.getTime()), reps=[...new Set(rows.map(r=>r._rep||r['Agent Name']||r['Associate Name']||r['Associate name']||r['Representative']).filter(Boolean))], teams=[...new Set(rows.map(researchRowTeam).filter(Boolean))];
   const bits=[`Source: ${labelSource(item.source)||item.source}`];
-  if(dates.length) bits.push(`Date: ${new Date(Math.min(...dates)).toLocaleDateString()} – ${new Date(Math.max(...dates)).toLocaleDateString()}`);
+  if(dates.length) bits.push(`Date: ${new Date(researchMin(dates)).toLocaleDateString()} – ${new Date(researchMax(dates)).toLocaleDateString()}`);
   if(reps.length) bits.push(`Person: ${reps.slice(0,3).join(', ')}${reps.length>3?' +'+(reps.length-3)+' more':''}`);
   if(teams.length) bits.push(`Team: ${teams.slice(0,3).join(', ')}${teams.length>3?' +'+(teams.length-3)+' more':''}`);
   return `<div class="researchConversationSummary">${bits.map(b=>`<span class="badge">${esc(b)}</span>`).join('')}</div>`;
@@ -3028,7 +3234,7 @@ function researchChartTraceAttrs(item,result,d){
 }
 function renderResearchBarChart(item,result){
   const data=researchChartData(item,result); if(data.length>20 && !item.rotateLabels) item={...item,rotateLabels:true};
-  const w=900,h=360,p=52, colors=['#b91c1c','#2563eb','#059669','#d97706','#7c3aed','#0891b2','#db2777','#65a30d'], labels=researchChartLabels(data), series=researchChartSeries(data), hasSecondary=!!result.hasSecondary&&series.length>1, stacked=hasSecondary&&item.stackedBars&&!item.groupedBars, vals=data.map(d=>+d.values[0]||0), totals=labels.map(l=>data.filter(d=>d.label===l).reduce((a,d)=>a+(+d.values[0]||0),0)), domainVals=stacked?totals:vals, min=item.axisMin!==''?+item.axisMin:Math.min(0,...domainVals), max=item.axisMax!==''?+item.axisMax:Math.max(1,...domainVals), plotRight=w-(item.showLegend&&hasSecondary?170:20), plotBottom=h-p, yFor=v=>plotBottom-(((+v||0)-min)/(max-min||1))*(h-p*2), xStep=(plotRight-p)/Math.max(1,labels.length), best=Math.max(...vals), worst=Math.min(...vals);
+  const w=900,h=360,p=52, colors=['#b91c1c','#2563eb','#059669','#d97706','#7c3aed','#0891b2','#db2777','#65a30d'], labels=researchChartLabels(data), series=researchChartSeries(data), hasSecondary=!!result.hasSecondary&&series.length>1, stacked=hasSecondary&&item.stackedBars&&!item.groupedBars, vals=data.map(d=>+d.values[0]||0), totals=labels.map(l=>data.filter(d=>d.label===l).reduce((a,d)=>a+(+d.values[0]||0),0)), domainVals=stacked?totals:vals, min=item.axisMin!==''?+item.axisMin:researchMin(domainVals,0), max=item.axisMax!==''?+item.axisMax:researchMax(domainVals,1), plotRight=w-(item.showLegend&&hasSecondary?170:20), plotBottom=h-p, yFor=v=>plotBottom-(((+v||0)-min)/(max-min||1))*(h-p*2), xStep=(plotRight-p)/Math.max(1,labels.length), best=researchMax(vals), worst=researchMin(vals);
   let bars='';
   if(item.barOrientation==='horizontal'){
     const xFor=v=>p+(((+v||0)-min)/(max-min||1))*(plotRight-p-10), rowH=(h-p*2)/Math.max(1,data.length); bars=data.map((d,i)=>{ const v=+d.values[0]||0, y=p+i*rowH+3, bw=Math.max(0,xFor(v)-p), c=(item.highlightBest&&v===best)?'#16a34a':(item.highlightWorst&&v===worst)?'#dc2626':colors[Math.max(0,series.indexOf(d.secondary||''))%colors.length]; return `<rect${researchChartTraceAttrs(item,result,d)} x="${p}" y="${y}" width="${bw}" height="${Math.max(6,rowH-6)}" fill="${c}"><title>${esc(d.secondary?d.label+' / '+d.secondary:d.label)}: ${formatResearchValue(v,item)}</title></rect><text x="${p-6}" y="${y+rowH/2}" text-anchor="end" font-size="10">${esc(researchShortLabel(d.label,item,18))}</text>${item.showValues?`<text x="${p+bw+4}" y="${y+rowH/2}" font-size="11" font-weight="700">${formatResearchValue(v,item)}</text>`:''}`; }).join('');
@@ -3040,7 +3246,7 @@ function renderResearchBarChart(item,result){
 }
 function renderResearchLineChart(item,result){
   const data=researchChartData(item,result); if(researchChartLabels(data).length>20 && !item.rotateLabels) item={...item,rotateLabels:true};
-  const w=900,h=360,p=52, colors=['#b91c1c','#2563eb','#059669','#d97706','#7c3aed','#0891b2','#db2777','#65a30d'], labels=researchChartLabels(data), series=result.hasSecondary?researchChartSeries(data):[''], vals=data.map(d=>+d.values[0]||0), plotRight=w-(item.showLegend&&series.length>1?170:20), max=item.axisMax!==''?+item.axisMax:Math.max(1,...vals), min=item.axisMin!==''?+item.axisMin:Math.min(0,...vals), xFor=i=>p+(i*(plotRight-p)/Math.max(1,labels.length-1)), yFor=v=>h-p-(((+v||0)-min)/(max-min||1))*(h-p*2), best=Math.max(...vals), worst=Math.min(...vals);
+  const w=900,h=360,p=52, colors=['#b91c1c','#2563eb','#059669','#d97706','#7c3aed','#0891b2','#db2777','#65a30d'], labels=researchChartLabels(data), series=result.hasSecondary?researchChartSeries(data):[''], vals=data.map(d=>+d.values[0]||0), plotRight=w-(item.showLegend&&series.length>1?170:20), max=item.axisMax!==''?+item.axisMax:researchMax(vals,1), min=item.axisMin!==''?+item.axisMin:researchMin(vals,0), xFor=i=>p+(i*(plotRight-p)/Math.max(1,labels.length-1)), yFor=v=>h-p-(((+v||0)-min)/(max-min||1))*(h-p*2), best=researchMax(vals), worst=researchMin(vals);
   const lines=series.map((sec,si)=>{ const pts=labels.map((lab,li)=>{ const d=result.hasSecondary?data.find(x=>x.label===lab && (x.secondary||'')===sec):data[li]; return [xFor(li),yFor(d?d.values[0]:0),d]; }); const color=colors[si%colors.length]; return `<path fill="none" stroke="${color}" stroke-width="3" d="${researchLinePath(pts,item.smoothLine)}"/>${pts.map(([x,y,d])=>{ const v=+(d?.values?.[0]||0), fill=(item.highlightBest&&v===best)?'#16a34a':(item.highlightWorst&&v===worst)?'#dc2626':color; return `${item.useDots?`<circle${d?researchChartTraceAttrs(item,result,d):''} cx="${x}" cy="${y}" r="4" fill="${fill}"><title>${esc((sec?sec+' / ':'')+(d?.label||''))}: ${d?formatResearchValue(d.values[0],item):''}</title></circle>`:''}${item.showValues&&d?`<text x="${x}" y="${Math.max(14,y-8)}" text-anchor="middle" font-size="11" font-weight="700">${formatResearchValue(d.values[0],item)}</text>`:''}${item.showDateLabels&&d&&researchDateLikeLabel(d.label)?`<text x="${x+6}" y="${y+14}" font-size="9" fill="#334155">${esc(researchShortLabel(d.label,item,12))}</text>`:''}`; }).join('')}`; }).join('');
   const labelSvg=labels.map((lab,i)=>researchAxisLabelSvg(xFor(i),h-14,lab,item)).join('');
   const legend=(item.showLegend&&series.length>1)?`<g transform="translate(${plotRight+12},34)"><text x="0" y="-14" font-size="12" font-weight="700">${esc(item.secondaryGroupField||'Legend')}</text>${series.map((s,i)=>`<line x1="0" x2="13" y1="${i*18+6}" y2="${i*18+6}" stroke="${colors[i%colors.length]}" stroke-width="3"/><text x="18" y="${i*18+10}" font-size="11">${esc(researchShortLabel(s,item,24))}</text>`).join('')}</g>`:'';
@@ -3056,7 +3262,7 @@ function researchCorrelation(points){
 function renderResearchScatterChart(item,result){
   let data=researchChartData(item,result).filter(d=>Number.isFinite(+d.xValue)&&Number.isFinite(+d.values?.[0])).map(d=>({...d,x:+d.xValue,y:+d.values[0]}));
   if(!data.length) return '<div class="researchWarn">Scatter plots require a numeric Group / X axis field and numeric Y axis result.</div>';
-  const w=900,h=390,p=58,minX=Math.min(...data.map(d=>d.x)),maxX=Math.max(...data.map(d=>d.x)),minY=Math.min(...data.map(d=>d.y)),maxY=Math.max(...data.map(d=>d.y)),x=v=>p+(v-minX)/(maxX-minX||1)*(w-p-25),y=v=>h-p-(v-minY)/(maxY-minY||1)*(h-p-25),fit=researchCorrelation(data), colors=['#b91c1c','#2563eb','#059669','#d97706','#7c3aed','#0891b2'], series=researchChartSeries(data), colorFor=d=>colors[Math.max(0,series.indexOf(d.secondary||''))%colors.length];
+  const w=900,h=390,p=58,minX=researchMin(data.map(d=>d.x)),maxX=researchMax(data.map(d=>d.x)),minY=researchMin(data.map(d=>d.y)),maxY=researchMax(data.map(d=>d.y)),x=v=>p+(v-minX)/(maxX-minX||1)*(w-p-25),y=v=>h-p-(v-minY)/(maxY-minY||1)*(h-p-25),fit=researchCorrelation(data), colors=['#b91c1c','#2563eb','#059669','#d97706','#7c3aed','#0891b2'], series=researchChartSeries(data), colorFor=d=>colors[Math.max(0,series.indexOf(d.secondary||''))%colors.length];
   const grid=[0,.25,.5,.75,1].map(t=>{ const xx=p+t*(w-p-25), yy=h-p-t*(h-p-25); return `<line x1="${xx}" x2="${xx}" y1="20" y2="${h-p}" stroke="#e5e7eb"/><line x1="${p}" x2="${w-25}" y1="${yy}" y2="${yy}" stroke="#e5e7eb"/>`; }).join('');
   const points=data.map(d=>`<circle cx="${x(d.x)}" cy="${y(d.y)}" r="5" fill="${colorFor(d)}" opacity=".82" ${researchChartTraceAttrs(item,result,d)}><title>${esc(d.label)}: ${d.x}, ${formatResearchValue(d.y,item)}</title></circle>`).join('');
   const trend=data.length>1?`<line x1="${x(minX)}" y1="${y(fit.intercept+fit.slope*minX)}" x2="${x(maxX)}" y2="${y(fit.intercept+fit.slope*maxX)}" stroke="#111827" stroke-width="2" stroke-dasharray="7 5"/>`:'';
@@ -3065,7 +3271,7 @@ function renderResearchScatterChart(item,result){
 function renderResearchHeatmapChart(item,result){
   const data=researchChartData(item,result), xs=researchChartLabels(data), ys=[...new Set(data.map(d=>d.secondary||'(none)'))];
   if(!data.length||!ys.length||ys.length===1&&ys[0]==='(none)') return '<div class="researchWarn">Heatmaps require a secondary group / series field.</div>';
-  const values=data.map(d=>+d.values[0]||0), min=Math.min(...values), max=Math.max(...values), cellW=Math.max(42,Math.min(100,760/Math.max(1,xs.length))),cellH=34,pL=150,pT=50,w=pL+xs.length*cellW+25,h=pT+ys.length*cellH+45,shade=v=>{ const t=(v-min)/(max-min||1), b=Math.round(245-150*t), g=Math.round(248-115*t); return `rgb(${Math.round(239-209*t)},${g},${b})`; };
+  const values=data.map(d=>+d.values[0]||0), min=researchMin(values), max=researchMax(values), cellW=Math.max(42,Math.min(100,760/Math.max(1,xs.length))),cellH=34,pL=150,pT=50,w=pL+xs.length*cellW+25,h=pT+ys.length*cellH+45,shade=v=>{ const t=(v-min)/(max-min||1), b=Math.round(245-150*t), g=Math.round(248-115*t); return `rgb(${Math.round(239-209*t)},${g},${b})`; };
   const cells=data.map(d=>{ const xi=xs.indexOf(d.label),yi=ys.indexOf(d.secondary||'(none)'),v=+d.values[0]||0; return `<g ${researchChartTraceAttrs(item,result,d)}><rect x="${pL+xi*cellW}" y="${pT+yi*cellH}" width="${cellW-2}" height="${cellH-2}" rx="4" fill="${shade(v)}"/><text x="${pL+xi*cellW+(cellW-2)/2}" y="${pT+yi*cellH+21}" text-anchor="middle" font-size="11" fill="${(v-min)/(max-min||1)>.55?'#fff':'#111827'}">${esc(formatResearchValue(v,item))}</text></g>`; }).join('');
   const xLabels=xs.map((v,i)=>`<text x="${pL+i*cellW+cellW/2}" y="42" text-anchor="end" transform="rotate(-35 ${pL+i*cellW+cellW/2} 42)" font-size="10">${esc(researchShortLabel(v,item,18))}</text>`).join(''), yLabels=ys.map((v,i)=>`<text x="${pL-8}" y="${pT+i*cellH+21}" text-anchor="end" font-size="11">${esc(researchShortLabel(v,item,22))}</text>`).join('');
   return `<div class="researchHeatLegend"><span>${formatResearchValue(min,item)}</span><span class="researchHeatRamp"></span><span>${formatResearchValue(max,item)}</span></div>${researchChartClipNote(data)}<div class="researchChartWrap"><svg class="researchChart" data-research-svg="${esc(item.id)}" viewBox="0 0 ${w} ${h}" style="min-width:${Math.max(760,w)}px;height:${Math.max(360,h)}px">${xLabels}${yLabels}${cells}</svg></div>`;
@@ -3073,7 +3279,7 @@ function renderResearchHeatmapChart(item,result){
 function renderResearchBoxChart(item,result){
   const data=researchChartData(item,result).filter(d=>d.box?.count);
   if(!data.length) return '<div class="researchWarn">Box plots require a numeric Y axis field.</div>';
-  const w=900,h=390,p=55,min=Math.min(...data.map(d=>d.box.min)),max=Math.max(...data.map(d=>d.box.max)),y=v=>h-p-(v-min)/(max-min||1)*(h-p-25),step=(w-p-20)/Math.max(1,data.length),boxes=data.map((d,i)=>{ const cx=p+i*step+step/2,b=d.box,bw=Math.min(38,step*.55); return `<g ${researchChartTraceAttrs(item,result,d)}><line x1="${cx}" x2="${cx}" y1="${y(b.min)}" y2="${y(b.max)}" stroke="#334155"/><line x1="${cx-bw/3}" x2="${cx+bw/3}" y1="${y(b.min)}" y2="${y(b.min)}" stroke="#334155"/><line x1="${cx-bw/3}" x2="${cx+bw/3}" y1="${y(b.max)}" y2="${y(b.max)}" stroke="#334155"/><rect x="${cx-bw/2}" y="${y(b.q3)}" width="${bw}" height="${Math.max(2,y(b.q1)-y(b.q3))}" fill="#bfdbfe" stroke="#1d4ed8"/><line x1="${cx-bw/2}" x2="${cx+bw/2}" y1="${y(b.median)}" y2="${y(b.median)}" stroke="#991b1b" stroke-width="2"/><title>${esc(d.label)}: min ${b.min}, Q1 ${b.q1}, median ${b.median}, Q3 ${b.q3}, max ${b.max}</title><text x="${cx}" y="${h-18}" text-anchor="end" transform="rotate(-35 ${cx} ${h-18})" font-size="10">${esc(researchShortLabel(d.label,item,16))}</text></g>`; }).join('');
+  const w=900,h=390,p=55,min=researchMin(data.map(d=>d.box.min)),max=researchMax(data.map(d=>d.box.max)),y=v=>h-p-(v-min)/(max-min||1)*(h-p-25),step=(w-p-20)/Math.max(1,data.length),boxes=data.map((d,i)=>{ const cx=p+i*step+step/2,b=d.box,bw=Math.min(38,step*.55); return `<g ${researchChartTraceAttrs(item,result,d)}><line x1="${cx}" x2="${cx}" y1="${y(b.min)}" y2="${y(b.max)}" stroke="#334155"/><line x1="${cx-bw/3}" x2="${cx+bw/3}" y1="${y(b.min)}" y2="${y(b.min)}" stroke="#334155"/><line x1="${cx-bw/3}" x2="${cx+bw/3}" y1="${y(b.max)}" y2="${y(b.max)}" stroke="#334155"/><rect x="${cx-bw/2}" y="${y(b.q3)}" width="${bw}" height="${Math.max(2,y(b.q1)-y(b.q3))}" fill="#bfdbfe" stroke="#1d4ed8"/><line x1="${cx-bw/2}" x2="${cx+bw/2}" y1="${y(b.median)}" y2="${y(b.median)}" stroke="#991b1b" stroke-width="2"/><title>${esc(d.label)}: min ${b.min}, Q1 ${b.q1}, median ${b.median}, Q3 ${b.q3}, max ${b.max}</title><text x="${cx}" y="${h-18}" text-anchor="end" transform="rotate(-35 ${cx} ${h-18})" font-size="10">${esc(researchShortLabel(d.label,item,16))}</text></g>`; }).join('');
   return `${researchChartClipNote(data)}<div class="researchChartWrap"><svg class="researchChart" data-research-svg="${esc(item.id)}" viewBox="0 0 ${w} ${h}"><line x1="${p}" x2="${p}" y1="20" y2="${h-p}" stroke="#111827"/><line x1="${p}" x2="${w-20}" y1="${h-p}" y2="${h-p}" stroke="#111827"/>${boxes}</svg></div>`;
 }
 function renderResearchPieChart(item,result){
@@ -3097,15 +3303,15 @@ function researchCanvasColor(index){ return ['#b91c1c','#2563eb','#059669','#d97
 function drawResearchCanvasChart(canvas,config){
   const {item,result}=config, data=config.data||[], rect=canvas.getBoundingClientRect(), width=Math.max(760,Math.round(rect.width||900)), height=390, ratio=Math.max(1,Math.min(2,window.devicePixelRatio||1));
   canvas.width=Math.round(width*ratio); canvas.height=Math.round(height*ratio); const ctx=canvas.getContext('2d'); if(!ctx) return; ctx.setTransform(ratio,0,0,ratio,0,0); ctx.clearRect(0,0,width,height); ctx.fillStyle='#fff'; ctx.fillRect(0,0,width,height);
-  const pL=58,pR=24,pT=24,pB=55,plotW=width-pL-pR,plotH=height-pT-pB, values=data.map(d=>Number(d.values?.[0])||0), minY=item.axisMin!==''?Number(item.axisMin):Math.min(0,...values), maxY=item.axisMax!==''?Number(item.axisMax):Math.max(1,...values), yFor=v=>pT+plotH-(Number(v)-minY)/(maxY-minY||1)*plotH, hits=[], series=researchChartSeries(data);
+  const pL=58,pR=24,pT=24,pB=55,plotW=width-pL-pR,plotH=height-pT-pB, values=data.map(d=>Number(d.values?.[0])||0), minY=item.axisMin!==''?Number(item.axisMin):researchMin(values,0), maxY=item.axisMax!==''?Number(item.axisMax):researchMax(values,1), yFor=v=>pT+plotH-(Number(v)-minY)/(maxY-minY||1)*plotH, hits=[], series=researchChartSeries(data);
   ctx.strokeStyle='#e5e7eb'; ctx.fillStyle='#64748b'; ctx.font='10px system-ui'; ctx.textAlign='right';
   for(let i=0;i<=4;i++){ const y=pT+i*plotH/4,v=maxY-(maxY-minY)*i/4; ctx.beginPath(); ctx.moveTo(pL,y); ctx.lineTo(width-pR,y); ctx.stroke(); ctx.fillText(formatResearchValue(v,item),pL-6,y+3); }
   ctx.strokeStyle='#111827'; ctx.beginPath(); ctx.moveTo(pL,pT); ctx.lineTo(pL,height-pB); ctx.lineTo(width-pR,height-pB); ctx.stroke();
   if(item.outputType==='scatter'){
-    const points=data.map(d=>({d,x:Number(d.xValue),y:Number(d.values?.[0])})).filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)), minX=Math.min(...points.map(p=>p.x)),maxX=Math.max(...points.map(p=>p.x)),xFor=v=>pL+(v-minX)/(maxX-minX||1)*plotW;
+    const points=data.map(d=>({d,x:Number(d.xValue),y:Number(d.values?.[0])})).filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)), minX=researchMin(points.map(p=>p.x)),maxX=researchMax(points.map(p=>p.x)),xFor=v=>pL+(v-minX)/(maxX-minX||1)*plotW;
     points.forEach(point=>{ const x=xFor(point.x),y=yFor(point.y); ctx.fillStyle=researchCanvasColor(series.indexOf(point.d.secondary||'')); ctx.beginPath(); ctx.arc(x,y,3.5,0,Math.PI*2); ctx.fill(); hits.push({x:x-6,y:y-6,w:12,h:12,d:point.d}); });
   }else if(item.outputType==='heatmap'){
-    const xs=researchChartLabels(data),ys=[...new Set(data.map(d=>d.secondary||'(none)'))],cellW=plotW/Math.max(1,xs.length),cellH=plotH/Math.max(1,ys.length),lo=Math.min(...values),hi=Math.max(...values);
+    const xs=researchChartLabels(data),ys=[...new Set(data.map(d=>d.secondary||'(none)'))],cellW=plotW/Math.max(1,xs.length),cellH=plotH/Math.max(1,ys.length),lo=researchMin(values),hi=researchMax(values);
     data.forEach(d=>{ const x=pL+xs.indexOf(d.label)*cellW,y=pT+ys.indexOf(d.secondary||'(none)')*cellH,t=((Number(d.values?.[0])||0)-lo)/(hi-lo||1); ctx.fillStyle=`rgb(${Math.round(239-209*t)},${Math.round(248-115*t)},${Math.round(245-150*t)})`; ctx.fillRect(x,y,Math.max(1,cellW-.5),Math.max(1,cellH-.5)); hits.push({x,y,w:cellW,h:cellH,d}); });
   }else if(item.outputType==='line'){
     const labels=researchChartLabels(data), xFor=i=>pL+i*plotW/Math.max(1,labels.length-1), lines=result.hasSecondary?series:[''];
@@ -3206,8 +3412,8 @@ function researchCompactColumnForStorage(item,c){ return {label:c?.label||'',dis
 function researchCellPresentationSnapshot(value,item,col,rows=[],ctx={},warnings=[]){ const pres=researchColumnCellPresentation(value,item,col,rows,ctx,warnings); return {raw:value,text:pres.text,html:pres.html,style:pres.style||''}; }
 function researchCompactRenderedResult(item,result){
   console.time('[Research Builder] compact result save');
-  const source=clonePlain(result||{}), renderedAt=new Date().toISOString(), columns=(source.columns||[]).map(c=>researchCompactColumnForStorage(item,c));
-  const compact={valueOnly:true,version:4,outputType:item.outputType,title:item.title||'',renderedAt,joinDiagnostics:source.joinDiagnostics||null,reconciliation:source.reconciliation||null,perf:source.perf?{...source.perf,warnings:undefined}:null,warnings:(source.warnings||[]).map(String).slice(0,25),columns,hasSecondary:!!source.hasSecondary,rowCount:0,columnCount:columns.length,display:{showValues:!!item.showValues,showLegend:item.showLegend!==false,showGridlines:item.showGridlines!==false,barOrientation:item.barOrientation||'vertical',stackedBars:!!item.stackedBars,groupedBars:item.groupedBars!==false,axisMin:item.axisMin??'',axisMax:item.axisMax??'',rotateLabels:!!item.rotateLabels,wrapLabels:item.wrapLabels!==false,smoothLine:!!item.smoothLine,useDots:item.useDots!==false,showPercent:!!item.showPercent,decimals:item.decimals??1,panelField:item.panelField||''}};
+  const source={...(result||{}),warnings:[...(result?.warnings||[])]}, renderedAt=new Date().toISOString(), columns=(source.columns||[]).map(c=>researchCompactColumnForStorage(item,c));
+  const compact={valueOnly:true,version:4,outputType:item.outputType,title:item.title||'',renderedAt,lineage:source.lineage||researchResultLineage(item,result),totalRowCount:source.totalRowCount||0,joinDiagnostics:source.joinDiagnostics||null,reconciliation:source.reconciliation||null,perf:source.perf?{...source.perf,warnings:undefined}:null,warnings:(source.warnings||[]).map(String).slice(0,25),columns,hasSecondary:!!source.hasSecondary,rowCount:0,columnCount:columns.length,display:{showValues:!!item.showValues,showLegend:item.showLegend!==false,showGridlines:item.showGridlines!==false,barOrientation:item.barOrientation||'vertical',stackedBars:!!item.stackedBars,groupedBars:item.groupedBars!==false,axisMin:item.axisMin??'',axisMax:item.axisMax??'',rotateLabels:!!item.rotateLabels,wrapLabels:item.wrapLabels!==false,smoothLine:!!item.smoothLine,useDots:item.useDots!==false,showPercent:!!item.showPercent,decimals:item.decimals??1,panelField:item.panelField||''}};
   if(item.outputType==='table'){
     compact.data=(source.data||[]).map(r=>({label:r.label??'',secondary:r.secondary??'',panel:r.panel??'',values:[...(r.values||[])],cells:(r.values||[]).map((v,i)=>researchCellPresentationSnapshot(v,item,(source.columns||[])[i]||{},[],{},source.warnings||[])),rows:Number(r.rows||0),dateValue:r.dateValue||0}));
     compact.totalValues=Array.isArray(source.totalValues)?[...source.totalValues]:[];
@@ -3286,8 +3492,9 @@ async function migrateLegacyResearchRenderedResults(){
 async function researchSaveRenderedResult(item,result){
   const idx=(state.researchItems||[]).findIndex(x=>x.id===item.id);
   if(idx<0) return false;
-  const renderedAt=new Date().toISOString();
-  try{ await researchRenderedResultPut(item,researchCompactRenderedResult(item,result),renderedAt); state.researchItems[idx].renderedResult={version:2,outputType:item.outputType,renderedAt,id:item.id,storedIn:'indexedDB'}; persistResearchItemsToLocalStorage(); return true; }
+  const renderedAt=new Date().toISOString(), generation={};
+  state.researchSaveGenerations=state.researchSaveGenerations||new Map(); state.researchSaveGenerations.set(item.id,generation);
+  try{ await researchRenderedResultPut(item,researchCompactRenderedResult(item,result),renderedAt); const current=(state.researchItems||[]).find(x=>x.id===item.id); if(!current||state.researchSaveGenerations.get(item.id)!==generation) return false; current.renderedResult={version:2,outputType:item.outputType,renderedAt,id:item.id,storedIn:'indexedDB'}; persistResearchItemsToLocalStorage(); return true; }
   catch(e){ console.error('[Research Builder] rendered result storage failed',e); persistResearchItemsToLocalStorage(); return false; }
 }
 async function researchStoredResultBodyAsync(item){
@@ -3300,7 +3507,18 @@ function renderGuidedSummaryCards(item,res){
   const col=res.columns?.[0]||{}, data=(res.data||[]).slice(0,item.rowLimit||24);
   return `<div class="guidedSummaryCards">${data.map(d=>`<div class="guidedSummaryCard"><strong>${esc(d.label||'Overall')}${d.secondary?` • ${esc(d.secondary)}`:''}</strong><span>${formatResearchValue(d.values?.[0],item,col)}</span></div>`).join('')||'<div class="researchWarn">No matching results.</div>'}</div>`;
 }
+function configureResearchCharts(){
+  if(typeof AllStarCharts==='undefined') return;
+  AllStarCharts.configure({
+    resolveResult:async itemId=>{ const item=(state.researchItems||[]).find(row=>row.id===itemId); if(!item) return null; const result=item.renderedResult?.result||await researchRenderedResultGet(itemId); return result?{item,result}:null; },
+    onDrill:(item,row,columnIndex,result)=>{ const column=result.columns?.[columnIndex]||{}, value=row.values?.[columnIndex]; openResearchCellDrilldown(researchDrilldownToken(item,row,columnIndex,column,value,formatResearchValue(value,item,column))); }
+  });
+}
 function renderResearchResultByDisplay(item,res){
+  const actions=typeof AllStarCharts!=='undefined'&&Array.isArray(res.data)?AllStarCharts.resultActions(item,res):'';
+  return actions+renderResearchResultContent(item,res);
+}
+function renderResearchResultContent(item,res){
   if(item.guidedDisplay==='summary_cards') return renderGuidedSummaryCards(item,res);
   if(item.guidedDisplay==='table_chart') return `${renderResearchVisualization(item,res)}<div style="margin-top:12px">${renderResearchTable(item,res)}</div>`;
   return item.outputType==='conversation'?renderResearchConversationViewer(item,res):(item.outputType==='table'?renderResearchTable(item,res):renderResearchVisualization(item,res));
@@ -3352,29 +3570,75 @@ function researchWorkerMeasurePlan(item,outputColumns,groupList){
   if(!measures.length||measures.some(m=>!m.def||!m.resolved?.compatible||m.resolved.source!==item.source)) return null;
   return {rowCount,measures};
 }
-async function evaluateResearchTypedWorker(item,groupList,outputColumns,warnings=[]){
+async function evaluateResearchTypedWorker(item,groupList,outputColumns,warnings=[],token){
+  researchThrowIfCancelled(token);
   const plan=researchWorkerMeasurePlan(item,outputColumns,groupList); if(!plan) return null;
   const groupIndex=new Uint32Array(plan.rowCount), entityNumbers=new Uint32Array(plan.rowCount), columns=plan.measures.map(({col,resolved})=>{ const a=new Float64Array(plan.rowCount),b=resolved.aggregation==='weighted_rate'?new Float64Array(plan.rowCount):null; a.fill(NaN); if(b)b.fill(NaN); return {aggregation:resolved.aggregation,behavior:col?.missingBehavior||item.missingBehavior||resolved.missingBehavior||'missing',label:resolved.label,a,b,resolved}; }), metas=groupList.map(g=>({label:g.primary,secondary:g.secondary||'',panel:g.panel||'',rows:g.rows?.length||0,dateValue:Number.isFinite(g.dateValue)?g.dateValue:researchSortDateValue(item,g.rows||[])}));
   const idx=sourceIndex(item.source); let offset=0;
-  for(let gi=0;gi<groupList.length;gi++) for(const row of (groupList[gi].rows||[])){ groupIndex[offset]=gi; entityNumbers[offset]=idx?.rowMeta?.get?.(row)?.entityNumber||0; columns.forEach(col=>{ if(['sum','avg','min','max'].includes(col.aggregation)) col.a[offset]=evaluateResearchNumericField(row,col.resolved.valueField,item.source); else if(col.aggregation==='weighted_rate'){ col.a[offset]=evaluateResearchNumericField(row,col.resolved.numeratorField,item.source); col.b[offset]=evaluateResearchNumericField(row,col.resolved.denominatorField,item.source); } }); offset++; if(offset%2000===0) await yieldToBrowser(); }
+  for(let gi=0;gi<groupList.length;gi++) for(const row of (groupList[gi].rows||[])){ groupIndex[offset]=gi; entityNumbers[offset]=idx?.rowMeta?.get?.(row)?.entityNumber||0; columns.forEach(col=>{ if(['sum','avg','min','max'].includes(col.aggregation)) col.a[offset]=evaluateResearchNumericField(row,col.resolved.valueField,item.source); else if(col.aggregation==='weighted_rate'){ col.a[offset]=evaluateResearchNumericField(row,col.resolved.numeratorField,item.source); col.b[offset]=evaluateResearchNumericField(row,col.resolved.denominatorField,item.source); } }); offset++; if(offset%2000===0){ await yieldToBrowser(); researchThrowIfCancelled(token); } }
   const workerSource=`self.onmessage=e=>{const p=e.data,acc=p.metas.map(()=>({rows:0,cols:p.defs.map(()=>({sum:0,count:0,num:0,den:0,missing:0,unique:new Set()}))}));for(let i=0;i<p.groupIndex.length;i++){const g=acc[p.groupIndex[i]];g.rows++;for(let c=0;c<p.defs.length;c++){const d=p.defs[c],s=g.cols[c],a=p.a[c][i],b=p.b[c]?p.b[c][i]:NaN;if(d.aggregation==='count'){s.count++;continue}if(d.aggregation==='unique_rep'){const u=p.entityNumbers[i];if(u)s.unique.add(u);else s.missing++;continue}if(d.aggregation==='weighted_rate'){if(Number.isFinite(a))s.num+=a;else s.missing++;if(Number.isFinite(b))s.den+=b;else s.missing++;continue}if(Number.isFinite(a)){s.sum+=a;s.count++}else{s.missing++;if(d.behavior==='zero')s.count++}}}const data=p.metas.map((m,g)=>{const values=p.defs.map((d,c)=>{const s=acc[g].cols[c];if(d.aggregation==='count')return s.count;if(d.aggregation==='unique_rep')return s.unique.size;if(d.aggregation==='weighted_rate')return s.den?s.num/s.den*100:(p.zeroBlank?null:0);if(d.aggregation==='avg')return s.count?s.sum/s.count:(d.behavior==='missing'?null:0);return s.sum});return {...m,values}}),missing=p.defs.map((d,c)=>acc.reduce((n,g)=>n+g.cols[c].missing,0));self.postMessage({data,missing})}`;
-  const url=URL.createObjectURL(new Blob([workerSource],{type:'text/javascript'})), worker=new Worker(url), started=performance.now();
+  let url=null, worker=null; const started=performance.now();
   try{
+    researchThrowIfCancelled(token); url=URL.createObjectURL(new Blob([workerSource],{type:'text/javascript'})); worker=new Worker(url);
     const transfer=[groupIndex.buffer,entityNumbers.buffer], a=columns.map(c=>{transfer.push(c.a.buffer);return c.a;}), b=columns.map(c=>{if(c.b)transfer.push(c.b.buffer);return c.b;});
-    const result=await new Promise((resolve,reject)=>{ const timer=setTimeout(()=>reject(new Error('Research worker timed out and will fall back.')),60000); worker.onmessage=e=>{clearTimeout(timer);resolve(e.data);}; worker.onerror=e=>{clearTimeout(timer);reject(new Error(e.message||'Research worker failed'));}; worker.postMessage({groupIndex,entityNumbers,a,b,metas,defs:columns.map(c=>({aggregation:c.aggregation,behavior:c.behavior})),zeroBlank:item.zeroDenominator==='blank'},transfer); });
+    const result=await new Promise((resolve,reject)=>{ const finish=(fn,value)=>{clearTimeout(timer);clearInterval(cancelPoll);fn(value);}, timer=setTimeout(()=>finish(reject,new Error('Research worker timed out and will fall back.')),60000), cancelPoll=setInterval(()=>{try{researchThrowIfCancelled(token);}catch(error){finish(reject,error);}},40); worker.onmessage=e=>finish(resolve,e.data); worker.onerror=e=>finish(reject,new Error(e.message||'Research worker failed')); try{ worker.postMessage({groupIndex,entityNumbers,a,b,metas,defs:columns.map(c=>({aggregation:c.aggregation,behavior:c.behavior})),zeroBlank:item.zeroDenominator==='blank'},transfer); }catch(error){finish(reject,error);} });
+    researchThrowIfCancelled(token);
     result.missing.forEach((count,i)=>{ if(count&&columns[i].behavior==='warn') warnings.push(`${columns[i].label}: ${count.toLocaleString()} blank/non-numeric inputs were excluded by the worker aggregation.`); });
     return {data:result.data,workerMs:Math.round(performance.now()-started)};
-  }catch(error){ console.warn('[Research Builder] Worker aggregation fell back to the main thread',error); return null; }
-  finally{ worker.terminate(); URL.revokeObjectURL(url); }
+  }catch(error){ if(error.name==='AbortError') throw error; console.warn('[Research Builder] Worker aggregation fell back to the main thread',error); return null; }
+  finally{ if(worker) worker.terminate(); if(url) URL.revokeObjectURL(url); }
 }
 
-async function evaluateResearchItemAsync(item, progress={}){
+function researchPopulationCacheKey(item,planned){
+  let descriptor=researchAnalysisCacheItem(item,'population');
+  if(!item.filterDuplicateReps){
+    descriptor={...descriptor,gearFields:Object.fromEntries(Object.keys(item.gearFilters||{}).map(key=>[key,researchGearFieldForKey(item,key,+(key.split(':')[1]||0))])),guidedPercentage:researchItemUsesGuidedPercentage(item)};
+    for(const field of ['id','columns','valueField','valueMode','measureId','percentOfField','withinCompareField','withinDays','withinUseRange','withinRangeMin','withinRangeMax','modelResult','modelId','criteriaId','totals','rowLimit','sort']) delete descriptor[field];
+  }
+  return ['researchPopulationV1',researchMetricRowSignature(planned.rows,item.source),researchExecutionDataSignature(descriptor),researchDefinitionDependencies(descriptor).signature,stableSerialize(descriptor)].join('\u001f');
+}
+function researchCopyJoinStats(stats){
+  if(!stats) return null;
+  return {...stats,seen:new Set(stats.seen||[]),modes:new Set(stats.modes||[]),ambiguityDetails:[...(stats.ambiguityDetails||[])],bySource:new Map([...(stats.bySource||new Map())].map(([key,value])=>[key,{...value,modes:new Set(value.modes||[])}]))};
+}
+async function prepareResearchPopulation(item,planned,warnings,progress={}){
+  researchThrowIfCancelled(progress.token);
+  state.researchPopulationCache=state.researchPopulationCache||new Map();
+  const key=researchPopulationCacheKey(item,planned), hit=researchTouchCache(state.researchPopulationCache,key);
+  if(hit){ hit.warnings.forEach(w=>researchExpressionAddWarning(warnings,w)); if(hit.joinStats) item._joinStats=researchCopyJoinStats(hit.joinStats); return {...hit,cacheHit:true}; }
+  const initialWarnings=warnings.length;
+  let rows=applyResearchGearRowFilters(planned.rows,item,warnings),universeRows=planned.rows.slice();
+  const duplicateMap=buildResearchDuplicateRepMap(item.filterDuplicateReps?researchDuplicateRowsBySource(item,rows):new Map(),item,{warnings});
+  rows=applyDuplicateRepFilterToRows(rows,item.source,duplicateMap,{item}); universeRows=applyDuplicateRepFilterToRows(universeRows,item.source,duplicateMap,{item});
+  researchThrowIfCancelled(progress.token); await yieldToBrowser(); researchThrowIfCancelled(progress.token);
+  if(!researchItemUsesGuidedPercentage(item)){
+    rows=await applyGuidedQualificationForNonPercentAsync(rows,item,{report:(done,total,stage)=>{researchThrowIfCancelled(progress.token); progress.report?.(done,total,stage,.10,.23,'individuals/rows');}});
+    researchThrowIfCancelled(progress.token);
+    universeRows=await applyGuidedQualificationForNonPercentAsync(universeRows,item,{report:(done,total,stage)=>{researchThrowIfCancelled(progress.token); progress.report?.(done,total,stage,.23,.34,'individuals/rows');}});
+  }
+  researchThrowIfCancelled(progress.token);
+  state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(rows,key+'|rows'); state.researchCohortRowSignatures.set(universeRows,key+'|universe');
+  const value={rows,universeRows,duplicateMap,dependencies:researchCacheDependencies(item),warnings:warnings.slice(initialWarnings),joinStats:researchCopyJoinStats(item._joinStats)};
+  researchBoundedRowsCacheSet(state.researchPopulationCache,key,value,30);
+  return {...value,cacheHit:false};
+}
+async function evaluateResearchItemAsync(item,progress={}){
+  state.researchActiveCalculations=state.researchActiveCalculations||new Map();
+  const key=item.id||researchItemCacheKey(item,'agg'), previous=state.researchActiveCalculations.get(key), operation={cancelled:false,parent:progress.token};
+  if(previous) previous.cancelled=true;
+  state.researchActiveCalculations.set(key,operation);
+  try{ return await evaluateResearchItemWorkAsync(item,{...progress,operationToken:operation}); }
+  finally{ if(state.researchActiveCalculations.get(key)===operation) state.researchActiveCalculations.delete(key); }
+}
+async function evaluateResearchItemWorkAsync(item, progress={}){
   progress={start:0,end:100,status:false,...progress};
+  researchThrowIfCancelled(progress.operationToken||progress.token);
   item=effectiveResearchItem(normalizeResearchItem(item));
-  const cacheKey=researchItemCacheKey(item,'agg'), cached=researchCacheGet(cacheKey); if(cached) return cached;
+  const cacheKey=researchItemCacheKey(item,'agg'), cached=researchCacheGet(cacheKey); if(cached) return researchCachedPresentation(item,cached);
   const t0=performance.now(), perf={rowsScanned:0,indexesUsed:[],filters:[],cacheUsed:false,timings:{}};
   const warnings=[]; perf.warnings=warnings; attachResearchRuntime(item,warnings);
   const report=(done,total,stage='Processing research table',stageStart=.34,stageEnd=.94,unit='rows')=>{
+    researchThrowIfCancelled(progress.operationToken||progress.token);
     const safeTotal=Math.max(1,total||0), fraction=Math.min(1,Math.max(0,(done||0)/safeTotal)), local=stageStart+(stageEnd-stageStart)*fraction, pct=progress.start+(progress.end-progress.start)*local, text=`${stage}... ${(done||0).toLocaleString()} / ${(total||0).toLocaleString()} ${unit}`;
     if(progress.token) updateResearchProgress(progress.token,text,pct,{force:true});
     else updateProgress(text,pct,{force:true});
@@ -3382,19 +3646,13 @@ async function evaluateResearchItemAsync(item, progress={}){
   };
   const primaryImported=(getRowsRaw(item.source)||[]).length;
   report(0,primaryImported,`Filtering primary source ${labelSource(item.source)}`,0,.10);
+  await prepareResearchJoinIndexes(item,progress.operationToken||progress.token);
   let planned=buildQueryPlan(item.source,{dateColumn:item.dateColumn,startDate:item.startDate,endDate:item.endDate,filters:item.filters||[],item,groupFields:[item.groupField,item.secondaryGroupField,item.panelField],valueFields:[item.valueField,item.percentOfField,item.withinCompareField,...(item.columns||[]).flatMap(c=>[c.field,c.percentOfField,c.withinCompareField])].filter(Boolean),customExpressions:[item.groupExpression,item.numeratorExpression,item.denominatorExpression,item.percentOfField]});
   let rows=planned.rows; perf.queryPlan=planned.plan; perf.rowsScanned=planned.plan.initialRows||0; perf.timings.queryPlanMs=Math.round(performance.now()-t0); const cohortStart=performance.now(); perf.indexesUsed.push(...(planned.plan.steps||[]).filter(s=>s.usedIndex).map(s=>s.name)); if(!rows.length && !getRowsRaw(item.source).length) warnings.push('No imported rows for selected source.'); addTeamFilterWarningsForItem(item,warnings); const hs=getResearchHeaders(item.source);
   report(primaryImported,primaryImported,`Primary source filtered to ${rows.length.toLocaleString()} candidate rows`,0,.10);
   [item.dateColumn,item.groupField,item.secondaryGroupField,item.panelField].filter(Boolean).forEach(h=>{ if(researchFieldNeedsHeaderWarning(item,h)) warnings.push('Missing header: '+h); });
-  let universeRows=rows.slice();
-  rows=applyResearchGearRowFilters(rows,item,warnings);
-  const duplicateMap=buildResearchDuplicateRepMap(researchDuplicateRowsBySource(item,rows),item,{warnings});
-  rows=applyDuplicateRepFilterToRows(rows,item.source,duplicateMap,{item});
-  universeRows=applyDuplicateRepFilterToRows(universeRows,item.source,duplicateMap,{item});
-  if(!researchItemUsesGuidedPercentage(item)){
-    rows=await applyGuidedQualificationForNonPercentAsync(rows,item,{report:(done,total,stage)=>report(done,total,stage,.10,.23,'individuals/rows')});
-    universeRows=await applyGuidedQualificationForNonPercentAsync(universeRows,item,{report:(done,total,stage)=>report(done,total,stage,.23,.34,'individuals/rows')});
-  }
+  const population=await prepareResearchPopulation(item,planned,warnings,{token:progress.operationToken||progress.token,report});
+  rows=population.rows; let universeRows=population.universeRows; const duplicateMap=population.duplicateMap; perf.populationCacheHit=population.cacheHit;
   const dupWarn=researchDuplicateWarning(duplicateMap); if(dupWarn) warnings.push(dupWarn);
   const mode=item.valueMode||'count'; if(['date_within','date_percent_within'].includes(mode) && !researchFieldLooksDate(item,item.valueField,rows)) warnings.push('This dates-within mode requires a date field.'); (item.columns||[]).forEach(c=>{ if(['date_within','date_percent_within'].includes(c.mode) && !researchFieldLooksDate(item,c.field,rows) && !warnings.includes('This dates-within mode requires a date field.')) warnings.push('This dates-within mode requires a date field.'); }); if(['sum','avg','min','max','value_within','value_percent_within'].includes(mode)){ const val=researchNumericValidation(item,item.valueField,rows); if(!val.ok) warnings.push(val.message); }
   perf.timings.cohortFilterMs=Math.round(performance.now()-cohortStart); const groupingStart=performance.now();
@@ -3408,7 +3666,7 @@ async function evaluateResearchItemAsync(item, progress={}){
   }else if(item.groupMultiAdd){
     report(0,rows.length,'Grouping research rows',.34,.58);
     const built=buildResearchMultiAddGroups(item,rows,universeRows,warnings); groups=built.groups; parentTotals=built.parentTotals;
-    report(rows.length,rows.length,'Grouping research rows',.34,.58); await yieldToBrowser();
+    report(rows.length,rows.length,'Grouping research rows',.34,.58); await yieldToBrowser(); researchThrowIfCancelled(progress.operationToken||progress.token);
   }else if(groupMetric){
     const cfg=researchGearGetForItem(item,'groupField');
     const counts=getMetricEntityCounts(groupMetric,{item,warnings},cfg);
@@ -3422,43 +3680,49 @@ async function evaluateResearchItemAsync(item, progress={}){
       parentTotals.set(bucket,bucketUniverse.length||bucketRows.length||0);
       for(let i=0;i<bucketRows.length;i++){
         const r=bucketRows[i], sec=hasSecondary?researchSecondaryKey(item,r):'', panel=researchPanelKey(item,r), key=bucket+'\u0000'+sec+'\u0000'+panel; if(!groups.has(key)) groups.set(key,{primary:bucket,secondary:sec,panel,rows:[],dateValue:researchSortDateValue(item,[r])}); groups.get(key).rows.push(r); groups.get(key).dateValue=Math.min(groups.get(key).dateValue||Infinity,researchSortDateValue(item,[r])||Infinity);
-        if((i+1)%RESEARCH_BATCH_SIZE===0){ report(i+1,bucketRows.length,`Processing research bucket ${processed+1} of ${totalBuckets}`,.34,.58); await yieldToBrowser(); }
+        if((i+1)%RESEARCH_BATCH_SIZE===0){ report(i+1,bucketRows.length,`Processing research bucket ${processed+1} of ${totalBuckets}`,.34,.58); await yieldToBrowser(); researchThrowIfCancelled(progress.operationToken||progress.token); }
       }
-      processed++; report(processed,totalBuckets,'Processing research buckets',.34,.58,'buckets'); await yieldToBrowser();
+      processed++; report(processed,totalBuckets,'Processing research buckets',.34,.58,'buckets'); await yieldToBrowser(); researchThrowIfCancelled(progress.operationToken||progress.token);
     }
   }else{
-    for(let i=0;i<universeRows.length;i++){ const r=universeRows[i], p=researchGroupLabel(item,r); parentTotals.set(p,(parentTotals.get(p)||0)+1); if((i+1)%RESEARCH_BATCH_SIZE===0){ report(i+1,universeRows.length,'Building group totals',.34,.46); await yieldToBrowser(); } }
-    for(let i=0;i<rows.length;i++){ const r=rows[i], p=researchGroupLabel(item,r), sec=hasSecondary?researchSecondaryKey(item,r):'', panel=researchPanelKey(item,r), key=p+'\u0000'+sec+'\u0000'+panel; if(!groups.has(key)) groups.set(key,{primary:p,secondary:sec,panel,rows:[],dateValue:researchSortDateValue(item,[r])}); groups.get(key).rows.push(r); groups.get(key).dateValue=Math.min(groups.get(key).dateValue||Infinity,researchSortDateValue(item,[r])||Infinity); if((i+1)%RESEARCH_BATCH_SIZE===0){ report(i+1,rows.length,'Grouping filtered rows',.46,.58); await yieldToBrowser(); } }
+    const readGroup=researchGroupLabelReader(item), groupedLabels=new WeakMap(), dateIndex=sourceIndex(item.source);
+    const readDate=row=>{ const ms=dateIndex?.rowMeta?.get(row)?.dateMs; return Number.isFinite(ms)?ms:researchSortDateValue(item,[row]); };
+    for(let i=0;i<universeRows.length;i++){ const r=universeRows[i], p=readGroup(r); groupedLabels.set(r,p); parentTotals.set(p,(parentTotals.get(p)||0)+1); if((i+1)%RESEARCH_BATCH_SIZE===0){ report(i+1,universeRows.length,'Building group totals',.34,.46); await yieldToBrowser(); researchThrowIfCancelled(progress.operationToken||progress.token); } }
+    for(let i=0;i<rows.length;i++){ const r=rows[i], p=groupedLabels.get(r)??readGroup(r), sec=hasSecondary?researchSecondaryKey(item,r):'', panel=researchPanelKey(item,r), key=p+'\u0000'+sec+'\u0000'+panel; if(!groups.has(key)) groups.set(key,{primary:p,secondary:sec,panel,rows:[],dateValue:readDate(r)}); groups.get(key).rows.push(r); groups.get(key).dateValue=Math.min(groups.get(key).dateValue||Infinity,readDate(r)||Infinity); if((i+1)%RESEARCH_BATCH_SIZE===0){ report(i+1,rows.length,'Grouping filtered rows',.46,.58); await yieldToBrowser(); researchThrowIfCancelled(progress.operationToken||progress.token); } }
   }
   perf.timings.groupingMs=Math.round(performance.now()-groupingStart); const calculationStart=performance.now();
   const total=universeRows.length||1;
   let groupList=[...groups.values()].filter(g=>Object.keys(item.gearFilters||{}).every(key=>{ const cfg={...researchGearDefault(),...(item.gearFilters||{})[key]}; if(key.startsWith('columnField:') && cfg.valueLevel==='level2') return true; if(!cfg.customValueEnabled||cfg.customValueMetric==='each') return true; const field=researchGearFieldForKey(item,key,+(key.split(':')[1]||0)); if(!field) return true; const bad=researchGearNumericInvalid(cfg,item,field,g.rows); if(bad){ if(!warnings.includes(bad)) warnings.push(bad); return true; } return researchGearGroupPass(g.rows,cfg,item,field); }));
-  groupList=researchApplyCalculationScope(groupList,item,warnings); groupList=researchApplyUnmatchedGroupBehavior(groupList,item,warnings);
+  groupList=researchApplyCalculationScope(groupList,item,warnings); groupList=await researchApplyUnmatchedGroupBehaviorAsync(groupList,item,warnings,progress.operationToken||progress.token);
   const outputColumns=expandedResearchColumns(item);
   await preparePercentBuilderCachesForResearchItem(item,outputColumns,warnings,(done,total,stage)=>report(done,total,stage,.58,.72));
-  let data=[], workerResult=await evaluateResearchTypedWorker(item,groupList,outputColumns,warnings);
+  let data=[], workerResult=await evaluateResearchTypedWorker(item,groupList,outputColumns,warnings,progress.operationToken||progress.token);
+  researchThrowIfCancelled(progress.operationToken||progress.token);
   if(workerResult){ data=workerResult.data; perf.timings.workerMs=workerResult.workerMs; perf.workerUsed=true; report(groupList.length,groupList.length,'Aggregating typed measures in a Web Worker',.72,.94,'groups'); }
-  else for(let i=0;i<groupList.length;i++){
+  else { let lastYield=performance.now(); for(let i=0;i<groupList.length;i++){
     const g=groupList[i], ctx={total,parentTotal:(parentTotals.get(g.primary)||g.rows.length||1),warnings}, computed=researchGroupOutput(item,g,outputColumns,ctx); data.push({label:g.primary,secondary:g.secondary,panel:g.panel||'',values:computed.values,xValue:computed.xValue,box:computed.box,rows:g.rows.length,dateValue:Number.isFinite(g.dateValue)?g.dateValue:researchSortDateValue(item,g.rows)});
-    if((i+1)%RESEARCH_BATCH_SIZE===0){ report(i+1,groupList.length,'Calculating research table groups',.72,.94,'groups'); await yieldToBrowser(); }
+    if((i+1)%RESEARCH_BATCH_SIZE===0||performance.now()-lastYield>12){ lastYield=performance.now(); report(i+1,groupList.length,'Calculating research table groups',.72,.94,'groups'); await yieldToBrowser(); researchThrowIfCancelled(progress.operationToken||progress.token); }
+  }
   }
   if(item.outputType==='table') data=data.filter(d=>outputColumns.every((c,i)=>{ const v=toNum(d.values?.[i]), hasMin=String(c.resultMin??'').trim()!=='', hasMax=String(c.resultMax??'').trim()!==''; if(hasMin&&(!Number.isFinite(v)||v<Number(c.resultMin))) return false; if(hasMax&&(!Number.isFinite(v)||v>Number(c.resultMax))) return false; return true; }));
   perf.timings.calculationMs=Math.round(performance.now()-calculationStart); const sortingStart=performance.now();
   data=researchSortAndLimitData(data,item,hasSecondary); perf.timings.sortingMs=Math.round(performance.now()-sortingStart);
   const totalValues=(item.outputType==='table'&&item.totals)?outputColumns.map(c=>aggregateResearchValue(item,universeRows,c,{total:universeRows.length||1,parentTotal:universeRows.length||1,warnings})):[];
   const effectiveHasSecondary=hasSecondary || (item.outputType==='line' && item.groupMultiAdd);
-  const reconciliation=researchReconciliationResult(item,universeRows,outputColumns,groupList,warnings), prep=state.researchLastPreparation?.itemId===item.id?state.researchLastPreparation:null; perf.groupsCalculated=groupList.length; perf.sourcePreparationMs=prep?.totalMs||0; perf.preparedSources=prep?.sources||[]; perf.totalComputeMs=Math.round(performance.now()-t0); console.info('[Research Builder]',perf); report(1,1,'Finalizing research result',.94,.98,'step'); return researchCacheSet(cacheKey,{valueOnly:true,data,warnings,columns:outputColumns,hasSecondary:effectiveHasSecondary,totalValues,totalRowCount:universeRows.length,duplicateMap,joinDiagnostics:researchJoinStatsSnapshot(item),reconciliation},perf);
+  const reconciliation=researchReconciliationResult(item,universeRows,outputColumns,groupList,warnings), prep=state.researchLastPreparation?.itemId===item.id?state.researchLastPreparation:null; perf.groupsCalculated=groupList.length; perf.sourcePreparationMs=prep?.totalMs||0; perf.preparedSources=prep?.sources||[]; perf.totalComputeMs=Math.round(performance.now()-t0); console.info('[Research Builder]',perf); report(1,1,'Finalizing research result',.94,.98,'step'); return researchCacheSet(cacheKey,{valueOnly:true,data,warnings,lineage:researchResultLineage(item,{columns:outputColumns,totalRowCount:universeRows.length}),columns:outputColumns,hasSecondary:effectiveHasSecondary,totalValues,totalRowCount:universeRows.length,duplicateMap,joinDiagnostics:researchJoinStatsSnapshot(item),reconciliation},perf,item);
 }
 async function renderResearchItemBodyAsync(item, progress={}){
   try{
-    resetExpressionRunStats(); const computeStart=performance.now(), res=item.outputType==='conversation'?evaluateResearchRawRows(item):await evaluateResearchItemAsync(item,progress), renderStart=performance.now(), resultHtml=renderResearchResultByDisplay(item,res);
+    resetExpressionRunStats(); const computeStart=performance.now(), res=item.outputType==='conversation'?evaluateResearchRawRows(item):await evaluateResearchItemAsync(item,progress);
+    researchThrowIfCancelled(progress.token);
+    const renderStart=performance.now(), resultHtml=renderResearchResultByDisplay(item,res);
     res.perf=attachResearchPreparationPerf(res.perf||{},item); res.perf.timings=res.perf.timings||{}; res.perf.timings.renderMs=Math.round(performance.now()-renderStart);
     const persistenceStart=performance.now(), savePromise=researchSaveRenderedResult(item,res);
     const saveWarn='<div class="researchDiag" data-research-save-status>Saving rendered values in the background…</div>', warns=(res.warnings||[]).map(w=>`<div class="researchWarn">${esc(w)}</div>`).join(''), dupBadge=(res.duplicateMap?.enabled&&res.duplicateMap.excludedRepKeys?.size)?`<div class="researchDiag" title="Click calculated cells for duplicate details.">Duplicate rep filter applied: ${res.duplicateMap.excludedRepKeys.size.toLocaleString()} duplicate records excluded</div>`:'', html=saveWarn+warns+dupBadge+researchSourceAuditHtml(item,res.perf,res.joinDiagnostics)+researchJoinSummaryHtml(res.joinDiagnostics)+queryPlanBadge(res.perf?.queryPlan)+researchPerformanceHtml(item,res.perf,res.reconciliation)+resultHtml+expressionSummaryPanel('Research expression diagnostics'), run=recordResearchPerformance(item,res.perf);
-    savePromise.then(ok=>{ const ms=Math.round(performance.now()-persistenceStart); run.timings.persistenceMs=ms; res.perf.timings.persistenceMs=ms; renderResearchDiagnosticsDrawer(); document.querySelectorAll(`[data-research-card=\"${CSS.escape(item.id)}\"] [data-research-save-status]`).forEach(n=>n.textContent=ok?`Rendered values saved in ${ms.toLocaleString()} ms.`:'Displayed, but saving rendered values failed.'); });
+    savePromise.then(ok=>{ if(progress.token?.cancelled) return; const ms=Math.round(performance.now()-persistenceStart); run.timings.persistenceMs=ms; res.perf.timings.persistenceMs=ms; renderResearchDiagnosticsDrawer(); document.querySelectorAll(`[data-research-card=\"${CSS.escape(item.id)}\"] [data-research-save-status]`).forEach(n=>n.textContent=ok?`Rendered values saved in ${ms.toLocaleString()} ms.`:'Displayed, but saving rendered values failed.'); });
     console.info('[Research Builder]',{item:item.title,cacheUsed:!!res.perf?.cacheUsed,totalComputeTime:res.perf?.totalComputeMs ?? Math.round(renderStart-computeStart),renderTime:res.perf.timings.renderMs,rowsScanned:res.perf?.rowsScanned,indexesUsed:res.perf?.indexesUsed}); return html;
   }
-  catch(e){ return researchFailedBody(e); }
+  catch(e){ if(e.name==='AbortError') throw e; return researchFailedBody(e); }
 }
 
 function bindResearchCanvasActions(){
@@ -3466,13 +3730,15 @@ function bindResearchCanvasActions(){
   bindResearchConversationViewerActions(els.researchCanvas);
   bindResearchVirtualTables(els.researchCanvas);
   bindResearchCanvasCharts(els.researchCanvas);
+  if(typeof AllStarCharts!=='undefined'){ configureResearchCharts(); AllStarCharts.bind(els.researchCanvas); }
   els.researchCanvas.querySelectorAll('[data-trace-id]').forEach(c=>c.onclick=e=>{ e.stopPropagation(); openResearchCellFeedback(c.dataset.traceId); }); els.researchCanvas.querySelectorAll('[data-drilldown-id]:not([data-trace-id])').forEach(c=>c.onclick=e=>{ e.stopPropagation(); openResearchCellDrilldown(c.dataset.drilldownId); });
   els.researchCanvas.querySelectorAll('[data-research-refresh]').forEach(b=>b.onclick=async()=>{ const item=state.researchItems.find(x=>x.id===b.dataset.researchRefresh); if(!item) return; await refreshResearchItem(item.id,b); });
-  els.researchCanvas.querySelectorAll('[data-research-render]').forEach(b=>b.onclick=async()=>{ const item=state.researchItems.find(x=>x.id===b.dataset.researchRender); if(!item) return; state.renderedLargeResearchCards.add(item.id); const token={cancelled:false,id:Date.now()+Math.random(),reason:'card-render'}; const card=els.researchCanvas.querySelector(`[data-research-card="${CSS.escape(item.id)}"] .researchCardBody`); const key=researchItemCacheKey(item,item.outputType==='conversation'?'raw':'agg'), cached=researchHasCache(key); if(card) card.innerHTML=`<div class="researchPreviewSummary"><span class="badge">${cached?'Opening cached result...':'Preparing used sources...'}</span></div>`; showProgress(cached?'Opening cached research card...':'Preparing used sources...',5); const prep=await ensureResearchExecutionIndexes(item,{token}); state.researchLastPreparation={itemId:item.id,...prep}; await yieldToBrowser(); updateProgress(cached?'Opening cached result...':'Calculating Research card...',35); await yieldToBrowser(); if(!token.cancelled && card){ const html=await renderResearchItemBodyAsync(item,{start:35,end:85,status:true}); updateProgress('Rendering visible table/chart...',85); await yieldToBrowser(); card.innerHTML=html; } updateProgress('Research card rendered',100); hideProgress(); bindResearchCanvasActions(); updateResearchCacheBadge(); });
+  els.researchCanvas.querySelectorAll('[data-research-render]').forEach(button=>button.onclick=async()=>{ const item=state.researchItems.find(row=>row.id===button.dataset.researchRender); if(!item) return; state.renderedLargeResearchCards.add(item.id); await refreshResearchItem(item.id,button); });
 }
 async function refreshResearchItem(itemId,button){
   const item=state.researchItems.find(x=>x.id===itemId); if(!item) return;
   const card=els.researchCanvas?.querySelector(`[data-research-card="${CSS.escape(item.id)}"] .researchCardBody`);
+  if(state.researchRenderToken) state.researchRenderToken.cancelled=true;
   const token=beginResearchProgress(`Rendering ${item.outputType}...`,2);
   state.researchRenderToken=token;
   if(button){ button.disabled=true; button.dataset.originalText=button.textContent; button.textContent='⟳ Rendering...'; }
@@ -3482,9 +3748,9 @@ async function refreshResearchItem(itemId,button){
     const prep=await ensureResearchExecutionIndexes(item,{token,progressToken:token,start:4,end:16});
     state.researchLastPreparation={itemId:item.id,...prep};
     await yieldToBrowser();
-    if(!researchProgressActive(token)){ if(card) card.innerHTML=researchQueuedPlaceholder(item); return; }
+    if(!researchProgressActive(token)){ if(state.researchRenderToken===token&&card) card.innerHTML=researchQueuedPlaceholder(item); return; }
     const html=await renderResearchItemBodyAsync(item,{start:16,end:92,status:true,token});
-    if(!researchProgressActive(token)){ if(card) card.innerHTML=researchQueuedPlaceholder(item); return; }
+    if(!researchProgressActive(token)){ if(state.researchRenderToken===token&&card) card.innerHTML=researchQueuedPlaceholder(item); return; }
     updateResearchProgress(token,'Inserting rendered table/chart...',95);
     if(card) card.innerHTML=html;
     bindResearchCanvasActions();
@@ -3493,7 +3759,8 @@ async function refreshResearchItem(itemId,button){
     setResearchCanvasStatus(`Refreshed ${item.title||'Research item'} from newly calculated values.`);
     await yieldToBrowser();
   }catch(e){
-    if(card) card.innerHTML=researchFailedBody(e);
+    if(e.name==='AbortError'||token.cancelled){ if(state.researchRenderToken===token) setResearchCanvasStatus('Research calculation cancelled.'); return; }
+    if(state.researchRenderToken===token&&card) card.innerHTML=researchFailedBody(e);
     setResearchCanvasStatus(`Research refresh failed: ${e.message||e}`);
   }finally{
     if(button){ button.disabled=false; button.textContent=button.dataset.originalText||'Refresh / Re-run'; }
@@ -3517,7 +3784,7 @@ async function renderResearchCanvasAsync(opts={}){
     const item=items[idx];
     setResearchCanvasStatus(`Rendering ${idx+1} of ${items.length}...`);
     const card=els.researchCanvas.querySelector(`[data-research-card="${CSS.escape(item.id)}"] .researchCardBody`);
-    if(card) card.innerHTML=researchStoredResultValid(item) ? await researchStoredResultBodyAsync(item) : researchNoStoredResultBody(item);
+    if(card){ const html=researchStoredResultValid(item) ? await researchStoredResultBodyAsync(item) : researchNoStoredResultBody(item); if(token.cancelled) break; card.innerHTML=html; }
     bindResearchCanvasActions();
     await yieldToBrowser();
   }
@@ -3533,7 +3800,7 @@ async function renderAllResearchItems(){
   if(state.researchRenderToken) state.researchRenderToken.cancelled=true;
   if(state.researchRenderAllToken) state.researchRenderAllToken.cancelled=true;
   const token=beginResearchProgress('Preparing Render All...',1);
-  token.reason='render-all'; state.researchRenderAllToken=token;
+  token.reason='render-all'; state.researchRenderAllToken=token; state.researchRenderToken=token;
   setResearchRenderAllRunning(true);
   renderResearchCanvasShell('Preparing Render All...');
   const weights=items.map(estimateResearchItemWork), totalWeight=weights.reduce((a,b)=>a+b,0)||items.length;
@@ -3551,23 +3818,26 @@ async function renderAllResearchItems(){
         const prep=await ensureResearchExecutionIndexes(item,{token,progressToken:token,start:startPct,end:Math.min(endPct,startPct+Math.max(1,(endPct-startPct)*.2))});
         state.researchLastPreparation={itemId:item.id,...prep};
         const html=await renderResearchItemBodyAsync(item,{start:startPct,end:Math.max(startPct,endPct-2),status:true,token});
-        if(!researchProgressActive(token)){ if(card) card.innerHTML=researchQueuedPlaceholder(item); break; }
+        if(!researchProgressActive(token)){ if(state.researchRenderToken===token&&card) card.innerHTML=researchQueuedPlaceholder(item); break; }
         if(card) card.innerHTML=html;
         state.renderedLargeResearchCards.add(item.id); renderedThisRun.add(item.id); rendered++;
         completedWeight+=itemWeight;
         updateResearchProgress(token,`Rendered ${idx+1} of ${items.length}`,5+90*(completedWeight/totalWeight));
       }catch(e){
+        if(e.name==='AbortError'||token.cancelled){ token.cancelled=true; break; }
         if(card) card.innerHTML=researchFailedBody(e); failed++; completedWeight+=itemWeight;
       }
       bindResearchCanvasActions(); updateResearchCacheBadge(); await yieldToBrowser();
     }
-    if(token.cancelled){ items.forEach(item=>{ if(renderedThisRun.has(item.id)) return; const card=els.researchCanvas.querySelector(`[data-research-card="${CSS.escape(item.id)}"] .researchCardBody`); if(card) card.innerHTML=researchQueuedPlaceholder(item); }); }
+    if(token.cancelled&&state.researchRenderToken===token){ items.forEach(item=>{ if(renderedThisRun.has(item.id)) return; const card=els.researchCanvas.querySelector(`[data-research-card="${CSS.escape(item.id)}"] .researchCardBody`); if(card) card.innerHTML=researchQueuedPlaceholder(item); }); }
     if(!token.cancelled) finishResearchProgress(token,'Render All complete');
   }finally{
-    setResearchRenderAllRunning(false);
-    if(state.researchRenderAllToken===token) state.researchRenderAllToken=null;
-    if(token.cancelled) setResearchCanvasStatus(`Rendering stopped. ${rendered} of ${items.length} rendered${failed?`, ${failed} failed`:''}.`);
-    else setResearchCanvasStatus(`Render All complete. ${rendered} of ${items.length} rendered${failed?`, ${failed} failed`:''}.`);
+    if(state.researchRenderAllToken===token){ setResearchRenderAllRunning(false); state.researchRenderAllToken=null; }
+    if(state.researchRenderToken===token){
+      if(token.cancelled) setResearchCanvasStatus(`Rendering stopped. ${rendered} of ${items.length} rendered${failed?`, ${failed} failed`:''}.`);
+      else setResearchCanvasStatus(`Render All complete. ${rendered} of ${items.length} rendered${failed?`, ${failed} failed`:''}.`);
+      state.researchRenderToken=null;
+    }
     bindResearchCanvasActions(); await yieldToBrowser(); hideResearchProgress(token);
   }
 }

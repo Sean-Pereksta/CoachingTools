@@ -57,14 +57,14 @@ let html=fs.readFileSync(htmlPath,'utf8');
 for(const vendor of ['xlsx.full.min.js','html2pdf.bundle.min.js','jspdf.umd.min.js']){
   const marker='<script src="../../vendor/'+vendor+'"><\/script>';
   if(!html.includes(marker)) throw new Error('Portable vendor marker missing: '+vendor);
-  html=html.replace(marker,'<script data-allstar-vendor="'+vendor+'">\n'+readSuite('vendor/'+vendor).replace(/<\/script/gi,'<\\/script')+'\n<\/script>');
+  html=html.replace(marker,()=>'<script data-allstar-vendor="'+vendor+'">\n'+readSuite('vendor/'+vendor).replace(/<\/script/gi,'<\\/script')+'\n<\/script>');
 }
 for(const shared of ['coachtools-sync.js','coachtools-storage.js','coachtools-identity.js','coachtools-import.js','coachtools-close-policy.js','coachtools-shell.js']){
   const marker='<script src="../../shared/'+shared+'"><\/script>';
   if(!html.includes(marker)) throw new Error('Portable shared marker missing: '+shared);
-  html=html.replace(marker,'<script data-coachtools-source="shared/'+shared+'">\n'+readSuite('shared/'+shared).replace(/<\/script/gi,'<\\/script')+'\n<\/script>');
+  html=html.replace(marker,()=>'<script data-coachtools-source="shared/'+shared+'">\n'+readSuite('shared/'+shared).replace(/<\/script/gi,'<\\/script')+'\n<\/script>');
 }
-html=html.replace(/<link rel="stylesheet" href="css\/allstar\.css">/,()=>'<style data-allstar-source="css/allstar.css">\n'+read('css/allstar.css')+'\n</style>');
+html=html.replace(/<link rel="stylesheet" href="(css\/[^"]+)">/g,(match,relative)=>'<style data-allstar-source="'+relative+'">\n'+read(relative)+'\n</style>');
 let portableGenerator=generator;
 portableGenerator=portableGenerator.replace(/<script src="\.\.\/\.\.\/vendor\/xlsx\.full\.min\.js"><\/script>/,'<script data-allstar-vendor="xlsx.full.min.js">window.XLSX=parent.XLSX;<\/script>');
 portableGenerator=portableGenerator.replace(/<script src="\.\.\/\.\.\/vendor\/jszip\.min\.js"><\/script>/,()=>'<script data-allstar-vendor="jszip.min.js">\n'+readSuite('vendor/jszip.min.js').replace(/<\/script/gi,'<\\/script')+'\n<\/script>');

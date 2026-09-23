@@ -84,3 +84,35 @@ SOURCE LAYOUT
 - build/build-portable.js: dependency-free portable builder
 
 The classic script order in allstar.html is intentional for file:// operation. Keep that order unless dependencies are revalidated; reports.js provides a shared startup helper used while research.js initializes.
+
+ANALYTICAL WORKSPACE MODERNIZATION
+- Home summarizes source metadata and gives direct entry points to Data, Models,
+  Research, Reports, Organizations, Messages, History and Settings. All tools keeps
+  the original toolbar accessible. Ctrl/Cmd+K searches actions and saved work;
+  arrows, Enter and Escape operate the palette. Favorites and recents persist.
+- Model Builder adds sections, search, reordering, plain-language explanations,
+  health, an explicit sample preview, and Research-this-criterion. A preview uses
+  an isolated unsaved definition and never creates or replaces a saved report.
+- Guided/Advanced Research shares the existing engine. Searchable field pickers,
+  formula construction, reusable filters, undo/redo and recoverable drafts add to
+  existing controls. New metric modes are optional; old modes retain semantics.
+- Create Chart opens an independent chart designer over calculated results. It
+  supports line, multiline, bar, grouped/stacked bar, area, scatter, bubble,
+  histogram and combo charts, reference lines and period transformations.
+  Appearance changes do not run Research. Saved definitions and the Analysis Board
+  reference Research; opening a saved chart does not silently refresh its source.
+- Expensive caches track their source and definition dependencies. Source refresh,
+  aliases, mappings and model changes invalidate affected work; bounded derived
+  caches can be evicted without deleting source data. Worker failures fall back to
+  responsive processing and stale calculations cannot overwrite newer results.
+- Settings > Performance displays actual cache and timing diagnostics.
+
+VALIDATION COMMANDS (from CoachTools)
+  TZ=UTC npm run test:allstar
+  TZ=UTC npm run benchmark:allstar
+  npm run test:allstar:browser
+The optional browser gate requires a local Playwright installation. Set
+PLAYWRIGHT_MODULE to its module path and CHROMIUM_PATH to an existing Chromium
+binary if they are not on the normal Node/browser paths. It exercises both the
+modular and portable file:// builds without publishing or generating previews.
+See docs/modernization-validation.md for measured coverage and limitations.

@@ -81,6 +81,9 @@ function updateMultiRunSummary(){
   if(els.multiRunSummary){ const model=findModel(els.runModelSelect?.value), dates=els.runStartDate?.value&&els.runEndDate?.value?`${els.runStartDate.value} to ${els.runEndDate.value}`:'all available dates', ranking=els.rankRepresentativesWithinTeam?.checked?'team-specific representative ranks on team pages':'overall representative ranks on every page'; els.multiRunSummary.textContent=count?`${count} organization PDF${count===1?'':'s'} queued · ${model?.name||'No model selected'} · ${dates} · ${els.runViewSelect?.selectedOptions?.[0]?.textContent||'Both'} · ${ranking}.`:'Choose one or more organizations. Every organization will use the same model, dates, view, QA settings, no-score setting, ranking scope, and saved PDF options.'; }
 }
 function compileRunCriterionPlan(model, opts={}){
+  return window.AllStarAnalysis ? window.AllStarAnalysis.modelPlan(model,opts,()=>compileRunCriterionPlanUncached(model,opts)) : compileRunCriterionPlanUncached(model,opts);
+}
+function compileRunCriterionPlanUncached(model, opts={}){
   const signature=stableSerialize({modelId:model?.id||'',modelsVersion:state.versions?.models||0,dataVersion:state.versions?.data||0,mappings:state.versions?.mappings||0,aliases:state.versions?.aliases||0,qaDateMode:opts.qaDateMode||'',qaTeamScoreMode:opts.qaTeamScoreMode||'',criteria:(model?.criteria||[]).map(c=>({id:c.id,name:c.name,source:c.source,calcType:c.calcType,audience:c.audience,scoreType:c.scoreType,weight:c.weight,points:c.points,column:c.column,filters:c.filters,trueValueEnabled:c.trueValueEnabled,trueValueSource:c.trueValueSource,trueValueColumn:c.trueValueColumn}))});
   const criteria=(model?.criteria||[]).map(c=>{
     const source=c.customSource||c.source||rowPullSourceForCriterion(c)||'retail_sv2';

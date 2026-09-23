@@ -88,3 +88,19 @@ Qualtrics workflow metadata (2026-09-08; no database/schema version change)
 - Local auto-save never claims to overwrite an imported/exported JSON file. External changes are observable only on re-import. Up to Date refers to the last successfully imported/exported snapshot, not a filesystem watcher.
 - New Individual Message settings use maxConcerns=1 and maxStrengths=2. Saved explicit values, zero/unlimited values, and legacy saved settings without limits retain their prior behavior.
 - Final Email Export uses one worksheet and exactly Name, Email, Header, Concern Areas, Strengths, Footer. Generic-before text is included in Header and generic-after text in Footer. Review/diagnostic and EML exports retain their separate contracts.
+
+All-Star analytical workspace additions (2026-09-23; no database/schema reset)
+- allStarWorkspaceNavigation.v1: favorite and recent command references only.
+- allstar.research.editorDraft.v1: recoverable unsaved editor controls, bounded undo is session-only.
+- allstar.research.filterSets.v1: named reusable filter configurations.
+- allstar.researchCharts.v1: version-1 chart definitions referencing existing Research IDs.
+- allstar.analysisBoard.v1: ordered chart/table/KPI references, not copied source datasets.
+- allstar.chartDrafts.v1: up to 12 unsaved chart definitions.
+- New Research metric modes (median, min, max, distinct, formula) and optional format,
+  precision, target, preferred direction are opt-in. Existing metric modes retain
+  their legacy calculation path; existing saved models and definitions retain IDs.
+- Shared analysis indexes, compiled plans, numeric values and criterion results are
+  bounded, derived, memory-only caches. They are never exported as source data.
+- Legacy Research rendered-result storage remains readable. Calculated caches
+  validate referenced definitions and source versions before reuse. Saved rendered
+  snapshots remain separately identified as snapshots until explicitly refreshed.

@@ -5,7 +5,7 @@ const path=require('node:path');
 const root=path.resolve(__dirname,'..');
 const sourcePath=p=>path.join(root,p);
 const read=p=>fs.readFileSync(sourcePath(p),'utf8');
-const files=['allstar.html','css/allstar.css','js/core.js','js/persistence.js','js/models.js','js/imports.js','js/calculations.js','js/research.js','js/organizations-core.js','js/workflow.js','js/list-tester.js','js/reports.js','js/qualtrics-bridge.js','js/app.js','qualtrics/generator.html','qualtrics/insights.js','qualtrics/individual-messages.js','qualtrics/individual-ui.js','qualtrics/generator-source.js','tests/regression-tests.js','tests/qualtrics-insights.test.js','tests/individual-messages.test.js','tests/individual-review.test.js','build/build-portable.js','dist/All-Star-Portable.html','README.txt','PERSISTENCE-CONTRACTS.txt','REFACTOR-MANIFEST.json','SIZE-REPORT.txt','VALIDATION.txt'];
+const files=['js/analysis-engine.js','js/research-workspace.js','js/research-charts.js','js/model-workspace.js','js/workspace-navigation.js','css/research-workspace.css','css/research-charts.css','css/model-workspace.css','css/workspace-navigation.css','allstar.html','css/allstar.css','js/core.js','js/persistence.js','js/models.js','js/imports.js','js/calculations.js','js/research.js','js/organizations-core.js','js/workflow.js','js/list-tester.js','js/reports.js','js/qualtrics-bridge.js','js/app.js','qualtrics/generator.html','qualtrics/insights.js','qualtrics/individual-messages.js','qualtrics/individual-ui.js','qualtrics/generator-source.js','tests/regression-tests.js','tests/qualtrics-insights.test.js','tests/individual-messages.test.js','tests/individual-review.test.js','build/build-portable.js','dist/All-Star-Portable.html','README.txt','PERSISTENCE-CONTRACTS.txt','REFACTOR-MANIFEST.json','SIZE-REPORT.txt','VALIDATION.txt'];
 let failed=false;
 function check(name,pass,detail=''){ console.log((pass?'PASS':'FAIL')+' '+name+(detail?' — '+detail:'')); if(!pass) failed=true; }
 for(const file of files) check('exists: '+file,fs.existsSync(sourcePath(file)));
@@ -34,6 +34,12 @@ check('Documented Coaching integration fixture protects Description-only final r
 check('Weekly coach identity accepts full names and safe historical surnames',models.includes('resolveWeeklyCoachIdentity')&&models.includes("method:'exact full name'")&&models.includes("method:'unique surname fallback'")&&models.includes("method:'ambiguous surname'"));
 check('Display Column implementation retained',read('js/calculations.js').includes('function displayColumnValue')&&generator.includes('ruleDisplayColumnEnabled')&&generator.includes('displayColumn.template'));
 check('manual tests are not a normal script dependency',!html.includes('src="tests/regression-tests.js"'));
+for(const vendor of ['xlsx.full.min.js','html2pdf.bundle.min.js','jspdf.umd.min.js']){
+  const escaped=vendor.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const match=portable.match(new RegExp('<script data-allstar-vendor="'+escaped+'">([\\s\\S]*?)<\\/script>'));
+  try{ if(!match) throw new Error('Bundled script missing'); new Function(match[1]); check('portable vendor parses: '+vendor,true); }
+  catch(error){ check('portable vendor parses: '+vendor,false,error.message); }
+}
 check('portable has no first-party file dependency',!/<(?:link[^>]+href|script[^>]+src)="(?:css|js|qualtrics)\//i.test(portable));
 check('portable contains final generator',['allstar-clear-data','simpleQualtricsExecutiveMatrixHtml','QualtricsInsights','Organization Opportunity Summary'].every(x=>portable.includes(x)));
 const contracts=['allStarStandaloneModels.v1','allStarResearchItems.v1','allStarImportedDataCache.v1','allStarResearchRenderedResults.v1','allStarResearchMetricsDb.v1','allStarOrgBuilder.v1','allStarRepAliases.v1','allStarRunSettings.v2','allStarPdfOptions.v1','allStarRunPresets.v1','allStarSavedReports.v1','coachingEmailGeneratorDB','coachingEmailGeneratorOrganizationSummary.v1'];

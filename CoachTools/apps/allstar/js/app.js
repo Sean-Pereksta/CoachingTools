@@ -343,6 +343,9 @@ async function runAllStarStartupPipeline(){
     await measureAllStarStartupStep('settings',async()=>{
       if(!state.startup.initialized){
         loadModels(); loadRepAliases(); loadResearchItems({definitionsOnly:true}); loadPdfOptions(); loadOrgs(); wire();
+        configureResearchCharts();
+        window.AllStarModelWorkspace?.init();
+        window.AllStarWorkspaceNavigation?.init();
         window.addEventListener('coachtools:data-updated',event=>scheduleAllStarCentralSync(event.detail||{}));
         state.startup.initialized=true;
         await loadMetrics().catch(error=>console.warn('[Research Metrics] Startup load failed',error));
@@ -374,6 +377,7 @@ async function runAllStarStartupPipeline(){
     state.startup.diagnostics={...(state.startup.diagnostics||{}),sourceDatasetsLoaded:sourceGroups.filter(group=>group.ready).length,durationMs:Math.round(performance.now()-started),categorizedDataTouched:false};
     console.info('[All-Star Startup]',state.startup.diagnostics);
     finishAllStarStartupProgress(job,'Ready.');
+    window.AllStarWorkspaceNavigation?.refresh();
     return true;
   }catch(error){
     console.warn('[All-Star] Startup retained the last valid state.',error);

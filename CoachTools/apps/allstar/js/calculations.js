@@ -60,9 +60,9 @@ function expressionSummaryPanel(title='Expression diagnostics'){
 function compileCachedExpression(source,expr,headers,bodyBuilder,ctx={}){
   const raw=expressionNormalizeText(expr); if(!raw) return null;
   const key=expressionCacheKey(source,raw,headers||getHeaders(source)||[]);
-  if(state.expressionCache.has(key)){ expressionRunStats().cacheHits++; return state.expressionCache.get(key); }
-  try{ const compiled=bodyBuilder(raw); state.expressionCache.set(key,compiled); expressionRunStats().compiled++; return compiled; }
-  catch(e){ expressionLogError({...ctx,source},e.message); const failed=()=>''; state.expressionCache.set(key,failed); return failed; }
+  if(state.expressionCache.has(key)){ expressionRunStats().cacheHits++; const hit=state.expressionCache.get(key); state.expressionCache.delete(key); state.expressionCache.set(key,hit); return hit; }
+  try{ const compiled=bodyBuilder(raw); boundedMapSet(state.expressionCache,key,compiled,400); expressionRunStats().compiled++; return compiled; }
+  catch(e){ expressionLogError({...ctx,source},e.message); const failed=()=>''; boundedMapSet(state.expressionCache,key,failed,400); return failed; }
 }
 function evaluateCompiledExpression(compiled,args,ctx={}){ const st=expressionRunStats(); st.evaluated++; try{ return compiled(...(args||[])); }catch(e){ expressionLogError(ctx,e.message); return ''; } }
 function warnIfNumericText(v,warnings,ctx={}){ if(typeof v==='string' && v.trim()!=='' && !Number.isFinite(toNum(v))){ const msg='This expression returned text but this mode requires a number.'; researchExpressionAddWarning(warnings||[],msg); expressionLogError(ctx,msg); } }
@@ -175,6 +175,28 @@ function dateAwareModelFilterMatch(row,rowSource,f,opts={}){
     if(!dateWindowPass(anchor, tr[targetDateCol], f)) return false;
     return compareFilter(researchFieldValue(tr,targetValueCol,src), f.targetOp||'contains', f.targetValue||'');
   });
+}
+// Compile once, while preserving the existing sequential include/exclude behavior.
+function compileModelFilterPredicate(rowSource, filters, opts={}){
+  const predicates=(filters||[]).map(raw=>{
+    const f=normalizeFilterForStorage(raw,rowSource), action=f.action||f.mode||'exclude';
+    if(action==='includeWithin'||action==='excludeWithin') return row=>{
+      const hit=dateAwareModelFilterMatch(row,rowSource,f,opts); return action==='includeWithin'?hit:!hit;
+    };
+    if((!f.dynamicColumn&&!f.column&&!isFreeTextFilterOperator(f.operator)) || (f.dynamicColumn&&!String(f.columnExpression||'').trim())) return null;
+    if(isNumericFilterOperator(f.operator)){
+      const fixedTarget=toNum(f.value), fixedTarget2=toNum(f.value2);
+      if((!f.dynamic&&!Number.isFinite(fixedTarget)) || (f.operator==='between'&&!Number.isFinite(fixedTarget2))) return null;
+      return row=>{
+        const target=f.dynamic?evaluateFilterNumericExpression(f.expression,row,f.source||rowSource,rowSource,opts):fixedTarget;
+        const leftRaw=filterColumnValueForRow(f,row,rowSource,opts), left=typeof leftRaw==='number'?leftRaw:toNum(leftRaw);
+        const hit=numericComparisonPass(left,f.operator,target,f.operator==='between'?fixedTarget2:undefined);
+        return action==='include'?hit:!hit;
+      };
+    }
+    return row=>{ const hit=textFilterPass(filterColumnValueForRow(f,row,rowSource,opts),f); return action==='include'?hit:!hit; };
+  }).filter(Boolean);
+  return row=>predicates.every(predicate=>predicate(row));
 }
 function applyFilters(rows, filters, rowSource, opts={}){
   let out=rows||[];
@@ -293,7 +315,8 @@ function criterionRowsForEntry(c,entry,opts={}){
   const extra=isCustomWeeklyStatSource(c.source)?(customSource(c.source)?.columns||{}):{};
   const ctx={...opts,dateBasis:extra.dateBasis,weekStart:extra.weekStart};
   const entryKey=entry?.kind==='team'?'team:'+coachNameKey(entry.name):'rep:'+(entry?.key||'');
-  const key=stableSerialize({run:opts.runId||opts._runId||'',source:c.source,version:state.dataIndex?.version||0,entryKey,start:ymd(ctx.start),end:ymd(ctx.end),dateColumn:ctx.dateColumn||'',qaDateMode:ctx.qaDateMode||'',filters:(c.filters||[]).map(f=>normalizeFilterForStorage(f,c.source)),mapping:state.versions?.mappings||0,aliases:state.versions?.aliases||0});
+  const dependencies=typeof AllStarAnalysis!=='undefined'?AllStarAnalysis.dependencySignature(AllStarAnalysis.criterionSources(c,ctx)):state.dataIndex?.version||0;
+  const key=stableSerialize({source:c.source,version:dependencies,entryKey,team:entry?.team||'',cachePolicy:[!!ctx._sourceRowsCache,!!ctx._entryRowsCache],start:ymd(ctx.start),end:ymd(ctx.end),dateColumn:ctx.dateColumn||'',qaDateMode:ctx.qaDateMode||'',dateBasis:ctx.dateBasis||'',weekStart:ctx.weekStart||'',filters:c.filters||[],mapping:state.versions?.mappings||0,aliases:state.versions?.aliases||0});
   state.criterionInputCache=state.criterionInputCache||new Map();
   if(state.criterionInputCache.has(key)){ state.perfCounters.criterionInputCacheHits++; const v=state.criterionInputCache.get(key); state.criterionInputCache.delete(key); state.criterionInputCache.set(key,v); return v; }
   let rows=rowsForEntry(c.source, entry, ctx);
@@ -324,19 +347,29 @@ function valueSingle(c, entry, opts){
     }
   }
   if(isCustomWeeklyStatSource(c.source) && c.format==='pct' && extra.numerator && extra.denominator){ c={...c,aggregate:'weightedPercent'}; return valueSingle(c,entry,opts); }
-  let pairs=rows.map((r,i)=>({r,i,n:toNum(r[col]),t:rowDateMillisForSource(c.source,r)})).filter(x=>Number.isFinite(x.n));
-  if(!pairs.length) return NaN;
-  if(mode==='latest'){ let best=pairs[0]; for(const p of pairs){ if(((p.t||0)>(best.t||0)) || ((p.t||0)===(best.t||0) && p.i>best.i)) best=p; } return best.n; }
-  if(mode==='first'){ let best=pairs[0]; for(const p of pairs){ if(((p.t||0)<(best.t||0)) || ((p.t||0)===(best.t||0) && p.i<best.i)) best=p; } return best.n; }
-  if(mode==='avg') return pairs.reduce((a,b)=>a+b.n,0)/pairs.length;
-  if(mode==='max') return Math.max(...pairs.map(x=>x.n));
-  if(mode==='min') return Math.min(...pairs.map(x=>x.n));
-  return pairs.reduce((a,b)=>a+b.n,0);
+  const numberFor=typeof AllStarAnalysis!=='undefined'?AllStarAnalysis.numberReader(c.source,col):row=>toNum(row[col]);
+  let count=0, total=0, minimum=Infinity, maximum=-Infinity, bestValue=NaN, bestTime=0;
+  const ordered=mode==='latest'||mode==='first';
+  for(const row of rows){
+    const number=numberFor(row); if(!Number.isFinite(number)) continue;
+    if(ordered){
+      const time=rowDateMillisForSource(c.source,row)||0;
+      if(!count || (mode==='latest'?time>=bestTime:time<bestTime)){ bestTime=time; bestValue=number; }
+    }
+    count++; total+=number; minimum=Math.min(minimum,number); maximum=Math.max(maximum,number);
+  }
+  if(!count) return NaN;
+  if(ordered) return bestValue;
+  if(mode==='avg') return total/count;
+  if(mode==='max') return maximum;
+  if(mode==='min') return minimum;
+  return total;
 }
 function sumColumn(source, col, entry, opts, filters){
   let rows=rowsForEntry(source, entry, opts); if((filters||[]).length){ const predicate=getCompiledFilterPredicate(source,filters,opts); rows=rows.filter(predicate); }
   const actualCol=resolveColumn(source,col);
-  return rows.reduce((s,r)=>{const n=toNum(r[actualCol]); return s+(Number.isFinite(n)?n:0);},0);
+  const numberFor=typeof AllStarAnalysis!=='undefined'?AllStarAnalysis.numberReader(source,actualCol):row=>toNum(row[actualCol]);
+  return rows.reduce((s,r)=>{const n=numberFor(r); return s+(Number.isFinite(n)?n:0);},0);
 }
 function valueMulti(c, entry, opts){
   const l=sumColumn(c.leftSource,c.leftColumn,entry,opts,c.filters);
@@ -352,7 +385,8 @@ function valueMulti(c, entry, opts){
 function valueCustom(c, entry, opts){
   const src=c.customSource||c.source; const expr=String(c.expression||''); if(!expr.trim()) return NaN;
   const ctx={source:src,context:`Model criteria: ${c.name||'Custom expression'}`,rowLabel:entry?.name||entry?.team||''};
-  const rowObj=entry; const rk=expressionRowKey(rowObj,src,expr,ctx.context); if(rk.m.has(rk.k)){ expressionRunStats().cacheHits++; return rk.m.get(rk.k); }
+  const rowObj=entry, cacheContext=typeof AllStarAnalysis!=='undefined'?[ctx.context,AllStarAnalysis.dependencySignature(AllStarAnalysis.criterionSources(c,opts)),AllStarAnalysis.optionsSignature(opts),stableSerialize(c.filters||[])].join('\u001e'):ctx.context;
+  const rk=expressionRowKey(rowObj,src,expr,cacheContext); if(rk.m.has(rk.k)){ expressionRunStats().cacheHits++; return rk.m.get(rk.k); }
   let replaced=replaceResearchSourceFieldRefs(expr,(m,ref)=>ref && !ref.missingSource && !ref.missingField ? String(sumColumn(ref.source,ref.field,entry,opts,[])) : 'NaN');
   replaced=replaced.replace(/(^|[^!])\[([^\]]+)\](?!\s*\.\s*\[)/g,(m,prefix,col)=>prefix+String(sumColumn(src,col,entry,opts,c.filters)));
   if(!/^[0-9+\-*/().\sNa]+$/.test(replaced)){ expressionLogError(ctx,'Expression could not be calculated. Check headers and operators.'); rk.m.set(rk.k,NaN); return NaN; }
@@ -602,7 +636,11 @@ function trueTeamCriterionValue(c, entry, opts={}){
   return value;
 }
 
-function criterionValue(c, entry, opts){
+function criterionValue(c, entry, opts={}){
+  if(typeof AllStarAnalysis!=='undefined') return AllStarAnalysis.criterionValue(c,entry,opts,()=>criterionValueUncached(c,entry,opts));
+  return criterionValueUncached(c,entry,opts);
+}
+function criterionValueUncached(c, entry, opts){
   if(c.calcType==='displayColumn') return displayColumnValue(c,entry,opts);
   if(entry.kind === 'team' && c.trueValueEnabled && TEAM_TOTAL_SOURCE_KEYS.includes(c.trueValueSource)) return trueTeamCriterionValue(c, entry, opts);
   if(c.calcType==='qaScore' || c.source==='qa' || isCustomQAStyleSource(c.source)) return valueQA(c,entry,opts);
