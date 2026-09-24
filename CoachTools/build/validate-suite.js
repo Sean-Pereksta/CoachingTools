@@ -29,6 +29,23 @@ function validateInlineScripts(filePath, html) {
   }
 }
 
+// Wrapper launchers may delegate their data contracts to bundled iframe apps.
+// Inspect the complete local frame tree, including scripts and dependencies.
+function localApplicationSources(entryPath, seen = new Set()) {
+  const filePath = path.resolve(entryPath);
+  if (seen.has(filePath) || !filePath.startsWith(ROOT + path.sep) || !fs.existsSync(filePath)) return [];
+  seen.add(filePath);
+  const html = fs.readFileSync(filePath, 'utf8');
+  const sources = [{ filePath, html }];
+  for (const match of html.matchAll(/<iframe\b[^>]*?\bsrc=["']([^"']+)["'][^>]*>/gi)) {
+    const target = match[1];
+    if (/^(?:[a-z]+:|\/|\\|#)/i.test(target)) continue;
+    const child = path.resolve(path.dirname(filePath), target.split(/[?#]/)[0]);
+    if (/\.html?$/i.test(child)) sources.push(...localApplicationSources(child, seen));
+  }
+  return sources;
+}
+
 const required = [
   'index.html',
   'apps.json',
@@ -120,8 +137,9 @@ if (manifest) {
   for (const app of manifest.apps || []) {
     if (!exists(app.file)) continue;
     const filePath = path.join(ROOT, app.file);
-    const html = fs.readFileSync(filePath, 'utf8');
-    validateInlineScripts(filePath, html);
+    const sources = localApplicationSources(filePath);
+    const html = sources.map(source => source.html).join('\n');
+    for (const source of sources) validateInlineScripts(source.filePath, source.html);
     if (/\/(?:workspace|mnt\/data)\/|[A-Z]:\\Users\\/i.test(html)) fail(`${app.file}: contains an absolute developer-machine path.`);
     for (const marker of expectedMarkers[app.id] || []) if (!html.includes(marker)) fail(`${app.id}: expected capability marker is missing: ${marker}`);
     if (['coaching-gaps', 'coach-timeline', 'kpi-impact', 'qa-scores', 'audit-checklist'].includes(app.id)) {
@@ -133,22 +151,24 @@ if (manifest) {
       if (!html.includes('CoachToolsAppData')) fail(`${app.id}: declares shared datasets but does not use CoachToolsAppData.`);
       for (const datasetType of app.data) if (!html.includes(datasetType)) fail(`${app.id}: manifest requires ${datasetType}, but the app does not declare it to the shared adapter.`);
     }
-    const dependencies = [...html.matchAll(/<(script|link|iframe)\b([^>]*?)\b(?:src|href|data-src)=(?:"([^"]+)"|'([^']+)')([^>]*)>/gi)].map(match => ({
-      tag: match[1].toLowerCase(),
-      attributes: `${match[2] || ''} ${match[5] || ''}`,
-      target: match[3] || match[4]
-    }));
-    for (const dependency of dependencies) {
-      const { tag, attributes, target } = dependency;
-      if (!target || /^(?:https?:|data:|blob:|about:|#)/i.test(target)) {
-        const approvedRemoteApp = tag === 'iframe' && /\bdata-coachtools-remote-app\s*=\s*["']true["']/i.test(attributes);
-        if (/^https?:/i.test(target) && !approvedRemoteApp) fail(`${app.file}: active runtime dependency is still remote: ${target}`);
-        continue;
+    for (const source of sources) {
+      const dependencies = [...source.html.matchAll(/<(script|link|iframe)\b([^>]*?)\b(?:src|href|data-src)=(?:"([^"]+)"|'([^']+)')([^>]*)>/gi)].map(match => ({
+        tag: match[1].toLowerCase(),
+        attributes: `${match[2] || ''} ${match[5] || ''}`,
+        target: match[3] || match[4]
+      }));
+      for (const dependency of dependencies) {
+        const { tag, attributes, target } = dependency;
+        if (!target || /^(?:https?:|data:|blob:|about:|#)/i.test(target)) {
+          const approvedRemoteApp = tag === 'iframe' && /\bdata-coachtools-remote-app\s*=\s*["']true["']/i.test(attributes);
+          if (/^https?:/i.test(target) && !approvedRemoteApp) fail(`${app.file}: active runtime dependency is still remote: ${target}`);
+          continue;
+        }
+        const clean = target.split(/[?#]/)[0];
+        const resolved = path.resolve(path.dirname(source.filePath), clean);
+        if (!fs.existsSync(resolved)) fail(`${app.file}: missing relative runtime dependency ${target}`);
+        if (!resolved.startsWith(ROOT + path.sep)) fail(`${app.file}: runtime dependency escapes CoachTools: ${target}`);
       }
-      const clean = target.split(/[?#]/)[0];
-      const resolved = path.resolve(path.dirname(filePath), clean);
-      if (!fs.existsSync(resolved)) fail(`${app.file}: missing relative runtime dependency ${target}`);
-      if (!resolved.startsWith(ROOT + path.sep)) fail(`${app.file}: runtime dependency escapes CoachTools: ${target}`);
     }
   }
 }

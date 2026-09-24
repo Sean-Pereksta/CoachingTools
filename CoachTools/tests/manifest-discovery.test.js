@@ -41,6 +41,14 @@ try {
   assert(manifest.apps.every(app => app.icon === 'icons/default-app.png'), 'New apps should receive the default icon.');
   assert(manifest.apps.every(app => app.category === 'Other' && app.enabled), 'New apps should receive safe manifest defaults.');
 
+  write('apps/wrapped.html', '<meta name="coachtools-id" content="wrapped"><meta name="coachtools-hidden" content="true"><title>Implementation</title>');
+  write('apps/wrapped-shell.html', '<meta name="coachtools-id" content="wrapped"><title>Wrapped app</title><iframe src="wrapped.html"></iframe>');
+  run();
+  manifest = JSON.parse(fs.readFileSync(path.join(fixture, 'apps.json'), 'utf8'));
+  assert.strictEqual(manifest.apps.filter(app => app.id === 'wrapped').length, 1, 'A wrapper and its hidden implementation share one launcher identity.');
+  assert.strictEqual(manifest.apps.find(app => app.id === 'wrapped').file, 'apps/wrapped-shell.html');
+  assert(fs.existsSync(path.join(fixture, 'apps/wrapped.html')), 'The hidden implementation remains available to its launcher.');
+
   manifest.apps.push({ id: 'missing-app', file: 'apps/missing.html' });
   fs.writeFileSync(path.join(fixture, 'apps.json'), JSON.stringify(manifest, null, 2), 'utf8');
   assert(run(true).includes('points to missing file'), 'A manifest entry whose file disappeared should fail validation.');

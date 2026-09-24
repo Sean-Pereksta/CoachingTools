@@ -64,49 +64,7 @@
     return text;
   }
 
-  function sundayForIsoWeekKey(weekKey) {
-    const match = /^(\d{4})-W(\d{1,2})$/i.exec(clean(weekKey));
-    if (!match) return null;
-    const year = Number(match[1]);
-    const week = Number(match[2]);
-    if (!Number.isInteger(year) || !Number.isInteger(week) || week < 1 || week > 53) return null;
-
-    const jan4 = new Date(Date.UTC(year, 0, 4));
-    const jan4IsoDay = jan4.getUTCDay() || 7;
-    const weekOneMonday = new Date(Date.UTC(year, 0, 4 - jan4IsoDay + 1));
-    const monday = new Date(weekOneMonday.getTime() + ((week - 1) * 7 * 86400000));
-    return new Date(monday.getTime() - 86400000);
-  }
-
-  function shortDate(date) {
-    if (!(date instanceof Date) || isNaN(date)) return '—';
-    return `${date.getUTCMonth() + 1}/${date.getUTCDate()}/${date.getUTCFullYear()}`;
-  }
-
-  function weekSundayLabel(weekKey) {
-    return shortDate(sundayForIsoWeekKey(weekKey));
-  }
-
-  function patchTooltipWeekHeader() {
-    const original = root.buildTooltipText;
-    if (typeof original !== 'function' || original.__cgShortDateHover) return;
-
-    function enhancedBuildTooltipText(rep, wk) {
-      const text = original.apply(this, arguments);
-      const weekKey = clean(wk);
-      const dateLabel = weekSundayLabel(weekKey);
-      if (!weekKey || !dateLabel || dateLabel === '—') return text;
-
-      const lines = String(text == null ? '' : text).split('\n');
-      if (!lines.length) return text;
-      lines[0] = lines[0].replace(weekKey, dateLabel);
-      return lines.join('\n');
-    }
-
-    enhancedBuildTooltipText.__cgShortDateHover = true;
-    enhancedBuildTooltipText.__original = original;
-    root.buildTooltipText = enhancedBuildTooltipText;
-  }
+  function weekSundayLabel(weekKey) { return root.reportWeekLabel(weekKey); }
 
   function patchCanonicalQA() {
     const original = root.canonicalizeQA;
@@ -241,42 +199,13 @@
         const queue = row.queueName || clean(pick(row, ['Queue Name', 'queue_name', 'queue'])) || '—';
         const durationRaw = row.interactionDuration || clean(pick(row, ['Interaction Duration', 'duration'])) || '—';
         const duration = formatInteractionDuration(durationRaw);
-        orb.title = `${review} • Score ${score} • Duration ${duration} • Queue ${queue}`;
+        orb.title = `${orb.dataset.rep} • QA • ${root.qaInteractionStartLabel(row)} • ${review} • Score ${score} • Duration ${duration} • Queue ${queue}`;
       }
-    });
-  }
-
-  function replaceWeekNumberLabels() {
-    document.querySelectorAll('.timelineWrap').forEach(scope => {
-      const weekKeys = Array.from(new Set(Array.from(scope.querySelectorAll('[data-wk]'))
-        .map(node => clean(node.dataset.wk))
-        .filter(Boolean)));
-      if (!weekKeys.length) return;
-
-      const byNumber = new Map();
-      weekKeys.forEach(wk => {
-        const match = /-W(\d{1,2})$/i.exec(wk);
-        if (match) byNumber.set(Number(match[1]), wk);
-      });
-
-      scope.querySelectorAll('*').forEach(node => {
-        if (node.children.length) return;
-        const match = /^W(\d{1,2})$/i.exec(clean(node.textContent));
-        if (!match) return;
-        const wk = byNumber.get(Number(match[1]));
-        if (!wk) return;
-        const label = weekSundayLabel(wk);
-        if (!label || label === '—') return;
-        node.textContent = label;
-        node.title = `Week beginning Sunday ${label}`;
-        node.dataset.cgWeekKey = wk;
-      });
     });
   }
 
   function decorate() {
     decorateQueued = false;
-    replaceWeekNumberLabels();
     decorateMonitorOrbs();
   }
 
@@ -342,7 +271,6 @@
     if (!required.every(name => typeof root[name] === 'function') || !document.getElementById('tt')) return false;
 
     patchCanonicalQA();
-    patchTooltipWeekHeader();
     addStyles();
     patchTooltipBehavior();
     installMonitorClickEnhancement();

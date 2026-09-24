@@ -75,7 +75,7 @@
   if(typeof document==='undefined'||typeof state==='undefined')return;
   const byId=id=>document.getElementById(id);
   const history=editHistory(),metricStack=[];
-  let baseline='',editingId='',restoring=false,captureTimer,activePicker=null,pickerSequence=0,initialized=false;
+  let baseline='',editingId='',restoring=false,captureTimer,initialized=false;
   let metricCycle=false,openedExisting=false;
   function notice(message){const status=byId('rwSaveState');if(status)status.textContent=message;}
   function readStored(key,fallback){try{return JSON.parse(localStorage.getItem(key)||'null')||fallback;}catch(_){return fallback;}}
@@ -132,7 +132,7 @@
     }catch(error){box.textContent='Choose a source and measures to check this analysis. '+(error.message||error);}
   }
   function fieldEntries(input){
-    const populationList=input.getAttribute('list');
+    const populationList=(input.getAttribute('data-header-list')||input.getAttribute('list'));
     if(populationList&&/Population|TeamFilter/.test(populationList))return [...(byId(populationList)?.querySelectorAll('option')||[])].map(o=>({label:o.label||o.value,value:o.value,group:/Org/.test(populationList)?'Organizations':/Rep/.test(populationList)?'Representatives':'Teams and coaches',detail:''}));
     const source=(input.dataset.gc?state.editingGuidedResearchConditions?.[Number(input.dataset.i)]?.source:'')||input.closest('[data-rw-formula-source]')?.dataset.rwFormulaSource||(input.closest('#metricEditorModal')?els.metricSourceSelect?.value:els.researchSource?.value);
     const entries=[],seen=new Set(),add=entry=>{if(!seen.has(entry.value)){seen.add(entry.value);entries.push(entry);}};
@@ -144,26 +144,8 @@
     [['_rep','Representative'],['_team','Team / coach']].forEach(([value,label])=>add({label,value,group:'Identity fields',detail:'Normalized relationship'}));
     return entries;
   }
-  function closePicker(){if(!activePicker)return;const {input,panel}=activePicker;input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');panel.remove();activePicker=null;}
-  function openPicker(input,empty=false){
-    if(!input||input.disabled)return;closePicker();const panel=document.createElement('div');panel.className='rwFieldPicker';panel.id='rwFields'+(++pickerSequence);panel.setAttribute('role','listbox');
-    document.body.appendChild(panel);const rect=input.getBoundingClientRect();panel.style.left=Math.max(8,Math.min(rect.left,innerWidth-360))+'px';panel.style.top=Math.min(rect.bottom+5,Math.max(8,innerHeight-300))+'px';panel.style.width=Math.min(Math.max(rect.width,350),innerWidth-16)+'px';
-    const entries=fieldEntries(input),matches=searchFields(entries,empty?'':input.value);
-    let group='';panel.innerHTML=matches.map((entry,index)=>{const header=entry.group!==group?`<div class="rwPickerGroup">${safeText(entry.group)}</div>`:'';group=entry.group;return header+`<button type="button" role="option" aria-selected="false" id="${panel.id}_${index}" data-rw-choice="${index}"><strong>${safeText(entry.label)}</strong><small>${safeText(entry.detail)}</small></button>`;}).join('')||'<div class="rwPickerEmpty">No matches. You can still type an expression.</div>';
-    input.setAttribute('role','combobox');input.setAttribute('aria-expanded','true');input.setAttribute('aria-controls',panel.id);input.setAttribute('aria-autocomplete','list');
-    activePicker={input,panel,matches,index:-1};panel.addEventListener('mousedown',event=>event.preventDefault());panel.onclick=event=>{const choice=event.target.closest('[data-rw-choice]');if(choice)chooseField(Number(choice.dataset.rwChoice));};
-  }
-  function chooseField(index){const active=activePicker,entry=active?.matches[index];if(!entry)return;active.input.value=entry.value;closePicker();active.input.dispatchEvent(new Event('input',{bubbles:true}));active.input.dispatchEvent(new Event('change',{bubbles:true}));closePicker();let target=active.input;if(!target.isConnected){if(target.id)target=byId(target.id)||target;else for(const attr of ['rf','rc','gc']){if(target.dataset[attr]){target=document.querySelector(`[data-${attr}="${target.dataset[attr]}"][data-i="${target.dataset.i}"]`)||target;break;}}}target.focus();}
-  function pickerEligible(input){return input?.matches?.('input[list="researchHeaderSuggestions"],input[list="metricHeaderSuggestions"],input[list^="researchPopulation"],input[list="researchTeamFilterSuggestions"],[data-rw-field]');}
-  function pickerKey(event){
-    if(!pickerEligible(event.target))return;
-    if(event.key==='ArrowDown'||event.key==='ArrowUp'){
-      event.preventDefault();if(!activePicker||activePicker.input!==event.target)openPicker(event.target,true);
-      const a=activePicker;if(!a||!a.matches.length)return;a.index=(a.index+(event.key==='ArrowDown'?1:-1)+a.matches.length)%a.matches.length;
-      a.panel.querySelectorAll('[role="option"]').forEach((option,index)=>option.setAttribute('aria-selected',String(index===a.index)));const selected=byId(a.panel.id+'_'+a.index);a.input.setAttribute('aria-activedescendant',selected.id);selected.scrollIntoView?.({block:'nearest'});
-    }else if(event.key==='Enter'&&activePicker?.input===event.target&&activePicker.index>=0){event.preventDefault();event.stopPropagation();chooseField(activePicker.index);}
-    else if(event.key==='Escape'&&activePicker){event.preventDefault();event.stopPropagation();closePicker();}
-  }
+  function closePicker(){hideHeaderSuggestions();}
+  function openPicker(input){if(input){input.dataset.rwField='';showHeaderSuggestions(input,headerAutocompleteContext(input));}}
   function filterSets(){const sets=readStored(FILTER_KEY,[]);return Array.isArray(sets)?sets:[];}
   function renderFilterSets(){const select=byId('rwFilterSet');if(select)select.innerHTML='<option value="">Saved filter sets…</option>'+filterSets().map((set,index)=>`<option value="${index}">${safeText(set.name)}</option>`).join('');}
   function saveFilterSet(){syncResearchEditorStateFromDom();const name=byId('rwFilterName').value.trim();if(!name){byId('rwFilterName').focus();return;}const sets=filterSets(),entry={name,filters:copy(state.editingResearchFilters||[]),conditions:copy(state.editingGuidedResearchConditions||[]),population:copy(state.editingResearchPopulationScope||{})};const existing=sets.findIndex(set=>set.name===name);if(existing<0)sets.push(entry);else sets[existing]=entry;if(writeStored(FILTER_KEY,sets))renderFilterSets();else notice('Filter set could not be stored. Export your analysis to keep a copy.');}
@@ -199,7 +181,6 @@
     const sets=document.createElement('div');sets.className='rwFilterSets';sets.innerHTML='<label>Reusable filter sets<select id="rwFilterSet" aria-label="Saved filter sets"></select></label><button type="button" class="smallBtn" id="rwApplyFilterSet">Apply set</button><input id="rwFilterName" aria-label="Filter set name" placeholder="Name this filter set"><button type="button" class="smallBtn" id="rwSaveFilterSet">Save set</button><span class="hint">Includes population filters and AND/OR qualification conditions.</span>';byId('researchFilters')?.before(sets);renderFilterSets();byId('rwSaveFilterSet').onclick=saveFilterSet;byId('rwApplyFilterSet').onclick=applyFilterSet;
     editor.addEventListener('input',scheduleCapture);editor.addEventListener('change',scheduleCapture);editor.addEventListener('click',event=>{if(!event.target.closest('.rwEditorBar,#rwDraftRecovery'))scheduleCapture();});
     editor.addEventListener('keydown',event=>{if(!(event.ctrlKey||event.metaKey)||event.altKey)return;if(event.target.matches('input,textarea'))return;if(event.key.toLowerCase()==='z'){event.preventDefault();if(event.shiftKey)restoreSnapshot(history.redo());else{capture();restoreSnapshot(history.undo());}}});
-    document.addEventListener('input',event=>{if(pickerEligible(event.target))openPicker(event.target);});document.addEventListener('keydown',pickerKey,true);document.addEventListener('focusin',event=>{if(pickerEligible(event.target))openPicker(event.target,true);else if(!event.target.closest?.('.rwFieldPicker'))closePicker();});document.addEventListener('pointerdown',event=>{if(activePicker&&event.target!==activePicker.input&&!event.target.closest('.rwFieldPicker'))closePicker();});root.addEventListener?.('resize',closePicker);document.addEventListener('scroll',event=>{if(activePicker&&!activePicker.panel.contains(event.target))closePicker();},true);
     document.addEventListener('click',event=>{const duplicate=event.target.closest('[data-rw-duplicate]');if(duplicate)duplicateResearch(duplicate.dataset.rwDuplicate);const first=event.target.closest('[data-rw-first]');if(first){openResearchItemEditor(null);setMode(first.dataset.rwFirst);}});
     byId('researchModal')?.querySelector('.researchToolbar')?.insertAdjacentHTML('beforeend','<button class="dark" type="button" id="rwAnalysisBoard">Charts / Analysis board</button><label class="rwSearchLabel">Find analysis<input type="search" id="rwResearchSearch" placeholder="Search saved Research"></label>');byId('rwAnalysisBoard').onclick=()=>root.AllStarCharts?.openBoard();byId('rwResearchSearch').oninput=event=>byId('researchCanvas').querySelectorAll('[data-research-card]').forEach(card=>card.hidden=!normalize(card.querySelector('.researchCardTitle')?.textContent).includes(normalize(event.target.value)));
     if(typeof MutationObserver!=='undefined'&&byId('researchCanvas'))new MutationObserver(enhanceCanvas).observe(byId('researchCanvas'),{childList:true});addMetricControls();
@@ -252,7 +233,7 @@
     const draft=readStored(DRAFT_KEY,null);byId('rwDraftRecovery').classList.toggle('hidden',!draft||draft.itemId!==editingId||JSON.stringify(draft.snapshot)===baseline);renderFilterSets();
   };
   const previousCloseModal=closeModal;
-  closeModal=function(modalId){if(modalId==='researchEditorModal'){clearTimeout(captureTimer);capture();closePicker();}return previousCloseModal(modalId);};
+  closeModal=function(modalId){hideHeaderSuggestions();if(modalId==='researchEditorModal'){clearTimeout(captureTimer);capture();closePicker();}return previousCloseModal(modalId);};
   const previousSave=saveResearchItemFromEditor;
   saveResearchItemFromEditor=async function(){capture();const key=els.researchEditId.value;const result=await previousSave();if(!byId('researchEditorModal')?.classList.contains('open')&&(state.researchItems||[]).some(item=>item.id===key)){baseline=JSON.stringify(controlsSnapshot());openedExisting=true;notice('Saved');try{const draft=readStored(DRAFT_KEY,null);if(draft?.itemId===editingId)localStorage.removeItem(DRAFT_KEY);}catch(_){}}return result;};
   if(typeof bindResearchCanvasActions==='function'){const previousBind=bindResearchCanvasActions;bindResearchCanvasActions=function(){previousBind();enhanceCanvas();};}

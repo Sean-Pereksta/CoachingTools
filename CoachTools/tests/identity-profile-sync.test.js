@@ -7,7 +7,12 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
-const context = { console, setTimeout, clearTimeout, Date, Math, JSON };
+// Keep rolling-window assertions anchored to the August fixture reporting period.
+class FixtureDate extends Date {
+  constructor(...args) { super(...(args.length ? args : [FixtureDate.now()])); }
+  static now() { return Date.parse('2026-08-12T12:00:00Z'); }
+}
+const context = { console, setTimeout, clearTimeout, Date: FixtureDate, Math, JSON };
 context.window = context;
 context.globalThis = context;
 vm.createContext(context);

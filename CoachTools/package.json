@@ -13,9 +13,9 @@
     "package-suite": "node build/package-suite.js",
     "serve": "node build/start-local-server.js",
     "test:myone": "node tests/myone-usability.test.js && node tests/myone-storage.test.js && node tests/manual-source-recovery.test.js && node tests/clean-upload-selection.test.js && node tests/source-scope-routing.test.js",
-    "test:allstar:modernization": "node apps/allstar/tests/analysis-engine.test.js && node apps/allstar/tests/research-engine.test.js && node apps/allstar/tests/research-workspace.test.js && node apps/allstar/tests/research-charts.test.js && node apps/allstar/tests/workspace-navigation.test.js && node apps/allstar/tests/model-workspace.test.js && node apps/allstar/tests/modernization-compatibility.test.js",
+    "test:allstar:modernization": "node apps/allstar/tests/analysis-engine.test.js && node apps/allstar/tests/research-engine.test.js && node apps/allstar/tests/research-workspace.test.js && node apps/allstar/tests/research-charts.test.js && node apps/allstar/tests/workspace-navigation.test.js && node apps/allstar/tests/model-workspace.test.js && node apps/allstar/tests/modernization-compatibility.test.js && node apps/allstar/tests/expression-autocomplete.test.js",
     "benchmark:allstar": "node apps/allstar/tests/analysis-benchmark.js",
-    "test:allstar:browser": "node apps/allstar/tests/browser-modernization.test.js"
+    "test:allstar:browser": "node apps/allstar/tests/browser-modernization.test.js && node apps/allstar/tests/browser-expression-org-gaps.test.js"
   },
   "devDependencies": {
     "fake-indexeddb": "^6.2.5",

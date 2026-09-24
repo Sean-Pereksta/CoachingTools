@@ -4,6 +4,8 @@ const assert = require('assert');
 require('../shared/coachtools-intelligence.js');
 
 const intelligence = globalThis.CoachToolsIntelligence;
+// Evaluate rolling windows against the fixture's reporting period.
+const asOf = new Date('2026-08-12T12:00:00Z');
 assert.ok(intelligence, 'CoachToolsIntelligence should attach to globalThis');
 assert.strictEqual(intelligence.VERSION, '1.0.0');
 
@@ -40,6 +42,7 @@ assert.strictEqual(Math.round(checklist[0].days), 2);
 assert.strictEqual(checklist[1].served, null);
 
 const support = intelligence.supportSummary({
+  asOf,
   checklist,
   scope: { mode: 'all' },
   byId: new Map([
@@ -60,6 +63,7 @@ assert.strictEqual(intelligence._test.personInScope(byId.get('rep-1'), { mode: '
 
 const appointmentMetric = intelligence.METRICS.find(metric => metric.id === 'appointment-rate');
 const recurringContext = {
+  asOf,
   byId,
   scope: { mode: 'all' },
   qa: [],
