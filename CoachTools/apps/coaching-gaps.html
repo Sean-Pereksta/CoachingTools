@@ -1566,6 +1566,20 @@
     .filterStateCard{ grid-template-columns:1fr; }
   }
 
+
+.activeReportFilters{display:flex;flex-wrap:wrap;gap:7px;padding:10px 18px;color:#64748b;font-size:12px;background:#f8fafc;border-bottom:1px solid #e2e8f0}
+.activeFilterChip{border:1px solid #bfdbfe;background:#eff6ff;color:#1e40af;border-radius:999px;padding:6px 11px;max-width:100%;overflow-wrap:anywhere;text-align:left;cursor:pointer}
+.timelineScroller{overflow-x:auto;max-width:100%;scrollbar-gutter:stable;padding-bottom:5px}
+.timelineScroller .timelineWrap,.timelineScroller .timelineWrap.hasOrbs{padding:12px 10px 10px;box-sizing:border-box}
+.timelineDates{display:flex;border-bottom:1px solid #cbd5e1;margin-bottom:10px}
+.timelineDates>div{flex:1 1 0;min-width:0;text-align:center;font-size:12px;font-weight:800;padding:9px 0;border-left:1px solid #dbe3ec;color:#334155}
+.timelineDates>div:nth-child(even){background:#eaf0f7}
+.timelineScroller .weekOrbs{position:static;min-height:56px;margin-bottom:10px}
+.timelineScroller .timelineRow.multi{display:block}.timelineScroller .timelineRowLabel{margin:8px 0}
+.timelineScroller .seg,.timelineScroller .cbseg,.timelineScroller .scoreSeg{box-sizing:border-box;border-left:1px solid rgba(100,116,139,.2)}
+.repHead{position:relative;background:white}.repNameBtn{overflow-wrap:anywhere;text-align:left}
+#filterStateCard .filterStateV{white-space:normal;overflow-wrap:anywhere}
+
 </style>
 </head>
 
@@ -1607,6 +1621,7 @@
 
     <div class="headerActions">
       <button id="panelChevron" class="filterToggleBtn" type="button" title="Open filters" aria-expanded="false">Filters <span class="filterCountBadge" id="filterCountBadge">0</span></button>
+      <button id="resetReportFilters" type="button" class="btn">Reset filters</button>
       <button class="iconBtn" id="settingsBtn" type="button" title="Settings">⚙</button>
       <button class="iconBtn" id="helpBtn" type="button" title="Help" aria-label="Open quick instructions">?</button>
     </div>
@@ -1628,6 +1643,7 @@
   </div>
 </div>
 
+<div id="activeReportFilters" class="activeReportFilters" aria-label="Active report filters"></div>
 <div class="scopeShell">
   <div class="scopeRibbon" id="scopeRibbon">
     <div class="scopeCell"><div class="scopeK">Showing</div><div class="scopeV" id="scopePrimary">Loading…</div></div>
@@ -1642,7 +1658,7 @@
 <div id="topPanel">
   <div class="controlGrid">
     <div class="filterDrawerHead">
-      <div><div class="filterDrawerTitle">Filters</div><div class="filterDrawerSub">The report updates automatically as you change these.</div></div>
+      <div><div class="filterDrawerTitle">Filters</div><div class="filterDrawerSub">The report updates automatically as you change these.</div><button type="button" class="btn" id="clearAllReportFilters">Clear all filters</button></div>
       <button class="filterDrawerClose" id="filterCloseBtn" type="button" aria-label="Close filters">✕</button>
     </div>
     <div class="filterStateCard" id="filterStateCard">
@@ -2453,6 +2469,26 @@ function mmddyy(d){
   const day=String(d.getDate()).padStart(2,'0');
   const y=d.getFullYear();
   return `${m}/${day}/${y}`;
+}
+// Shared presentation helpers; ISO grouping and calculations stay unchanged.
+function formatReportDate(value){ return mmddyy(value instanceof Date?value:parseDate(value)); }
+function reportWeekStart(key){
+  const match=/^(\d{4})-W(\d{1,2})$/.exec(String(key||''));
+  if(!match || +match[2]<1 || +match[2]>53) return null;
+  const jan4=new Date(Date.UTC(+match[1],0,4));
+  return new Date(Date.UTC(+match[1],0,4-(jan4.getUTCDay()||7)+(+match[2]-1)*7));
+}
+function reportWeekLabel(key){
+  const d=reportWeekStart(key);
+  return d?`${d.getUTCMonth()+1}/${d.getUTCDate()}/${d.getUTCFullYear()}`:'—';
+}
+function reportWeekRange(key){
+  const start=reportWeekStart(key); if(!start) return '—';
+  const end=new Date(start.getTime()+6*MS_PER_DAY);
+  return `${reportWeekLabel(key)} – ${end.getUTCMonth()+1}/${end.getUTCDate()}/${end.getUTCFullYear()}`;
+}
+function timelineDateHeader(weeks){
+  return `<div class="timelineDates">${weeks.map(wk=>`<div title="${reportWeekRange(wk)}" data-week-label="${escAttr(wk)}">${reportWeekLabel(wk)}</div>`).join('')}</div>`;
 }
 function ymd(d){
   if(!(d instanceof Date) || isNaN(d)) return '';
@@ -4009,8 +4045,10 @@ function qaConversationId(row){
   ).trim();
 }
 function qaInteractionStartLabel(row){
-  const dt = row?.startDate || parseAnyDate(pickFieldFromRow(row || {}, ["interactionstarttime","interactionstart","starttime","interactiontime","scoreddate","date"]));
-  return dt ? mmddyy(dt) : '—';
+  const raw=pickFieldFromRow(row||{},['interactionstarttime','interactionstart','starttime','interactiontime']);
+  const dt=raw && /\d{1,2}:\d{2}/.test(String(raw))?new Date(raw):null;
+  if(dt && !isNaN(dt)) return `${formatReportDate(dt)} ${dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`;
+  return formatReportDate(row?.startDate || raw || pickFieldFromRow(row||{},['scoreddate','date'])) || '—';
 }
 function gatherChecklistInWindow(repName, weeks){
   const out=[];
@@ -4453,17 +4491,45 @@ function updateModernScope(){
   if(els.scopeCoaching) els.scopeCoaching.innerHTML = `<strong>${filteredCoach.length.toLocaleString()}</strong> visible • ${escAttr(coachingFilterLabel())}`;
   if(els.scopeChecklist) els.scopeChecklist.innerHTML = `<strong>${filteredChecklist.length.toLocaleString()}</strong> visible • ${escAttr(checklistFilterLabel())}`;
   if(els.scopeData) els.scopeData.innerHTML = `QA <strong>${filteredQA.length.toLocaleString()}</strong> • Stats <strong>${allRows.length.toLocaleString()}</strong> • ${coachings.length&&checklistRows.length?'Data ready':'Check sources'}`;
-  let filterCount = 0;
-  if(includedCoachingTerms.size || excludedCoachingTerms.size || enabledTypes.size !== coachingTypes.length) filterCount++;
-  if(activePreset || checklistFilterLabel() !== 'All checklist items') filterCount++;
-  if(getSecondaryKpiKey()) filterCount++;
-  if(Number(els.minCovInp?.value||50) !== 50) filterCount++;
-  if(els.filterCountBadge) els.filterCountBadge.textContent = String(filterCount);
+  const chips=activeReportFilterLabels();
+  if(els.filterCountBadge) els.filterCountBadge.textContent=String(chips.length);
+  const chipBar=document.getElementById('activeReportFilters');
+  if(chipBar) chipBar.innerHTML=chips.length?chips.map(text=>`<button type="button" class="activeFilterChip" data-open-report-filters>${escAttr(text)}</button>`).join(''):'<span>All coaching types and checklist items · No additional filters</span>';
   if(els.filterStatePreset) els.filterStatePreset.textContent = presetLabel();
   if(els.filterStateCoaching) els.filterStateCoaching.textContent = coachingFilterLabel();
   if(els.filterStateChecklist) els.filterStateChecklist.textContent = checklistFilterLabel();
   clearPresetVisual();
 }
+function activeReportFilterLabels(){
+  const labels=[];
+  if(enabledTypes.size!==coachingTypes.length) labels.push(enabledTypes.size?`Coaching types: ${[...enabledTypes].join(', ')}`:'Coaching types: none');
+  includedCoachingTerms.forEach(x=>labels.push('Coaching contains: '+x));
+  excludedCoachingTerms.forEach(x=>labels.push('Coaching excludes: '+x));
+  if(activePreset) labels.push('Checklist preset: '+checklistFilterLabel());
+  else checklistCriteria.forEach(c=>{
+    const conditions=[c.incident&&c.incident!=='__ANY__'?c.incident:'',...(c.incidentTerms||[]),...(c.keywords||[])].filter(Boolean);
+    if(conditions.length || c.mode==='exclude') labels.push(`Checklist ${c.mode==='exclude'?'exclude':'include'}: ${conditions.join(' / ')||'all items'}`);
+  });
+  if(Number(els.minCovInp?.value||50)!==50) labels.push('Minimum coverage: '+els.minCovInp.value+'%');
+  if(els.repSearch.value.trim()) labels.push('Representative: '+els.repSearch.value.trim());
+  if(els.oppSel.value) labels.push('Opportunity gate: '+els.oppSel.value+' ≥ '+(els.oppMin.value||0));
+  return labels;
+}
+function clearReportFilters(){
+  activePreset=''; enabledTypes=new Set(coachingTypes); includedCoachingTerms.clear(); excludedCoachingTerms.clear();
+  // Preserve criteria identities, names, colors and unrelated settings.
+  checklistCriteria.forEach(c=>{c.mode='include';c.incident='__ANY__';c.incidentTerms=[];c.keywords=[];});
+  els.minCovInp.value='50'; els.repSearch.value=''; els.oppSel.value=''; toggleOppGateUI();
+  rebuildCoachingWeekIndex(); paintTypeChips(); paintCoachingWordChips(); paintChecklistCriteriaEditor(); paintKeywordChips(); savePrefs(); render();
+}
+document.getElementById('resetReportFilters').addEventListener('click',clearReportFilters);
+document.getElementById('clearAllReportFilters').addEventListener('click',clearReportFilters);
+document.getElementById('activeReportFilters').addEventListener('click',e=>{if(e.target.closest('[data-open-report-filters]'))setPanelCollapsed(false);});
+// Shared horizontal position; representative headings remain outside the scroller.
+document.addEventListener('scroll',e=>{
+  if(!e.target.matches?.('#repList .timelineScroller')) return;
+  document.querySelectorAll('#repList .timelineScroller').forEach(scroller=>{if(scroller.scrollLeft!==e.target.scrollLeft)scroller.scrollLeft=e.target.scrollLeft;});
+},true);
 function applyQuickPreset(key){
   const preset = PRESET_DEFS[key];
   if(!preset) return;
@@ -5129,7 +5195,7 @@ const TT = { lastKey:'' };
 
 function buildTooltipText(rep, wk, valStr, status, coachCount){
   const lines = [];
-  const head = valStr ? `${wk} • ${valStr}% (${status})` : `${wk}`;
+  const head = valStr ? `${reportWeekRange(wk)} • ${valStr}% (${status})` : `${reportWeekRange(wk)}`;
   lines.push(head);
 
   const arr = coachingForRepWeek(rep, wk) || [];
@@ -5255,7 +5321,7 @@ function paintGapList(repSummaries){
     const top = misses.slice(0, 24);
     const items = top.map(m=>{
       const vStr = Number.isFinite(m.v) ? (m.v*100).toFixed(1)+'%' : '—';
-      return `<li><strong>${escAttr(m.rep)}</strong> — <span class="mono">${escAttr(m.wk)}</span> • <span class="gapBad">${escAttr(vStr)}</span></li>`;
+      return `<li><strong>${escAttr(m.rep)}</strong> — <span class="mono">${escAttr(reportWeekLabel(m.wk))}</span> • <span class="gapBad">${escAttr(vStr)}</span></li>`;
     }).join('');
 
     els.gapList.innerHTML = `<ul>${items}</ul>`;
@@ -5276,7 +5342,7 @@ function paintGapList(repSummaries){
       if(m.i > last.i) last = m;
     }
     const vStr = Number.isFinite(last.v) ? (last.v*100).toFixed(1)+'%' : '—';
-    return `<li><strong>${escAttr(r.repName)}</strong> — <span class="gapBad">${r.missingBelow.length}</span> red week(s) w/o coaching ±1w (most recent: <span class="mono">${escAttr(last.wk)}</span> • <span class="gapBad">${escAttr(vStr)}</span>)</li>`;
+    return `<li><strong>${escAttr(r.repName)}</strong> — <span class="gapBad">${r.missingBelow.length}</span> red week(s) w/o coaching ±1w (most recent: <span class="mono">${escAttr(reportWeekLabel(last.wk))}</span> • <span class="gapBad">${escAttr(vStr)}</span>)</li>`;
   }).join('');
 
   els.gapList.innerHTML = `<ul>${items}</ul>`;
@@ -5976,7 +6042,7 @@ function paintRepModal(){
       <div class="coachItemTop">
         <div class="coachItemDate">${mmddyy(it.date)}</div>
         <div class="coachItemBadge">${escAttr(it.incident)}</div>
-        <div class="mono" style="margin-left:auto;color:var(--muted);font-weight:900">${escAttr(it.wk)}</div>
+        <div class="mono" style="margin-left:auto;color:var(--muted);font-weight:900">${escAttr(reportWeekLabel(it.wk))}</div>
       </div>
       ${colorTags ? `<div class="mini" style="margin-top:6px">${colorTags}</div>` : ''}
       <div class="coachItemDesc">${escAttr(it.desc || '—')}</div>
@@ -5991,7 +6057,7 @@ function paintRepModal(){
     const oppVal = oppGateKey ? `<td class="mono">${Number.isFinite(c.oppCount)? String(Math.round(c.oppCount)) : '—'}</td>` : '';
     return `
       <tr>
-        <td class="mono">${escAttr(c.wk)}</td>
+        <td class="mono">${escAttr(reportWeekLabel(c.wk))}</td>
         <td class="mono">${escAttr(val)}</td>
         <td>${escAttr(status)}</td>
         ${oppVal}
@@ -6007,7 +6073,7 @@ function paintRepModal(){
     <div class="mCard">
       <div class="mHead">
         <span>Timeline</span>
-        <span class="mono" style="color:var(--muted);font-weight:900">${weeks[0]} → ${weeks[weeks.length-1]} • Goal ${(goalFrac*100).toFixed(1)}%</span>
+        <span class="mono" style="color:var(--muted);font-weight:900">${reportWeekLabel(weeks[0])} → ${reportWeekLabel(weeks[weeks.length-1])} • Goal ${(goalFrac*100).toFixed(1)}%</span>
       </div>
 
       <div class="mini">
@@ -6019,7 +6085,8 @@ function paintRepModal(){
         <span class="pill">Data coverage: <strong>${fmtPct0(covFrac)}</strong></span>
       </div>
 
-      <div class="timelineWrap ${modalOrb.wrapClass}" style="margin-top:10px">
+      <div class="timelineScroller" tabindex="0" aria-label="Representative weekly timeline"><div class="timelineWrap ${modalOrb.wrapClass}" style="margin-top:10px;min-width:${weeks.length*96+20}px">
+        ${timelineDateHeader(weeks)}
         ${modalDisclaimerHtml}
         ${modalOrb.html}
         <div class="timelineStack">
@@ -6031,7 +6098,7 @@ function paintRepModal(){
           <div class="mono">Hover segments for coaching + checklist details</div>
           <div class="mono">Blue hatch=coaching • Orange hatch=corrective</div>
         </div>
-      </div>
+      </div></div>
     </div>
 
     <div class="mCard">
@@ -6097,11 +6164,11 @@ function openItemModalFromOrb(btn){
   if(kind === 'coaching'){
     const row = it.row || {};
     els.itemModalTitle.textContent = `Documented Coaching • ${rep}`;
-    els.itemModalMeta.textContent = `${wk} • ${mmddyy(row.date)} • ${(row.types||[]).join(', ') || 'Type not set'}`;
+    els.itemModalMeta.textContent = `${reportWeekRange(wk)} • ${mmddyy(row.date)} • ${(row.types||[]).join(', ') || 'Type not set'}`;
     els.itemModalBody.innerHTML = `
       <div class="mCard">
         <div class="mini">
-          <span class="pill">Week: <strong>${escAttr(wk)}</strong></span>
+          <span class="pill">Week: <strong>${escAttr(reportWeekRange(wk))}</strong></span>
           <span class="pill">Date: <strong>${escAttr(mmddyy(row.date))}</strong></span>
           <span class="pill">Types: <strong>${escAttr((row.types||[]).join(', ') || '—')}</strong></span>
           <span class="pill">Coach: <strong>${escAttr(row.coach || '—')}</strong></span>
@@ -6116,7 +6183,7 @@ function openItemModalFromOrb(btn){
     const row = it.row || {};
     const convoId = qaConversationId(row) || '—';
     els.itemModalTitle.textContent = `Call Quality Monitor • ${rep}`;
-    els.itemModalMeta.textContent = `${wk} • ${qaInteractionStartLabel(row)} • Score ${fmtPct1(row.score)}`;
+    els.itemModalMeta.textContent = `${reportWeekRange(wk)} • ${qaInteractionStartLabel(row)} • Score ${fmtPct1(row.score)}`;
     els.itemModalBody.innerHTML = `
       <div class="mCard">
         <div class="mini">
@@ -6135,7 +6202,7 @@ function openItemModalFromOrb(btn){
   const createdDate = row.createdOn ? mmddyy(row.createdOn) : '—';
   const agingTxt = days===null ? '—' : `${days} day${days===1?'':'s'}`;
   els.itemModalTitle.textContent = `Checklist Incident • ${rep}`;
-  els.itemModalMeta.textContent = `${wk} • ${mmddyy(row.date)} • ${row.incident || 'Incident'}`;
+  els.itemModalMeta.textContent = `${reportWeekRange(wk)} • ${mmddyy(row.date)} • ${row.incident || 'Incident'}`;
   els.itemModalBody.innerHTML = `
     <div class="mCard">
       <div class="mini">
@@ -6168,11 +6235,11 @@ function timelineOrbHtml(repName, weeks){
     const inner = items.map((it, idx)=>{
       const style = it.kind==='incident' ? ` style="--orb-color:${escAttr(it.color || '#f59e0b')}"` : '';
       const title = it.kind==='coaching'
-        ? `Coaching • ${mmddyy(it.row?.date)}`
+        ? `Documented Coaching • ${formatReportDate(it.row?.date)} • ${(it.row?.types||[]).join(", ")} • ${it.row?.desc||it.row?.description||""}`
         : (it.kind==='monitor'
           ? `Conversation ID: ${qaConversationId(it.row) || '—'} • Interaction Start Time: ${qaInteractionStartLabel(it.row)} • Evaluator: ${it.row?.evaluator || '—'}`
-          : `Checklist • ${mmddyy(it.row?.date)} • ${it.row?.incident || ''}`);
-      return `<button class="weekOrb ${escAttr(it.kind)}" data-kind="${escAttr(it.kind)}" data-rep="${escAttr(repName)}" data-wk="${escAttr(wk)}" data-idx="${idx}" title="${escAttr(title)}"${style}></button>`;
+          : `Checklist • ${formatReportDate(it.row?.date)} • ${it.row?.incident || ''} • ${it.row?.desc || ''}`);
+      return `<button class="weekOrb ${escAttr(it.kind)}" data-kind="${escAttr(it.kind)}" data-rep="${escAttr(repName)}" data-wk="${escAttr(wk)}" data-idx="${idx}" aria-label="${escAttr(repName+' · '+title)}" title="${escAttr(repName+' · '+title)}"${style}></button>`;
     }).join('');
     return `<div class="weekOrbCol">${inner}</div>`;
   }).join('');
@@ -8554,17 +8621,18 @@ function render(){
           </div>
         </details>
 
-        <div class="timelineWrap ${repOrb.wrapClass}">
+        <div class="timelineScroller" tabindex="0" aria-label="Weekly timeline for ${escAttr(s.repName)}"><div class="timelineWrap ${repOrb.wrapClass}" style="min-width:${weeks.length*96+20}px">
+          ${timelineDateHeader(weeks)}
           ${disclaimerHtml}
           ${repOrb.html}
           <div class="timelineStack">
             ${stackRowsHtml.join('')}
           </div>
           <div class="timelineMeta">
-            <div class="mono">${weeks[0]} → ${weeks[weeks.length-1]} • <span class="mono" style="color:var(--muted);font-weight:900">Blue hatch=coaching • Orange hatch=corrective (hover/click name)</span></div>
+            <div class="mono">${reportWeekLabel(weeks[0])} → ${reportWeekLabel(weeks[weeks.length-1])} • <span class="mono" style="color:var(--muted);font-weight:900">Blue hatch=coaching • Orange hatch=corrective (hover/click name)</span></div>
             <div class="mono">${secondaryKpiDef ? `Goals: ${(goalFrac*100).toFixed(1)}% / ${(getGoalFracForKpi(secondaryKpiKey)*100).toFixed(1)}%` : `Goal: ${(goalFrac*100).toFixed(1)}%`}</div>
           </div>
-        </div>
+        </div></div>
       </div>
     `;
   }).join('') || `<div class="mono" style="color:var(--muted);font-weight:900">No reps match.</div>`;

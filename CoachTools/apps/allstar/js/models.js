@@ -2042,18 +2042,13 @@ function bindCriteriaEditors(){
         c[field]=val;
       }
       if(field==='calcType' || field==='audience' || field==='source') alignDisplayColumnCriterion(c);
-      if(field==='expression') showHeaderSuggestions(input,c);
       if(field==='checkValueType'){
         ensureRowPullConditions(c).forEach(cond=>{ cond.operator=normalizeRowPullOperator(cond.operator,c.checkValueType||'text'); });
       }
       if(['source','weight','scoreType','calcType','aggregate','withinUseRange','leftSource','rightSource','customSource','checkColumn','checkDateColumn','checkValueType','audience','trueValueEnabled','trueValueSource','lookupMatchEntity','lookupSelection','displayMode','displayCalculation','displayMissingMode'].includes(field)) renderEditModel();
     };
   });
-  els.criteriaList.querySelectorAll('[data-expression-input]').forEach(input=>{
-    input.onfocus=()=>{ const box=input.closest('[data-crit]'); const c=getEditCriterion(box?.dataset.crit); if(c) showHeaderSuggestions(input,c); };
-    input.onkeyup=()=>{ const box=input.closest('[data-crit]'); const c=getEditCriterion(box?.dataset.crit); if(c) showHeaderSuggestions(input,c); };
-    input.onblur=()=>setTimeout(hideHeaderSuggestions,160);
-  });
+
   els.criteriaList.querySelectorAll('[data-qacrit]').forEach(input=>{
     input.onchange=input.oninput=()=>{
       const box=input.closest('[data-crit]'); const c=getEditCriterion(box?.dataset.crit); if(!c) return;
@@ -2096,52 +2091,62 @@ function bindCriteriaEditors(){
       else if(field==='dynamic') f.dynamic=!!input.checked;
       else if(field==='dynamicColumn') f.dynamicColumn=!!input.checked;
       else { f[field]=input.value; if(field==='action') f.mode=input.value; }
-      if(field==='expression' || field==='columnExpression') showHeaderSuggestions(input,{source:f.source||c.source,customSource:f.source||c.source});
       if(['source','column','operator','dynamic','dynamicColumn','action','targetSource','windowMode'].includes(field)) renderEditModel();
     };
   });
-  els.criteriaList.querySelectorAll('[data-filter-expression-input]').forEach(input=>{
-    input.onfocus=()=>{ const critBox=input.closest('[data-crit]'); const filterBox=input.closest('[data-filter]'); const c=getEditCriterion(critBox?.dataset.crit); const f=(c?.filters||[]).find(x=>x.id===filterBox?.dataset.filter); if(f) showHeaderSuggestions(input,{source:f.source||c.source,customSource:f.source||c.source}); };
-    input.onkeyup=()=>input.onfocus();
-    input.onblur=()=>setTimeout(hideHeaderSuggestions,160);
-  });
+
 }
 function ensureHeaderSuggestMenu(){
   let menu=document.getElementById('headerSuggestMenu');
   if(!menu){ menu=document.createElement('div'); menu.id='headerSuggestMenu'; menu.className='headerSuggestMenu'; document.body.appendChild(menu); }
   return menu;
 }
+// Find the complete token surrounding the caret; never consume adjacent math.
 function expressionTokenInfo(input){
-  const value=input.value||'', pos=input.selectionStart??value.length, before=value.slice(0,pos);
+  const value=input.value||'', pos=input.selectionStart??value.length, selected=input.selectionEnd??pos;
+  if(selected>pos) return {mode:'header',start:pos,end:selected,text:value.slice(pos,selected).replace(/^\[|\]$/g,''),bracketed:false};
+  const before=value.slice(0,pos), after=value.slice(pos);
+  const tailEnd=(pattern)=>pos+(after.match(pattern)?.[0].length||0);
   const cross=before.match(/!\[([^\]]*)$/);
-  if(cross) return {mode:'source',start:pos-cross[1].length-2,end:pos,text:cross[1],bracketed:true};
-  const crossHeader=before.match(/!\[([^\]]+)\]\s*\.\s*\[([^\]]*)$/);
-  if(crossHeader){ const source=sourceKeyFromExpressionLabel(crossHeader[1]); return {mode:'crossHeader',source,start:pos-crossHeader[2].length-1,end:pos,text:crossHeader[2],bracketed:true}; }
-
-  // Loose cross-source syntax: !nondate.retail.wipers, !date.retail.wipers.accepted,
-  // !Retail SV2.Cash Apps, etc.  This keeps the typed source and completes only the field part.
-  const bang=before.lastIndexOf('!');
-  if(bang>=0){
-    const bangBody=before.slice(bang+1);
-    const loose=splitSourceQualifiedLooseRef(bangBody);
-    if(loose){
-      const rawField=String(loose.rawField||'');
-      const fieldStartInBody=Math.max(0,bangBody.length-rawField.length);
-      return {mode:'crossHeader',source:sourceKeyFromExpressionLabel(loose.rawSource),start:bang+1+fieldStartInBody,end:pos,text:rawField,bracketed:false,loose:true};
-    }
-    if(bang>=0 && before.slice(bang).indexOf(']')<0){ return {mode:'source',start:bang,end:pos,text:bangBody.replace(/^\[/,''),bracketed:false}; }
+  if(cross) return {mode:'source',start:pos-cross[0].length,end:tailEnd(/^[^\]\n]*\]?/),text:cross[1]};
+  const bracket=before.match(/\[([^\]]*)$/);
+  if(bracket){
+    const start=pos-bracket[0].length, prefix=value.slice(0,start), source=prefix.match(/!\[([^\]]+)\]\s*\.\s*$/);
+    return {mode:source?'crossHeader':'header',source:source?sourceKeyFromExpressionLabel(source[1]):'',start,end:tailEnd(/^[^\]\n+*/()]*\]?/),text:bracket[1],bracketed:true};
   }
-
-  const open=before.lastIndexOf('['), close=before.lastIndexOf(']');
-  if(open>close) return {mode:'header',start:open,end:pos,text:before.slice(open+1),bracketed:true};
-
-  // Include dots so "retail.wipers" and "retail.wipers.ac" remain one search token.
-  const m=before.match(/[A-Za-z0-9_%&.][A-Za-z0-9_%&.\s-]*$/);
-  if(!m) return {mode:'header',start:pos,end:pos,text:'',bracketed:false};
-  const raw=m[0], leading=(raw.match(/^\s*/)||[''])[0].length;
-  return {mode:'header',start:pos-raw.length+leading,end:pos,text:raw.trim(),bracketed:false};
+  const model=before.match(/;([^;+*/()\n]*)$/);
+  if(model) return {mode:'model',start:pos-model[0].length,end:tailEnd(/^[^;+*/()\n-]*/),text:model[1].trim()};
+  const bang=before.match(/!([^!+*/()\n-]*)$/);
+  if(bang){
+    const loose=splitSourceQualifiedLooseRef(bang[1]);
+    if(loose) return {mode:'crossHeader',source:sourceKeyFromExpressionLabel(loose.rawSource),start:pos-bang[0].length,end:tailEnd(/^[^+*/()\n-]*/),text:loose.rawField,loose:true};
+    return {mode:'source',start:pos-bang[0].length,end:pos,text:bang[1]};
+  }
+  const token=before.match(/[@$]?[A-Za-z0-9_%&.][A-Za-z0-9_%&. \t]*$/);
+  if(!token) return {mode:'header',start:pos,end:pos,text:''};
+  const suffix=after.match(/^[A-Za-z0-9_%&. \t]*/)?.[0]||'';
+  return {mode:'header',start:pos-token[0].length,end:pos+suffix.trimEnd().length,text:token[0].trim(),bracketed:false};
 }
-function hideHeaderSuggestions(){ const menu=document.getElementById('headerSuggestMenu'); if(menu) menu.classList.remove('open'); }
+let headerSuggestOwner=null, headerSuggestIndex=-1;
+function hideHeaderSuggestions(){
+  const menu=document.getElementById('headerSuggestMenu');
+  if(menu) menu.classList.remove('open');
+  if(headerSuggestOwner){ headerSuggestOwner.setAttribute('aria-expanded','false'); headerSuggestOwner.removeAttribute('aria-activedescendant'); }
+  headerSuggestOwner=null; headerSuggestIndex=-1;
+}
+function placeHeaderSuggestions(input,menu){
+  const rect=input.getBoundingClientRect(), width=Math.min(480,window.innerWidth-16);
+  menu.style.width=width+'px'; menu.style.left=Math.max(8,Math.min(rect.left,window.innerWidth-width-8))+'px';
+  menu.style.top=Math.max(8,Math.min(rect.bottom+4,window.innerHeight-260))+'px';
+  menu.style.maxHeight='250px';
+}
+function positionHeaderSuggestions(input,menu){
+  placeHeaderSuggestions(input,menu); menu.classList.add('open');
+  headerSuggestOwner=input; headerSuggestIndex=-1;
+  input.setAttribute('aria-controls','headerSuggestMenu'); input.setAttribute('aria-expanded','true'); input.setAttribute('aria-autocomplete','list');
+  menu.setAttribute('role','listbox');
+  menu.querySelectorAll('button').forEach((button,i)=>{button.id='headerSuggestion-'+i;button.setAttribute('role','option');button.setAttribute('aria-selected','false');button.tabIndex=-1;});
+}
 
 function sourceAliasTextForHeaderSuggest(src){
   const aliases=[src,labelSource(src)];
@@ -2186,7 +2191,7 @@ function expressionHeaderCandidateSources(defaultSource, explicitSource=''){
     add(defaultSource);
     add(NONDATED_SOURCE);
     add(DATED_SOURCE);
-    if(!defaultSource || isDynamicResearchSource(defaultSource)) allSourceKeys().forEach(add);
+    allSourceKeys().forEach(add);
   }
   return out;
 }
@@ -2198,10 +2203,14 @@ function expressionHeaderCandidates(defaultSource, explicitSource='', query=''){
       if(headerSuggestMatches(searchText,query)) candidates.push({kind:'header',label:h,source:src,detail:labelSource(src),insert:null});
     });
   });
-  (state.metrics||[]).forEach(m=>{
+  if(!explicitSource) (state.metrics||[]).forEach(m=>{
     const label='@'+(m.name||m.id||'Metric');
     if(headerSuggestMatches(label+' metric '+(m.notes||''),query)) candidates.push({kind:'metric',label,source:m.source||defaultSource,detail:'Metric',insert:label});
   });
+  if(!explicitSource){
+    (state.orgs||[]).forEach(org=>{const label='$'+org.name;if(headerSuggestMatches(label,query))candidates.push({kind:'organization',label,detail:'Organization',insert:label});});
+    ['_rep','_team'].forEach(label=>{if(headerSuggestMatches(label,query))candidates.push({kind:'header',label,source:defaultSource,detail:'Identity field',insert:label});});
+  }
   const seen=new Set();
   return candidates.filter(c=>{
     const key=[c.kind,c.source,c.label].join('\u0001');
@@ -2221,7 +2230,7 @@ function insertHeaderIntoExpression(input, info, item, defaultSource=''){
   const candidate=typeof item==='string' ? {kind:'header',label:item,source:defaultSource} : (item||{kind:'header',label:''});
   const useBrackets=headerInsertNeedsBrackets(input,info);
   let insertion='';
-  if(candidate.kind==='metric') insertion=candidate.insert || candidate.label;
+  if(candidate.insert!==undefined && candidate.insert!==null) insertion=candidate.insert || candidate.label;
   else if(info.mode==='crossHeader' || (candidate.source && defaultSource && candidate.source!==defaultSource)){
     insertion=(info.mode==='crossHeader' && info.bracketed && !info.loose)
       ? `[${plainHeaderName(candidate.label)}]`
@@ -2237,8 +2246,8 @@ function insertHeaderIntoExpression(input, info, item, defaultSource=''){
   hideHeaderSuggestions();
 }
 function headerAutocompleteContext(input){
-  let source='';
-  if(input?.getAttribute?.('list')==='metricHeaderSuggestions') source=els.metricSourceSelect?.value || firstImportedResearchSource?.() || 'qa';
+  let source=input?.closest?.('[data-rw-formula-source]')?.dataset.rwFormulaSource || (input?.dataset.gc?state.editingGuidedResearchConditions?.[Number(input.dataset.i)]?.source:'') || '';
+  if(input?.getAttribute?.('data-header-list')==='metricHeaderSuggestions') source=els.metricSourceSelect?.value || firstImportedResearchSource?.() || 'qa';
   if(!source && els.researchEditorModal?.contains(input)) source=els.researchSource?.value || DYNAMIC_RESEARCH_SOURCE;
   if(!source && els.editModelModal?.contains(input)){
     const critBox=input.closest('[data-crit]'), filterBox=input.closest('[data-filter]');
@@ -2251,13 +2260,17 @@ function headerAutocompleteContext(input){
 }
 function isHeaderAutocompleteTarget(elm){
   if(!elm || !elm.matches) return false;
-  if(elm.matches('textarea[data-research-expression-input],input[data-filter-expression-input]')) return true;
-  const list=elm.getAttribute('list');
+  if(elm.matches('[data-research-expression-input],[data-filter-expression-input],[data-expression-input],[data-model-picker-attached],[data-rw-field],[data-header-list]')) return true;
+  const list=elm.getAttribute('data-header-list');
   return list==='researchHeaderSuggestions' || list==='metricHeaderSuggestions';
 }
-function showHeaderSuggestions(input,c){
+function showHeaderSuggestions(input,c,showAll=false){
   if(!input || !c) return;
-  const info=expressionTokenInfo(input);
+  hideHeaderSuggestions();
+  document.querySelectorAll('.researchValueSuggestions').forEach(x=>x.remove());
+  input.removeAttribute('list'); input.setAttribute('autocomplete','off');
+  const population=/Population|TeamFilter/.test(input.getAttribute('data-header-list')||'');
+  const info=population?{mode:'population',start:0,end:input.value.length,text:input.value}:expressionTokenInfo(input);
   const menu=ensureHeaderSuggestMenu();
   const defaultSource=c.customSource||c.source||NONDATED_SOURCE;
   const query=info.text||'';
@@ -2269,32 +2282,54 @@ function showHeaderSuggestions(input,c){
     if(!matches.length){ hideHeaderSuggestions(); return; }
     menu.innerHTML=`<div class="headerSuggestHelp">Choose a source/page. Shortcuts like <strong>!nondate</strong> and <strong>!date</strong> are supported.</div>`+
       matches.map((x,i)=>`<button type="button" class="headerSuggestItem" data-source-suggest="${esc(x.src)}">${esc(x.label)} <span class="hint">!${esc(x.src)}</span></button>`).join('');
-    const rect=input.getBoundingClientRect(); menu.style.left=Math.max(8,Math.min(rect.left,window.innerWidth-360))+'px'; menu.style.top=Math.min(rect.bottom+4,window.innerHeight-390)+'px'; menu.classList.add('open');
-    menu.querySelectorAll('[data-source-suggest]').forEach(btn=>btn.onmousedown=e=>{ e.preventDefault(); const label=labelSource(btn.dataset.sourceSuggest); const v=input.value||''; const insertion=`![${label}].[`; input.value=v.slice(0,info.start)+insertion+v.slice(info.end); const pos=info.start+insertion.length; input.focus(); input.setSelectionRange(pos,pos); input.dispatchEvent(new Event('input',{bubbles:true})); showHeaderSuggestions(input,c); });
+    positionHeaderSuggestions(input,menu);
+    menu.querySelectorAll('[data-source-suggest]').forEach(btn=>btn.onmousedown=e=>{ e.preventDefault(); const label=labelSource(btn.dataset.sourceSuggest); const v=input.value||''; const insertion=/^\s*\.\s*\[/.test(v.slice(info.end))?`![${label}]`:`![${label}].[`; input.value=v.slice(0,info.start)+insertion+v.slice(info.end); const pos=info.start+insertion.length; input.focus(); input.setSelectionRange(pos,pos); input.dispatchEvent(new Event('input',{bubbles:true})); });
     return;
   }
-  if((query||'').length<1 && info.mode!=='crossHeader'){ hideHeaderSuggestions(); return; }
+  if((query||'').length<1 && !['crossHeader','model','population'].includes(info.mode) && !input.hasAttribute('data-rw-field') && !showAll){ hideHeaderSuggestions(); return; }
   const explicitSource=info.mode==='crossHeader' ? info.source : '';
-  const matches=expressionHeaderCandidates(defaultSource,explicitSource,query).slice(0,80);
+  const models=!explicitSource && typeof modelReferenceSuggestions==='function'?modelReferenceSuggestions(query).map(x=>({...x,kind:'model',detail:'Model · '+x.detail})):[];
+  const populationEntries=population?(window.AllStarResearchWorkspace?.fieldEntries(input)||[]).filter(x=>headerSuggestMatches(x.label,query)).slice(0,80).map(x=>({kind:'population',label:x.label,detail:x.group,insert:x.value})):[];
+  const typed=!explicitSource && typeof RESEARCH_TYPED_MEASURES!=='undefined'?RESEARCH_TYPED_MEASURES.filter(x=>headerSuggestMatches(x.label,query)).map(x=>({kind:'metric',label:x.label,detail:'Built-in measure',insert:researchMeasureRef(x.id)})):[];
+  const matches=population?populationEntries:info.mode==='model'?models:[...expressionHeaderCandidates(defaultSource,explicitSource,query).slice(0,60),...models,...typed].slice(0,80);
   if(!matches.length){ hideHeaderSuggestions(); return; }
   window.__headerSuggestCandidates=matches;
   menu.innerHTML=`<div class="headerSuggestHelp">Click a real header/metric to insert it. Dotted headers stay as headers; use <strong>!nondate</strong> or <strong>!date</strong> for categorized databases.</div>`+
     matches.map((h,i)=>`<button type="button" class="headerSuggestItem" data-header-suggest-index="${i}">${esc(h.label)}${h.detail?` <span class="hint">— ${esc(h.detail)}</span>`:''}</button>`).join('');
-  const rect=input.getBoundingClientRect();
-  menu.style.left=Math.max(8,Math.min(rect.left,window.innerWidth-380))+'px';
-  menu.style.top=Math.min(rect.bottom+4,window.innerHeight-390)+'px';
-  menu.classList.add('open');
+  positionHeaderSuggestions(input,menu);
   menu.querySelectorAll('[data-header-suggest-index]').forEach(btn=>btn.onmousedown=e=>{ e.preventDefault(); const item=(window.__headerSuggestCandidates||[])[Number(btn.dataset.headerSuggestIndex)]; insertHeaderIntoExpression(input,info,item,defaultSource); });
 }
 function globalHeaderAutocompleteHandler(e){
   const input=e.target;
-  if(!isHeaderAutocompleteTarget(input)) return;
+  if(!isHeaderAutocompleteTarget(input)){ if(e.type==='focusin') hideHeaderSuggestions(); return; }
+  if(e.isComposing) return;
   showHeaderSuggestions(input,headerAutocompleteContext(input));
 }
 document.addEventListener('focusin',globalHeaderAutocompleteHandler);
-document.addEventListener('keyup',globalHeaderAutocompleteHandler);
-document.addEventListener('input',e=>{ if(isHeaderAutocompleteTarget(e.target)) setTimeout(()=>showHeaderSuggestions(e.target,headerAutocompleteContext(e.target)),0); });
-document.addEventListener('click',e=>{ if(!e.target.closest?.('#headerSuggestMenu') && !isHeaderAutocompleteTarget(e.target)) hideHeaderSuggestions(); });
+document.addEventListener('input',globalHeaderAutocompleteHandler);
+document.addEventListener('compositionend',globalHeaderAutocompleteHandler);
+document.addEventListener('keydown',e=>{
+  if(!e.isComposing && e.key==='ArrowDown' && isHeaderAutocompleteTarget(e.target) && !headerSuggestOwner) showHeaderSuggestions(e.target,headerAutocompleteContext(e.target),true);
+  if(e.target!==headerSuggestOwner || e.isComposing) return;
+  const menu=document.getElementById('headerSuggestMenu'), buttons=[...menu.querySelectorAll('button')];
+  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();hideHeaderSuggestions();return;}
+  if(['ArrowDown','ArrowUp'].includes(e.key)){
+    e.preventDefault(); headerSuggestIndex=(headerSuggestIndex+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;
+    buttons.forEach((b,i)=>b.setAttribute('aria-selected',String(i===headerSuggestIndex)));
+    e.target.setAttribute('aria-activedescendant',buttons[headerSuggestIndex].id);
+    buttons[headerSuggestIndex].scrollIntoView?.({block:'nearest'});
+  }else if((e.key==='Enter'||e.key==='Tab')&&headerSuggestIndex>=0){
+    e.preventDefault(); buttons[headerSuggestIndex].onmousedown(e);
+  }else if(['ArrowLeft','ArrowRight','Home','End','Tab'].includes(e.key)) hideHeaderSuggestions();
+});
+document.addEventListener('pointerdown',e=>{ if(!e.target.closest?.('#headerSuggestMenu')) hideHeaderSuggestions(); });
+document.addEventListener('focusout',e=>{ if(e.target===headerSuggestOwner) hideHeaderSuggestions(); });
+window.addEventListener('resize',hideHeaderSuggestions);
+document.addEventListener('scroll',e=>{
+  if(!headerSuggestOwner || e.target.closest?.('#headerSuggestMenu')) return;
+  if(headerSuggestOwner.isConnected && document.activeElement===headerSuggestOwner) placeHeaderSuggestions(headerSuggestOwner,ensureHeaderSuggestMenu());
+  else hideHeaderSuggestions();
+},true);
 
 function headersForModelSource(model, source){
   if(sourceHasImportedData(source)){ try{return sourceRowsFromStoredAoa(source,model,true).headers||[];}catch(e){return getHeaders(source)||[];} }
