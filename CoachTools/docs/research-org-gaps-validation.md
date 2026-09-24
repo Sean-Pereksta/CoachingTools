@@ -24,9 +24,20 @@ builder includes these changes without introducing a new storage schema.
   Fixed minimum week widths scroll horizontally beneath stationary rep headings;
   representative rows share their scroll position. QA read states and event details
   retain their original handlers.
+- Manifest discovery registers KPI Impact's launcher once while retaining its
+  embedded application's data identity. Performance Scorecard's canonical source
+  stays discoverable and continues launching the enhanced build. All 13 launcher
+  entries retain their existing metadata. Suite validation follows local iframe
+  applications to inspect their scripts, dependencies and shared-data contracts.
+- Identity/profile and coaching-intelligence regression tests use a fixed clock
+  or reporting cutoff matching their August fixtures, so rolling-window assertions
+  remain repeatable after that month.
 
 ## Validation
 
+- `TZ=UTC npm test`: passed, including manifest consistency, suite validation,
+  all desktop regressions and the full All-Star suite. All 13 apps remain
+  registered. The missing All Apps icon produces one nonblocking fallback warning.
 - `TZ=UTC npm run test:allstar`: passed, including portable generation, package
   verification, existing import/calculation/persistence regressions and the new
   `expression-autocomplete.test.js`.
@@ -38,10 +49,6 @@ builder includes these changes without introducing a new storage schema.
 - Coaching Gaps browser checks cover actual week headers, year rollover, a timezone
   west of UTC, representative heading position during scrolling, active filter
   disclosure, drawer access, and reset preserving unrelated state.
-- The root `npm test` command is blocked before app tests by an existing manifest
-  collision: `apps/kpi-impact.html` and `apps/kpi-impact-galactic.html` both declare
-  `coachtools-id="kpi-impact"`. Both declarations also exist at base commit
-  `721ff95`. This update does not modify either application.
 
 Browser tests use the optional Playwright/Chromium installation documented in
 `apps/allstar/README.txt`; run `npm run test:allstar:browser` after building portable.
