@@ -37,7 +37,7 @@
   const APP_LOAD_TIMEOUT_MS = 12000;
   const ICON_PRELOAD_CONCURRENCY = 4;
   const ICON_PRELOAD_TIMEOUT_MS = 5000;
-  const FILTERS = Object.freeze(['All', 'Favorites', 'Core', 'People', 'Data', 'Coaching', 'Performance', 'Quality', 'Other', 'Needs Data']);
+  const FILTERS = Object.freeze(['All', 'Favorites', 'Core', 'People', 'Data', 'Coaching', 'Performance', 'Quality', 'General Apps', 'Other', 'Needs Data']);
   const elements = {};
   const openWindows = new Map();
   const state = {
