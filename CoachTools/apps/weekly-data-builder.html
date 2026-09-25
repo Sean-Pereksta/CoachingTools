@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="coachtools-app" content="true">
+<meta name="coachtools-id" content="weekly-data-builder">
+<meta name="coachtools-name" content="Weekly Data Builder">
+<meta name="coachtools-description" content="Combine appointment and wiper reports with prior weekly data, review matches, and export an updated CSV.">
+<meta name="coachtools-category" content="General Apps">
+<meta name="coachtools-icon" content="icons/databuilder.png">
+<meta name="coachtools-initials" content="WDB">
+<meta name="coachtools-keywords" content="weekly, data, builder, appointments, wipers, csv, xlsx, reporting, append">
+<meta name="coachtools-favorite" content="false">
+<meta name="coachtools-featured" content="false">
+<meta name="coachtools-preload" content="false">
+<meta name="coachtools-order" content="100">
+<meta name="coachtools-version" content="1.0">
+<meta name="coachtools-enabled" content="true">
+<title>Weekly Data Builder</title>
+<style>
+html,body{height:100%;margin:0}body{display:grid;place-items:center;background:#f4f5f7;color:#17212f;font:14px/1.5 "Segoe UI",Arial,sans-serif}.loader{max-width:520px;padding:28px;text-align:center}.loader strong{display:block;font-size:18px;margin-bottom:8px}.loader span{color:#647182}
+</style>
+</head>
+<body>
+<div class="loader" id="loader"><strong>Opening Weekly Data Builder…</strong><span>Preparing the local reporting workspace.</span></div>
+<script>window.__WDB_PAYLOAD=[];</script>
+<script src="weekly-data-builder-payload/chunk-01.js"></script>
+<script src="weekly-data-builder-payload/chunk-02.js"></script>
+<script src="weekly-data-builder-payload/chunk-03.js"></script>
+<script src="weekly-data-builder-payload/chunk-04.js"></script>
+<script src="weekly-data-builder-payload/chunk-05.js"></script>
+<script src="weekly-data-builder-payload/chunk-06.js"></script>
+<script>
+(async function loadWeeklyDataBuilder(){
+  try {
+    if (typeof DecompressionStream !== 'function') {
+      throw new Error('This browser does not support the decompression API required by Weekly Data Builder.');
+    }
+    const encoded=(window.__WDB_PAYLOAD||[]).join('');
+    if (!encoded) throw new Error('Weekly Data Builder payload is missing.');
+    const binary=atob(encoded);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+    const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    const html=await new Response(stream).text();
+    window.__WDB_PAYLOAD=null;
+    document.open();
+    document.write(html);
+    document.close();
+  } catch (error) {
+    console.error(error);
+    document.body.innerHTML='<main class="loader"><strong>Weekly Data Builder could not open.</strong><span>'+String(error&&error.message||error)+'</span></main>';
+  }
+})();
+</script>
+</body>
+</html>
