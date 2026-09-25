@@ -370,6 +370,33 @@ window.COACHTOOLS_MANIFEST = {
       "order": 90,
       "version": "1.0",
       "enabled": true
+    },
+    {
+      "id": "weekly-data-builder",
+      "name": "Weekly Data Builder",
+      "description": "Combine appointment and wiper reports with prior weekly data, review matches, and export an updated CSV.",
+      "file": "apps/weekly-data-builder.html",
+      "icon": "icons/databuilder.png",
+      "initials": "WDB",
+      "category": "General Apps",
+      "keywords": [
+        "weekly",
+        "data",
+        "builder",
+        "appointments",
+        "wipers",
+        "csv",
+        "xlsx",
+        "reporting",
+        "append"
+      ],
+      "data": [],
+      "favorite": false,
+      "featured": false,
+      "preload": false,
+      "order": 100,
+      "version": "1.0",
+      "enabled": true
     }
   ]
 };
