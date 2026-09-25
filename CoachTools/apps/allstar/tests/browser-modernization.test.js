@@ -5,6 +5,7 @@ const assert=require('node:assert/strict');
 const path=require('node:path');
 const {pathToFileURL}=require('node:url');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const {statsFile}=require('./team-totals-import.test.js');
 const root=path.resolve(__dirname,'..');
 (async()=>{
   const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||undefined,args:['--no-sandbox','--disable-dev-shm-usage']});
@@ -60,8 +61,21 @@ const root=path.resolve(__dirname,'..');
       assert.equal(await page.locator('#researchTitleInput').inputValue(),'Team value');
       await page.setViewportSize({width:600,height:800});
       assert.ok(await page.locator('#researchEditorModal').isVisible());
+      await page.evaluate(()=>{closeModal('researchEditorModal');openModal('importModal');});
+      for(const [area,rate] of [['retail',61],['referral',73]]){
+        const fixture=statsFile(area,rate+'%');
+        await page.locator('#'+area+'File').setInputFiles({name:fixture.name,mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:Buffer.from(await fixture.arrayBuffer())});
+        await page.waitForFunction(area=>!state.activeImportJob&&state.data[area].teamTotals.rows.length===2,area);
+        const label=await page.locator('#'+area+'FileName').textContent();
+        assert.ok(label.includes('2/2 teams matched'),file+' '+area+': '+label);
+        assert.equal(await page.locator('#download'+(area==='retail'?'Retail':'Referral')+'TeamTotalsBtn').isEnabled(),true);
+        assert.equal(await page.evaluate(area=>criterionValue({...emptyCriterion(),source:area+'_sv2',trueValueEnabled:true,trueValueSource:area+'_team_totals',trueValueColumn:'Cash Appointment Rate'},{kind:'team',name:'Madison Ellis',team:'Madison Ellis'},{}),area),rate);
+      }
+      await page.reload();
+      await page.waitForFunction(()=>state.startup.completed);
+      assert.deepEqual(await page.evaluate(()=>['retail','referral'].map(area=>state.data[area].teamTotals.rows.length)),[2,2]);
       assert.deepEqual(errors,[],file+' runtime errors');
-      console.log('PASS file:// '+file+': startup, keyboard navigation, model search, real Research, chart reuse/save/board, editor undo, small window');
+      console.log('PASS file:// '+file+': startup, keyboard navigation, model search, real Research, chart reuse/save/board, editor undo, small window, Retail/Referral summary matching and reload');
       await context.close();
     }
   }finally{await browser.close();}

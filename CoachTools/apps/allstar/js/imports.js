@@ -18,17 +18,25 @@ async function readFileWorkbook(file){
   return wb;
 }
 const workbookAoaCache=new WeakMap();
+function sheetAoaRange(ws,maxRows=Infinity){
+  // Fixed workbook references (AA2, A6, row-3 summaries) are absolute. SheetJS
+  // otherwise starts at !ref, shifting blank leading rows AND columns away.
+  try{
+    const end=XLSX.utils.decode_range(ws['!ref']||'A1:A1').e;
+    return {s:{r:0,c:0},e:{r:Math.min(end.r,Math.max(0,maxRows-1)),c:end.c}};
+  }catch(_){ return undefined; }
+}
 function sheetAoa(wb, sheetName){
   if(wb?.__coachToolsAoaBySheet) return wb.__coachToolsAoaBySheet[sheetName]||[];
   const ws=wb.Sheets[sheetName]; if(!ws) return [];
   let cached=workbookAoaCache.get(wb); if(!cached){cached=new Map();workbookAoaCache.set(wb,cached);}
   if(cached.has(sheetName)) return cached.get(sheetName);
-  const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false}); cached.set(sheetName,aoa); return aoa;
+  const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false,range:sheetAoaRange(ws)}); cached.set(sheetName,aoa); return aoa;
 }
 function sheetAoaPreview(wb,sheetName,maxRows=100){
   if(wb?.__coachToolsAoaBySheet) return (wb.__coachToolsAoaBySheet[sheetName]||[]).slice(0,Math.max(0,maxRows));
   const ws=wb.Sheets[sheetName]; if(!ws) return [];
-  let range; try{ const decoded=XLSX.utils.decode_range(ws['!ref']||'A1:A1'); range={s:{r:0,c:decoded.s.c},e:{r:Math.min(decoded.e.r,Math.max(0,maxRows-1)),c:decoded.e.c}}; }catch(_){range=undefined;}
+  const range=sheetAoaRange(ws,maxRows);
   return XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false,range});
 }
 function controlSheetName(wb){
@@ -659,7 +667,7 @@ function sharedDatasetTypeForAllStarSource(source){
 function coachToolsParsedFromWorkbook(file,wb){
   const sheets=[...(wb?.SheetNames||[])], data={}; let totalRows=0;
   sheets.forEach(name=>{
-    const raw=wb?.__coachToolsAoaBySheet ? wb.__coachToolsAoaBySheet[name]||[] : XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:''});
+    const raw=wb?.__coachToolsAoaBySheet ? wb.__coachToolsAoaBySheet[name]||[] : XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:'',range:sheetAoaRange(wb.Sheets[name])});
     const aoa=window.CoachToolsImport?.trimAOA?window.CoachToolsImport.trimAOA(raw):raw;
     data[name]={aoa}; totalRows+=aoa.length;
   });
