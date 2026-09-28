@@ -53,6 +53,9 @@ async function run(){
   m.run('state.sourceMeta.retail_sv2={};state.data.retail.sv2.forEach(r=>delete r._monthly);');
   const unknown=await m.run('buildOrgReadiness(state.orgs[0],{...orgItem,dateColumn:""})');assert.equal(unknown.audits[0].kind,'unknown');assert.equal(unknown.status,'Cannot evaluate reliably');
   const staticReport=await m.run('buildOrgReadiness(state.orgs[0],{...orgItem,dateColumn:""},{sources:{retail_sv2:{kind:"static"}}})');assert.equal(staticReport.audits[0].kind,'static');assert.equal(staticReport.status,'Needs attention');
+  m.run('state.data.retail.sv2.forEach(r=>r._monthlyUndated=true);');
+  const undated=await m.run('buildOrgReadiness(state.orgs[0],{...orgItem,dateColumn:"",startDate:"",endDate:""})');assert.equal(undated.audits[0].kind,'undated');assert.equal(undated.audits[0].period,null);assert.ok(!undated.audits[0].issues.some(i=>/no established observation date/.test(i.text)));
+  const undatedWindow=await m.run('buildOrgReadiness(state.orgs[0],{...orgItem,dateColumn:""})');assert.ok(undatedWindow.audits[0].issues.some(i=>/non-dated/.test(i.text)));
   console.log('PASS monthly vs weekly windows, deliberate mixed comparison, unknown coverage, static reference classification');
  }finally{m.close();}
  const c=fixture();

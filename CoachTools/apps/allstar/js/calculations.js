@@ -634,7 +634,7 @@ function trueTeamCriterionValue(c, entry, opts={}){
   const raw=row[col];
   if(String(raw??'').trim()===''){ opts.trueValueDiagnostics.push({criterion:c.name||'',team,source:c.trueValueSource,column:col,reason:'Blank True Value'}); return NaN; }
   const value=c.format==='pct' ? (row._monthly?toNum(raw):normalizeScore(raw)) : toNum(raw);
-  opts.trueValueDiagnostics.push({criterion:c.name||'',team,source:c.trueValueSource,column:col,controlTab:row._controlTab,summaryLookupKey:row._summaryLookupKey,originalSummaryName:row._summaryDisplayName,summarySheet:row._summarySheet,summaryRow:row._summaryRowNumber,rawValue:raw,parsedValue:value,matchMode:match.matchMode,note:row._monthly?`Calculated from the full monthly roster; ${row._monthlyPartial?'partial data':'complete coverage'}.`:`Matched through ${match.matchMode}; no representative aggregation was performed.`});
+  opts.trueValueDiagnostics.push({criterion:c.name||'',team,source:c.trueValueSource,column:col,controlTab:row._controlTab,summaryLookupKey:row._summaryLookupKey,originalSummaryName:row._summaryDisplayName,summarySheet:row._summarySheet,summaryRow:row._summaryRowNumber,rawValue:raw,parsedValue:value,matchMode:match.matchMode,note:row._monthly?`Calculated from the full monthly roster; ${row._monthlyPartial?'partial data':row._monthlyUndated?'loaded records complete':'complete coverage'}.`:`Matched through ${match.matchMode}; no representative aggregation was performed.`});
   return value;
 }
 

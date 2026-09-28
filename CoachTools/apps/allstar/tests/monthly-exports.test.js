@@ -14,10 +14,37 @@ function opportunity(rows,periodLabel=period){return M.source([
 function wiper(date,rows,name='wiper.csv'){return M.source([['REPORT DATE','EMPLOYEE_FULL_NAME','WIPERS_ACCEPTED','WIPERS_OFFERED'],...rows.map(r=>[date,...r])],name);}
 function include(f,start,end){f.assignments[Object.keys(f.assignments)[0]||f.rows[0].reportDate]={start,end,meaning:'week-label',note:'Confirmed fixture week label denotes preceding activity week.'};return f;}
 function fullBundle(){
- let b=M.add(M.create('retail'),opportunity([['Coach Alpha','Rep One',10,8],['Coach Alpha','Rep Two',90,18]])).bundle;
+ let b=M.add({...M.create('retail'),dateMode:'dated'},opportunity([['Coach Alpha','Rep One',10,8],['Coach Alpha','Rep Two',90,18]])).bundle;
  const weeks=[['9/6/2026','2026-08-30','2026-09-05',4,10],['9/13/2026','2026-09-06','2026-09-12',6,20],['9/20/2026','2026-09-13','2026-09-19',5,10],['9/27/2026','2026-09-20','2026-09-26',5,10]];
  for(const [date,start,end,a,o] of weeks)b=M.add(b,include(wiper(date,[['  REP  ONE ',a,o],['Rep Two',0,0]],`week-${date.replaceAll('/','-')}.csv`),start,end)).bundle;
  b.consumerAsCash=true;return b;
+}
+function undatedBundle(){
+ const source=opportunity([], '');
+ const rows=[['High Coach','High Rep',20,16,64],['Edge Coach','Edge Rep',20,15,65],['Low Coach','Low Rep',20,14,66],['Weighted Coach','Small Rep',1,9,0],[' weighted  coach ','Large Rep',44,1,45]];
+ const aoa=source.aoa.concat(rows.map(([coach,name,...counts],i)=>[coach,name,i%2?'invalid label':'',...counts.flatMap(n=>[n,0,'0%'])]));
+ let b=M.add(M.create('mixed'),M.source(aoa,'opportunity-no-dates.csv')).bundle;
+ b=M.add(b,M.source([['EMPLOYEE_FULL_NAME','WIPERS_ACCEPTED','WIPERS_OFFERED'],...rows.map(r=>[r[1],1,4])],'wipers-no-dates.csv')).bundle;
+ return b;
+}
+async function undatedReviewTest(bundle,sources=[]){
+ const {window}=parseHTML('<html><body></body></html>'),document=window.document;
+ // LinkeDOM lacks the browser select.value setter used by the real dialog.
+ const proto=Object.getPrototypeOf(document.createElement('select')),get=Object.getOwnPropertyDescriptor(proto,'value').get;
+ Object.defineProperty(proto,'value',{configurable:true,get,set(v){for(const o of this.querySelectorAll('option'))o.selected=o.value===v;}});
+ const context=vm.createContext({window:{document,CoachToolsMonthly:M},console});
+ vm.runInContext(fs.readFileSync(path.join(root,'../../shared/coachtools-monthly-review.js'),'utf8'),context);
+ const pending=context.window.CoachToolsMonthlyReview.review({bundle,sources});
+ assert.equal(document.querySelectorAll('input[type="date"]').length,0);
+ assert.doesNotMatch(document.body.textContent,/REPORT DATE:|Fiscal period:|Activity from|Basis for assignment/);
+ assert.match(document.body.textContent,/More than 15%/);
+ const areaLabels=[...document.querySelectorAll('select')].map(s=>s.textContent);
+ assert.ok(areaLabels.some(s=>s.includes('Automatic — Monthly Retail')));
+ assert.ok(areaLabels.some(s=>s.includes('Automatic — Monthly Referral')));
+ const apply=[...document.querySelectorAll('button')].find(b=>b.textContent==='Apply monthly import');
+ assert.equal(apply.disabled,false);apply.click();
+ const reviewed=await pending;assert.ok(M.compile(reviewed).canApply);assert.match(reviewed.importedAt,/^\d{4}-\d{2}-\d{2}T/);
+ return reviewed;
 }
 function harness(db=new IDBFactory(),storage=new Map()){
  const {document}=parseHTML(fs.readFileSync(path.join(root,'allstar.html'),'utf8'));
@@ -29,6 +56,39 @@ function harness(db=new IDBFactory(),storage=new Map()){
  return {context,db,storage,errors,run:s=>vm.runInContext(s,context),stop(){vm.runInContext('state.lifecycle.closing=true;clearTimeout(state.importCacheSaveTimer);',context);}};
 }
 (async()=>{
+ const undated=undatedBundle(),newOut=M.compile(undated);
+ assert.equal(newOut.period,null);assert.equal(newOut.coverageComplete,null);assert.equal(newOut.canApply,true,JSON.stringify(newOut.issues));
+ assert.deepEqual(newOut.coachAssignments.map(c=>[c.key,c.share,c.area]),[['high coach',.16,'retail'],['edge coach',.15,'referral'],['low coach',.14,'referral'],['weighted coach',.10,'referral']]);
+ assert.equal(newOut.reps.filter(r=>r.coach.toLowerCase().includes('weighted')).every(r=>r.area==='referral'),true);
+ assert.ok(newOut.reps.every(r=>r.wiper.accepted===1));assert.ok(newOut.reps.every(r=>r.wiper.contributions.every(c=>!c.start&&!c.end)));
+ const manual=M.clone(undated);manual.coachAreas['edge coach']='retail';assert.equal(M.compile(manual).reps[1].area,'retail');
+ for(const value of ['', '*', 'N/A', '-1']){const unknown=M.clone(undated);unknown.opportunity.rows[0].segments.consumer.opportunities=M.cell(value);assert.ok(M.compile(unknown).issues.some(i=>i.code==='area-required'));unknown.coachAreas['high coach']='retail';unknown.partialAcknowledged=true;assert.equal(M.compile(unknown).canApply,true);}
+ const zeroCalls=M.clone(undated);for(const s of M.SEGMENTS)zeroCalls.opportunity.rows[0].segments[s].opportunities=M.cell(0);assert.equal(M.compile(zeroCalls).coachAssignments[0].share,null);assert.ok(M.compile(zeroCalls).issues.some(i=>i.code==='area-required'));
+ const noDates=M.asUndated(fullBundle());for(const f of noDates.wipers)f.assignments={};assert.equal(M.compile(noDates).canApply,true);assert.equal(M.compile(noDates).reps[0].wiper.accepted,20);
+ const plus=M.add(undated,M.source([['EMPLOYEE_FULL_NAME','WIPERS_ACCEPTED','WIPERS_OFFERED'],['High Rep',2,6]],'extra.csv')).bundle;assert.equal(M.compile(plus).reps[0].wiper.accepted,3);
+ assert.equal(M.add(plus,{...M.clone(plus.wipers[1]),name:'renamed.csv'}).duplicate,true);
+ plus.wipers[1].replaces=plus.wipers[0].id;assert.equal(M.compile(plus).reps[0].wiper.accepted,2);
+ const reviewed=await undatedReviewTest(undated);
+ const legacyMixed=fullBundle();legacyMixed.scope='mixed';const beforeReview=JSON.stringify(legacyMixed);
+ const reorderedReview=await undatedReviewTest(legacyMixed,[undated.wipers[0],undated.opportunity]);assert.equal(reorderedReview.wipers.length,1);assert.equal(M.compile(reorderedReview).reps[0].wiper.accepted,1);assert.equal(JSON.stringify(legacyMixed),beforeReview);
+ const u=harness();u.context.undated=reviewed;
+ assert.equal(await u.run('commitMonthlyBundle(undated)'),true,JSON.stringify(u.errors));
+ assert.equal(u.run('state.data.retail.sv2.length'),1);assert.equal(u.run('state.data.referral.sv2.length'),4);
+ assert.equal(u.run('state.data.retail.monthlySummary.period'),null);assert.equal(u.run('state.data.retail.monthlySummary.importedAt'),reviewed.importedAt);
+ assert.equal(u.run("state.data.retail.sv2.some(r=>r._date||r._monthlyPeriod)"),false);
+ assert.match(u.run("monthlyReportCoverage({criteria:[{source:'retail_sv2'}]})"),/Non-dated.*Loaded/);
+ assert.match(u.run("el('monthlyImportSummary').textContent"),/Non-dated/);
+ const ur=harness(u.db,u.storage);await ur.run('loadImportedDataFromIndexedDB({deferRender:true})');assert.equal(ur.run('state.data.retail.monthlySummary.importedAt'),reviewed.importedAt);assert.equal(ur.run('state.data.referral.sv2.length'),4);
+ const allReferral=M.clone(reviewed);allReferral.coachAreas['high coach']='referral';allReferral.importedAt='2026-10-01T10:00:00.000Z';u.context.allReferral=allReferral;
+ assert.equal(await u.run('commitMonthlyBundle(allReferral)'),true,JSON.stringify(u.errors));assert.equal(u.run('state.data.retail.sv2.length'),0);assert.equal(u.run('state.data.referral.sv2.length'),5);
+ // A fresh undated Opportunity export resets prior Wipers/manual overrides and archives by load time.
+ const nextSource=M.clone(reviewed.opportunity.aoa);nextSource[3][1]='New Rep';const fresh=M.add(allReferral,M.source(nextSource,'next.csv')).bundle;fresh.partialAcknowledged=true;fresh.importedAt='2026-10-02T10:00:00.000Z';assert.equal(fresh.wipers.length,0);assert.deepEqual(fresh.coachAreas,{});
+ u.context.fresh=fresh;assert.equal(await u.run('commitMonthlyBundle(fresh)'),true);assert.ok(u.run('Object.keys(state.data.referral.monthlyHistory).some(k=>k.startsWith("loaded-2026-10-01"))'));
+ // A shared mixed upload moving all coaches to one area clears the previous area's rows.
+ ur.context.onlyReferral=M.toDataset(allReferral,'referral');ur.run("window.CoachToolsData={ready:async()=>{},getDatasetVersion:type=>type==='monthlyReferral'?{id:'single-area-mixed',version:2,classificationMethod:'reviewed-monthly-bundle',importedAt:'2099-01-01T00:00:00Z'}:null,getCurrent:async()=>({originalFileName:'mixed.csv',data:onlyReferral})};");
+ assert.equal((await ur.run('syncAllStarFromCoachToolsData({render:false})')).changed,true,JSON.stringify(ur.errors));assert.equal(ur.run('state.data.retail.sv2.length'),0);assert.equal(ur.run('state.data.referral.sv2.length'),5);
+ u.stop();ur.stop();
+ console.log('PASS undated review/apply/reload/history, weighted cash threshold, exact 15%, overrides, missing counts and one-area transfers');
  const b=fullBundle(),out=M.compile(b);
  assert.equal(out.canApply,true);assert.equal(out.reps[0].wiper.accepted,20);assert.equal(out.reps[0].wiper.offered,50);assert.equal(out.reps[0].wiper.rate,.4);assert.equal(out.teams[0].segments.consumer.rate,.26);assert.equal(out.reps[1].wiper.rate,null);assert.equal(out.coverageComplete,true);
  const utf16=Buffer.concat([Buffer.from([255,254]),Buffer.from(b.opportunity.aoa.map(r=>r.join('\t')).join('\r\n'),'utf16le')]);

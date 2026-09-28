@@ -64,16 +64,18 @@ function orgReadinessSourceAudit(source,item,baseRows,settings){
   const rows=getResearchSourceRows(source), config=settings.sources?.[source]||{}, meta=state.sourceMeta?.[source]||{};
   const area=source.startsWith('retail_')?'retail':source.startsWith('referral_')?'referral':'';
   const monthly=area&&state.data[area]?.monthlySummary?.period;
-  const period=(meta.monthlyPeriod||rows.some(r=>r._monthly))&&monthly?{start:monthly.start,end:monthly.end}:config.kind==='period'?{start:config.start||'',end:config.end||''}:null;
-  const dateField=orgReadinessDateField(source,item), dates=[], missing=[], invalid=[];
+  const undated=rows.length>0&&rows.every(r=>r._monthlyUndated);
+  const period=undated?null:(meta.monthlyPeriod||rows.some(r=>r._monthly))&&monthly?{start:monthly.start,end:monthly.end}:config.kind==='period'?{start:config.start||'',end:config.end||''}:null;
+  const dateField=undated?'':orgReadinessDateField(source,item), dates=[], missing=[], invalid=[];
   for(const row of rows){
+    if(undated)continue;
     const raw=dateField?(source!==item.source&&(source==='qa'||source===QA_DIRECT_SOURCE)?qaDateFromRow(row,els.runQADateSelect?.value||'interaction'):researchFieldValue(row,dateField,source)):'';
     if(!String(raw??'').trim()){missing.push(row);continue;}
     const parsed=parseDateOnly(raw); if(parsed) dates.push({row,date:ymd(parsed)}); else invalid.push(row);
   }
   const sorted=dates.map(x=>x.date).sort(), window=!!(item.startDate||item.endDate);
   const confirmed=dates.filter(x=>(!item.startDate||x.date>=item.startDate)&&(!item.endDate||x.date<=item.endDate));
-  const kind=period?'period':config.kind==='static'?'static':dateField?(missing.length||invalid.length?'mixed':'dated'):'unknown';
+  const kind=undated?'undated':period?'period':config.kind==='static'?'static':dateField?(missing.length||invalid.length?'mixed':'dated'):'unknown';
   const primaryAmbiguities=source===item.source?researchCohortIdentityIndex(source,'rep').ambiguities:null;
   const joined=source===item.source?{rows:baseRows,missingRepIdentities:[],missingCoachIdentities:[],ambiguityDetails:[...researchCohortKeys(baseRows,source).reps].filter(key=>primaryAmbiguities?.has(key)).map(key=>({identity:key,...primaryAmbiguities.get(key)})),fallbackRows:0,joinMode:'primary'}:resolveRowsForCohort(source,{rows:baseRows,baseRows,baseSource:item.source,item});
   const used=source===item.source?baseRows:researchRowsForCohort(source,baseRows,item.source,item);
@@ -85,6 +87,7 @@ function orgReadinessSourceAudit(source,item,baseRows,settings){
   if(periodGrain&&periodGrain!=='day')issues.push({level:'attention',text:`${label}: rows represent ${periodGrain} totals. The mapped date/week is a period label, not an individual observation date; filtering selects entire records, not prorated totals.`});
   if(source!==item.source&&(researchGroupDateField(item)||(item.useSecondaryGroup&&researchFieldNameLooksDate(item,item.secondaryGroupField))))issues.push({level:'blocking',text:`${label}: cross-source matching uses the item-wide window, not each output date bucket. The same source total can repeat across buckets. This setup cannot certify period-by-period results.`});
   const conditionWindows=(item.guidedConditions||[]).filter(c=>!c.expression&&c.operator==='date_between'&&parseDateOnly(c.value)&&parseDateOnly(c.value2)).map(c=>({source:c.source||item.source,field:c.field,start:ymd(parseDateOnly(c.value)),end:ymd(parseDateOnly(c.value2))}));
+  if(undated&&(window||conditionWindows.length))issues.push({level:'attention',text:`${label}: these monthly records are non-dated. Loaded timestamps do not establish performance within a date window.`});
   if(period)for(const condition of conditionWindows)if(condition.start!==period.start||condition.end!==period.end)issues.push({level:settings.periodIntent==='mixed'?'attention':'blocking',text:`${label} uses ${period.start||'?'}–${period.end||'?'}, while the ${labelSource(condition.source)} condition on ${condition.field} requires ${condition.start}–${condition.end}. This is a mixed-period comparison, not weekly performance evidence.`});
   if(!rows.length) issues.push({level:'blocking',text:`${label}: no imported records are available.`});
   if(kind==='unknown') issues.push({level:window?'blocking':'attention',text:`${label}: no established observation date or reporting period. Upload dates, filenames and hire dates are not substituted.`});

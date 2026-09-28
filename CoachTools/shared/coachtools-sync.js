@@ -51,7 +51,11 @@
       if (duplicate) {
         return { status: 'current', reason: 'Identical scoped fingerprint already imported.', becomesCurrent: false, matchingDatasetId: duplicate.id || duplicate.datasetId || '' };
       }
-      return { status: 'updated', reason: 'The reporting period matches but the contents changed.', becomesCurrent: true, replacesDatasetId: current.datasetId || current.id || '' };
+      return { status: 'updated', reason: periodKey==='undated'?'Non-dated monthly contents changed.':'The reporting period matches but the contents changed.', becomesCurrent: true, replacesDatasetId: current.datasetId || current.id || '' };
+    }
+    if(periodKey==='undated'||currentKey==='undated'){
+      const newer=text(next.importedAt)>=text(current.importedAt);
+      return {status:newer?'updated':'older',reason:'Non-dated monthly data is compared by date loaded.',becomesCurrent:newer};
     }
     if (nextSort && currentSort && nextSort > currentSort) {
       return { status: 'new', reason: 'A newer reporting period was detected.', becomesCurrent: true };

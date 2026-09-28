@@ -434,6 +434,7 @@
   function compareCurrent(candidate, current) {
     if (!current) return true;
     if (candidate.scopeHash && candidate.scopeHash !== current.scopeHash) return true;
+    if(candidate.periodKey==='undated'||current.periodKey==='undated')return String(candidate.importedAt||'')>=String(current.importedAt||'');
     if (candidate.periodKey && candidate.periodKey === current.periodKey) return String(candidate.importedAt || '') >= String(current.importedAt || '');
     if (String(candidate.periodSort || '') !== String(current.periodSort || '')) return String(candidate.periodSort || '') > String(current.periodSort || '');
     return String(candidate.importedAt || '') >= String(current.importedAt || '');
@@ -690,7 +691,8 @@
       importedAt
     };
     if (meta.forceSourceReplacement || data?.meta?.forceSourceReplacement || ['weeklyRetail','weeklyReferral'].includes(datasetType)) return {status:'updated',reason:'Source override: replace the stored source with the incoming file.',becomesCurrent:true,candidate};
-    if (['monthlyRetail', 'monthlyReferral', 'compCoaching'].includes(datasetType) && (!sourcePeriod || !sourcePeriod.sortKey || sourcePeriod.periodKey === 'current')) {
+    const nonDatedMonthly=['monthlyRetail','monthlyReferral'].includes(datasetType)&&data?.meta?.monthlyBundle?.dateMode==='undated';
+    if (!nonDatedMonthly && ['monthlyRetail', 'monthlyReferral', 'compCoaching'].includes(datasetType) && (!sourcePeriod || !sourcePeriod.sortKey || sourcePeriod.periodKey === 'current')) {
       return { status: 'needs-review', reason: 'The reporting period could not be detected safely.', becomesCurrent: false, candidate };
     }
     if (databaseUnavailable) return { status: currentData.has(datasetType) ? 'needs-review' : 'new', reason: 'IndexedDB comparison history is unavailable.', becomesCurrent: !currentData.has(datasetType), candidate };
@@ -716,6 +718,7 @@
         : (!current ? { status: 'new', reason: 'No current dataset exists.', becomesCurrent: true }
           : duplicate ? { status: 'current', reason: 'Identical scoped fingerprint already imported for this reporting period.', becomesCurrent: false }
           : scopeHash && scopeHash !== String(current.scopeHash || '') ? { status: 'new', reason: 'This source has not been evaluated for the selected scope.', becomesCurrent: true }
+          : candidate.periodKey==='undated'||current.periodKey==='undated' ? {status:compareCurrent(candidate,current)?'updated':'older',reason:'Non-dated monthly data is compared by date loaded.',becomesCurrent:compareCurrent(candidate,current)}
           : candidate.periodKey === current.periodKey ? { status: 'updated', reason: 'The reporting period matches but contents changed.', becomesCurrent: true }
           : candidate.periodSort > current.periodSort ? { status: 'new', reason: 'A newer period was detected.', becomesCurrent: true }
           : candidate.periodSort < current.periodSort ? { status: 'older', reason: 'An older period was detected.', becomesCurrent: false }

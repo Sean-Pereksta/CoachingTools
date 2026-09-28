@@ -219,7 +219,8 @@
     const validation = base.validateClassification(type, parsed);
     if (!validation.valid) throw new Error(validation.reason);
 
-    if (['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'compCoaching'].includes(type)) {
+    if(parsed.meta?.monthlyBundle?.dateMode==='undated')entry.classification.detectedPeriod={label:'Non-dated',periodKey:'undated',sortKey:''};
+    else if (['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'compCoaching'].includes(type)) {
       let period = entry.classification.detectedPeriod;
       if (!period || !period.sortKey || period.periodKey === 'current') {
         const periods = new Map();

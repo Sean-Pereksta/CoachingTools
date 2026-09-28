@@ -17,20 +17,38 @@ Only the validated format uses leading columns A/B/C for coach/name/fiscal perio
 Changed layouts open a column mapping preview. Fiscal period never becomes hire
 date. UTF-16 LE/BE BOM tab-delimited CSV and UTF-8 quoted CSV are supported.
 
-An explicitly selected monthly area owns its Opportunity roster. A master file
-for both areas requires a coach-to-area mapping; unambiguous existing All-Star
-roster assignments are offered as defaults. Consumer and Insurance never select
-an area. Consumer-to-Cash aliases require explicit confirmation that the business
-definitions match. The original Consumer fields remain available. No conversion,
-ITAC, revenue or hire-date metric is manufactured from these exports.
+An explicitly selected monthly area owns its Opportunity roster. In Mixed, coaches
+are automatically assigned using their team's summed raw opportunity counts:
+Consumer (cash) opportunities / (Commercial + Consumer + Insurance opportunities).
+More than 15% is Retail; 15% or below, including exactly 15%, is Referral. This is
+weighted by call counts, not an average of representative percentages. Coach names
+use the same Unicode/case/whitespace normalization as other monthly matching.
+Missing/suppressed/invalid opportunity counts or no calls leave the coach for
+manual assignment. Fully blank segments count as zero only after the reviewer
+confirms the export's no-activity convention. Each automatic assignment remains
+editable. Loading a different Opportunity export recalculates the assignments and
+clears prior manual overrides; renamed duplicate content retains its decisions.
 
-Every wiper report label requires activity start/end dates, an explicit meaning
-(activity date, week label or export date), and a documented basis for that choice.
-The supplied labels alone cannot establish covered weeks. Out-of-fiscal report
-labels are permitted with verified in-fiscal coverage. Activity crossing a fiscal
-boundary must be excluded or replaced with correctly bounded source data; aggregate
-counts are never prorated. Gaps are partial; overlapping reporting buckets are
-blocking. There is no four/five-file count requirement.
+Consumer is used as cash for this area-assignment rule. Consumer-to-Cash aliases
+for scored metrics still require the existing explicit confirmation. The original
+Consumer fields remain available. No conversion, ITAC, revenue or hire-date metric
+is manufactured from these exports.
+
+New and edited monthly bundles are **non-dated**. Opportunity fiscal labels and
+Wiper report-date labels may be blank or unusable; Wiper exports may omit the report
+date column altogether. No report date, activity range, label meaning, or assignment
+note is required. Import review, saved settings, summaries and report notes show the
+load timestamp. Source labels remain in the raw export for lineage, but never
+become observation dates, filter dates or required reporting periods. Source rows
+remain `_date: ''`. Each Wiper file contributes its included valid counts; absence
+of a calendar span does not produce a coverage-gap warning or require partial-data
+acknowledgment. Missing/invalid counts and unmatched names still require review.
+
+Existing saved dated bundles retain their historical calculations when reloaded or
+viewed. Opening one for editing converts the working copy to non-dated; Cancel
+leaves the saved bundle unchanged. Import timestamps are retained through reloads,
+not regenerated as reporting dates. Research Readiness identifies these sources as
+non-dated and does not ask for a reporting period for an unrestricted analysis.
 
 ## Identity, missing data and calculations
 
@@ -60,12 +78,19 @@ with absent wiper records remain on the roster with missing status, not zeroes.
 ## Files, persistence and compatibility
 
 Canonical decoded content identifies duplicate uploads independent of filename.
-Each file retains its raw rows, per-label coverage and per-row allocation decisions.
+Each file retains its raw rows, load timestamp, exclusions and per-row allocation decisions.
 A corrected file explicitly replaces an earlier file; removing it recalculates its
-contributions. Duplicate/overlapping representative contributions cannot be applied.
-New fiscal months start with a fresh wiper set and archive the earlier bundle and
-its historical coach assignments. Data Settings includes file lineage, coverage,
-matching exceptions, team totals and representative contribution drill-down.
+contributions. Identical decoded uploads cannot double-count under a different
+filename, and repeated rows for the same representative/source group require
+resolution. Distinct files add their counts; because these records are non-dated,
+there is no calendar-overlap check. Use the replacement selector for corrected
+files instead of adding both versions.
+
+Loading a different Opportunity export starts a new snapshot with a fresh Wiper set
+and coach assignments. Add its Wiper exports afterward. The prior committed
+snapshot is archived by its load timestamp, with its historical coach assignments.
+Wiper-only uploads remain additive to the existing snapshot. Data Settings includes
+file lineage, matching exceptions, team totals and representative contributions.
 
 `shared/coachtools-monthly.js` is the shared normalization/aggregation engine;
 `shared/coachtools-monthly-review.js` supplies the bounded review dialog.
@@ -79,9 +104,10 @@ retain the previous monthly datasets; unrelated datasets are not cleared. Cache
 restoration recompiles the retained bundle through the same engine. Shared monthly
 imports carry the reviewed bundle and scoped roster selection into central sync.
 A newer reviewed central monthly update can refresh All-Star; unrelated source
-precedence is unchanged. For mixed-area sync, both central records must contain
-the same master bundle before either All-Star area is replaced, preventing a
-half-saved shared upload from moving allocations into both teams.
+precedence is unchanged. For a mixed bundle with representatives in both areas, both central records must
+contain the same master bundle before either All-Star area is replaced. A mixed
+bundle that assigns every coach to one area clears the previously populated other
+area. Non-dated shared imports use load time for recency, never a filename date.
 
 ## Validation
 
@@ -89,6 +115,8 @@ half-saved shared upload from moving allocations into both teams.
 existing desktop and All-Star regressions. Monthly cases cover encoding, reordered
 headers, changed-layout detection, weighted arithmetic, duplicate filenames,
 replacements/removals, duplicate-name allocation, missing/suppressed values,
-coverage/boundaries, independent areas, cached/categorized identities, history,
+legacy coverage/boundaries, weighted coach cash shares and threshold boundaries,
+manual overrides, date-free review/apply/reload, independent areas,
+cached/categorized identities, timestamp history,
 central intake, reload parity and verified-save rollback. Employee exports are
 used locally for format checks only and are not committed.
