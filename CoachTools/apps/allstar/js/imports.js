@@ -842,7 +842,7 @@ async function syncAllStarFromCoachToolsData(options={}){
       const wb=directWorkbookFromCoachToolsDataset(record.data);
       if(wb.__monthlyBundle?.scope==='mixed'&&['monthlyRetail','monthlyReferral'].includes(change.datasetType)){
         const area=change.datasetType==='monthlyRetail'?'retail':'referral', peerArea=area==='retail'?'referral':'retail',peerType=peerArea==='retail'?'monthlyRetail':'monthlyReferral';
-        if(window.CoachToolsMonthly.compile(wb.__monthlyBundle).reps.every(r=>r.area===area)){
+        if(window.CoachToolsMonthly.compile(wb.__monthlyBundle).reps.every(r=>r.area===area||r.area==='unclassified')){
           applyMonthlyBundleInStage(wb.__monthlyBundle,area,wb.__monthlySelection,{coordinated:true});
           applyMonthlyBundleInStage(wb.__monthlyBundle,peerArea,null,{coordinated:true});
           applied.push(change.datasetType,peerType);nextSync[change.datasetType]=change.identity;nextSync[peerType]=allStarCentralSyncIdentity(window.CoachToolsData.getDatasetVersion(peerType)||{});
@@ -1131,7 +1131,7 @@ function mergeCategorizedCell(row, header, value){
   row[header]=vals.join('; ');
 }
 function categorizedSourceRowsForBuild(){
-  return allSourceKeys().filter(src=>!isCategorizedSource(src)&&!TEAM_TOTAL_SOURCE_KEYS.includes(src)).map(src=>({source:src,headers:getHeaders(src)||[],rows:getRowsRaw(src)||[]}));
+  return allSourceKeys().filter(src=>!isCategorizedSource(src)&&!TEAM_TOTAL_SOURCE_KEYS.includes(src)&&!['monthly_opportunity','monthly_wiper'].includes(src)).map(src=>({source:src,headers:getHeaders(src)||[],rows:getRowsRaw(src)||[]}));
 }
 function buildCategorizedHeaderMaps(packs){
   const nondateUsed=new Set(['Representative','Coach']), dateUsed=new Set(['Representative','Coach','Date','Source']);
@@ -1209,14 +1209,16 @@ async function buildCategorizedSourceFragment(pack,maps,teamInfo,signature,conte
       const date=bestDateForCategorizedRow(pack.source,row,pack.headers);
       if(maps.hasDate){
         const out={Representative:rep,Coach:coach||'',Date:date?ymd(date):'',Source:labelSource(pack.source),_rep:rep,_repKey:row._repKey||fullNameIdentityKey(rep),_rosterId:row._rosterId||key,_rawRep:row._rawRep||rep,_team:coach||'',_sourceArea:sourceAreaForSource(pack.source)||row._sourceArea||'',_sourceKey:pack.source,_sourceRow:row._sourceRow||row.rowNumber||'',_date:date||null};
-        maps.dated.forEach((target,srcHeader)=>{ out[target]=row[srcHeader]??''; });
+        out._ranked=row._ranked;out._manager=row._manager;out._fieldMeta={};out._fieldStates={};
+        maps.dated.forEach((target,srcHeader)=>{ out[target]=row[srcHeader]??'';if(row._fieldMeta?.[srcHeader])out._fieldMeta[target]=row._fieldMeta[srcHeader];if(row._fieldStates?.[srcHeader])out._fieldStates[target]=row._fieldStates[srcHeader]; });
         datedRows.push(out);
       }else{
         if(!nondateByRep.has(key)) nondateByRep.set(key,{Representative:rep,Coach:coach||'',_rep:rep,_repKey:row._repKey||fullNameIdentityKey(rep),_rosterId:row._rosterId||key,_rawRep:row._rawRep||rep,_team:coach||'',_sourceArea:sourceAreaForSource(pack.source)||row._sourceArea||'',_sourceRows:[]});
         const out=nondateByRep.get(key);
         out._sourceRows.push({source:pack.source,row:row._sourceRow||row.rowNumber||'',rawRep:row._rawRep||rep});
         if(coach && !out.Coach){ out.Coach=coach; out._team=coach; }
-        maps.nondate.forEach((target,srcHeader)=>mergeCategorizedCell(out,target,row[srcHeader]));
+        out._ranked=row._ranked;out._manager=row._manager;out._fieldMeta=out._fieldMeta||{};out._fieldStates=out._fieldStates||{};
+        maps.nondate.forEach((target,srcHeader)=>{mergeCategorizedCell(out,target,row[srcHeader]);if(row._fieldMeta?.[srcHeader])out._fieldMeta[target]=row._fieldMeta[srcHeader];if(row._fieldStates?.[srcHeader])out._fieldStates[target]=row._fieldStates[srcHeader];});
       }
     }
     if(context.rowDone) context.rowDone();
@@ -1230,6 +1232,7 @@ function mergeCategorizedNonDateFragment(target,partial){
   if(!target.has(key)){ target.set(key,{...partial,_sourceRows:[...(partial._sourceRows||[])]}); return; }
   const out=target.get(key);
   out._sourceRows.push(...(partial._sourceRows||[]));
+  out._fieldMeta={...(out._fieldMeta||{}),...(partial._fieldMeta||{})};out._fieldStates={...(out._fieldStates||{}),...(partial._fieldStates||{})};if(partial._ranked===false)out._ranked=false;
   if(partial.Coach && !out.Coach){ out.Coach=partial.Coach; out._team=partial._team||partial.Coach; }
   Object.entries(partial).forEach(([header,value])=>{
     if(header==='Representative'||header==='Coach'||header.startsWith('_')) return;
@@ -1861,6 +1864,7 @@ function addDateToRange(range,d){
 }
 function pushMapArray(map,key,row){ if(!key) return; if(!map.has(key)) map.set(key,[]); map.get(key).push(row); }
 function rowTeam(row,options={}){
+  if(row?._monthly)return canonicalCoachName(row.Coach||row._team||'');
   const mutate=options.mutate!==false;
   if(!row) return '';
   if(TEAM_TOTAL_SOURCE_KEYS.includes(rowSourceKey(row))){
@@ -1897,6 +1901,7 @@ function teamNameFromAnyRow(row,options={}){
   return directTeamFromAnyRow(row);
 }
 function repKeyFromAnyRow(row){
+  if(row?._ranked===false)return '';
   if(!row) return '';
   if(TEAM_TOTAL_SOURCE_KEYS.includes(rowSourceKey(row))) return '';
   return row._repKey || nameKey(row._rep || row.Representative || row['Representative'] || row['Agent Name'] || row['Associate Name'] || row['Associate name'] || row['Rep Name'] || row.Rep || row.Name || '');

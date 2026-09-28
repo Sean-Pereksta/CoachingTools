@@ -771,7 +771,7 @@
           prepared.dataset.meta.monthlyBundle=clone(parsed.meta.monthlyBundle);
           if(normalized.meta.monthlyUndated)prepared.dataset.meta.detectedPeriod={label:'Non-dated',periodKey:'undated',sortKey:''};
           const a=prepared.dataset.workbook.data['Monthly Opportunity']?.aoa||[], hs=a[0]||[];
-          prepared.dataset.meta.monthlySelection=a.slice(1).map(r=>[r[hs.indexOf('Representative')],r[hs.indexOf('Coach')]]);
+          prepared.dataset.meta.monthlySelection=(!scope||scope.mode==='all')?null:a.slice(1).map(r=>[r[hs.indexOf('Representative')],r[hs.indexOf('Coach')]]);
           // File lineage, coverage and explicit allocations are part of the data identity.
           prepared.scopedFingerprint += ':'+M.fingerprint(JSON.stringify(parsed.meta.monthlyBundle));
           prepared.dataset.meta.scopedFingerprint=prepared.scopedFingerprint;
@@ -994,7 +994,7 @@
       const out=M.compile(bundle),areas=bundle.scope==='mixed'?['retail','referral']:[bundle.scope];
       for(const area of areas){
         const parsed=M.toDataset(bundle,area),id=area==='retail'?'monthlyRetail':'monthlyReferral';
-        if(!parsed.meta.totalRows)continue;
+        if(!parsed.meta.totalRows&&!out.reps.some(r=>r.area==='unclassified'))continue;
         analysis.recognized.push({file:{name:bundle.opportunity.name,size:0,lastModified:Date.now()},parsed,rawWorkbook:null,classification:{id,confidence:'high',classificationMethod:'reviewed-monthly-bundle',validation:{valid:true},detectedPeriod:out.period?{label:out.period.start+' — '+out.period.end,periodKey:out.period.id,sortKey:out.period.start}:{label:'Non-dated',periodKey:'undated',sortKey:''}}});
       }
     }catch(error){analysis.errors.push({file:candidates[0].file,error});}

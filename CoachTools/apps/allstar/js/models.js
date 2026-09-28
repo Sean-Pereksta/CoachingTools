@@ -789,6 +789,7 @@ function emptyCriterion(){
   return {id:id(),name:'New Criteria',source:'retail_sv2',calcType:'single',audience:'both',scoreType:'rank',direction:'higher',weight:'1',format:'number',missingRank:999,missingPoints:0,zeroCanWin:false,minimumMonitors:0,column:'',aggregate:'sum',withinCompareColumn:'',withinUseRange:false,withinDays:'',withinRangeMin:'',withinRangeMax:'',leftSource:'retail_sv2',leftColumn:'',operator:'divide',rightSource:'retail_sv2',rightColumn:'',customSource:'retail_sv2',expression:'',checkDateColumn:'',checkColumn:'',checkOperator:'contains',checkValueType:'text',checkText:'',filters:[],minimumEnabled:false,minimum:0,points:1,autofailThreshold:1,autofailOperator:'greaterEqual',trueValueEnabled:false,trueValueSource:'',trueValueColumn:'',lookupVersion:2,displayMode:'lookup',lookupMatchEntity:'representative',lookupMatchColumn:'',lookupReturnColumn:'',lookupDateColumn:'',lookupCustomValue:'',lookupSelection:'latest',displayCalculation:'raw',displayValueType:'auto',displayMissingMode:'blank',displayMissingText:'',displayRules:[]};
 }
 function getHeaders(source){
+  if(['monthly_opportunity','monthly_wiper'].includes(source))return [...new Set(monthlySourceRows(source).flatMap(r=>Object.keys(r)))].filter(h=>!h.startsWith('_'));
   if(source===NONDATED_SOURCE) return state.categorized.nondated.headers || ['Representative','Coach'];
   if(source===DATED_SOURCE) return state.categorized.dated.headers || ['Representative','Coach','Date'];
   if(isCustomSource(source)) return customSource(source)?.headers||[];
@@ -805,8 +806,9 @@ function getHeaders(source){
   if(source==='comp_calls') return state.data.comp_calls.headers;
   return [];
 }
-function allSourceKeys(){ return [NONDATED_SOURCE,DATED_SOURCE,'retail_sv2','retail_wiper','retail_team_totals','referral_sv2','referral_wiper','referral_team_totals','qa',QA_DIRECT_SOURCE,'checklist','documented_coaching','comp_calls',...customSourceKeys()]; }
+function allSourceKeys(){ return [NONDATED_SOURCE,DATED_SOURCE,'monthly_opportunity','monthly_wiper','retail_sv2','retail_wiper','retail_team_totals','referral_sv2','referral_wiper','referral_team_totals','qa',QA_DIRECT_SOURCE,'checklist','documented_coaching','comp_calls',...customSourceKeys()]; }
 function getRowsRaw(source){
+  if(['monthly_opportunity','monthly_wiper'].includes(source))return monthlySourceRows(source);
   if(source===NONDATED_SOURCE) return state.categorized.nondated.rows || [];
   if(source===DATED_SOURCE) return state.categorized.dated.rows || [];
   if(isCustomSource(source)) return customSource(source)?.rows||[];

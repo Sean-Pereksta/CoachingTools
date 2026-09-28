@@ -37,7 +37,7 @@ async function undatedReviewTest(bundle,sources=[]){
  const pending=context.window.CoachToolsMonthlyReview.review({bundle,sources});
  assert.equal(document.querySelectorAll('input[type="date"]').length,0);
  assert.doesNotMatch(document.body.textContent,/REPORT DATE:|Fiscal period:|Activity from|Basis for assignment/);
- assert.match(document.body.textContent,/More than 15%/);
+ assert.match(document.body.textContent,/15% or higher/);
  const areaLabels=[...document.querySelectorAll('select')].map(s=>s.textContent);
  assert.ok(areaLabels.some(s=>s.includes('Automatic — Monthly Retail')));
  assert.ok(areaLabels.some(s=>s.includes('Automatic — Monthly Referral')));
@@ -92,7 +92,7 @@ async function monthlyUploadFlowTest(){
 (async()=>{
  const undated=undatedBundle(),newOut=M.compile(undated);
  assert.equal(newOut.period,null);assert.equal(newOut.coverageComplete,null);assert.equal(newOut.canApply,true,JSON.stringify(newOut.issues));
- assert.deepEqual(newOut.coachAssignments.map(c=>[c.key,c.share,c.area]),[['high coach',.16,'retail'],['edge coach',.15,'referral'],['low coach',.14,'referral'],['weighted coach',.10,'referral']]);
+ assert.deepEqual(newOut.coachAssignments.map(c=>[c.key,c.share,c.area]),[['high coach',.16,'retail'],['edge coach',.15,'retail'],['low coach',.14,'referral'],['weighted coach',.10,'referral']]);
  assert.equal(newOut.reps.filter(r=>r.coach.toLowerCase().includes('weighted')).every(r=>r.area==='referral'),true);
  assert.ok(newOut.reps.every(r=>r.wiper.accepted===1));assert.ok(newOut.reps.every(r=>r.wiper.contributions.every(c=>!c.start&&!c.end)));
  const manual=M.clone(undated);manual.coachAreas['edge coach']='retail';assert.equal(M.compile(manual).reps[1].area,'retail');
@@ -107,13 +107,13 @@ async function monthlyUploadFlowTest(){
  const reorderedReview=await undatedReviewTest(legacyMixed,[undated.wipers[0],undated.opportunity]);assert.equal(reorderedReview.wipers.length,1);assert.equal(M.compile(reorderedReview).reps[0].wiper.accepted,1);assert.equal(JSON.stringify(legacyMixed),beforeReview);
  const u=harness();u.context.undated=reviewed;
  assert.equal(await u.run('commitMonthlyBundle(undated)'),true,JSON.stringify(u.errors));
- assert.equal(u.run('state.data.retail.sv2.length'),1);assert.equal(u.run('state.data.referral.sv2.length'),4);
+ assert.equal(u.run('state.data.retail.sv2.length'),2);assert.equal(u.run('state.data.referral.sv2.length'),3);
  assert.equal(u.run('state.data.retail.monthlySummary.period'),null);assert.equal(u.run('state.data.retail.monthlySummary.importedAt'),reviewed.importedAt);
  assert.equal(u.run("state.data.retail.sv2.some(r=>r._date||r._monthlyPeriod)"),false);
  assert.match(u.run("monthlyReportCoverage({criteria:[{source:'retail_sv2'}]})"),/Non-dated.*Loaded/);
  assert.match(u.run("el('monthlyImportSummary').textContent"),/Non-dated/);
- const ur=harness(u.db,u.storage);await ur.run('loadImportedDataFromIndexedDB({deferRender:true})');assert.equal(ur.run('state.data.retail.monthlySummary.importedAt'),reviewed.importedAt);assert.equal(ur.run('state.data.referral.sv2.length'),4);
- const allReferral=M.clone(reviewed);allReferral.coachAreas['high coach']='referral';allReferral.importedAt='2026-10-01T10:00:00.000Z';u.context.allReferral=allReferral;
+ const ur=harness(u.db,u.storage);await ur.run('loadImportedDataFromIndexedDB({deferRender:true})');assert.equal(ur.run('state.data.retail.monthlySummary.importedAt'),reviewed.importedAt);assert.equal(ur.run('state.data.referral.sv2.length'),3);
+ const allReferral=M.clone(reviewed);allReferral.coachAreas['high coach']='referral';allReferral.coachAreas['edge coach']='referral';allReferral.importedAt='2026-10-01T10:00:00.000Z';u.context.allReferral=allReferral;
  assert.equal(await u.run('commitMonthlyBundle(allReferral)'),true,JSON.stringify(u.errors));assert.equal(u.run('state.data.retail.sv2.length'),0);assert.equal(u.run('state.data.referral.sv2.length'),5);
  // A fresh undated Opportunity export resets prior Wipers/manual overrides and archives by load time.
  const nextSource=M.clone(reviewed.opportunity.aoa);nextSource[3][1]='New Rep';const fresh=M.add(allReferral,M.source(nextSource,'next.csv')).bundle;fresh.partialAcknowledged=true;fresh.importedAt='2026-10-02T10:00:00.000Z';assert.equal(fresh.wipers.length,0);assert.deepEqual(fresh.coachAreas,{});
