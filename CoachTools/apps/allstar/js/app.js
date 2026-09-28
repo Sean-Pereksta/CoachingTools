@@ -119,7 +119,10 @@ function wire(){
   if(els.stopResearchRenderBtn) els.stopResearchRenderBtn.onclick=()=>cancelResearchRenderAll('Stopping after the current safe checkpoint...');
   if(els.newMetricBtn) els.newMetricBtn.onclick=()=>openMetricEditor('');
   if(els.metricSearchInput) els.metricSearchInput.oninput=()=>renderMetricList();
-  if(els.metricSourceSelect) els.metricSourceSelect.onchange=()=>{ const chosen=els.metricSourceSelect.value; refreshMetricDatalist(); if(chosen) els.metricSourceSelect.value=chosen; state.editingMetricGear={...researchGearDefault()}; state.editingMetricRules=(state.editingMetricRules||[]).map(r=>({...r,gear:{...researchGearDefault()},selectedValues:[]})); renderMetricRules(); validateMetricNumeric(); };
+  if(els.metricSourceSelect) els.metricSourceSelect.onchange=()=>{ const chosen=els.metricSourceSelect.value; refreshMetricDatalist(); if(chosen) els.metricSourceSelect.value=chosen; state.editingMetricGear={...researchGearDefault()}; state.editingMetricRules=(state.editingMetricRules||[]).map(r=>({...r,gear:{...researchGearDefault()},selectedValues:[]})); renderMetricRules(); renderMetricComponentFields(); handleMetricModeOrRangeChange(); };
+  if(el('metricSMSPreset'))el('metricSMSPreset').onclick=applySegmentSMSPreset;
+  for(const id of ['metricComponents','metricExcludeZero','metricExcludeMissing','metricMissingAsZero','metricComponentUnit'])if(el(id))el(id).onchange=()=>{handleMetricModeOrRangeChange();};
+  if(el('metricPreviewGrouping'))el('metricPreviewGrouping').onchange=renderMetricFoundPreview;
   if(els.metricModeSelect) els.metricModeSelect.onchange=handleMetricModeOrRangeChange;
   if(els.metricWithinUseRange) els.metricWithinUseRange.onchange=handleMetricModeOrRangeChange;
   if(els.metricFieldInput) els.metricFieldInput.oninput=validateMetricNumeric;
@@ -159,6 +162,7 @@ function wire(){
   if(els.saveResearchItemBtn) els.saveResearchItemBtn.onclick=saveResearchItemFromEditor;
   if(els.coachtoolsFiles) els.coachtoolsFiles.onchange=e=>{ const files=Array.from(e.target.files||[]); if(files.length) stageCoachToolsImportFiles(files); };
   if(els.coachtoolsImportAllBtn) els.coachtoolsImportAllBtn.onclick=importCoachToolsBatch;
+  if(el('monthlyManagersBtn'))el('monthlyManagersBtn').onclick=openMonthlyManagerReport;
   for(const [id,area,readOnly] of [['monthlyRetailBtn','retail',false],['monthlyReferralBtn','referral',false],['monthlyMixedBtn','mixed',false],['monthlyRetailSettingsBtn','retail',true],['monthlyReferralSettingsBtn','referral',true]]) if(el(id)) el(id).onclick=()=>openMonthlyImport(area,readOnly);
   renderMonthlyImportSummary();
   els.retailFile.onchange=e=>{const f=e.target.files[0]; if(f) loadRetailFile(f);};

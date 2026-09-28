@@ -35,5 +35,11 @@ let reviews=0;context.CoachToolsMonthlyReview.review=async options=>{reviews++;l
  const raw=await api.parseFile(csv('opportunity.csv',op));assert.throws(()=>api.prepareScopedDataset(raw,'monthlyRetail',{mode:'all'}),/review/i);
  const scoped=api.prepareScopedDataset(latest.data,'monthlyRetail',{mode:'coach',coaches:['Coach A'],label:'Coach A'});assert.equal(scoped.valid,true);assert.deepEqual(plain(scoped.dataset.meta.monthlySelection),[['Rep A','Coach A']]);
  const zero=api.prepareScopedDataset(latest.data,'monthlyRetail',{mode:'coach',coaches:['Other Coach'],label:'Other'});assert.equal(zero.valid,false);
+ const hierarchy=require('../apps/allstar/tests/fixtures/monthly-hierarchy.js');
+ const modern=await api.analyzeFiles([csv('new-op.csv',hierarchy.opportunity),csv('new-wiper.csv',hierarchy.wiper)]);assert.equal(modern.errors.length,0);assert.equal(modern.recognized.length,2);
+ for(const entry of modern.recognized){const staged=await api.prepareRecognizedEntry(entry,{scope:{mode:'all',label:'All people'}});assert.equal(staged.dataset.meta.monthlySelection,null);await api.saveRecognizedEntry(entry,{scope:{mode:'all',label:'All people'}});}
+ const modernSaved=await data.getCurrent('monthlyRetail',{includeRecord:true}),modernOut=M.compile(modernSaved.data.meta.monthlyBundle);assert.equal(modernOut.overall.wiper.accepted,20);assert.equal(modernOut.teams.find(t=>t.coach==='Coach A').segments.consumer.opportunities,15);assert.equal(modernOut.managers.reduce((n,m)=>n+(m.wiper.accepted||0),0),20);
+ assert.ok(await data.getCurrent('qa'));
+ console.log('PASS manager exports through shared Clean Upload / Update Data, full-scope subtotal authority and unresolved Wiper retention');
  console.log('PASS real shared Clean Upload, UTF-16 intake, staged monthly review, additive updates, duplicate prevention, scope preservation, QA retention');
 })().catch(e=>{console.error(e);process.exitCode=1;});
