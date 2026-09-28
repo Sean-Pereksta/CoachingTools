@@ -1,0 +1,29 @@
+/* Presentation only: modal workspaces, never exported report or print surfaces. */
+@media screen{
+:is(#researchModal,#researchEditorModal,#metricsModal,#metricEditorModal,#modelsModal,#editModelModal,#importModal,#troubleshootModal,#teamsModal,#rosterReassignmentModal,#runModal,#pdfOptionsModal,#listTesterModal,#listTesterDetailModal) .modal{border:1px solid #c7d0dc;border-radius:12px;box-shadow:0 18px 52px #101b2e40}
+:is(#researchEditorModal,#metricsModal,#metricEditorModal,#modelsModal,#importModal,#teamsModal,#rosterReassignmentModal,#pdfOptionsModal,#listTesterModal,#listTesterDetailModal) .modalBody{background:#f6f7f9;gap:14px;align-content:start}
+:is(#researchEditorModal,#metricsModal,#metricEditorModal,#modelsModal,#importModal,#troubleshootModal,#teamsModal,#rosterReassignmentModal,#runModal,#pdfOptionsModal,#listTesterModal,#listTesterDetailModal) .modalHead{padding:12px 16px;background:#1b2535}
+:is(#researchEditorModal,#metricsModal,#metricEditorModal,#modelsModal,#importModal,#troubleshootModal,#teamsModal,#rosterReassignmentModal,#runModal,#pdfOptionsModal,#listTesterModal,#listTesterDetailModal) .modalFoot{gap:8px;padding:12px 16px;border-top:1px solid #d8dfe7;background:#fff;flex-wrap:wrap;z-index:3}
+:is(#researchEditorModal,#metricsModal,#metricEditorModal,#modelsModal,#importModal,#troubleshootModal,#teamsModal,#rosterReassignmentModal,#runModal,#pdfOptionsModal,#listTesterModal,#listTesterDetailModal) :is(.panel,.filterRow,.metricRuleRow,.modelRow){border:1px solid #d8dfe7;border-radius:9px;padding:12px;min-width:0}
+:is(#researchEditorModal,#metricsModal,#metricEditorModal,#modelsModal,#importModal,#troubleshootModal,#teamsModal,#rosterReassignmentModal,#runModal,#pdfOptionsModal,#listTesterModal,#listTesterDetailModal) .panelTitle{border-bottom:1px solid #e3e7ed;padding-bottom:10px;font-size:14px;color:#273548}
+:is(#researchEditorModal,#metricsModal,#metricEditorModal,#modelsModal,#importModal,#troubleshootModal,#teamsModal,#rosterReassignmentModal,#runModal,#pdfOptionsModal,#listTesterModal,#listTesterDetailModal) :is(input,select,textarea){border-color:#abb7c6;border-radius:6px;min-width:0;max-width:100%}
+:is(#researchEditorModal,#metricsModal,#metricEditorModal,#modelsModal,#importModal,#troubleshootModal,#teamsModal,#rosterReassignmentModal,#runModal,#pdfOptionsModal,#listTesterModal,#listTesterDetailModal) .field{min-width:0;gap:6px}
+:is(#researchEditorModal,#metricEditorModal,#importModal,#troubleshootModal,#runModal,#pdfOptionsModal) .field label{font-size:12px;line-height:1.45;letter-spacing:.01em}
+:is(#researchEditorModal,#metricsModal,#metricEditorModal,#modelsModal,#editModelModal,#importModal,#troubleshootModal,#teamsModal,#rosterReassignmentModal,#runModal,#pdfOptionsModal,#listTesterModal,#listTesterDetailModal) :is(button,input,select,textarea,summary):focus-visible{outline:2px solid #b91c1c;outline-offset:2px}
+:is(#researchEditorModal,#metricsModal,#metricEditorModal,#modelsModal,#importModal,#teamsModal,#rosterReassignmentModal,#runModal,#pdfOptionsModal,#listTesterModal) .hint{line-height:1.55;color:#526075}
+#researchEditorModal .researchSection{margin-bottom:14px;padding:14px;border-color:#d8dfe7}
+#researchEditorModal :is(.researchFilterRow,.researchColumnRow,.guidedConditionRow){gap:10px;align-items:end}
+#researchEditorModal .researchExpressionBox textarea,#metricEditorModal textarea,#editModelModal [data-expression-input]{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;line-height:1.6;tab-size:2}
+#researchEditorModal .researchExpressionBox textarea{min-height:90px}
+#metricsModal .metricListItem{grid-template-columns:minmax(130px,1.5fr) minmax(110px,1fr) minmax(90px,.8fr) auto;line-height:1.5;padding:13px;gap:12px}
+#metricsModal .metricListItem>*{min-width:0;overflow-wrap:anywhere}
+#metricEditorModal .metricRuleRow{grid-template-columns:minmax(65px,.6fr) minmax(130px,1.4fr) minmax(100px,1fr) minmax(100px,1fr) auto;align-items:end;gap:10px}
+:is(#teamsModal,#rosterReassignmentModal) .teamManagerItem{padding:12px;line-height:1.5;overflow-wrap:anywhere}
+:is(#teamsModal,#rosterReassignmentModal,#listTesterModal,#listTesterDetailModal,#troubleshootModal) .tableWrap{border:1px solid #d8dfe7;border-radius:8px;scrollbar-gutter:stable}
+:is(#teamsModal,#rosterReassignmentModal,#listTesterModal,#listTesterDetailModal,#troubleshootModal) td{padding:9px 11px;line-height:1.5}
+:is(#teamsModal,#rosterReassignmentModal,#listTesterModal,#listTesterDetailModal,#troubleshootModal) th{padding:10px 11px;background:#263549}
+:is(#runModal,#pdfOptionsModal) input[type=checkbox]{accent-color:#991b1b;flex-shrink:0;width:16px;height:16px;vertical-align:middle}
+:is(#runModal,#pdfOptionsModal) .checkItem{line-height:1.5;padding:8px;border-color:#e0e5eb;border-radius:6px}
+:is(#importModal,#troubleshootModal) .row{row-gap:10px}
+@media(max-width:760px){#metricsModal .metricListItem,#metricEditorModal .metricRuleRow{grid-template-columns:minmax(0,1fr)}#metricsModal .metricListActions{justify-content:flex-start}#researchEditorModal .researchColumnRow.expressionMode{grid-template-columns:minmax(0,1fr)}:is(#researchEditorModal,#metricEditorModal,#importModal,#runModal,#pdfOptionsModal) .modalFoot>button{white-space:normal}}
+}

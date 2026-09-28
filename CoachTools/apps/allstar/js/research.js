@@ -1198,13 +1198,13 @@ function resolveResearchAggregateReference(name,item,rows,warnings=[],fn='sum'){
   return {found:false,value:0,kind:'missing'};
 }
 function escapeResearchRegex(s){ return String(s||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
-function replaceResearchAggregateReferences(expr,item,rows,warnings=[]){
-  const hold=[]; const keep=(v,raw)=>`__research_ref_${hold.push({value:v,raw})-1}__`;
-  const valueFor=(name,fn='sum')=>{ const res=resolveResearchAggregateReference(name,item,rows,warnings,fn); return keep(res.value,name); };
-  expr=expr.replace(/\b(sum|avg|count|unique|min|max)\s*\(\s*(!\s*\[[^\]]+\]\s*\.\s*\[[^\]]+\]|!\s*[^!()[\]+\-*/,\n\r]+?\s*[:.]\s*[^!()[\]+\-*/,\n\r]+?)\s*\)/gi,(_,fn,ref)=>keep(resolveResearchAggregateReference(ref,item,rows,warnings,fn.toLowerCase()).value,ref));
+function replaceResearchAggregateReferences(expr,item,rows,warnings=[],inspect=null){
+  const hold=[]; const keep=(v,raw,aggregation='sum')=>`__research_ref_${hold.push({value:v,raw,aggregation})-1}__`;
+  const valueFor=(name,fn='sum')=>{ const res=resolveResearchAggregateReference(name,item,rows,warnings,fn); return keep(res.value,name,fn); };
+  expr=expr.replace(/\b(sum|avg|count|unique|min|max)\s*\(\s*(!\s*\[[^\]]+\]\s*\.\s*\[[^\]]+\]|!\s*[^!()[\]+\-*/,\n\r]+?\s*[:.]\s*[^!()[\]+\-*/,\n\r]+?)\s*\)/gi,(_,fn,ref)=>keep(resolveResearchAggregateReference(ref,item,rows,warnings,fn.toLowerCase()).value,ref,fn.toLowerCase()));
   expr=replaceResearchSourceFieldRefs(expr,(m,ref)=>keep(resolveResearchAggregateReference(m,item,rows,warnings,'sum').value,m));
-  expr=expr.replace(/model\(\s*["']([^"']+)["']\s*(?:,\s*["']([^"']+)["']\s*)?\)/gi,(_,m,c)=>keep(evaluateModelReferenceValue({model:m,criteria:c||''},rows,item,'sum',warnings)||0, c?`${m} / ${c}`:m));
-  expr=expr.replace(/;([A-Za-z0-9 _-]+)\.([A-Za-z0-9 _.-]+)/g,(_,m,c)=>keep(evaluateModelReferenceValue({model:m.trim(),criteria:c.trim()},rows,item,'sum',warnings)||0, `${m.trim()} / ${c.trim()}`));
+  expr=expr.replace(/model\(\s*["']([^"']+)["']\s*(?:,\s*["']([^"']+)["']\s*)?\)/gi,(_,m,c)=>keep(evaluateModelReferenceValue({model:m,criteria:c||''},rows,item,'sum',warnings)||0, c?`model(${JSON.stringify(m)},${JSON.stringify(c)})`:`model(${JSON.stringify(m)})`));
+  expr=expr.replace(/;([A-Za-z0-9 _-]+)\.([A-Za-z0-9 _.-]+)/g,(_,m,c)=>keep(evaluateModelReferenceValue({model:m.trim(),criteria:c.trim()},rows,item,'sum',warnings)||0, `model(${JSON.stringify(m.trim())},${JSON.stringify(c.trim())})`));
   expr=expr.replace(/@([A-Za-z0-9 _.-]+)/g,(_,n)=>valueFor(n,'sum'));
   expr=expr.replace(/\b(sum|avg|count|unique|min|max)\s*\(\s*\[([^\]]+)\]\s*\)/gi,(_,fn,f)=>valueFor(f,fn.toLowerCase()));
   expr=expr.replace(/\b(sum|avg|count|unique|min|max)\s*\(\s*([A-Za-z_][A-Za-z0-9_ ]*?)\s*\)/gi,(_,fn,f)=>valueFor(f,fn.toLowerCase()));
@@ -1222,6 +1222,7 @@ function replaceResearchAggregateReferences(expr,item,rows,warnings=[]){
     const res=resolveResearchAggregateReference(token,item,rows,warnings,'sum');
     return res.found ? valueFor(token,'sum') : '0';
   });
+  if(inspect) hold.forEach(entry=>inspect({...entry}));
   hold.forEach((entry,i)=>{ expr=expr.replaceAll(`__research_ref_${i}__`,String(Number.isFinite(toNum(entry.value))?toNum(entry.value):0)); });
   return expr;
 }
@@ -1887,10 +1888,12 @@ function researchFilterCacheRows(cached,idx){
 }
 function buildQueryPlan(source, opts={}){
   const idx=sourceIndex(source), all=getRowsRaw(source), plan={source,usedIndex:!!idx,initialRows:all.length,candidateRows:all.length,finalRows:all.length,steps:[],fallbacks:[],filters:[],indexesUsed:[],rowsScanned:0};
-  const filterCacheKey=researchQueryFilterCacheKey(source,opts), cached=state.researchFilterResultCache?.get(filterCacheKey), cachedRows=researchFilterCacheRows(cached,idx);
+  const filterCacheKey=researchQueryFilterCacheKey(source,opts)+(opts.inspect?'|org:'+opts.inspect.scopeKey:''), cached=state.researchFilterResultCache?.get(filterCacheKey), cachedRows=opts.inspect?null:researchFilterCacheRows(cached,idx);
   if(cachedRows){ plan.cacheHit=true; plan.candidateRows=cachedRows.length; plan.finalRows=cachedRows.length; plan.indexesUsed.push('versioned filter-position cache'); plan.steps.push({name:'versioned filter cache',before:all.length,candidates:cachedRows.length,after:cachedRows.length,usedIndex:true}); state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(cachedRows,filterCacheKey); return {rows:cachedRows,plan}; }
   plan.cacheHit=false;
   let rows=all;
+  opts.inspect?.stage?.('Imported primary source',rows);
+  if(opts.inspect?.scopeRows){ rows=rows.filter(r=>opts.inspect.scopeRows.has(r)); opts.inspect.stage?.('After organization selection',rows); }
   const step=(name,before,candidates,after,used)=>plan.steps.push({name,before,candidates,after,usedIndex:!!used});
   const filters=(opts.filters||[]).filter(Boolean);
   if(isCustomWeeklyStatSource(source) && (opts.startDate||opts.endDate)){ const before=rows.length; rows=rows.filter(r=>weeklyRowInRange(source,r,{...opts,start:opts.startDate,end:opts.endDate})); step('weekly date/week range filter',before,before,rows.length,false); }
@@ -1902,7 +1905,9 @@ function buildQueryPlan(source, opts={}){
     if(candidates){ rows=intersectRowsFast(rows,candidates).filter(r=>inRange(researchFieldValue(r,actual,source),opts.startDate,opts.endDate)); step('date filter',before,candidates.length,rows.length,true); }
     else { rows=rows.filter(r=>inRange(researchFieldValue(r,actual,source),opts.startDate,opts.endDate)); step('date filter',before,before,rows.length,false); plan.fallbacks.push('dateColumn'); }
   }else if(opts.dateColumn && (opts.startDate||opts.endDate)){ const before=rows.length; rows=rows.filter(r=>inRange(researchFieldValue(r,opts.dateColumn,source),opts.startDate,opts.endDate)); step('date filter',before,before,rows.length,false); }
+  opts.inspect?.stage?.('After applicable date filtering',rows);
   rows=researchApplyPopulationScope(rows,{...(opts.item||{}),source},plan);
+  opts.inspect?.stage?.('After saved population settings',rows);
   const remaining=[];
   const applyGroup=(label,predicate,indexRows)=>{ const before=rows.length; const candidates=indexRows?intersectRowsFast(rows,indexRows):rows; rows=candidates.filter(predicate); step(label,before,candidates.length,rows.length,!!indexRows); };
   filters.forEach(f=>{
@@ -1939,12 +1944,13 @@ function buildQueryPlan(source, opts={}){
   const modelRefs=[], custom=[];
   last.forEach(f=>(parseModelRef(f.field||'')||parseModelRef(f.value||''))?modelRefs.push(f):custom.push(f));
   [modelRefs,custom].forEach((list,li)=>list.forEach(f=>{ const before=rows.length; rows=applyResearchFilters(rows,[f],opts.item||{source},plan); step(li===0?'model criteria reference':'custom expression/filter',before,before,rows.length,false); }));
+  opts.inspect?.stage?.('After saved population filters',rows);
   if(rows===all) rows=all.slice();
   plan.candidateRows=rows.length; plan.finalRows=rows.length;
   plan.rowsScanned=Math.max(plan.rowsScanned||0,(plan.steps||[]).reduce((n,s)=>n+Number(s.candidates||0),0));
   const positions=idx?.rowMeta?[...rows].map(r=>idx.rowMeta.get(r)?.rowId):[];
   const cacheValue=positions.length===rows.length&&positions.every(Number.isInteger)?{positions,plan:{...plan}}:{rows:rows.slice(),plan:{...plan}}; cacheValue.dependencies=researchCacheDependencies({...(opts.item||{}),source});
-  state.researchFilterResultCache=state.researchFilterResultCache||new Map(); researchBoundedRowsCacheSet(state.researchFilterResultCache,filterCacheKey,cacheValue);
+  state.researchFilterResultCache=state.researchFilterResultCache||new Map(); if(!opts.inspect) researchBoundedRowsCacheSet(state.researchFilterResultCache,filterCacheKey,cacheValue);
   state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(rows,filterCacheKey);
   return {rows,plan};
 }
@@ -2688,6 +2694,7 @@ function evictResearchSourceCaches(dep){
   if(changed) saveResearchResultCache();
 }
 function selectiveResearchInvalidation(dep={}){
+  if(typeof invalidateOrgReadiness==='function') invalidateOrgReadiness(dep.reason||'Research inputs changed');
   for(const token of state.researchActiveCalculations?.values()||[]) token.cancelled=true;
   state.perfCounters.selectiveInvalidations++;
   const reason=dep.reason||'selective invalidation';
@@ -2707,6 +2714,7 @@ function selectiveResearchInvalidation(dep={}){
   if(!dep.silent) updateResearchCacheBadge();
 }
 function clearResearchComputedCaches(reason='cache cleared'){
+  if(typeof invalidateOrgReadiness==='function') invalidateOrgReadiness(reason);
   for(const token of state.researchActiveCalculations?.values()||[]) token.cancelled=true;
   if(typeof AllStarAnalysis!=='undefined') AllStarAnalysis.invalidate({full:true,reason});
   state.researchPopulationCache=new Map(); state.researchJoinedPopulationCache=new Map();
@@ -3599,13 +3607,16 @@ function researchCopyJoinStats(stats){
 async function prepareResearchPopulation(item,planned,warnings,progress={}){
   researchThrowIfCancelled(progress.token);
   state.researchPopulationCache=state.researchPopulationCache||new Map();
-  const key=researchPopulationCacheKey(item,planned), hit=researchTouchCache(state.researchPopulationCache,key);
+  const key=researchPopulationCacheKey(item,planned), hit=progress.inspect?null:researchTouchCache(state.researchPopulationCache,key);
   if(hit){ hit.warnings.forEach(w=>researchExpressionAddWarning(warnings,w)); if(hit.joinStats) item._joinStats=researchCopyJoinStats(hit.joinStats); return {...hit,cacheHit:true}; }
   const initialWarnings=warnings.length;
   let rows=applyResearchGearRowFilters(planned.rows,item,warnings),universeRows=planned.rows.slice();
+  progress.inspect?.stage?.('After field value selections',rows);
   const duplicateMap=buildResearchDuplicateRepMap(item.filterDuplicateReps?researchDuplicateRowsBySource(item,rows):new Map(),item,{warnings});
   rows=applyDuplicateRepFilterToRows(rows,item.source,duplicateMap,{item}); universeRows=applyDuplicateRepFilterToRows(universeRows,item.source,duplicateMap,{item});
   researchThrowIfCancelled(progress.token); await yieldToBrowser(); researchThrowIfCancelled(progress.token);
+  progress.inspect?.stage?.('After duplicate handling',rows);
+  progress.inspect?.beforeConditions?.(rows,item);
   if(!researchItemUsesGuidedPercentage(item)){
     rows=await applyGuidedQualificationForNonPercentAsync(rows,item,{report:(done,total,stage)=>{researchThrowIfCancelled(progress.token); progress.report?.(done,total,stage,.10,.23,'individuals/rows');}});
     researchThrowIfCancelled(progress.token);
@@ -3613,8 +3624,9 @@ async function prepareResearchPopulation(item,planned,warnings,progress={}){
   }
   researchThrowIfCancelled(progress.token);
   state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(rows,key+'|rows'); state.researchCohortRowSignatures.set(universeRows,key+'|universe');
+  progress.inspect?.stage?.('After research conditions (before grouping)',rows);
   const value={rows,universeRows,duplicateMap,dependencies:researchCacheDependencies(item),warnings:warnings.slice(initialWarnings),joinStats:researchCopyJoinStats(item._joinStats)};
-  researchBoundedRowsCacheSet(state.researchPopulationCache,key,value,30);
+  if(!progress.inspect) researchBoundedRowsCacheSet(state.researchPopulationCache,key,value,30);
   return {...value,cacheHit:false};
 }
 async function evaluateResearchItemAsync(item,progress={}){
@@ -3629,12 +3641,13 @@ async function evaluateResearchItemWorkAsync(item, progress={}){
   progress={start:0,end:100,status:false,...progress};
   researchThrowIfCancelled(progress.operationToken||progress.token);
   item=effectiveResearchItem(normalizeResearchItem(item));
-  const cacheKey=researchItemCacheKey(item,'agg'), cached=researchCacheGet(cacheKey); if(cached) return researchCachedPresentation(item,cached);
+  const cacheKey=researchItemCacheKey(item,'agg'), cached=progress.inspect?null:researchCacheGet(cacheKey); if(cached) return researchCachedPresentation(item,cached);
   const t0=performance.now(), perf={rowsScanned:0,indexesUsed:[],filters:[],cacheUsed:false,timings:{}};
   const warnings=[]; perf.warnings=warnings; attachResearchRuntime(item,warnings);
   const report=(done,total,stage='Processing research table',stageStart=.34,stageEnd=.94,unit='rows')=>{
     researchThrowIfCancelled(progress.operationToken||progress.token);
     const safeTotal=Math.max(1,total||0), fraction=Math.min(1,Math.max(0,(done||0)/safeTotal)), local=stageStart+(stageEnd-stageStart)*fraction, pct=progress.start+(progress.end-progress.start)*local, text=`${stage}... ${(done||0).toLocaleString()} / ${(total||0).toLocaleString()} ${unit}`;
+    if(progress.inspect){ progress.inspect.progress?.(text,pct); return; }
     if(progress.token) updateResearchProgress(progress.token,text,pct,{force:true});
     else updateProgress(text,pct,{force:true});
     if(progress.status) setResearchCanvasStatus(text);
@@ -3642,11 +3655,11 @@ async function evaluateResearchItemWorkAsync(item, progress={}){
   const primaryImported=(getRowsRaw(item.source)||[]).length;
   report(0,primaryImported,`Filtering primary source ${labelSource(item.source)}`,0,.10);
   await prepareResearchJoinIndexes(item,progress.operationToken||progress.token);
-  let planned=buildQueryPlan(item.source,{dateColumn:item.dateColumn,startDate:item.startDate,endDate:item.endDate,filters:item.filters||[],item,groupFields:[item.groupField,item.secondaryGroupField,item.panelField],valueFields:[item.valueField,item.percentOfField,item.withinCompareField,...(item.columns||[]).flatMap(c=>[c.field,c.percentOfField,c.withinCompareField])].filter(Boolean),customExpressions:[item.groupExpression,item.numeratorExpression,item.denominatorExpression,item.percentOfField]});
+  let planned=buildQueryPlan(item.source,{inspect:progress.inspect,dateColumn:item.dateColumn,startDate:item.startDate,endDate:item.endDate,filters:item.filters||[],item,groupFields:[item.groupField,item.secondaryGroupField,item.panelField],valueFields:[item.valueField,item.percentOfField,item.withinCompareField,...(item.columns||[]).flatMap(c=>[c.field,c.percentOfField,c.withinCompareField])].filter(Boolean),customExpressions:[item.groupExpression,item.numeratorExpression,item.denominatorExpression,item.percentOfField]});
   let rows=planned.rows; perf.queryPlan=planned.plan; perf.rowsScanned=planned.plan.initialRows||0; perf.timings.queryPlanMs=Math.round(performance.now()-t0); const cohortStart=performance.now(); perf.indexesUsed.push(...(planned.plan.steps||[]).filter(s=>s.usedIndex).map(s=>s.name)); if(!rows.length && !getRowsRaw(item.source).length) warnings.push('No imported rows for selected source.'); addTeamFilterWarningsForItem(item,warnings); const hs=getResearchHeaders(item.source);
   report(primaryImported,primaryImported,`Primary source filtered to ${rows.length.toLocaleString()} candidate rows`,0,.10);
   [item.dateColumn,item.groupField,item.secondaryGroupField,item.panelField].filter(Boolean).forEach(h=>{ if(researchFieldNeedsHeaderWarning(item,h)) warnings.push('Missing header: '+h); });
-  const population=await prepareResearchPopulation(item,planned,warnings,{token:progress.operationToken||progress.token,report});
+  const population=await prepareResearchPopulation(item,planned,warnings,{token:progress.operationToken||progress.token,report,inspect:progress.inspect});
   rows=population.rows; let universeRows=population.universeRows; const duplicateMap=population.duplicateMap; perf.populationCacheHit=population.cacheHit;
   const dupWarn=researchDuplicateWarning(duplicateMap); if(dupWarn) warnings.push(dupWarn);
   const mode=item.valueMode||'count'; if(['date_within','date_percent_within'].includes(mode) && !researchFieldLooksDate(item,item.valueField,rows)) warnings.push('This dates-within mode requires a date field.'); (item.columns||[]).forEach(c=>{ if(['date_within','date_percent_within'].includes(c.mode) && !researchFieldLooksDate(item,c.field,rows) && !warnings.includes('This dates-within mode requires a date field.')) warnings.push('This dates-within mode requires a date field.'); }); if(['sum','avg','min','max','value_within','value_percent_within'].includes(mode)){ const val=researchNumericValidation(item,item.valueField,rows); if(!val.ok) warnings.push(val.message); }
@@ -3691,11 +3704,11 @@ async function evaluateResearchItemWorkAsync(item, progress={}){
   groupList=researchApplyCalculationScope(groupList,item,warnings); groupList=await researchApplyUnmatchedGroupBehaviorAsync(groupList,item,warnings,progress.operationToken||progress.token);
   const outputColumns=expandedResearchColumns(item);
   await preparePercentBuilderCachesForResearchItem(item,outputColumns,warnings,(done,total,stage)=>report(done,total,stage,.58,.72));
-  let data=[], workerResult=await evaluateResearchTypedWorker(item,groupList,outputColumns,warnings,progress.operationToken||progress.token);
+  let data=[], workerResult=progress.inspect?null:await evaluateResearchTypedWorker(item,groupList,outputColumns,warnings,progress.operationToken||progress.token);
   researchThrowIfCancelled(progress.operationToken||progress.token);
   if(workerResult){ data=workerResult.data; perf.timings.workerMs=workerResult.workerMs; perf.workerUsed=true; report(groupList.length,groupList.length,'Aggregating typed measures in a Web Worker',.72,.94,'groups'); }
   else { let lastYield=performance.now(); for(let i=0;i<groupList.length;i++){
-    const g=groupList[i], ctx={total,parentTotal:(parentTotals.get(g.primary)||g.rows.length||1),warnings}, computed=researchGroupOutput(item,g,outputColumns,ctx); data.push({label:g.primary,secondary:g.secondary,panel:g.panel||'',values:computed.values,xValue:computed.xValue,box:computed.box,rows:g.rows.length,dateValue:Number.isFinite(g.dateValue)?g.dateValue:researchSortDateValue(item,g.rows)});
+    const g=groupList[i], ctx={total,parentTotal:(parentTotals.get(g.primary)||g.rows.length||1),warnings}, computed=researchGroupOutput(item,g,outputColumns,ctx); progress.inspect?.group?.(g,computed,outputColumns,item,ctx); data.push({label:g.primary,secondary:g.secondary,panel:g.panel||'',values:computed.values,xValue:computed.xValue,box:computed.box,rows:g.rows.length,dateValue:Number.isFinite(g.dateValue)?g.dateValue:researchSortDateValue(item,g.rows)});
     if((i+1)%RESEARCH_BATCH_SIZE===0||performance.now()-lastYield>12){ lastYield=performance.now(); report(i+1,groupList.length,'Calculating research table groups',.72,.94,'groups'); await yieldToBrowser(); researchThrowIfCancelled(progress.operationToken||progress.token); }
   }
   }
@@ -3704,7 +3717,7 @@ async function evaluateResearchItemWorkAsync(item, progress={}){
   data=researchSortAndLimitData(data,item,hasSecondary); perf.timings.sortingMs=Math.round(performance.now()-sortingStart);
   const totalValues=(item.outputType==='table'&&item.totals)?outputColumns.map(c=>aggregateResearchValue(item,universeRows,c,{total:universeRows.length||1,parentTotal:universeRows.length||1,warnings})):[];
   const effectiveHasSecondary=hasSecondary || (item.outputType==='line' && item.groupMultiAdd);
-  const reconciliation=researchReconciliationResult(item,universeRows,outputColumns,groupList,warnings), prep=state.researchLastPreparation?.itemId===item.id?state.researchLastPreparation:null; perf.groupsCalculated=groupList.length; perf.sourcePreparationMs=prep?.totalMs||0; perf.preparedSources=prep?.sources||[]; perf.totalComputeMs=Math.round(performance.now()-t0); console.info('[Research Builder]',perf); report(1,1,'Finalizing research result',.94,.98,'step'); return researchCacheSet(cacheKey,{valueOnly:true,data,warnings,lineage:researchResultLineage(item,{columns:outputColumns,totalRowCount:universeRows.length}),columns:outputColumns,hasSecondary:effectiveHasSecondary,totalValues,totalRowCount:universeRows.length,duplicateMap,joinDiagnostics:researchJoinStatsSnapshot(item),reconciliation},perf,item);
+  const reconciliation=researchReconciliationResult(item,universeRows,outputColumns,groupList,warnings), prep=state.researchLastPreparation?.itemId===item.id?state.researchLastPreparation:null; perf.groupsCalculated=groupList.length; perf.sourcePreparationMs=prep?.totalMs||0; perf.preparedSources=prep?.sources||[]; perf.totalComputeMs=Math.round(performance.now()-t0); console.info('[Research Builder]',perf); report(1,1,'Finalizing research result',.94,.98,'step'); const result={valueOnly:true,data,warnings,lineage:researchResultLineage(item,{columns:outputColumns,totalRowCount:universeRows.length}),columns:outputColumns,hasSecondary:effectiveHasSecondary,totalValues,totalRowCount:universeRows.length,duplicateMap,joinDiagnostics:researchJoinStatsSnapshot(item),reconciliation}; if(progress.inspect){ progress.inspect.complete?.(result,groupList,item); return {...result,perf}; } return researchCacheSet(cacheKey,result,perf,item);
 }
 async function renderResearchItemBodyAsync(item, progress={}){
   try{
