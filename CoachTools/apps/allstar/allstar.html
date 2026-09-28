@@ -32,6 +32,8 @@
 <link rel="stylesheet" href="css/research-charts.css">
 <link rel="stylesheet" href="css/model-workspace.css">
 <link rel="stylesheet" href="css/workspace-navigation.css">
+<link rel="stylesheet" href="css/workspace-polish.css">
+<link rel="stylesheet" href="css/organizations.css">
 </head>
 <body>
 <div id="monthlyCompleteness" class="hint" role="status" hidden></div>
@@ -227,26 +229,44 @@
 
 <div id="orgBuilderModal" class="modalBackdrop">
   <div class="modal">
-    <div class="modalHead"><div class="modalTitle">Org Builder</div><button class="dark" data-close="orgBuilderModal">Close</button></div>
+    <div class="modalHead"><div class="modalTitle">Organizations<small id="orgActiveNameSummary"></small></div><button class="dark" data-close="orgBuilderModal">Close</button></div>
     <div class="modalBody">
-      <div class="panel">
-        <div class="row">
+      <div class="orgWorkspace">
+        <aside class="panel orgSidebar" aria-label="Organizations">
+          <div class="panelTitle">Organizations</div>
+          <label class="srOnly" for="orgSearchInput">Search organizations</label><input id="orgSearchInput" placeholder="Search organizations…">
           <button id="createOrgBtn" class="green" type="button">Create Org</button>
-          <button id="duplicateOrgBtn" class="dark" type="button">Duplicate Org</button>
-          <button id="deleteOrgBtn" class="red" type="button">Delete Org</button>
-          <button id="saveOrgBtn" class="green" type="button">Save Org</button>
-          <button id="exportOrgsBtn" class="dark" type="button">Export Orgs</button>
-          <label class="gray" style="font-weight:800;cursor:pointer">Import Orgs <input id="importOrgsFile" type="file" accept=".txt,.json" class="hidden"></label>
+          <div id="orgList" class="teamManagerList"></div>
+          <div class="row orgTransfer"><button id="exportOrgsBtn" class="dark" type="button">Export Orgs</button><label class="orgImportLabel">Import Orgs<input id="importOrgsFile" type="file" accept=".txt,.json"></label></div>
+        </aside>
+        <div class="orgMain">
+          <div class="orgContext">
+            <div class="field"><label for="orgNameInput">Organization name</label><input id="orgNameInput" placeholder="Name this organization"></div>
+            <div class="row orgActions"><button id="saveOrgBtn" class="green" type="button">Save Org</button><button id="duplicateOrgBtn" class="dark" type="button">Duplicate Org</button></div>
+            <div id="orgCountBadge" class="badge">0 coaches · 0 reps covered</div>
+            <div id="orgCoverageNote" class="hint"></div>
+            <div class="orgTabs" role="tablist" aria-label="Organization workspace">
+              <button id="orgMembersTab" type="button" role="tab" aria-selected="true" aria-controls="orgMembersPanel" data-org-tab="members">Members</button>
+              <button id="orgReadinessTab" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="orgReadinessPanel" data-org-tab="readiness">Research Readiness</button>
+            </div>
+          </div>
+          <section id="orgMembersPanel" role="tabpanel" aria-labelledby="orgMembersTab" class="orgMembers">
+            <div class="panel"><div class="panelTitle">Available coaches / teams</div><label class="srOnly" for="orgCoachSearchInput">Search coaches</label><input id="orgCoachSearchInput" placeholder="Search coaches…"><div class="row"><button id="selectVisibleOrgCoachesBtn" class="dark" type="button">Select visible coaches</button><button id="clearOrgCoachesBtn" class="gray" type="button">Clear selected coaches</button></div><div id="orgCoachSummary" class="hint" aria-live="polite"></div><div id="orgCoachList" class="teamRepList"></div></div>
+            <div class="panel"><div class="panelTitle">Selected membership</div><div class="hint">Membership changes save immediately. Save Org applies the name.</div><div id="orgSelectedList" class="teamRepList"></div><div class="orgDanger"><button id="deleteOrgBtn" class="red" type="button">Delete Org</button></div></div>
+          </section>
+          <section id="orgReadinessPanel" role="tabpanel" aria-labelledby="orgReadinessTab" class="panel hidden">
+            <div class="panelTitle">Can this research setup answer your question?</div>
+            <p class="hint">Inspect an existing Research item against this organization's current membership. Checks run only when requested. Edit the item in the existing Research editor.</p>
+            <div class="orgReadinessControls"><div class="field"><label for="orgResearchSelect">Saved Research item</label><select id="orgResearchSelect"></select></div><div class="field"><label for="orgPeriodIntent">Intended comparison</label><select id="orgPeriodIntent"><option value="same">Same period</option><option value="mixed">Deliberately mixed periods</option></select></div></div>
+            <div class="row"><button id="orgCheckResearchBtn" class="green" type="button">Check Research Setup</button><button id="orgEditResearchBtn" class="dark" type="button">Open Research editor</button></div>
+            <div id="orgReadinessStatus" class="orgReadinessStatus" role="status" aria-live="polite">Select an item, then check its setup.</div>
+            <div id="orgReadinessResults"></div>
+          </section>
         </div>
       </div>
-      <div class="grid3 orgWorkspace">
-        <div class="panel"><div class="panelTitle">1 · Organizations</div><input id="orgSearchInput" placeholder="Search orgs..."><div id="orgList" class="teamManagerList"></div></div>
-        <div class="panel"><div class="panelTitle">2 · Available Coaches / Teams</div><input id="orgCoachSearchInput" placeholder="Search coaches..."><div class="row"><button id="selectVisibleOrgCoachesBtn" class="dark" type="button">Select visible coaches</button><button id="clearOrgCoachesBtn" class="gray" type="button">Clear selected coaches</button></div><div id="orgCoachSummary" class="hint" aria-live="polite"></div><div id="orgCoachList" class="teamRepList"></div></div>
-        <div class="panel"><div class="panelTitle">3 · Organization Details</div><div class="field"><label>Org Name</label><input id="orgNameInput" placeholder="Name this org"></div><div id="orgCountBadge" class="badge">0 coaches · 0 reps covered</div><div id="orgSelectedList" class="teamRepList"></div></div>
-      </div>
-      <div class="panel"><div class="panelTitle">Org Health</div><div id="orgHealthPanel" class="checkResultList"></div></div>
+      <section class="panel"><div class="panelTitle">Organization health</div><div class="hint">Select a card to inspect the affected coaches or organizations. Overlap may be intentional.</div><div id="orgHealthPanel" class="checkResultList"></div><div id="orgHealthDetails" tabindex="-1"></div></section>
     </div>
-    <div class="modalFoot"><button class="dark" data-close="orgBuilderModal">Done</button></div>
+    <div class="modalFoot"><button id="orgSaveFootBtn" class="green" type="button">Save Org</button><button class="dark" data-close="orgBuilderModal">Done</button></div>
   </div>
 </div>
 
@@ -776,6 +796,7 @@
 <script src="js/reports.js"></script>
 <script src="js/research.js"></script>
 <script src="js/organizations-core.js"></script>
+<script src="js/organization-readiness.js"></script>
 <script src="js/workflow.js"></script>
 <script src="js/list-tester.js"></script>
 <script src="js/qualtrics-bridge.js"></script>

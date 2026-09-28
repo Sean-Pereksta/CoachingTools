@@ -26,8 +26,71 @@ function parseListTesterNames(value,commaSeparated=false){
 
 function openOrgBuilder(){ loadOrgs(); if(!state.activeOrgId&&state.orgs[0]) state.activeOrgId=state.orgs[0].id; renderOrgBuilder(); openModal('orgBuilderModal'); }
 function createOrg(){ const o=normalizeOrg({name:'New Org'}); state.orgs.push(o); state.activeOrgId=o.id; saveOrgs(); renderOrgBuilder(); }
-function renderOrgBuilder(){ const q=normalizeOrgName(state.orgSearch||''), cq=normalizeOrgName(state.orgCoachSearch||''), act=activeOrg(); if(els.orgNameInput) els.orgNameInput.value=act?.name||''; const orgRows=(state.orgs||[]).filter(o=>!q||normalizeOrgName(o.name).includes(q)); if(els.orgList) els.orgList.innerHTML=orgRows.map(o=>`<button type="button" class="teamManagerItem orgCard ${o.id===state.activeOrgId?'active':''}" aria-pressed="${o.id===state.activeOrgId}" data-org-id="${esc(o.id)}"><strong>${esc(o.name)}</strong><span>${o.coachNames.length} coaches · ${orgRepCount(o)} reps</span></button>`).join('')||`<div class="teamManagerItem">${q?'No organizations match your search.':'Create an organization to start assigning teams.'}</div>`; if(els.orgList) els.orgList.querySelectorAll('[data-org-id]').forEach(x=>x.onclick=()=>{ state.activeOrgId=x.dataset.orgId; renderOrgBuilder(); }); const selected=new Set((act?.coachNames||[]).map(normalizeOrgName)); const coaches=knownCoachNames().filter(c=>!cq||normalizeOrgName(c).includes(cq)); const summary=document.getElementById('orgCoachSummary'); if(summary) summary.textContent=`${coaches.length} teams shown · ${selected.size} selected`; if(els.orgCoachList) els.orgCoachList.innerHTML=coaches.map(c=>`<label class="checkItem orgCoachRow ${selected.has(normalizeOrgName(c))?'selected':''}"><input type="checkbox" ${act?'':'disabled'} data-org-coach="${esc(c)}" ${selected.has(normalizeOrgName(c))?'checked':''}><span>${esc(c)}</span></label>`).join('')||'<div class="checkItem">No coaches match.</div>'; if(els.orgSelectedList) els.orgSelectedList.innerHTML=(act?.coachNames||[]).map(c=>`<div class="checkItem orgMembership"><span>${esc(c)}</span> <button class="smallBtn red" data-remove-org-coach="${esc(c)}" type="button">Remove</button></div>`).join('')||'<div class="checkItem">No coaches selected.</div>'; if(els.orgCountBadge) els.orgCountBadge.textContent=`${act?.coachNames?.length||0} coaches · ${act?orgRepCount(act):0} reps covered`; if(els.orgHealthPanel) renderOrgHealth(); if(els.orgCoachList) els.orgCoachList.querySelectorAll('[data-org-coach]').forEach(x=>x.onchange=()=>{ if(!act) return; const val=x.dataset.orgCoach; const next=new Set(act.coachNames||[]); x.checked?next.add(val):next.delete(val); act.coachNames=[...next].sort((a,b)=>a.localeCompare(b)); act.updatedAt=new Date().toISOString(); saveOrgs(); renderOrgBuilder(); }); if(els.orgSelectedList) els.orgSelectedList.querySelectorAll('[data-remove-org-coach]').forEach(b=>b.onclick=()=>{ if(!act) return; act.coachNames=(act.coachNames||[]).filter(c=>c!==b.dataset.removeOrgCoach); act.updatedAt=new Date().toISOString(); saveOrgs(); renderOrgBuilder(); }); }
-function renderOrgHealth(){ const known=new Set(knownCoachNames().map(normalizeOrgName)); const counts=new Map(); (state.orgs||[]).forEach(o=>(o.coachNames||[]).forEach(c=>counts.set(normalizeOrgName(c),(counts.get(normalizeOrgName(c))||0)+1))); const multi=[...counts].filter(([,n])=>n>1).length, stale=[...counts.keys()].filter(c=>!known.has(c)).length, assigned=new Set([...counts.keys()]), unassigned=[...known].filter(c=>!assigned.has(c)).length, zeroCoaches=(state.orgs||[]).filter(o=>!o.coachNames.length).length, zeroReps=(state.orgs||[]).filter(o=>orgRepCount(o)===0).length; const cards=[['Organizations',state.orgs.length,false],['Duplicate membership',multi,true],['Stale coaches',stale,true],['Unassigned coaches',unassigned,true],['Empty organizations',zeroCoaches,true],['No reps covered',zeroReps,true]]; els.orgHealthPanel.innerHTML=cards.map(([label,count,warn])=>`<div class="orgHealthCard ${warn&&count?'warning':''}"><strong>${count}</strong><span>${label}</span></div>`).join(''); }
+function orgCoverage(org){
+  const teams=orgCoachSet(org), reps=new Map(), coveredTeams=new Set(), missing=[];
+  for(const rep of currentTeamIndex().reps||[]){
+    if(!teams.has(normalizeOrgName(rep.team))) continue;
+    const key=normalizeIdentityName(rep.key||rep.name||'');
+    if(!key){ missing.push(rep.team); continue; }
+    if(!reps.has(key)) reps.set(key,rep);
+    coveredTeams.add(normalizeOrgName(rep.team));
+  }
+  const noRoster=(org?.coachNames||[]).filter(team=>!coveredTeams.has(normalizeOrgName(team)));
+  return {reps:[...reps.values()],count:reps.size,noRoster,missing,complete:!noRoster.length&&!missing.length};
+}
+function renderOrgBuilder(){
+  const q=normalizeOrgName(state.orgSearch||''), cq=normalizeOrgName(state.orgCoachSearch||''), act=activeOrg();
+  if(els.orgNameInput) els.orgNameInput.value=act?.name||'';
+  const activeName=document.getElementById('orgActiveNameSummary');if(activeName)activeName.textContent=act?.name||'No organization selected';
+  const orgRows=(state.orgs||[]).filter(o=>!q||normalizeOrgName(o.name).includes(q));
+  if(els.orgList){
+    els.orgList.innerHTML=orgRows.map(o=>{ const coverage=orgCoverage(o); return `<button type="button" class="teamManagerItem orgCard ${o.id===state.activeOrgId?'active':''}" aria-pressed="${o.id===state.activeOrgId}" data-org-id="${esc(o.id)}"><strong>${esc(o.name)}</strong><span>${o.coachNames.length} coaches · ${coverage.count} unique reps${coverage.complete?'':' · coverage incomplete'}</span></button>`; }).join('')||`<div class="teamManagerItem">${q?'No organizations match your search.':'Create an organization to start assigning teams.'}</div>`;
+    els.orgList.querySelectorAll('[data-org-id]').forEach(x=>x.onclick=()=>{ state.activeOrgId=x.dataset.orgId; invalidateOrgReadiness('Organization selection changed'); renderOrgBuilder(); });
+  }
+  const selected=new Set((act?.coachNames||[]).map(normalizeOrgName)), coaches=knownCoachNames().filter(c=>!cq||normalizeOrgName(c).includes(cq));
+  const summary=document.getElementById('orgCoachSummary'); if(summary) summary.textContent=`${coaches.length} teams shown · ${selected.size} selected`;
+  if(els.orgCoachList) els.orgCoachList.innerHTML=coaches.map(c=>`<label class="checkItem orgCoachRow ${selected.has(normalizeOrgName(c))?'selected':''}"><input type="checkbox" ${act?'':'disabled'} data-org-coach="${esc(c)}" ${selected.has(normalizeOrgName(c))?'checked':''}><span>${esc(c)}</span></label>`).join('')||'<div class="checkItem">No coaches match.</div>';
+  if(els.orgSelectedList) els.orgSelectedList.innerHTML=(act?.coachNames||[]).map(c=>`<div class="checkItem orgMembership"><span>${esc(c)}</span><button class="smallBtn red" data-remove-org-coach="${esc(c)}" type="button" aria-label="Remove ${esc(c)} from this organization">Remove</button></div>`).join('')||'<div class="checkItem">No coaches selected.</div>';
+  const coverage=orgCoverage(act);
+  if(els.orgCountBadge) els.orgCountBadge.textContent=`${act?.coachNames?.length||0} coaches · ${coverage.count} unique reps covered`;
+  const note=document.getElementById('orgCoverageNote');
+  if(note) note.textContent=coverage.complete?'Coverage uses the current imported roster / team index; historical assignments are not established.':`Coverage is incomplete: no identifiable representatives for ${coverage.noRoster.join(', ')||coverage.missing.join(', ')}. Counts use only the current imported roster / team index.`;
+  for(const id of ['duplicateOrgBtn','deleteOrgBtn','selectVisibleOrgCoachesBtn','clearOrgCoachesBtn']) if(els[id]) els[id].disabled=!act;
+  if(els.orgHealthPanel) renderOrgHealth();
+  if(els.orgCoachList) els.orgCoachList.querySelectorAll('[data-org-coach]').forEach(x=>x.onchange=()=>{
+    if(!act) return; const val=x.dataset.orgCoach, next=new Set(act.coachNames||[]); x.checked?next.add(val):next.delete(val);
+    act.coachNames=[...next].sort((a,b)=>a.localeCompare(b)); act.updatedAt=new Date().toISOString(); saveOrgs(); renderOrgBuilder();
+    [...els.orgCoachList.querySelectorAll('[data-org-coach]')].find(cb=>cb.dataset.orgCoach===val)?.focus();
+  });
+  if(els.orgSelectedList) els.orgSelectedList.querySelectorAll('[data-remove-org-coach]').forEach(b=>b.onclick=()=>{
+    if(!act) return; act.coachNames=(act.coachNames||[]).filter(c=>c!==b.dataset.removeOrgCoach); act.updatedAt=new Date().toISOString(); saveOrgs(); renderOrgBuilder();
+  });
+  renderOrgReadinessControls();
+}
+function orgHealthIssues(){
+  const known=new Map(knownCoachNames().map(c=>[normalizeOrgName(c),c])), memberships=new Map();
+  for(const org of state.orgs||[]) for(const coach of org.coachNames||[]){
+    const key=normalizeOrgName(coach); if(!memberships.has(key)) memberships.set(key,{coach,orgs:[]}); memberships.get(key).orgs.push(org);
+  }
+  const orgIssue=org=>({label:org.name,orgs:[org]});
+  return [
+    {label:'Organizations',items:(state.orgs||[]).map(orgIssue)},
+    {label:'Overlapping membership',note:'Informational: a coach may intentionally belong to multiple organizations.',items:[...memberships.values()].filter(x=>x.orgs.length>1).map(x=>({...x,label:x.coach}))},
+    {label:'Stale coaches',warning:true,items:[...memberships].filter(([key])=>!known.has(key)).map(([,x])=>({...x,label:x.coach}))},
+    {label:'Unassigned coaches',warning:true,items:[...known].filter(([key])=>!memberships.has(key)).map(([,coach])=>({label:coach,orgs:[]}))},
+    {label:'Empty organizations',warning:true,items:(state.orgs||[]).filter(o=>!o.coachNames.length).map(orgIssue)},
+    {label:'No reps covered',warning:true,note:'No representatives could be identified in the current roster. This is not proof that a team has no people.',items:(state.orgs||[]).filter(o=>orgCoverage(o).count===0).map(orgIssue)}
+  ];
+}
+function renderOrgHealth(){
+  const issues=orgHealthIssues();
+  els.orgHealthPanel.innerHTML=issues.map((issue,i)=>`<button type="button" data-org-health="${i}" class="orgHealthCard ${issue.warning&&issue.items.length?'warning':''}" aria-expanded="${state.orgHealthSelection===i}" aria-controls="orgHealthDetails"><strong>${issue.items.length}</strong><span>${esc(issue.label)}</span></button>`).join('');
+  els.orgHealthPanel.querySelectorAll('[data-org-health]').forEach(b=>b.onclick=()=>{ state.orgHealthSelection=+b.dataset.orgHealth; renderOrgHealth(); document.getElementById('orgHealthDetails')?.focus(); });
+  const details=document.getElementById('orgHealthDetails'), issue=issues[state.orgHealthSelection];
+  if(!details) return;
+  details.innerHTML=issue?`<h3>${esc(issue.label)}</h3>${issue.note?`<p class="hint">${esc(issue.note)}</p>`:''}<ul class="orgIssueList">${issue.items.map(x=>`<li><span>${esc(x.label)}</span><span>${x.orgs.map(org=>`<button type="button" class="smallBtn" data-inspect-org="${esc(org.id)}">Open ${esc(org.name)}</button>`).join(' ')||'Use Members to explicitly assign this coach to the selected organization.'}</span></li>`).join('')||'<li>No items to review.</li>'}</ul>`:'';
+  details.querySelectorAll('[data-inspect-org]').forEach(b=>b.onclick=()=>{ state.activeOrgId=b.dataset.inspectOrg; state.orgWorkspaceTab='members'; invalidateOrgReadiness('Organization selection changed'); renderOrgBuilder(); document.getElementById('orgNameInput')?.focus(); });
+}
 
 function exportOrgs(){ downloadText('all_star_orgs.json',JSON.stringify({version:1,orgs:state.orgs||[]},null,2)); }
 function importOrgs(text){ const obj=JSON.parse(text), incoming=(Array.isArray(obj)?obj:(obj.orgs||[])).map(normalizeOrg); incoming.forEach(o=>{ const byId=state.orgs.findIndex(x=>x.id===o.id); if(byId>=0) state.orgs[byId]=o; else { if(state.orgs.some(x=>normalizeOrgName(x.name)===normalizeOrgName(o.name))) o.name+=' copy'; state.orgs.push(o); } }); saveOrgs(); renderOrgBuilder(); }
