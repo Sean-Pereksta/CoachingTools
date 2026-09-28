@@ -41,7 +41,10 @@ async function undatedReviewTest(bundle,sources=[]){
  const areaLabels=[...document.querySelectorAll('select')].map(s=>s.textContent);
  assert.ok(areaLabels.some(s=>s.includes('Automatic — Monthly Retail')));
  assert.ok(areaLabels.some(s=>s.includes('Automatic — Monthly Referral')));
- const apply=[...document.querySelectorAll('button')].find(b=>b.textContent==='Apply monthly import');
+ const apply=document.querySelector('#monthlyApply');
+ assert.equal(document.querySelectorAll('input[type=checkbox]').length,0);
+ assert.ok(document.querySelector('#monthlyTeamPreview'));assert.ok(document.querySelector('#monthlyRepPreview'));
+ assert.equal(document.querySelector('#monthlyFiles').dataset.coachtoolsAutoImport,'false');
  assert.equal(apply.disabled,false);apply.click();
  const reviewed=await pending;assert.ok(M.compile(reviewed).canApply);assert.match(reviewed.importedAt,/^\d{4}-\d{2}-\d{2}T/);
  return reviewed;
@@ -54,6 +57,37 @@ function harness(db=new IDBFactory(),storage=new Map()){
  vm.runInContext(fs.readFileSync(path.join(root,'../../shared/coachtools-monthly.js'),'utf8')+'\n'+names.map(n=>fs.readFileSync(path.join(root,n),'utf8')).join('\n'),context);
  vm.runInContext(`setStatus=renderEditModelSafe=renderTeamSelect=updateResearchCacheBadge=()=>{};showProgress=hideProgress=updateProgress=()=>{};state.startup.running=false;state.lifecycle.hidden=false;loadModels();`,context);
  return {context,db,storage,errors,run:s=>vm.runInContext(s,context),stop(){vm.runInContext('state.lifecycle.closing=true;clearTimeout(state.importCacheSaveTimer);',context);}};
+}
+async function monthlyUploadFlowTest(){
+ const h=harness();
+ try{
+  h.context.baseline=fullBundle();assert.equal(await h.run('commitMonthlyBundle(baseline)'),true);
+  h.run('window.XLSX=XLSX;');
+  vm.runInContext(fs.readFileSync(path.join(root,'../../shared/coachtools-monthly-review.js'),'utf8'),h.context);
+  const pending=h.run('openMonthlyImport()'),doc=h.context.document;
+  const file=src=>{const bytes=Buffer.concat([Buffer.from([255,254]),Buffer.from(src.aoa.map(r=>r.join('\t')).join('\r\n'),'utf16le')]);return {name:src.name,arrayBuffer:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length)};};
+  const op=opportunity([['Coach Alpha','Rep One',10,8],['Coach Alpha','Rep Two',90,18]],'');
+  const files=[file(wiper('a',[['Rep One',4,10],['Rep Two',0,0]],'one.csv')),file(op),file(wiper('b',[['Rep One',6,20],['Rep Two',0,0]],'two.csv')),file(wiper('c',[['Unknown Rep',2,5]],'unmatched.csv'))];
+  const upload=doc.getElementById('monthlyFiles');Object.defineProperty(upload,'files',{value:files});await upload.onchange();
+  assert.equal(doc.querySelectorAll('#monthlyImportReview input[type=checkbox]').length,0);
+  assert.match(doc.getElementById('monthlyTeamPreview').textContent,/Coach Alpha/);assert.match(doc.getElementById('monthlyRepPreview').textContent,/33.33%/);
+  assert.match(doc.getElementById('monthlyImportReview').textContent,/3 Wiper files combined/);
+  let apply=doc.getElementById('monthlyApply');assert.equal(apply.disabled,false,'warnings must not block a monthly save');
+  const search=doc.getElementById('monthlyPreviewSearch');search.value='Rep One';search.onchange();assert.equal(doc.getElementById('monthlyApply'),apply,'blur/change preserves the clicked save button');
+  h.run('state.startup.running=true;');await apply.onclick();assert.match(doc.getElementById('monthlyImportReview').textContent,/still loading or saving/);assert.equal(h.run('state.data.retail.wiper[0].Accepted'),20);
+  h.run('state.startup.running=false;const normalIdbReq=idbReq;idbReq=(req,label)=>normalIdbReq(req,label).then(r=>label==="Verifying retail_wiper"?{...r,value:{rows:[]}}:r);');
+  await apply.onclick();assert.match(doc.getElementById('monthlyImportReview').textContent,/Could not save/);assert.equal(h.run('state.data.retail.wiper[0].Accepted'),20);assert.equal(apply.disabled,false);
+  h.run('idbReq=normalIdbReq;');
+  const before=h.run('state.importJobHistory.length');const first=apply.onclick(),second=apply.onclick();await Promise.all([first,second]);const saved=await pending;
+  assert.equal(saved.wipers.length,3);assert.equal(doc.getElementById('monthlyImportReview'),null);assert.equal(h.run('state.importJobHistory.length'),before+1);
+  assert.equal(h.run('state.data.retail.wiper[0].Accepted'),10);assert.equal(h.run('state.data.retail.wiper[0].Offered'),30);assert.equal(h.run('state.data.retail.sv2[0]["Cash Opps"]'),10);assert.equal(h.run('state.data.retail.sv2[0]["Cash Apps"]'),8);
+  assert.equal(h.run('state.data.retail.teamTotals.rows[0]["Cash Appointment Rate"]'),26);assert.equal(h.run('state.data.retail.monthlySummary.partial'),true);
+  const reload=harness(h.db,h.storage);try{await reload.run('loadImportedDataFromIndexedDB({deferRender:true})');assert.equal(reload.run('state.data.retail.wiper[0].Accepted'),10);assert.equal(reload.run('state.data.retail.monthlySummary.importedAt'),saved.importedAt);}finally{reload.stop();}
+  // Detached form controls used to throw the reported null.dataset TypeError.
+  h.run('const looseControls=["cfield","rpfield","ff"].map(key=>{const x=document.createElement("input");x.setAttribute("data-"+key,"name");els.criteriaList.append(x);return x;});bindCriteriaEditors();');
+  assert.doesNotThrow(()=>h.run('looseControls.forEach(x=>{x.remove();x.onchange();});'));
+  console.log('PASS real multi-file picker → combined preview → save/retry/reload, no approval checkboxes, stable Save click and detached controls');
+ }finally{h.stop();}
 }
 (async()=>{
  const undated=undatedBundle(),newOut=M.compile(undated);
@@ -89,6 +123,7 @@ function harness(db=new IDBFactory(),storage=new Map()){
  assert.equal((await ur.run('syncAllStarFromCoachToolsData({render:false})')).changed,true,JSON.stringify(ur.errors));assert.equal(ur.run('state.data.retail.sv2.length'),0);assert.equal(ur.run('state.data.referral.sv2.length'),5);
  u.stop();ur.stop();
  console.log('PASS undated review/apply/reload/history, weighted cash threshold, exact 15%, overrides, missing counts and one-area transfers');
+ await monthlyUploadFlowTest();
  const b=fullBundle(),out=M.compile(b);
  assert.equal(out.canApply,true);assert.equal(out.reps[0].wiper.accepted,20);assert.equal(out.reps[0].wiper.offered,50);assert.equal(out.reps[0].wiper.rate,.4);assert.equal(out.teams[0].segments.consumer.rate,.26);assert.equal(out.reps[1].wiper.rate,null);assert.equal(out.coverageComplete,true);
  const utf16=Buffer.concat([Buffer.from([255,254]),Buffer.from(b.opportunity.aoa.map(r=>r.join('\t')).join('\r\n'),'utf16le')]);

@@ -880,8 +880,9 @@
       windowState.loading.hidden = true;
       settleWindowLoad(windowState, false);
     }, APP_LOAD_TIMEOUT_MS);
-    try { windowState.iframe.contentWindow.location.reload(); }
-    catch (_) { windowState.iframe.src = windowState.app.file; }
+    // Let the owning document navigate its iframe. Reading a file: frame's
+    // location can be denied even when both files are in the same folder.
+    windowState.iframe.src = windowState.app.file;
   }
 
   function showContextMenu(app, x, y) {

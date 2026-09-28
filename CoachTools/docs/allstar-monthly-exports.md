@@ -6,11 +6,19 @@ Control/team-sheet workbooks retain their existing paths.
 
 ## Import and review
 
-Open All-Star → Import Data → Monthly Retail, Monthly Referral, or One master
-file · both areas. The shared Clean Upload and Update Data selectors recognize
-the same exports and open the same review dialog. Select one Rep Opportunity
-Performance export and any number of Rep Wiper Performance exports. Wipers can
-be selected together, staged before Opportunity, or added to a saved bundle.
+Open All-Star → Import Data → Upload monthly exports. The shared Clean Upload and Update Data selectors recognize
+the same exports and open the same preview. Select one Rep Opportunity
+Performance export and any number of Rep Wiper Performance exports together in
+one file picker, in any order. Wipers can also be staged before Opportunity or
+added to a saved bundle. Representative data and full team totals are displayed
+immediately, with all matched Wiper counts summed. Save monthly data is the only
+submission step; there is no approval checkbox or separate Cash confirmation.
+Team overrides, exclusions, and corrected-file replacements remain optional.
+
+The Save button stays mounted while the preview changes, so a text-field blur does
+not remove the button before its click fires. Direct All-Star saves remain in the
+preview until the verified IndexedDB transaction succeeds. Busy or failed saves
+show the error in that preview and retain the selected files for retry.
 
 Opportunity's segment and metric headings determine the nine statistical columns.
 Only the validated format uses leading columns A/B/C for coach/name/fiscal period.
@@ -29,10 +37,10 @@ confirms the export's no-activity convention. Each automatic assignment remains
 editable. Loading a different Opportunity export recalculates the assignments and
 clears prior manual overrides; renamed duplicate content retains its decisions.
 
-Consumer is used as cash for this area-assignment rule. Consumer-to-Cash aliases
-for scored metrics still require the existing explicit confirmation. The original
-Consumer fields remain available. No conversion, ITAC, revenue or hire-date metric
-is manufactured from these exports.
+Consumer is Cash for both area assignment and scored Cash opportunities,
+appointments, and appointment-rate fields in non-dated monthly imports. The original
+Consumer fields remain available without a confirmation step. No conversion,
+ITAC, revenue or hire-date metric is manufactured from these exports.
 
 New and edited monthly bundles are **non-dated**. Opportunity fiscal labels and
 Wiper report-date labels may be blank or unusable; Wiper exports may omit the report
@@ -42,7 +50,9 @@ load timestamp. Source labels remain in the raw export for lineage, but never
 become observation dates, filter dates or required reporting periods. Source rows
 remain `_date: ''`. Each Wiper file contributes its included valid counts; absence
 of a calendar span does not produce a coverage-gap warning or require partial-data
-acknowledgment. Missing/invalid counts and unmatched names still require review.
+acknowledgment. Missing/invalid counts and unmatched names remain visible in the preview and
+are excluded from affected totals without requiring approval. Structural errors
+and ambiguous coach-area assignments are shown beside Save with the needed fix.
 
 Existing saved dated bundles retain their historical calculations when reloaded or
 viewed. Opening one for editing converts the working copy to non-dated; Cancel
@@ -55,8 +65,8 @@ non-dated and does not ask for a reporting period for an unrestricted analysis.
 Names match automatically only after Unicode/case/whitespace normalization and
 only when exactly one Opportunity record owns the name. Duplicate names remain
 separate roster records. Allocate each ambiguous wiper row to one selected roster
-record with a reason (different people, transfer, or verified alias), or explicitly
-exclude it with a reason. Unmatched names never create representatives. No fuzzy
+record by selecting the recipient, or exclude it. The decision is recorded
+automatically; there is no required explanation field. Unmatched names never create representatives. No fuzzy
 or initial/surname match is used. Neither export supplies a verified employee ID.
 
 Missing, suppressed (`*`), not-applicable, invalid and numeric zero are distinct.
@@ -65,8 +75,9 @@ confirm the export's no-activity convention. Partial segments do not inherit tha
 convention. Negative/fractional counts, appointments above opportunities, and
 accepted above offered are excluded with raw values retained in diagnostics.
 A zero denominator produces N/A. Isolated invalid records do not prevent preview;
-applying partial results requires acknowledgment and retains visible completeness
-flags in settings, report headings and PDF footers.
+non-dated imports can save available valid counts immediately and retain visible
+completeness flags in settings, report headings and PDF footers. Historical dated
+bundles retain their original acknowledgment behavior until edited.
 
 Representative and team rates use summed raw numerators divided by summed raw
 denominators. Exported appointment rates are reconciliation checks with 0.05
@@ -87,7 +98,7 @@ there is no calendar-overlap check. Use the replacement selector for corrected
 files instead of adding both versions.
 
 Loading a different Opportunity export starts a new snapshot with a fresh Wiper set
-and coach assignments. Add its Wiper exports afterward. The prior committed
+and coach assignments. Select its Wiper exports in the same batch or add them afterward. The prior committed
 snapshot is archived by its load timestamp, with its historical coach assignments.
 Wiper-only uploads remain additive to the existing snapshot. Data Settings includes
 file lineage, matching exceptions, team totals and representative contributions.
@@ -116,7 +127,9 @@ existing desktop and All-Star regressions. Monthly cases cover encoding, reorder
 headers, changed-layout detection, weighted arithmetic, duplicate filenames,
 replacements/removals, duplicate-name allocation, missing/suppressed values,
 legacy coverage/boundaries, weighted coach cash shares and threshold boundaries,
-manual overrides, date-free review/apply/reload, independent areas,
+manual overrides, multi-file selection, visible combined previews, saving partial
+data without approvals, busy/save-failure retries, stable Save clicks, automatic
+Cash aliases, date-free review/apply/reload, independent areas,
 cached/categorized identities, timestamp history,
 central intake, reload parity and verified-save rollback. Employee exports are
 used locally for format checks only and are not committed.

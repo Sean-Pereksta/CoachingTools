@@ -119,7 +119,9 @@
 
       <section class="panel importSection">
         <div class="panelTitle">Monthly Retail / Monthly Referral exports</div>
-        <div class="row"><button type="button" id="monthlyRetailBtn">Monthly Retail</button><button type="button" id="monthlyReferralBtn">Monthly Referral</button><button type="button" id="monthlyMixedBtn">One master file · both areas</button></div>
+        <div class="row"><button type="button" id="monthlyMixedBtn" class="green">Upload monthly exports</button></div>
+        <p class="hint">Select one Opportunity file and all Wiper files together. Preview combined representative and team totals, then save.</p>
+        <details><summary>Upload to a specific area</summary><div class="row"><button type="button" id="monthlyRetailBtn">Monthly Retail only</button><button type="button" id="monthlyReferralBtn">Monthly Referral only</button></div></details>
         <p id="monthlyImportSummary" role="status"></p>
         <div class="row"><button type="button" id="monthlyRetailSettingsBtn">Retail Data Settings</button><button type="button" id="monthlyReferralSettingsBtn">Referral Data Settings</button></div>
         <details><summary>Previous monthly imports</summary><div id="monthlyHistory"></div></details>

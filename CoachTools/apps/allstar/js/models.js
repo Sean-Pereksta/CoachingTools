@@ -2021,7 +2021,7 @@ async function showModelCriterionPreview(cid){
 function bindCriteriaEditors(){
   els.criteriaList.querySelectorAll('[data-cfield]').forEach(input=>{
     input.onchange=input.oninput=()=>{
-      const box=input.closest('[data-crit]'); const c=getEditCriterion(box.dataset.crit); if(!c) return;
+      const box=input.closest('[data-crit]'); if(!box)return; const c=getEditCriterion(box.dataset.crit); if(!c) return;
       const field=input.dataset.cfield;
       let val=input.type==='checkbox' ? input.checked : input.value;
       if(field==='minimumEnabled') val=val==='true';
@@ -2070,7 +2070,7 @@ function bindCriteriaEditors(){
   els.criteriaList.querySelectorAll('[data-preview-row-pull]').forEach(b=>b.onclick=()=>{ const [cid,rid]=b.dataset.previewRowPull.split('|'); const c=getEditCriterion(cid); const cond=ensureRowPullConditions(c).find(x=>x.id===rid); showColumnPreview(c.source||'checklist',cond?.column||''); });
   els.criteriaList.querySelectorAll('[data-rpfield]').forEach(input=>{
     input.onchange=input.oninput=()=>{
-      const critBox=input.closest('[data-crit]'); const rowBox=input.closest('[data-row-pull-condition]'); const c=getEditCriterion(critBox.dataset.crit); const cond=ensureRowPullConditions(c).find(x=>x.id===rowBox.dataset.rowPullCondition); if(!cond) return;
+      const critBox=input.closest('[data-crit]'); const rowBox=input.closest('[data-row-pull-condition]'); if(!critBox||!rowBox)return; const c=getEditCriterion(critBox.dataset.crit); if(!c)return; const cond=ensureRowPullConditions(c).find(x=>x.id===rowBox.dataset.rowPullCondition); if(!cond) return;
       const rpField=input.dataset.rpfield;
       cond[rpField]=input.value;
       if(rpField==='operator') cond.operator=normalizeRowPullOperator(cond.operator, c.source===DATED_SOURCE && c.checkValueType==='number'?'number':'text');
@@ -2086,7 +2086,7 @@ function bindCriteriaEditors(){
   });
   els.criteriaList.querySelectorAll('[data-ff]').forEach(input=>{
     input.onchange=input.oninput=()=>{
-      const critBox=input.closest('[data-crit]'); const filterBox=input.closest('[data-filter]'); const c=getEditCriterion(critBox.dataset.crit); const f=(c.filters||[]).find(x=>x.id===filterBox.dataset.filter); if(!f) return;
+      const critBox=input.closest('[data-crit]'); const filterBox=input.closest('[data-filter]'); if(!critBox||!filterBox)return; const c=getEditCriterion(critBox.dataset.crit); if(!c)return; const f=(c.filters||[]).find(x=>x.id===filterBox.dataset.filter); if(!f) return;
       const field=input.dataset.ff;
       if(field==='values') f.values=Array.from(input.selectedOptions).map(o=>o.value);
       else if(field==='dynamic') f.dynamic=!!input.checked;

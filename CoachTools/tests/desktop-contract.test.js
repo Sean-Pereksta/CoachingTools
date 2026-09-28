@@ -8,6 +8,17 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const desktopScript = fs.readFileSync(path.join(root, 'shared', 'coachtools-desktop.js'), 'utf8');
+// Direct-file frames have opaque origins: reload via the iframe element without
+// touching contentWindow.location, which can log browser security errors.
+{
+  let childWindowReads=0;
+  const iframe={src:'',get contentWindow(){childWindowReads++;throw new Error('opaque file origin');}};
+  const pane={iframe,app:{file:'apps/allstar/allstar.html'},unavailable:{},loading:{}};
+  const reloadContext=vm.createContext({state:{activeAppId:'allstar'},openWindows:new Map([['allstar',pane]]),APP_LOAD_TIMEOUT_MS:12000,clearTimeout(){},setTimeout(){return 1;},settleWindowLoad(){}});
+  vm.runInContext(desktopScript.slice(desktopScript.indexOf('  function reloadActive()'),desktopScript.indexOf('  function showContextMenu(')),reloadContext);
+  vm.runInContext('reloadActive()',reloadContext);
+  assert.equal(childWindowReads,0);assert.equal(iframe.src,'apps/allstar/allstar.html');assert.equal(pane.loading.hidden,false);
+}
 const desktopStyles = fs.readFileSync(path.join(root, 'shared', 'coachtools-theme.css'), 'utf8');
 const desktopHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'apps.json'), 'utf8'));
