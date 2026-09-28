@@ -840,13 +840,19 @@ async function syncAllStarFromCoachToolsData(options={}){
       if(!record?.data?.workbook?.sheets?.length || !loader) continue;
       if(job) updateAllStarStartupProgress(job,`Refreshing ${change.datasetType}…`,70+Math.round(18*(index/Math.max(1,changed.length))));
       const wb=directWorkbookFromCoachToolsDataset(record.data);
-      if(wb.__monthlyBundle?.scope==='mixed'&&new Set(window.CoachToolsMonthly.compile(wb.__monthlyBundle).reps.map(r=>r.area)).size===2&&['monthlyRetail','monthlyReferral'].includes(change.datasetType)){
+      if(wb.__monthlyBundle?.scope==='mixed'&&['monthlyRetail','monthlyReferral'].includes(change.datasetType)){
         const area=change.datasetType==='monthlyRetail'?'retail':'referral', peerArea=area==='retail'?'referral':'retail',peerType=peerArea==='retail'?'monthlyRetail':'monthlyReferral';
+        if(window.CoachToolsMonthly.compile(wb.__monthlyBundle).reps.every(r=>r.area===area)){
+          applyMonthlyBundleInStage(wb.__monthlyBundle,area,wb.__monthlySelection,{coordinated:true});
+          applyMonthlyBundleInStage(wb.__monthlyBundle,peerArea,null,{coordinated:true});
+          applied.push(change.datasetType,peerType);nextSync[change.datasetType]=change.identity;nextSync[peerType]=allStarCentralSyncIdentity(window.CoachToolsData.getDatasetVersion(peerType)||{});
+          continue;
+        }
         const peer=await window.CoachToolsData.getCurrent(peerType,{includeRecord:true});
         if(JSON.stringify(peer?.data?.meta?.monthlyBundle)!==JSON.stringify(wb.__monthlyBundle))throw new Error('Both monthly areas must finish saving the same reviewed master bundle before All-Star can apply it. Previous monthly data was kept.');
         applyMonthlyBundleInStage(wb.__monthlyBundle,area,wb.__monthlySelection,{coordinated:true});
         applyMonthlyBundleInStage(peer.data.meta.monthlyBundle,peerArea,peer.data.meta.monthlySelection||null,{coordinated:true});
-        applied.push(change.datasetType,peerType);nextSync[change.datasetType]=change.identity;nextSync[peerType]=allStarCentralSyncIdentity(window.CoachToolsData.getDatasetVersion(peerType));
+        applied.push(change.datasetType,peerType);nextSync[change.datasetType]=change.identity;nextSync[peerType]=allStarCentralSyncIdentity(window.CoachToolsData.getDatasetVersion(peerType)||{});
         continue;
       }
       const file={name:record.originalFileName||`${change.datasetType}.xlsx`,size:record.fileSize||0,lastModified:Date.parse(record.fileModifiedDate||record.importedAt)||Date.now()};

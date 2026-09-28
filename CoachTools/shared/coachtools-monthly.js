@@ -25,7 +25,7 @@
   }
   function detect(aoa){
     const first=(aoa[0]||[]).map(header);
-    if(['report date','employee full name','wipers accepted','wipers offered'].every(x=>first.includes(x)))return 'wiper';
+    if(['employee full name','wipers accepted','wipers offered'].every(x=>first.includes(x)))return 'wiper';
     if(aoa.slice(0,3).some(r=>r.some(c=>header(c)==='opportunity latest segment')) || (aoa[1]||[]).some(c=>SEGMENTS.includes(key(c))))return 'opportunity';
     return '';
   }
@@ -48,7 +48,7 @@
   function source(aoa,name,manual){
     const kind=detect(aoa)|| (manual?'opportunity':'');if(!kind)throw new Error('Expected Rep Opportunity Performance or Rep Wiper Performance headers.');
     const canonical=JSON.stringify(aoa.filter(r=>r.some(c=>display(c))).map(r=>r.map(c=>String(c??'').normalize('NFKC').trim())));
-    const result={id:fingerprint(canonical),canonical,name,kind,aoa:clone(aoa),rows:[],assignments:{}};
+    const result={id:fingerprint(canonical),canonical,name,kind,aoa:clone(aoa),rows:[],assignments:{},importedAt:new Date().toISOString()};
     if(kind==='opportunity'){
       const map=manual||opportunityMapping(aoa);result.mapping=map;
       if(!map){result.mappingRequired=true;return result;}
@@ -61,32 +61,49 @@
     }
     return result;
   }
-  function create(scope='retail'){return {version:VERSION,scope,opportunity:null,wipers:[],coachAreas:{},allocations:{},consumerAsCash:false,blankSegments:'missing',partialAcknowledged:false};}
+  function create(scope='retail'){return {version:VERSION,dateMode:'undated',scope,opportunity:null,wipers:[],coachAreas:{},allocations:{},consumerAsCash:false,blankSegments:'missing',partialAcknowledged:false};}
+  // Existing saved bundles retain their original calculations until edited.
+  function asUndated(bundle){return {...clone(bundle),dateMode:'undated'};}
+  function coachAssignments(b){
+    const coaches=new Map();
+    for(const r of b.opportunity?.rows||[]){
+      if(!r.coach||!r.name)continue;
+      const k=key(r.coach),c=coaches.get(k)||{key:k,coach:r.coach,cash:0,total:0,complete:true};
+      for(const s of SEGMENTS){
+        const g=r.segments[s],noActivity=b.blankSegments==='no-activity'&&Object.values(g).every(v=>v.status==='missing');
+        if(g.opportunities.status!=='valid'&&!noActivity){c.complete=false;continue;}
+        const n=noActivity?0:g.opportunities.value;c.total+=n;if(s==='consumer')c.cash+=n;
+      }
+      coaches.set(k,c);
+    }
+    return [...coaches.values()].map(c=>{const share=c.complete&&c.total>0?c.cash/c.total:null,automatic=share===null?'':share>0.15?'retail':'referral',override=b.coachAreas?.[c.key]||'';return {...c,share,automatic,override,area:override||automatic};});
+  }
   function add(bundle,src){
     const b=clone(bundle);b.partialAcknowledged=false;
     if(src.kind==='opportunity'){
       if(b.opportunity?.canonical===src.canonical)return {bundle:b,duplicate:true};
       const oldPeriods=new Set((b.opportunity?.rows||[]).map(r=>r.period?.id)),newPeriods=new Set(src.rows.map(r=>r.period?.id));
-      if(b.opportunity&&([...newPeriods].some(p=>!oldPeriods.has(p)))){b.wipers=[];b.allocations={};}
+      if(b.opportunity&&(b.dateMode==='undated'||[...newPeriods].some(p=>!oldPeriods.has(p)))){b.wipers=[];b.allocations={};if(b.dateMode==='undated')b.coachAreas={};}
       b.opportunity=clone(src);
     }else{if(b.wipers.some(f=>f.canonical===src.canonical))return {bundle:b,duplicate:true};b.wipers.push(clone(src));}
     return {bundle:b,duplicate:false};
   }
   function compile(b){
     if(b?.version!==VERSION)throw new Error('Unsupported monthly bundle version. Reimport the source exports.');
+    const undated=b.dateMode==='undated',assignments=coachAssignments(b),coachAreas=new Map(assignments.map(c=>[c.key,c.area]));
     const issues=[],reps=[],teams=[],op=b?.opportunity,active=(b?.wipers||[]).filter(f=>!f.excluded&&!b.wipers.some(n=>!n.excluded&&n.replaces===f.id)),coverage=[];
     const issue=(code,message,extra={},severity='warning')=>issues.push({code,message,severity,...extra});
     if(!op)issue('opportunity-required','Upload one Opportunity file to establish the roster.',{},'blocker');
     if(op?.mappingRequired)issue('mapping-required','Review the changed Opportunity header layout and map its columns.',{},'blocker');
     const periods=[...new Map((op?.rows||[]).filter(r=>r.period).map(r=>[r.period.id,r.period])).values()];
-    if(op&&periods.length!==1)issue('fiscal-period','Opportunity rows must describe one fiscal reporting period.',{},'blocker');
-    const period=periods.length===1?periods[0]:null,byName=new Map();
+    if(!undated&&op&&periods.length!==1)issue('fiscal-period','Opportunity rows must describe one fiscal reporting period.',{},'blocker');
+    const period=!undated&&periods.length===1?periods[0]:null,byName=new Map();
     for(const r of op?.rows||[]){
       if(!r.name||!r.coach){issue('blank-identity','Opportunity row excluded: representative or coach is blank.',{source:op.name,row:r.row,counts:r.segments});continue;}
-      if(!r.period||r.period.id!==period?.id){issue('invalid-fiscal','Review this row’s fiscal period.',{source:op.name,row:r.row},'blocker');continue;}
-      const area=b.scope==='mixed'?b.coachAreas[key(r.coach)]:b.scope;
+      if(!undated&&(!r.period||r.period.id!==period?.id)){issue('invalid-fiscal','Review this row’s fiscal period.',{source:op.name,row:r.row},'blocker');continue;}
+      const area=b.scope==='mixed'?coachAreas.get(key(r.coach)):b.scope;
       if(!['retail','referral'].includes(area))issue('area-required',`Assign ${r.coach} to Monthly Retail or Monthly Referral.`,{coach:r.coach},'blocker');
-      const rep={id:`${period.id}|${key(r.coach)}|${key(r.name)}|${r.row}`,name:r.name,coach:r.coach,area,sourceRow:r.row,segments:{},wiper:{accepted:null,offered:null,rate:null,complete:false,contributions:[]}};
+      const rep={id:`${r.period?.id||op.id}|${key(r.coach)}|${key(r.name)}|${r.row}`,name:r.name,coach:r.coach,area,sourceRow:r.row,segments:{},wiper:{accepted:null,offered:null,rate:null,complete:false,contributions:[]}};
       for(const s of SEGMENTS){
         const g=r.segments[s],allBlank=Object.values(g).every(c=>c.status==='missing');
         let opportunities=g.opportunities.value,appointments=g.appointments.value,status='complete';
@@ -108,13 +125,14 @@
       const canonical=f.canonical;
       if(seen.has(canonical)){issue('duplicate-file','Duplicate file content excluded.',{source:f.name});continue;}seen.add(canonical);
       for(const reportDate of new Set(f.rows.map(r=>r.reportDate||r.reportLabel))){
-        const a=f.assignments?.[reportDate];
+        const a=f.assignments?.[reportDate]||{};
         if(a?.exclude)continue;
-        if(!a||!date(a.start)||!date(a.end)||a.start>a.end||!['activity-date','week-label','export-date'].includes(a.meaning)||!display(a.note)){
+        if(!undated&&(!date(a.start)||!date(a.end)||a.start>a.end||!['activity-date','week-label','export-date'].includes(a.meaning)||!display(a.note))){
           issue('period-assignment',`Assign activity coverage and document the meaning of report label ${reportDate||'(blank)'}.`,{source:f.name,sourceId:f.id,reportDate},'blocker');continue;
         }
-        if(!period||a.start<period.start||a.end>period.end){issue('period-boundary','Coverage must be wholly within the fiscal period. Exclude or replace this aggregate; it cannot be prorated.',{source:f.name,sourceId:f.id,reportDate},'blocker');continue;}
-        const bucket=`${a.start}_${a.end}`;coverage.push({source:f.name,sourceId:f.id,reportDate,start:a.start,end:a.end,meaning:a.meaning,note:a.note});buckets.set(bucket,{start:a.start,end:a.end});
+        if(!undated&&(!period||a.start<period.start||a.end>period.end)){issue('period-boundary','Coverage must be wholly within the fiscal period. Exclude or replace this aggregate; it cannot be prorated.',{source:f.name,sourceId:f.id,reportDate},'blocker');continue;}
+        const bucket=undated?`${f.id}:${reportDate}`:`${a.start}_${a.end}`;
+        if(!undated){coverage.push({source:f.name,sourceId:f.id,reportDate,start:a.start,end:a.end,meaning:a.meaning,note:a.note});buckets.set(bucket,{start:a.start,end:a.end});}
         for(const r of f.rows.filter(r=>(r.reportDate||r.reportLabel)===reportDate)){
           const contributionId=`${f.id}:${r.row}`,info={source:f.name,sourceId:f.id,row:r.row,name:r.name,accepted:r.accepted,offered:r.offered,reportDate,bucket,contributionId};
           if(!r.name){issue('blank-wiper-name','Blank-name wiper row excluded; its counts are retained here.',info);continue;}
@@ -124,26 +142,26 @@
           else if(candidates.length===1)target=candidates[0];
           if(!target){issue(candidates.length?'ambiguous-name':'unmatched-name',candidates.length?'Choose the recipient for these counts (different people / transfer).':'Match an approved alias or explicitly exclude this record.',{...info,candidates:candidates.map(r=>r.id)});continue;}
           if(r.accepted.status!=='valid'||r.offered.status!=='valid'||r.accepted.value>r.offered.value){issue('invalid-wiper','Missing, suppressed or invalid wiper counts; accepted must not exceed offered.',{...info,repId:target.id});target.wiper.invalid=true;continue;}
-          if(target.wiper.contributions.some(c=>c.start<=a.end&&a.start<=c.end)){issue('duplicate-bucket','This representative has overlapping contributions. Replace/remove the earlier file or explicitly exclude this row.',{...info,repId:target.id},'blocker');continue;}
-          target.wiper.contributions.push({fileId:f.id,file:f.name,row:r.row,reportDate,bucket,start:a.start,end:a.end,accepted:r.accepted.value,offered:r.offered.value,allocation:allocation||null});matched++;
+          if(target.wiper.contributions.some(c=>undated?c.bucket===bucket:c.start<=a.end&&a.start<=c.end)){issue('duplicate-bucket','This representative has duplicate contributions. Replace/remove the earlier file or explicitly exclude this row.',{...info,repId:target.id},'blocker');continue;}
+          target.wiper.contributions.push({fileId:f.id,file:f.name,row:r.row,reportDate,bucket,...(undated?{importedAt:f.importedAt||''}:{start:a.start,end:a.end}),accepted:r.accepted.value,offered:r.offered.value,allocation:allocation||null});matched++;
         }
       }
     }
     const days=(start,end)=>Math.floor((Date.parse(end)-Date.parse(start))/86400000)+1;
     const covered=new Set();for(const c of coverage)for(let d=Date.parse(c.start);d<=Date.parse(c.end);d+=86400000)covered.add(d);
     const expectedDays=period?days(period.start,period.end):0;
-    const coverageComplete=expectedDays>0&&covered.size===expectedDays;
+    const coverageComplete=undated?null:expectedDays>0&&covered.size===expectedDays;
     if(period&&!coverageComplete)issue('coverage-gap',`${covered.size} of ${expectedDays} fiscal days have assigned wiper coverage; totals are partial.`);
     const distinctBuckets=[...buckets.values()].sort((a,c)=>a.start.localeCompare(c.start));
     for(let i=1;i<distinctBuckets.length;i++)if(distinctBuckets[i].start<=distinctBuckets[i-1].end)issue('coverage-overlap','Reporting buckets overlap. Review the files and replace or remove the overlapping component.',{},'blocker');
     for(const rep of reps){
       const w=rep.wiper,cs=w.contributions;
       if(cs.length){w.accepted=cs.reduce((n,c)=>n+c.accepted,0);w.offered=cs.reduce((n,c)=>n+c.offered,0);w.rate=w.offered>0?w.accepted/w.offered:null;}
-      const repDays=cs.reduce((n,c)=>n+days(c.start,c.end),0);
-      w.complete=coverageComplete&&!w.invalid&&repDays===expectedDays;
+      const repDays=undated?0:cs.reduce((n,c)=>n+days(c.start,c.end),0);
+      w.complete=undated?cs.length>0&&!w.invalid:coverageComplete&&!w.invalid&&repDays===expectedDays;
       w.status=!cs.length?'missing':w.complete?'complete':'partial';
     }
-    if(reps.some(r=>!r.wiper.complete))issue('rep-coverage','Representatives without every assigned reporting bucket retain missing/partial wiper status.');
+    if(reps.some(r=>!r.wiper.complete))issue('rep-coverage',undated?'Representatives without valid wiper records retain missing/partial status.':'Representatives without every assigned reporting bucket retain missing/partial wiper status.');
     const uncertain=issues.some(i=>['blank-identity','blank-wiper-name','unmatched-name','ambiguous-name','excluded-wiper','invalid-wiper'].includes(i.code));
     for(const teamKey of new Set(reps.map(r=>`${r.area}|${key(r.coach)}`))){
       const rs=reps.filter(r=>`${r.area}|${key(r.coach)}`===teamKey),team={coach:rs[0].coach,area:rs[0].area,repCount:rs.length,segments:{},wiper:{}};
@@ -152,7 +170,7 @@
       team.wiper={accepted:valid.length?accepted:null,offered:valid.length?offered:null,rate:offered>0?accepted/offered:null,status:rs.every(r=>r.wiper.complete)&&!uncertain?'complete':'partial'};teams.push(team);
     }
     const partial=issues.some(i=>i.severity==='warning')||teams.some(t=>t.wiper.status!=='complete'||SEGMENTS.some(s=>t.segments[s].status!=='complete'));
-    return {period,reps,teams,issues,coverage,coverageComplete,partial,matched,canApply:!!reps.length&&!issues.some(i=>i.severity==='blocker')&&(!partial||b.partialAcknowledged),consumerAsCash:!!b.consumerAsCash};
+    return {period,undated,coachAssignments:assignments,reps,teams,issues,coverage,coverageComplete,partial,matched,canApply:!!reps.length&&!issues.some(i=>i.severity==='blocker')&&(!partial||b.partialAcknowledged),consumerAsCash:!!b.consumerAsCash};
   }
   const title=s=>s[0].toUpperCase()+s.slice(1);
   function stats(rep,consumerAsCash){
@@ -166,7 +184,7 @@
     const out=compile(b);if(!out.canApply)throw new Error('Resolve monthly blockers and acknowledge incomplete results before applying.');
     const reps=out.reps.filter(r=>r.area===area),sv2=reps.map(r=>stats(r,b.consumerAsCash)),wiper=reps.map(wipers);
     const aoa=rows=>{const headers=Object.keys(rows[0]||{});return [headers,...rows.map(r=>headers.map(h=>r[h]))];};
-    return {meta:{fileName:b.opportunity.name,totalRows:reps.length,sheetsCount:2,monthlyBundle:clone(b),monthlyArea:area,monthlyPeriod:out.period,monthlyPartial:out.partial},workbook:{sheets:['Monthly Opportunity','Monthly Wipers'],data:{'Monthly Opportunity':{aoa:aoa(sv2)},'Monthly Wipers':{aoa:aoa(wiper)}}}};
+    return {meta:{fileName:b.opportunity.name,totalRows:reps.length,sheetsCount:2,monthlyBundle:clone(b),monthlyArea:area,monthlyPeriod:out.period,monthlyUndated:out.undated,importedAt:b.importedAt||'',monthlyPartial:out.partial},workbook:{sheets:['Monthly Opportunity','Monthly Wipers'],data:{'Monthly Opportunity':{aoa:aoa(sv2)},'Monthly Wipers':{aoa:aoa(wiper)}}}};
   }
   function changes(previous,next,previousRoster=[]){
     const after=compile(next).reps,areas=new Set(after.map(r=>r.area)),before=(previous?.opportunity?compile(previous).reps:previousRoster).filter(r=>areas.has(r.area)),rows=[];
@@ -174,6 +192,6 @@
     for(const r of before)if(!after.some(p=>key(p.name)===key(r.name)&&key(p.coach)===key(r.coach)&&p.area===r.area))rows.push({name:r.name,from:r.coach,to:'Removed from this team',type:'Removal'});
     return rows;
   }
-  const api={VERSION,SEGMENTS,clone,key,display,date,fiscal,fingerprint,decode,delimited,detect,opportunityMapping,cell,source,create,add,compile,stats,wipers,toDataset,changes};
+  const api={VERSION,SEGMENTS,clone,key,display,date,fiscal,fingerprint,decode,delimited,detect,opportunityMapping,cell,source,create,asUndated,coachAssignments,add,compile,stats,wipers,toDataset,changes};
   root.CoachToolsMonthly=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

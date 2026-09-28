@@ -504,7 +504,7 @@
   function validateClassification(datasetType, parsed) {
     if (parsed?.meta?.monthlyBundle && root.CoachToolsMonthly && ['monthlyRetail','monthlyReferral'].includes(datasetType)) {
       const out=root.CoachToolsMonthly.compile(parsed.meta.monthlyBundle);
-      return {valid:out.canApply,reason:out.canApply?'':'Monthly bundle requires period, mapping or incomplete-data review.',missing:[],checkedSheets:parsed.workbook?.sheets||[]};
+      return {valid:out.canApply,reason:out.canApply?'':'Monthly bundle requires assignment, mapping or incomplete-data review.',missing:[],checkedSheets:parsed.workbook?.sheets||[]};
     }
     const headers = workbookHeaderSet(parsed);
     const rows = Number(parsed && parsed.meta && parsed.meta.totalRows) || 0;
@@ -769,6 +769,7 @@
         const prepared=prepareScopedDataset(plain,source,scope,options);
         if(prepared.valid){
           prepared.dataset.meta.monthlyBundle=clone(parsed.meta.monthlyBundle);
+          if(normalized.meta.monthlyUndated)prepared.dataset.meta.detectedPeriod={label:'Non-dated',periodKey:'undated',sortKey:''};
           const a=prepared.dataset.workbook.data['Monthly Opportunity']?.aoa||[], hs=a[0]||[];
           prepared.dataset.meta.monthlySelection=a.slice(1).map(r=>[r[hs.indexOf('Representative')],r[hs.indexOf('Coach')]]);
           // File lineage, coverage and explicit allocations are part of the data identity.
@@ -988,14 +989,13 @@
         if(requested)initial=existing.find(e=>e.area===requested)?.bundle;
       }
       initial=initial||M.create(options.monthlyArea||'mixed');
-      if(root.CoachToolsMonthlyAreaAssignments)initial={...M.clone(initial),coachAreas:{...root.CoachToolsMonthlyAreaAssignments(),...initial.coachAreas}};
       const bundle=await root.CoachToolsMonthlyReview.review({bundle:initial,sources,existingBundles:existing,previousRoster:root.CoachToolsMonthlyExistingRoster?.()||[]});
       if(!bundle)return analysis;
       const out=M.compile(bundle),areas=bundle.scope==='mixed'?['retail','referral']:[bundle.scope];
       for(const area of areas){
         const parsed=M.toDataset(bundle,area),id=area==='retail'?'monthlyRetail':'monthlyReferral';
         if(!parsed.meta.totalRows)continue;
-        analysis.recognized.push({file:{name:bundle.opportunity.name,size:0,lastModified:Date.now()},parsed,rawWorkbook:null,classification:{id,confidence:'high',classificationMethod:'reviewed-monthly-bundle',validation:{valid:true},detectedPeriod:{label:out.period.start+' — '+out.period.end,periodKey:out.period.id,sortKey:out.period.start}}});
+        analysis.recognized.push({file:{name:bundle.opportunity.name,size:0,lastModified:Date.now()},parsed,rawWorkbook:null,classification:{id,confidence:'high',classificationMethod:'reviewed-monthly-bundle',validation:{valid:true},detectedPeriod:out.period?{label:out.period.start+' — '+out.period.end,periodKey:out.period.id,sortKey:out.period.start}:{label:'Non-dated',periodKey:'undated',sortKey:''}}});
       }
     }catch(error){analysis.errors.push({file:candidates[0].file,error});}
     return analysis;
@@ -1026,7 +1026,8 @@
     const parsed = entry.rawWorkbook ? await materializeDiscoveredEntry(entry, scopeSnapshot, options) : entry.parsed;
     const validation = validateClassification(type, parsed);
     if (!validation.valid) throw new Error(validation.reason);
-    if (['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral','compCoaching'].includes(type)) {
+    if(parsed.meta?.monthlyBundle?.dateMode==='undated')entry.classification.detectedPeriod={label:'Non-dated',periodKey:'undated',sortKey:''};
+    else if (['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral','compCoaching'].includes(type)) {
       let period = entry.classification.detectedPeriod;
       if (!period?.sortKey || period.periodKey === 'current') {
         const periods = new Map();
