@@ -22,6 +22,8 @@
 <script src="../../shared/coachtools-sync.js"></script>
 <script src="../../shared/coachtools-storage.js"></script>
 <script src="../../shared/coachtools-identity.js"></script>
+<script src="../../shared/coachtools-monthly.js"></script>
+<script src="../../shared/coachtools-monthly-review.js"></script>
 <script src="../../shared/coachtools-import.js"></script>
 <script src="../../shared/coachtools-close-policy.js"></script>
 <script src="../../shared/coachtools-shell.js"></script>
@@ -32,6 +34,7 @@
 <link rel="stylesheet" href="css/workspace-navigation.css">
 </head>
 <body>
+<div id="monthlyCompleteness" class="hint" role="status" hidden></div>
 <div class="toolbar">
   <select id="categoriesDrop" class="toolbarSelect toolbarControlSecondary"><option value="">Categories</option><option value="models">Create/Modify</option><option value="massHeaders">Mass Header Check</option><option value="metrics">Metrics</option></select>
   <select id="importDrop" class="toolbarSelect toolbarControlSecondary"><option value="">Import</option><option value="data">Import Data</option><option value="roster">Roster Reassignment</option><option value="teams">Teams Imported</option><option value="orgs">Org Builder</option></select>
@@ -112,6 +115,13 @@
         <details class="importDetails"><summary>Shared data details</summary><div data-coachtools-data-status></div></details>
       </section>
 
+      <section class="panel importSection">
+        <div class="panelTitle">Monthly Retail / Monthly Referral exports</div>
+        <div class="row"><button type="button" id="monthlyRetailBtn">Monthly Retail</button><button type="button" id="monthlyReferralBtn">Monthly Referral</button><button type="button" id="monthlyMixedBtn">One master file · both areas</button></div>
+        <p id="monthlyImportSummary" role="status"></p>
+        <div class="row"><button type="button" id="monthlyRetailSettingsBtn">Retail Data Settings</button><button type="button" id="monthlyReferralSettingsBtn">Referral Data Settings</button></div>
+        <details><summary>Previous monthly periods</summary><div id="monthlyHistory"></div></details>
+      </section>
       <section class="panel importSection updateDataSection">
         <div class="panelTitle">Update Data</div>
         <div class="updateDataPrimary">
@@ -760,6 +770,7 @@
 <script src="js/models.js"></script>
 <script src="js/imports.js"></script>
 <script src="js/import-jobs.js"></script>
+<script src="js/monthly-import.js"></script>
 <script src="js/calculations.js"></script>
 <script src="js/coaching-diagnostics.js"></script>
 <script src="js/reports.js"></script>

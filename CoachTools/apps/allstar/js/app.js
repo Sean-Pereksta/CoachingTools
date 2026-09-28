@@ -159,6 +159,8 @@ function wire(){
   if(els.saveResearchItemBtn) els.saveResearchItemBtn.onclick=saveResearchItemFromEditor;
   if(els.coachtoolsFiles) els.coachtoolsFiles.onchange=e=>{ const files=Array.from(e.target.files||[]); if(files.length) stageCoachToolsImportFiles(files); };
   if(els.coachtoolsImportAllBtn) els.coachtoolsImportAllBtn.onclick=importCoachToolsBatch;
+  for(const [id,area,readOnly] of [['monthlyRetailBtn','retail',false],['monthlyReferralBtn','referral',false],['monthlyMixedBtn','mixed',false],['monthlyRetailSettingsBtn','retail',true],['monthlyReferralSettingsBtn','referral',true]]) if(el(id)) el(id).onclick=()=>openMonthlyImport(area,readOnly);
+  renderMonthlyImportSummary();
   els.retailFile.onchange=e=>{const f=e.target.files[0]; if(f) loadRetailFile(f);};
   if(els.rosterReassignmentArea) els.rosterReassignmentArea.onchange=()=>{ clearRosterReassignmentPreview(); restoreImportFileLabels(); };
   if(els.rosterReassignmentFile) els.rosterReassignmentFile.onchange=e=>{ const f=e.target.files[0]; if(f) previewRosterReassignmentFile(f); };

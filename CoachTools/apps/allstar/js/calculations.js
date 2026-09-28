@@ -241,6 +241,7 @@ function sourceAreaForSource(source){
   return '';
 }
 function rowMatchesTrustedEntry(row,entry,source=''){
+  if(String(row?._rosterId||'').startsWith('monthly|')&&entry?.kind==='rep')return entry.rosterId?row._rosterId===entry.rosterId:row._repKey===entry.key&&coachNameKey(row._team)===coachNameKey(entry.team);
   if(!hasTrustedControlRoster() || !entry || entry.kind!=='rep') return true;
   const key=row?._repKey||repKeyFromAnyRow(row); if(!key || key!==entry.key) return false;
   // Documented Coaching is person-level event history.  A valid person match
@@ -368,6 +369,7 @@ function valueSingle(c, entry, opts){
 function sumColumn(source, col, entry, opts, filters){
   let rows=rowsForEntry(source, entry, opts); if((filters||[]).length){ const predicate=getCompiledFilterPredicate(source,filters,opts); rows=rows.filter(predicate); }
   const actualCol=resolveColumn(source,col);
+  if(rows.some(r=>String(r._rosterId||'').startsWith('monthly|'))&&(!actualCol||!rows.some(r=>r[actualCol]!==null&&r[actualCol]!==undefined&&String(r[actualCol]).trim()!=='')))return NaN;
   const numberFor=typeof AllStarAnalysis!=='undefined'?AllStarAnalysis.numberReader(source,actualCol):row=>toNum(row[actualCol]);
   return rows.reduce((s,r)=>{const n=numberFor(r); return s+(Number.isFinite(n)?n:0);},0);
 }
@@ -631,8 +633,8 @@ function trueTeamCriterionValue(c, entry, opts={}){
   if(!col || !(col in row)){ opts.trueValueDiagnostics.push({criterion:c.name||'',team,source:c.trueValueSource,column:c.trueValueColumn,reason:'Missing True Value column'}); return NaN; }
   const raw=row[col];
   if(String(raw??'').trim()===''){ opts.trueValueDiagnostics.push({criterion:c.name||'',team,source:c.trueValueSource,column:col,reason:'Blank True Value'}); return NaN; }
-  const value=c.format==='pct' ? normalizeScore(raw) : toNum(raw);
-  opts.trueValueDiagnostics.push({criterion:c.name||'',team,source:c.trueValueSource,column:col,controlTab:row._controlTab,summaryLookupKey:row._summaryLookupKey,originalSummaryName:row._summaryDisplayName,summarySheet:row._summarySheet,summaryRow:row._summaryRowNumber,rawValue:raw,parsedValue:value,matchMode:match.matchMode,note:`Matched through ${match.matchMode}; no representative aggregation was performed.`});
+  const value=c.format==='pct' ? (row._monthly?toNum(raw):normalizeScore(raw)) : toNum(raw);
+  opts.trueValueDiagnostics.push({criterion:c.name||'',team,source:c.trueValueSource,column:col,controlTab:row._controlTab,summaryLookupKey:row._summaryLookupKey,originalSummaryName:row._summaryDisplayName,summarySheet:row._summarySheet,summaryRow:row._summaryRowNumber,rawValue:raw,parsedValue:value,matchMode:match.matchMode,note:row._monthly?`Calculated from the full monthly roster; ${row._monthlyPartial?'partial data':'complete coverage'}.`:`Matched through ${match.matchMode}; no representative aggregation was performed.`});
   return value;
 }
 

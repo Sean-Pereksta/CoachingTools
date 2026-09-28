@@ -1032,7 +1032,7 @@
   }
   function getDatasetVersion(type) {
     const pointer = currentPointers.get(canonicalType(type));
-    return pointer ? { datasetId: pointer.datasetId, version: pointer.version, fingerprint: pointer.fingerprint, scopedFingerprint: pointer.scopedFingerprint || pointer.fingerprint, scopeHash: pointer.scopeHash || '', scopeMode: pointer.scopeMode || 'legacy-unscoped', scopedRowCount: Number(pointer.scopedRowCount) || 0, importedAt: pointer.importedAt } : null;
+    return pointer ? { classificationMethod: pointer.classificationMethod || '', datasetId: pointer.datasetId, version: pointer.version, fingerprint: pointer.fingerprint, scopedFingerprint: pointer.scopedFingerprint || pointer.fingerprint, scopeHash: pointer.scopeHash || '', scopeMode: pointer.scopeMode || 'legacy-unscoped', scopedRowCount: Number(pointer.scopedRowCount) || 0, importedAt: pointer.importedAt } : null;
   }
   function forgetEstablishedDock(type) {
     const key = 'coachtools.desktop.cleanUploadBaseline.v1';

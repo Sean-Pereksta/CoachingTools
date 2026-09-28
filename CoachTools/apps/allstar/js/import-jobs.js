@@ -23,7 +23,7 @@ function assertAllStarImportActive(){
   if(job?.cancelled) throw new Error(`${job.label} import stopped during ${job.stage}: no progress for 60 seconds. Retry the upload.`);
 }
 function allStarImportSources(source){
-  return source==='retail'?['retail_sv2','retail_wiper','retail_team_totals']:source==='referral'?['referral_sv2','referral_wiper','referral_team_totals']:[source];
+  return source==='monthly'?['retail_sv2','retail_wiper','retail_team_totals','referral_sv2','referral_wiper','referral_team_totals']:source==='retail'?['retail_sv2','retail_wiper','retail_team_totals']:source==='referral'?['referral_sv2','referral_wiper','referral_team_totals']:[source];
 }
 async function runAllStarImport(source,file,options,loader){
   if(state.activeImportJob || state.centralSyncStageActive || state.importCacheLoading || state.startup?.running){
@@ -69,7 +69,7 @@ async function runAllStarImport(source,file,options,loader){
     }
     markImportCacheDirty('misc','sourceSettings','import source mappings');
     markDataIndexDirty(`${job.label} imported`,{sources});
-    if(source==='retail'||source==='referral'){ bumpVersion('roster'); invalidateRosterIndex(`${source} import`); state.teamIndexCache=null; }
+    if(source==='retail'||source==='referral'||source==='monthly'){ bumpVersion('roster'); invalidateRosterIndex(`${source} import`); state.teamIndexCache=null; }
     importJobStage(job,'Saving'); updateProgress(`Saving ${job.label}…`,80,{force:true});
     const saved=await saveImportedDataToIndexedDB(`${job.id} complete`,{silent:true,dirtyOnly:true,noCompaction:true,noRender:true,deferIndexes:true,verifySources:sources,importJob:job,noRetry:true});
     if(!saved) throw new Error(state.importCache.lastError||'IndexedDB replacement did not commit.');

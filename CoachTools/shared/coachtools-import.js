@@ -239,10 +239,18 @@
     if (diagnostics) diagnostics.start('File read', { fileName: file.name, fileSize: Number(file.size) || 0 });
     let payload;
     if (extension === '.csv' || file.type === 'text/csv') {
-      try { payload = await file.text(); }
+      try { if(root.CoachToolsMonthly && typeof file.arrayBuffer==='function'){const buffer=await file.arrayBuffer();try{payload=root.CoachToolsMonthly.decode(buffer);}catch(error){if(typeof file.text!=='function')throw error;payload=await file.text();}}else payload=await file.text(); }
       finally { if (diagnostics) diagnostics.end('File read', { fileName: file.name }); }
       if (diagnostics) diagnostics.start('XLSX parse', { fileName: file.name, format: 'csv' });
-      try { return root.XLSX.read(payload, { type: 'string' }); }
+      try {
+        if(root.CoachToolsMonthly){
+          let rows=[];try{rows=root.CoachToolsMonthly.delimited(payload);}catch(error){if(/OPPORTUNITY_LATEST_SEGMENT|EMPLOYEE_FULL_NAME/.test(payload.slice(0,1000)))throw error;}
+          if(root.CoachToolsMonthly.detect(rows)){
+            const wb=root.XLSX.utils.book_new();root.XLSX.utils.book_append_sheet(wb,root.XLSX.utils.aoa_to_sheet(rows),'Monthly Export');return wb;
+          }
+        }
+        return root.XLSX.read(payload, { type: 'string' });
+      }
       finally { if (diagnostics) diagnostics.end('XLSX parse', { fileName: file.name }); }
     }
     try { payload = await file.arrayBuffer(); }
@@ -494,6 +502,10 @@
     return requirements[datasetType] || [];
   }
   function validateClassification(datasetType, parsed) {
+    if (parsed?.meta?.monthlyBundle && root.CoachToolsMonthly && ['monthlyRetail','monthlyReferral'].includes(datasetType)) {
+      const out=root.CoachToolsMonthly.compile(parsed.meta.monthlyBundle);
+      return {valid:out.canApply,reason:out.canApply?'':'Monthly bundle requires period, mapping or incomplete-data review.',missing:[],checkedSheets:parsed.workbook?.sheets||[]};
+    }
     const headers = workbookHeaderSet(parsed);
     const rows = Number(parsed && parsed.meta && parsed.meta.totalRows) || 0;
     const requirements = sourceRequirements(datasetType);
@@ -750,6 +762,23 @@
     const aliases = { retail: 'weeklyRetail', referral: 'weeklyReferral', coaching: 'documentedCoaching' };
     source = aliases[source] || source;
     if (!SOURCES[source]) throw new Error('Unknown CoachTools source: ' + source);
+    if(root.CoachToolsMonthly && ['monthlyRetail','monthlyReferral'].includes(source)){
+      if(parsed?.meta?.monthlyBundle){
+        const area=source==='monthlyRetail'?'retail':'referral', M=root.CoachToolsMonthly;
+        const normalized=M.toDataset(parsed.meta.monthlyBundle,area), plain=clone(normalized);delete plain.meta.monthlyBundle;
+        const prepared=prepareScopedDataset(plain,source,scope,options);
+        if(prepared.valid){
+          prepared.dataset.meta.monthlyBundle=clone(parsed.meta.monthlyBundle);
+          const a=prepared.dataset.workbook.data['Monthly Opportunity']?.aoa||[], hs=a[0]||[];
+          prepared.dataset.meta.monthlySelection=a.slice(1).map(r=>[r[hs.indexOf('Representative')],r[hs.indexOf('Coach')]]);
+          // File lineage, coverage and explicit allocations are part of the data identity.
+          prepared.scopedFingerprint += ':'+M.fingerprint(JSON.stringify(parsed.meta.monthlyBundle));
+          prepared.dataset.meta.scopedFingerprint=prepared.scopedFingerprint;
+        }
+        return prepared;
+      }
+      if((parsed?.workbook?.sheets||[]).some(sn=>root.CoachToolsMonthly.detect(parsed.workbook.data[sn]?.aoa||[])))throw new Error('Review Opportunity and Wiper files together in the Monthly import panel before saving.');
+    }
     const diagnosticsApi = root.CoachToolsDiagnostics;
     if (diagnosticsApi) {
       diagnosticsApi.start('Scope filtering', { datasetType: source });
@@ -930,6 +959,48 @@
     return root.LZString.compressToUTF16(JSON.stringify(dataset));
   }
 
+  async function reviewMonthlyEntries(analysis, options={}) {
+    if(!root.CoachToolsMonthly || !root.CoachToolsMonthlyReview)return analysis;
+    const M=root.CoachToolsMonthly, candidates=[...analysis.recognized,...analysis.needsReview].filter(entry=>!entry.parsed?.meta?.monthlyBundle&&(entry.parsed?.workbook?.sheets||[]).some(sn=>M.detect(entry.parsed.workbook.data[sn]?.aoa||[])));
+    if(!candidates.length)return analysis;
+    analysis.recognized=analysis.recognized.filter(e=>!candidates.includes(e));analysis.needsReview=analysis.needsReview.filter(e=>!candidates.includes(e));
+    try{
+      const sources=[];
+      for(const entry of candidates){
+        const wb=entry.rawWorkbook;
+        for(const sn of entry.parsed.workbook.sheets){
+          const aoa=wb?root.XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:'',raw:false}):entry.parsed.workbook.data[sn].aoa;
+          if(M.detect(aoa))sources.push(M.source(aoa,entry.file.name));
+        }
+      }
+      const existing=[];
+      for(const area of ['retail','referral']){
+        const local=await root.CoachToolsGetMonthlyBundle?.(area);
+        const record=local?null:await root.CoachToolsData?.getCurrent?.(area==='retail'?'monthlyRetail':'monthlyReferral',{includeRecord:true});
+        const bundle=local||record?.data?.meta?.monthlyBundle;if(bundle)existing.push({area,bundle});
+      }
+      let initial;
+      if(existing.length===1)initial=existing[0].bundle;
+      else if(existing.length===2&&JSON.stringify(existing[0].bundle)===JSON.stringify(existing[1].bundle))initial=existing[0].bundle;
+      else if(existing.length===2){
+        // Choose explicitly when adding files to separate active monthly bundles.
+        const requested=options.monthlyArea;
+        if(requested)initial=existing.find(e=>e.area===requested)?.bundle;
+      }
+      initial=initial||M.create(options.monthlyArea||'mixed');
+      if(root.CoachToolsMonthlyAreaAssignments)initial={...M.clone(initial),coachAreas:{...root.CoachToolsMonthlyAreaAssignments(),...initial.coachAreas}};
+      const bundle=await root.CoachToolsMonthlyReview.review({bundle:initial,sources,existingBundles:existing,previousRoster:root.CoachToolsMonthlyExistingRoster?.()||[]});
+      if(!bundle)return analysis;
+      const out=M.compile(bundle),areas=bundle.scope==='mixed'?['retail','referral']:[bundle.scope];
+      for(const area of areas){
+        const parsed=M.toDataset(bundle,area),id=area==='retail'?'monthlyRetail':'monthlyReferral';
+        if(!parsed.meta.totalRows)continue;
+        analysis.recognized.push({file:{name:bundle.opportunity.name,size:0,lastModified:Date.now()},parsed,rawWorkbook:null,classification:{id,confidence:'high',classificationMethod:'reviewed-monthly-bundle',validation:{valid:true},detectedPeriod:{label:out.period.start+' — '+out.period.end,periodKey:out.period.id,sortKey:out.period.start}}});
+      }
+    }catch(error){analysis.errors.push({file:candidates[0].file,error});}
+    return analysis;
+  }
+
   async function analyzeFiles(files, options) {
     const recognized = [], needsReview = [], errors = [];
     const list = Array.from(files || []);
@@ -941,7 +1012,7 @@
         else needsReview.push(entry);
       } catch (error) { errors.push({ file, error }); }
     }
-    const analysis = { recognized, needsReview, errors };
+    const analysis = await reviewMonthlyEntries({ recognized, needsReview, errors },options);
     return options?.manualSourceSelection ? resolveUnidentifiedFiles(analysis, options) : analysis;
   }
 
@@ -1093,6 +1164,7 @@
     prepareDataset,
     packDataset,
     analyzeFiles,
+    reviewMonthlyEntries,
     prepareRecognizedEntry,
     saveRecognizedEntry,
     storePreparedEntry,
