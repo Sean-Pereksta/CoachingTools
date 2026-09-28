@@ -1179,7 +1179,7 @@ function cachedRowsForSource(source, opts={}){
 function cachedRowsForEntry(source, entry, opts={}){
   if(!opts || !opts._entryRowsCache) return null;
   const sourceKey=rowsCacheKey(source, opts);
-  const entryKey=entry.kind==='team' ? `team:${coachNameKey(entry.name)}` : `rep:${entry.key}`;
+  const entryKey=entry.kind==='team' ? `team:${coachNameKey(entry.name)}` : `rep:${entry.rosterId||entry.key}:${entry.team||''}`;
   const key=sourceKey+'|'+entryKey;
   if(opts._entryRowsCache.has(key)){ state.perfCounters.entryRowCacheHits=(state.perfCounters.entryRowCacheHits||0)+1; return opts._entryRowsCache.get(key); }
   state.perfCounters.entryRowCacheMisses=(state.perfCounters.entryRowCacheMisses||0)+1;
@@ -1195,6 +1195,7 @@ function cachedRowsForEntry(source, entry, opts={}){
         }
       }
     }
+    if(entry.kind!=='team' && raw.some(r=>String(r._rosterId||'').startsWith('monthly|'))) raw=raw.filter(r=>rowMatchesTrustedEntry(r,entry,source));
     rows = filterRowsForSource(source, raw, opts);
   }else{
     rows=cachedRowsForSource(source, opts);

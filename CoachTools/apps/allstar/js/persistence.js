@@ -77,12 +77,12 @@ function sourceCacheValue(source, clone=true){
   const copy=value=>clone?importCacheClone(value):value;
   const key=sourceCacheRecordId(source);
   const retail=state.data.retail||{}, referral=state.data.referral||{};
-  if(key==='retail:metadata') return copy({fileName:retail.fileName||'',rosterFileName:retail.rosterFileName||'',rosterUpdatedAt:retail.rosterUpdatedAt||'',headers:retail.headers||{sv2:[],wiper:[]}});
+  if(key==='retail:metadata') return copy({monthlyBundle:retail.monthlyBundle||null,monthlySelection:retail.monthlySelection||null,monthlyHistory:retail.monthlyHistory||{},fileName:retail.fileName||'',rosterFileName:retail.rosterFileName||'',rosterUpdatedAt:retail.rosterUpdatedAt||'',headers:retail.headers||{sv2:[],wiper:[]}});
   if(key==='retail:sv2') return copy({headers:retail.headers?.sv2||[],rows:retail.sv2||[],aoa:retail.sv2Aoa||[]});
   if(key==='retail:wiper') return copy({headers:retail.headers?.wiper||[],rows:retail.wiper||[],aoa:retail.wiperAoa||[]});
   if(key==='retail:controlRoster') return copy({rows:retail.controlRoster||[]});
   if(key==='retail:teamTotals'){ const ds=normalizeTeamTotalsDataset(retail.teamTotals||emptyTeamTotalsDataset('retail'),'retail_team_totals',{force:true}); return copy({...ds,rowsByTeamKey:Object.create(null),rowsByCoachAliasKey:Object.create(null),indexVersion:-1,indexSignature:''}); }
-  if(key==='referral:metadata') return copy({fileName:referral.fileName||'',rosterFileName:referral.rosterFileName||'',rosterUpdatedAt:referral.rosterUpdatedAt||'',headers:referral.headers||{sv2:[],wiper:[],itac:[]},itacSheetName:referral.itacSheetName||''});
+  if(key==='referral:metadata') return copy({monthlyBundle:referral.monthlyBundle||null,monthlySelection:referral.monthlySelection||null,monthlyHistory:referral.monthlyHistory||{},fileName:referral.fileName||'',rosterFileName:referral.rosterFileName||'',rosterUpdatedAt:referral.rosterUpdatedAt||'',headers:referral.headers||{sv2:[],wiper:[],itac:[]},itacSheetName:referral.itacSheetName||''});
   if(key==='referral:sv2') return copy({headers:referral.headers?.sv2||[],rows:referral.sv2||[],aoa:referral.sv2Aoa||[]});
   if(key==='referral:wiper') return copy({headers:referral.headers?.wiper||[],rows:referral.wiper||[],aoa:referral.wiperAoa||[]});
   if(key==='referral:itac') return copy({headers:referral.headers?.itac||[],rows:referral.itac||[],aoa:referral.itacAoa||[],sheetName:referral.itacSheetName||''});
@@ -97,12 +97,12 @@ function hydrateSourceCacheRecord(nextData, rec, customData){
     nextData.retail={...nextData.retail,...v}; return;
   }
   if(['referral_sv2','referral_wiper','referral_team_totals'].includes(rec?.id)){ nextData.referral={...nextData.referral,...v}; return; }
-  if(id==='retail:metadata'){ nextData.retail.fileName=v.fileName||''; nextData.retail.rosterFileName=v.rosterFileName||''; nextData.retail.rosterUpdatedAt=v.rosterUpdatedAt||''; nextData.retail.headers={...(nextData.retail.headers||{}),...(v.headers||{})}; return; }
+  if(id==='retail:metadata'){ nextData.retail.monthlyBundle=v.monthlyBundle||null; nextData.retail.monthlySelection=v.monthlySelection||null; nextData.retail.monthlyHistory=v.monthlyHistory||{}; nextData.retail.fileName=v.fileName||''; nextData.retail.rosterFileName=v.rosterFileName||''; nextData.retail.rosterUpdatedAt=v.rosterUpdatedAt||''; nextData.retail.headers={...(nextData.retail.headers||{}),...(v.headers||{})}; return; }
   if(id==='retail:sv2'){ nextData.retail.sv2=v.rows||[]; nextData.retail.sv2Aoa=v.aoa||[]; nextData.retail.headers.sv2=v.headers||[]; return; }
   if(id==='retail:wiper'){ nextData.retail.wiper=v.rows||[]; nextData.retail.wiperAoa=v.aoa||[]; nextData.retail.headers.wiper=v.headers||[]; return; }
   if(id==='retail:controlRoster'){ nextData.retail.controlRoster=v.rows||[]; return; }
   if(id==='retail:teamTotals'){ nextData.retail.teamTotals=normalizeTeamTotalsDataset(v||emptyTeamTotalsDataset('retail'),'retail_team_totals',{force:true}); return; }
-  if(id==='referral:metadata'){ nextData.referral.fileName=v.fileName||''; nextData.referral.rosterFileName=v.rosterFileName||''; nextData.referral.rosterUpdatedAt=v.rosterUpdatedAt||''; nextData.referral.headers={...(nextData.referral.headers||{}),...(v.headers||{})}; nextData.referral.itacSheetName=v.itacSheetName||''; return; }
+  if(id==='referral:metadata'){ nextData.referral.monthlyBundle=v.monthlyBundle||null; nextData.referral.monthlySelection=v.monthlySelection||null; nextData.referral.monthlyHistory=v.monthlyHistory||{}; nextData.referral.fileName=v.fileName||''; nextData.referral.rosterFileName=v.rosterFileName||''; nextData.referral.rosterUpdatedAt=v.rosterUpdatedAt||''; nextData.referral.headers={...(nextData.referral.headers||{}),...(v.headers||{})}; nextData.referral.itacSheetName=v.itacSheetName||''; return; }
   if(id==='referral:sv2'){ nextData.referral.sv2=v.rows||[]; nextData.referral.sv2Aoa=v.aoa||[]; nextData.referral.headers.sv2=v.headers||[]; return; }
   if(id==='referral:wiper'){ nextData.referral.wiper=v.rows||[]; nextData.referral.wiperAoa=v.aoa||[]; nextData.referral.headers.wiper=v.headers||[]; return; }
   if(id==='referral:itac'){ nextData.referral.itac=v.rows||[]; nextData.referral.itacAoa=v.aoa||[]; nextData.referral.headers.itac=v.headers||[]; nextData.referral.itacSheetName=v.sheetName||v.itacSheetName||''; return; }
@@ -525,6 +525,7 @@ async function loadImportedDataFromIndexedDB(opts={}){
     const nextData=defaultImportedDataState();
     const customData={};
     const legacySourceRecordIds=hydrateSourceCacheRecords(nextData,sourceRecords,customData);
+    if(typeof restoreMonthlyBundles==='function') restoreMonthlyBundles(nextData);
     if(Number(meta.controlRosterSchemaVersion||0)<CONTROL_ROSTER_SCHEMA_VERSION){
       if(nextData.retail) nextData.retail.controlRoster=[];
       if(nextData.referral) nextData.referral.controlRoster=[];

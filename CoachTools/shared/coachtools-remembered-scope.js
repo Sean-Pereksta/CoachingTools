@@ -414,6 +414,7 @@
       const requestedMode = mode;
       const analysisOptions = requestedMode === 'clean' ? { ...options, authoritativeCleanUpload: true, manualSourceSelection: true } : options;
       const result = await analyzeFilesResponsive(files, analysisOptions);
+      if(importer.reviewMonthlyEntries)await importer.reviewMonthlyEntries(result,analysisOptions);
       if (analysisOptions?.manualSourceSelection && importer.resolveUnidentifiedFiles) await importer.resolveUnidentifiedFiles(result, analysisOptions);
       if (requestedMode === 'clean') {
         await beginCleanSession(result);
