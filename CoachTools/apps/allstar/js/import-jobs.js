@@ -86,6 +86,7 @@ async function runAllStarImport(source,file,options,loader){
   }catch(error){
     if(!committed) stage?.rollback();
     job.error=String(error?.message||error);
+    options.onError?.(error);
     importJobStage(job,`Failed: ${job.error}`);
     restoreImportFileLabels(); updateCategorizeImportButton();
     if(!options.silent) alert(`${job.label} import failed: ${job.error} The previous source was kept. Retry the upload.`);

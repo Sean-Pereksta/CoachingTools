@@ -5,10 +5,10 @@ function monthlyAreaData(bundle,area,current={},selection=null){
   if(!out.canApply)throw new Error('Monthly bundle needs review before it can replace committed data.');
   const rows=out.reps.filter(r=>r.area===area&&(!selection||selection.some(([name,coach])=>M.key(name)===M.key(r.name)&&M.key(coach)===M.key(r.coach))));
   const identity=r=>({_monthly:true,_rosterId:`monthly|${area}|${r.id}`,_rep:r.name,_repKey:fullNameIdentityKey(r.name),_rawRep:r.name,_rawRepKey:fullNameIdentityKey(r.name),_team:r.coach,_sourceArea:area,_date:'',_monthlyPeriod:out.period?.id||'',_monthlyUndated:out.undated,_importedAt:bundle.importedAt||''});
-  const sv2=rows.map(r=>({...M.stats(r,bundle.consumerAsCash),...identity(r),_sourceKey:`${area}_sv2`,_sourceRow:r.sourceRow,_monthlyStatus:Object.fromEntries(M.SEGMENTS.map(s=>[s,r.segments[s].status]))}));
+  const sv2=rows.map(r=>({...M.stats(r,out.consumerAsCash),...identity(r),_sourceKey:`${area}_sv2`,_sourceRow:r.sourceRow,_monthlyStatus:Object.fromEntries(M.SEGMENTS.map(s=>[s,r.segments[s].status]))}));
   const wiper=rows.map(r=>({...M.wipers(r),...identity(r),_sourceKey:`${area}_wiper`,_monthlyStatus:r.wiper.status,_contributions:r.wiper.contributions}));
   const controlRoster=rows.map(r=>({...identity(r),rosterId:`monthly|${area}|${r.id}`,source:area,sourceArea:area,team:r.coach,representative:r.name,displayName:r.name,originalName:r.name,fullNameKey:fullNameIdentityKey(r.name),_isControlRoster:true,_sourceKey:`${area}_control_roster`,workbook:bundle.opportunity.name,sheetName:'Monthly Opportunity',rowNumber:r.sourceRow,controlRosterSchemaVersion:CONTROL_ROSTER_SCHEMA_VERSION}));
-  const teamRows=out.teams.filter(t=>t.area===area).map(t=>({...M.stats(t,bundle.consumerAsCash),...M.wipers(t),'Full Team Name':t.coach,_team:t.coach,_teamKey:coachNameKey(t.coach),_sourceKey:`${area}_team_totals`,_monthly:true,_monthlyUndated:out.undated,_importedAt:bundle.importedAt||'',_monthlyPartial:out.partial,_summarySheet:'Calculated from monthly representatives',_monthlyStatus:{...Object.fromEntries(M.SEGMENTS.map(s=>[s,t.segments[s].status])),wiper:t.wiper.status}}));
+  const teamRows=out.teams.filter(t=>t.area===area).map(t=>({...M.stats(t,out.consumerAsCash),...M.wipers(t),'Full Team Name':t.coach,_team:t.coach,_teamKey:coachNameKey(t.coach),_sourceKey:`${area}_team_totals`,_monthly:true,_monthlyUndated:out.undated,_importedAt:bundle.importedAt||'',_monthlyPartial:out.partial,_summarySheet:'Calculated from monthly representatives',_monthlyStatus:{...Object.fromEntries(M.SEGMENTS.map(s=>[s,t.segments[s].status])),wiper:t.wiper.status}}));
   const headers=rs=>Object.keys(rs[0]||{}).filter(k=>!k.startsWith('_'));
   const sv2Headers=headers(sv2),wiperHeaders=headers(wiper),aoa=(hs,rs)=>[hs,...rs.map(r=>hs.map(h=>r[h]))];
   const history={...(current.monthlyHistory||{})};
@@ -41,10 +41,15 @@ function applyMonthlyBundleInStage(bundle,onlyArea,selection=null,options={}){
   return true;
 }
 async function commitMonthlyBundle(bundle,options={}){
+  if(!bundle?.opportunity)throw new Error('Choose an Opportunity file before saving monthly data.');
+  if(options.throwOnFailure&&(state.activeImportJob||state.centralSyncStageActive||state.importCacheLoading||state.startup?.running))throw new Error('All-Star is still loading or saving data. Your files are retained; try Save monthly data again when it finishes.');
   const areas=bundle.scope==='mixed'?['retail','referral']:[...new Set(window.CoachToolsMonthly.compile(bundle).reps.map(r=>r.area))];
   const source=areas.length===2?'monthly':areas[0];
-  const ok=await runAllStarImport(source,{name:bundle.opportunity.name,size:0},{...options,label:'Monthly export bundle'},async()=>applyMonthlyBundleInStage(bundle));
-  if(ok)renderMonthlyImportSummary();return ok;
+  let failure;
+  const ok=await runAllStarImport(source,{name:bundle.opportunity.name,size:0},{...options,label:'Monthly export bundle',onError:error=>{failure=error;options.onError?.(error);}},async()=>applyMonthlyBundleInStage(bundle));
+  if(ok)renderMonthlyImportSummary();
+  else if(options.throwOnFailure)throw failure||new Error('Monthly data was not saved. Your selected files are retained; please retry.');
+  return ok;
 }
 async function monthlyFileRoute(area,file,options={}){
   if(!window.CoachToolsMonthly)return {handled:false,workbook:options.workbook};
@@ -56,13 +61,13 @@ async function monthlyFileRoute(area,file,options={}){
   const src=window.CoachToolsMonthly.source(sheetAoa(wb,sn),file.name);
   const current=state.data[area]?.monthlyBundle;
   hideProgress();
-  const bundle=await window.CoachToolsMonthlyReview.review({bundle:current||window.CoachToolsMonthly.create(area),sources:[src],previousRoster:monthlyExistingRoster()});
-  return {handled:true,result:bundle?await commitMonthlyBundle(bundle,options):false};
+  const bundle=await window.CoachToolsMonthlyReview.review({bundle:current||window.CoachToolsMonthly.create(area),sources:[src],previousRoster:monthlyExistingRoster(),onApply:b=>commitMonthlyBundle(b,{...options,silent:true,throwOnFailure:true})});
+  return {handled:true,result:!!bundle};
 }
-async function openMonthlyImport(area='retail',readOnly=false,period=''){
-  const existing=period?state.data[area]?.monthlyHistory?.[period]:state.data[area]?.monthlyBundle;
-  const bundle=await window.CoachToolsMonthlyReview.review({bundle:existing||window.CoachToolsMonthly.create(area),readOnly,previousRoster:monthlyExistingRoster()});
-  if(bundle)await commitMonthlyBundle(bundle);
+async function openMonthlyImport(area='mixed',readOnly=false,period=''){
+  let existing=period?state.data[area]?.monthlyHistory?.[period]:state.data[area]?.monthlyBundle;
+  if(area==='mixed')existing=['retail','referral'].map(a=>state.data[a]?.monthlyBundle).find(b=>b?.scope==='mixed')||null;
+  return window.CoachToolsMonthlyReview.review({bundle:existing||window.CoachToolsMonthly.create(area),readOnly,previousRoster:monthlyExistingRoster(),onApply:b=>commitMonthlyBundle(b,{silent:true,throwOnFailure:true})});
 }
 function renderMonthlyImportSummary(){
   const node=el('monthlyImportSummary');if(!node)return;

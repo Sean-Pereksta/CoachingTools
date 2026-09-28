@@ -61,9 +61,9 @@
     }
     return result;
   }
-  function create(scope='retail'){return {version:VERSION,dateMode:'undated',scope,opportunity:null,wipers:[],coachAreas:{},allocations:{},consumerAsCash:false,blankSegments:'missing',partialAcknowledged:false};}
+  function create(scope='retail'){return {version:VERSION,dateMode:'undated',scope,opportunity:null,wipers:[],coachAreas:{},allocations:{},consumerAsCash:true,blankSegments:'missing',partialAcknowledged:false};}
   // Existing saved bundles retain their original calculations until edited.
-  function asUndated(bundle){return {...clone(bundle),dateMode:'undated'};}
+  function asUndated(bundle){return {...clone(bundle),dateMode:'undated',consumerAsCash:true};}
   function coachAssignments(b){
     const coaches=new Map();
     for(const r of b.opportunity?.rows||[]){
@@ -170,7 +170,7 @@
       team.wiper={accepted:valid.length?accepted:null,offered:valid.length?offered:null,rate:offered>0?accepted/offered:null,status:rs.every(r=>r.wiper.complete)&&!uncertain?'complete':'partial'};teams.push(team);
     }
     const partial=issues.some(i=>i.severity==='warning')||teams.some(t=>t.wiper.status!=='complete'||SEGMENTS.some(s=>t.segments[s].status!=='complete'));
-    return {period,undated,coachAssignments:assignments,reps,teams,issues,coverage,coverageComplete,partial,matched,canApply:!!reps.length&&!issues.some(i=>i.severity==='blocker')&&(!partial||b.partialAcknowledged),consumerAsCash:!!b.consumerAsCash};
+    return {period,undated,coachAssignments:assignments,reps,teams,issues,coverage,coverageComplete,partial,matched,canApply:!!reps.length&&!issues.some(i=>i.severity==='blocker')&&(undated||!partial||b.partialAcknowledged),consumerAsCash:undated||!!b.consumerAsCash};
   }
   const title=s=>s[0].toUpperCase()+s.slice(1);
   function stats(rep,consumerAsCash){
@@ -181,8 +181,8 @@
   }
   function wipers(rep){return {Representative:rep.name||'',Coach:rep.coach,Accepted:rep.wiper.accepted,Offered:rep.wiper.offered,Declined:rep.wiper.offered===null?null:rep.wiper.offered-rep.wiper.accepted,'Wiper Rate':rep.wiper.rate===null?null:rep.wiper.rate*100,'Wiper Status':rep.wiper.status};}
   function toDataset(b,area){
-    const out=compile(b);if(!out.canApply)throw new Error('Resolve monthly blockers and acknowledge incomplete results before applying.');
-    const reps=out.reps.filter(r=>r.area===area),sv2=reps.map(r=>stats(r,b.consumerAsCash)),wiper=reps.map(wipers);
+    const out=compile(b);if(!out.canApply)throw new Error('Choose an Opportunity file and resolve the highlighted import issues.');
+    const reps=out.reps.filter(r=>r.area===area),sv2=reps.map(r=>stats(r,out.consumerAsCash)),wiper=reps.map(wipers);
     const aoa=rows=>{const headers=Object.keys(rows[0]||{});return [headers,...rows.map(r=>headers.map(h=>r[h]))];};
     return {meta:{fileName:b.opportunity.name,totalRows:reps.length,sheetsCount:2,monthlyBundle:clone(b),monthlyArea:area,monthlyPeriod:out.period,monthlyUndated:out.undated,importedAt:b.importedAt||'',monthlyPartial:out.partial},workbook:{sheets:['Monthly Opportunity','Monthly Wipers'],data:{'Monthly Opportunity':{aoa:aoa(sv2)},'Monthly Wipers':{aoa:aoa(wiper)}}}};
   }
