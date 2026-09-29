@@ -11,7 +11,9 @@ function defaultImportedDataState(){
     qa_direct: { fileName:'', rows:[], headers:[], aoa:[], sheetName:'' },
     checklist: { fileName:'', rows:[], headers:[], aoa:[] },
     documented_coaching: { fileName:'', rows:[], headers:[], aoa:[] },
-    comp_calls: { fileName:'', rows:[], headers:[], aoa:[] }
+    comp_calls: { fileName:'', rows:[], headers:[], aoa:[] },
+    weeklyRetail: { fileName:'', rows:[], headers:[], config:null, audit:[] },
+    weeklyReferral: { fileName:'', rows:[], headers:[], config:null, audit:[] }
   };
 }
 function defaultImportedBooksState(){

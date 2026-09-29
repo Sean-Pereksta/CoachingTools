@@ -67,7 +67,8 @@ function normalizeCriterionForStorage(c){
   c.trueValueEnabled=!!c.trueValueEnabled;
   c.trueValueSource=TEAM_TOTAL_SOURCE_KEYS.includes(c.trueValueSource)?c.trueValueSource:'';
   c.trueValueColumn=String(c.trueValueColumn||'').trim();
-  c.calcType=['single','multi','custom','qaScore','checklistCount','displayColumn'].includes(c.calcType)?c.calcType:'single';
+  c.calcType=['single','multi','custom','qaScore','checklistCount','displayColumn','datedStats'].includes(c.calcType)?c.calcType:'single';
+  if(c.calcType==='datedStats'){ c.leftSource=c.rightSource=c.customSource=c.source; c.trueValueEnabled=false; c.zeroCanWin=true; }
   if(c.calcType==='displayColumn'){
     c.scoreType='display';
     c.trueValueEnabled=false;
@@ -789,6 +790,7 @@ function emptyCriterion(){
   return {id:id(),name:'New Criteria',source:'retail_sv2',calcType:'single',audience:'both',scoreType:'rank',direction:'higher',weight:'1',format:'number',missingRank:999,missingPoints:0,zeroCanWin:false,minimumMonitors:0,column:'',aggregate:'sum',withinCompareColumn:'',withinUseRange:false,withinDays:'',withinRangeMin:'',withinRangeMax:'',leftSource:'retail_sv2',leftColumn:'',operator:'divide',rightSource:'retail_sv2',rightColumn:'',customSource:'retail_sv2',expression:'',checkDateColumn:'',checkColumn:'',checkOperator:'contains',checkValueType:'text',checkText:'',filters:[],minimumEnabled:false,minimum:0,points:1,autofailThreshold:1,autofailOperator:'greaterEqual',trueValueEnabled:false,trueValueSource:'',trueValueColumn:'',lookupVersion:2,displayMode:'lookup',lookupMatchEntity:'representative',lookupMatchColumn:'',lookupReturnColumn:'',lookupDateColumn:'',lookupCustomValue:'',lookupSelection:'latest',displayCalculation:'raw',displayValueType:'auto',displayMissingMode:'blank',displayMissingText:'',displayRules:[]};
 }
 function getHeaders(source){
+  if(isDatedStatsSource(source)) return state.data[source]?.headers||[];
   if(['monthly_opportunity','monthly_wiper'].includes(source))return [...new Set(monthlySourceRows(source).flatMap(r=>Object.keys(r)))].filter(h=>!h.startsWith('_'));
   if(source===NONDATED_SOURCE) return state.categorized.nondated.headers || ['Representative','Coach'];
   if(source===DATED_SOURCE) return state.categorized.dated.headers || ['Representative','Coach','Date'];
@@ -806,8 +808,9 @@ function getHeaders(source){
   if(source==='comp_calls') return state.data.comp_calls.headers;
   return [];
 }
-function allSourceKeys(){ return [NONDATED_SOURCE,DATED_SOURCE,'monthly_opportunity','monthly_wiper','retail_sv2','retail_wiper','retail_team_totals','referral_sv2','referral_wiper','referral_team_totals','qa',QA_DIRECT_SOURCE,'checklist','documented_coaching','comp_calls',...customSourceKeys()]; }
+function allSourceKeys(){ return [NONDATED_SOURCE,DATED_SOURCE,'weeklyRetail','weeklyReferral','monthly_opportunity','monthly_wiper','retail_sv2','retail_wiper','retail_team_totals','referral_sv2','referral_wiper','referral_team_totals','qa',QA_DIRECT_SOURCE,'checklist','documented_coaching','comp_calls',...customSourceKeys()]; }
 function getRowsRaw(source){
+  if(isDatedStatsSource(source)) return state.data[source]?.rows||[];
   if(['monthly_opportunity','monthly_wiper'].includes(source))return monthlySourceRows(source);
   if(source===NONDATED_SOURCE) return state.categorized.nondated.rows || [];
   if(source===DATED_SOURCE) return state.categorized.dated.rows || [];
@@ -1260,6 +1263,7 @@ function renderEditModel(){
   els.criteriaList.innerHTML = (m.criteria||[]).map((c,i)=>criterionHtml(c,i)).join('');
   bindModelSourceSettings();
   bindCriteriaEditors();
+  bindDatedStatsCriteria();
 }
 
 function customMappingFieldsHtml(source, cols={}, fw='generic_table', headerOverride=null){
@@ -1640,6 +1644,7 @@ function headerMatch(headers, expected){
   return findHeader(headers||[],[expected]);
 }
 function sourceHasImportedData(source){
+  if(isDatedStatsSource(source))return !!state.data[source]?.rows?.length;
   if(source===NONDATED_SOURCE) return !!(state.categorized.nondated.rows||[]).length;
   if(source===DATED_SOURCE) return !!(state.categorized.dated.rows||[]).length;
   if(source==='retail_sv2') return !!((state.data.retail.sv2||[]).length||(state.data.retail.sv2Aoa||[]).length);
@@ -1771,6 +1776,7 @@ function displayRuleHtml(rule,index){
 }
 function criterionHtml(c,i){
   const src=c.source||'retail_sv2';
+  if(c.calcType==='datedStats') return datedStatsCriterionHtml(c,i);
   const isDisplayColumn=c.calcType==='displayColumn';
   const isCheck=isRowPullCriterion(c); const showRowPull=isCheck; const checkSource=showRowPull?src:'checklist';
   const isQa=!isDisplayColumn&&(src==='qa'||isCustomQAStyleSource(src)); const isWeekly=isCustomWeeklyStatSource(src);
@@ -1787,7 +1793,7 @@ function criterionHtml(c,i){
       <div class="field ${isDisplayColumn?'hidden':''}"><label>Weight</label><select data-cfield="weight">${weightOptions}</select></div>
     </div>
     <div class="grid4">
-      <div class="field"><label>Calculation</label><select data-cfield="calcType"><option value="single" ${c.calcType==='single'?'selected':''}>Single</option><option value="displayColumn" ${isDisplayColumn?'selected':''}>Display Column (raw cell)</option><option value="multi" ${c.calcType==='multi'?'selected':''}>Multi Item</option><option value="custom" ${c.calcType==='custom'?'selected':''}>Custom</option><option value="qaScore" ${c.calcType==='qaScore'?'selected':''}>QA Score</option><option value="checklistCount" ${c.calcType==='checklistCount'?'selected':''}>Count</option></select></div>
+      <div class="field"><label>Calculation</label><select data-cfield="calcType"><option value="datedStats">Dated Stats / Trend</option><option value="single" ${c.calcType==='single'?'selected':''}>Single</option><option value="displayColumn" ${isDisplayColumn?'selected':''}>Display Column (raw cell)</option><option value="multi" ${c.calcType==='multi'?'selected':''}>Multi Item</option><option value="custom" ${c.calcType==='custom'?'selected':''}>Custom</option><option value="qaScore" ${c.calcType==='qaScore'?'selected':''}>QA Score</option><option value="checklistCount" ${c.calcType==='checklistCount'?'selected':''}>Count</option></select></div>
       <div class="field ${isDisplayColumn?'hidden':''}"><label>Direction</label><select data-cfield="direction"><option value="higher" ${c.direction==='higher'?'selected':''}>Higher Best</option><option value="lower" ${c.direction==='lower'?'selected':''}>Lower Best</option></select></div>
       <div class="field ${isDisplayColumn?'hidden':''}"><label>Format</label><select data-cfield="format"><option value="number" ${c.format==='number'?'selected':''}>Number</option><option value="pct" ${c.format==='pct'?'selected':''}>Percent</option></select></div>
       <div class="field ${isDisplayColumn?'hidden':''}"><label>Points</label><input data-cfield="points" type="number" step="0.01" value="${esc(c.points??1)}"></div>
@@ -2036,13 +2042,15 @@ function bindCriteriaEditors(){
         const wasDisplayColumn=c.calcType==='displayColumn';
         setCriterionPrimarySource(c,val);
         if(!wasDisplayColumn){
-          if(val==='qa' || isCustomQAStyleSource(val)){ c.calcType='qaScore'; c.format='pct'; }
+          if(isDatedStatsSource(val)){ c.calcType='datedStats'; c.scoreType='display'; c.zeroCanWin=true; }
+          else if(val==='qa' || isCustomQAStyleSource(val)){ c.calcType='qaScore'; c.format='pct'; }
           else if(val===DATED_SOURCE){ c.calcType='single'; c.aggregate=c.aggregate||'sum'; c.checkValueType=c.checkValueType||'text'; }
           else if(isDatedRowPullSource(val)){ c.calcType='checklistCount'; }
           else if(c.calcType==='qaScore' || c.calcType==='checklistCount'){ c.calcType='single'; }
         }
       }else{
         c[field]=val;
+        if(field==='calcType'&&val==='datedStats'){ c.source='weeklyRetail'; c.scoreType='display'; c.zeroCanWin=true; }
       }
       if(field==='calcType' || field==='audience' || field==='source') alignDisplayColumnCriterion(c);
       if(field==='checkValueType'){

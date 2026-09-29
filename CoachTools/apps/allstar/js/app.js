@@ -119,7 +119,7 @@ function wire(){
   if(els.stopResearchRenderBtn) els.stopResearchRenderBtn.onclick=()=>cancelResearchRenderAll('Stopping after the current safe checkpoint...');
   if(els.newMetricBtn) els.newMetricBtn.onclick=()=>openMetricEditor('');
   if(els.metricSearchInput) els.metricSearchInput.oninput=()=>renderMetricList();
-  if(els.metricSourceSelect) els.metricSourceSelect.onchange=()=>{ const chosen=els.metricSourceSelect.value; refreshMetricDatalist(); if(chosen) els.metricSourceSelect.value=chosen; state.editingMetricGear={...researchGearDefault()}; state.editingMetricRules=(state.editingMetricRules||[]).map(r=>({...r,gear:{...researchGearDefault()},selectedValues:[]})); renderMetricRules(); renderMetricComponentFields(); handleMetricModeOrRangeChange(); };
+  if(els.metricSourceSelect) els.metricSourceSelect.onchange=()=>{ const chosen=els.metricSourceSelect.value; if(isDatedStatsSource(chosen)){closeModal('metricEditorModal');return openDatedStatsMetricEditor(undefined,chosen);} refreshMetricDatalist(); if(chosen) els.metricSourceSelect.value=chosen; state.editingMetricGear={...researchGearDefault()}; state.editingMetricRules=(state.editingMetricRules||[]).map(r=>({...r,gear:{...researchGearDefault()},selectedValues:[]})); renderMetricRules(); renderMetricComponentFields(); handleMetricModeOrRangeChange(); };
   if(el('metricSMSPreset'))el('metricSMSPreset').onclick=applySegmentSMSPreset;
   for(const id of ['metricComponents','metricExcludeZero','metricExcludeMissing','metricMissingAsZero','metricComponentUnit'])if(el(id))el(id).onchange=()=>{handleMetricModeOrRangeChange();};
   if(el('metricPreviewGrouping'))el('metricPreviewGrouping').onchange=renderMetricFoundPreview;
@@ -148,7 +148,7 @@ function wire(){
   if(els.selectVisibleOrgCoachesBtn) els.selectVisibleOrgCoachesBtn.onclick=()=>{ const o=activeOrg(); if(!o) return; const next=new Set(o.coachNames||[]); knownCoachNames().filter(c=>!state.orgCoachSearch||normalizeOrgName(c).includes(normalizeOrgName(state.orgCoachSearch))).forEach(c=>next.add(c)); o.coachNames=[...next].sort((a,b)=>a.localeCompare(b)); saveOrgs(); renderOrgBuilder(); };
   if(els.clearOrgCoachesBtn) els.clearOrgCoachesBtn.onclick=()=>{ const o=activeOrg(); if(!o) return; o.coachNames=[]; saveOrgs(); renderOrgBuilder(); };
   if(els.clearResearchBtn) els.clearResearchBtn.onclick=clearResearchItemsWithConfirm;
-  if(els.researchSource) els.researchSource.onchange=()=>{ populateResearchFieldSelectors({}); populateResearchTypedMeasurePicker(currentResearchItemFromEditor()); renderResearchTypedMeasureMeta(); if(state.editingPercentBuilder&&state.editingPercentBuilder.fromMode!=='custom_expression') state.editingPercentBuilder.qualifierSource=els.researchSource.value; renderResearchColumnsEditor(); renderPercentBuilderEditor(currentResearchItemFromEditor()); scheduleResearchJoinPreview(); updateResearchBuilderVisibility(); };
+  if(els.researchSource) els.researchSource.onchange=()=>{ if(isDatedStatsSource(els.researchSource.value)){closeModal('researchEditorModal');return openDatedStatsResearchEditor();} populateResearchFieldSelectors({}); populateResearchTypedMeasurePicker(currentResearchItemFromEditor()); renderResearchTypedMeasureMeta(); if(state.editingPercentBuilder&&state.editingPercentBuilder.fromMode!=='custom_expression') state.editingPercentBuilder.qualifierSource=els.researchSource.value; renderResearchColumnsEditor(); renderPercentBuilderEditor(currentResearchItemFromEditor()); scheduleResearchJoinPreview(); updateResearchBuilderVisibility(); };
   if(els.researchOutputType) els.researchOutputType.onchange=()=>{ const t=els.researchOutputType.value, graph=['line','bar','scatter','histogram','heatmap','box','pie'].includes(t); if(graph&&els.researchShowValues) els.researchShowValues.checked=true; if(t==='line'&&els.researchUseDots) els.researchUseDots.checked=true; if(t==='heatmap'&&els.researchUseSecondaryGroup) els.researchUseSecondaryGroup.value='yes'; if(t==='scatter'&&els.researchAnalysisGrain?.value==='auto') els.researchAnalysisGrain.value='representatives'; if(t==='histogram'&&els.researchValueMode) els.researchValueMode.value='count'; if((graph||els.researchUseSecondaryGroup?.value==='yes')&&els.researchShowLegend) els.researchShowLegend.checked=true; populateResearchTypedMeasurePicker(currentResearchItemFromEditor()); validateResearchEditor(); updateResearchBuilderVisibility(); };
   if(els.researchAnalysisGrain) els.researchAnalysisGrain.onchange=()=>{ populateResearchTypedMeasurePicker(currentResearchItemFromEditor()); renderResearchTypedMeasureMeta(); scheduleResearchJoinPreview(); validateResearchEditor(); };
   if(els.researchCrossSourceJoin) els.researchCrossSourceJoin.onchange=()=>{ scheduleResearchJoinPreview(); validateResearchEditor(); };
@@ -225,7 +225,7 @@ function wire(){
 
 let coachToolsCentralSyncTimer=0;
 let coachToolsCentralSyncQueue=Promise.resolve(false);
-const ALLSTAR_CENTRAL_DATASETS=new Set(['all','monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist','compCoaching']);
+const ALLSTAR_CENTRAL_DATASETS=new Set(['all','weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist','compCoaching']);
 function queueAllStarCentralSync(reason){
   if(state.lifecycle?.closing) return Promise.resolve({changed:false,cancelled:true});
   const generation=state.lifecycle.generation;
@@ -348,7 +348,7 @@ async function runAllStarStartupPipeline(){
     setAllStarStartupPhase(job,0,20,'Loading settings…');
     await measureAllStarStartupStep('settings',async()=>{
       if(!state.startup.initialized){
-        loadModels(); loadRepAliases(); loadResearchItems({definitionsOnly:true}); loadPdfOptions(); loadOrgs(); wire();
+        loadModels(); loadRepAliases(); loadResearchItems({definitionsOnly:true}); loadPdfOptions(); loadOrgs(); wire(); initDatedStatsWorkspace();
         configureResearchCharts();
         window.AllStarModelWorkspace?.init();
         window.AllStarWorkspaceNavigation?.init();

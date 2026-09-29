@@ -27,6 +27,7 @@ function componentMetricPreview(metric,rows){
 'use strict';
 
 function normalizeMetric(m={}){
+  if(m.dataCategory==='datedStats'||m.mode==='datedStats')return window.AllStarDatedStats.normalizeMetric({...m,id:m.id||id(),name:m.name||'New Dated Stats Metric'});
   const mainGear={...researchGearDefault(),...(m.gear||m.mainGear||{})};
   if(Array.isArray(m.selectedValues) && !Array.isArray(mainGear.selected)) mainGear.selected=clonePlain(m.selectedValues);
   const normRules=Array.isArray(m.rules)?m.rules.map(r=>{
@@ -150,7 +151,7 @@ function applyMetricGear(rows,source,field,cfg,warnings=[]){
   return out;
 }
 function metricRulePass(row,rule,source){ const gear={...researchGearDefault(),...(rule.gear||{})}; if(rule.field && (gear.customTextEnabled || gear.customValueEnabled || (gear.valuesEnabled!==false && Array.isArray(gear.selected)))) return applyMetricGear([row],source,rule.field,gear,[]).length>0; const v=researchFieldValue(row,rule.field,source), op=rule.op||'is'; if(op==='blank') return String(v??'').trim()===''; if(op==='not blank') return String(v??'').trim()!==''; if((rule.selectedValues||[]).length) return rule.selectedValues.includes(String(v??'(blank)')); if(op==='within days of') return Math.abs(calendarDiffDays(v,rule.value)) <= (Number(rule.value2)||0); const mapped={ 'greater or equal':'greater/equal', 'less or equal':'less/equal' }[op]||op; return compareFilter(v,mapped,rule.value,rule.value2); }
-function metricRows(metric,rows,source,warnings=[]){ metric=normalizeMetric(metric); let base=rows||[]; if(metric.field) base=applyMetricGear(base,source,metric.field,metric.gear||{selected:metric.selectedValues},warnings); const andRules=(metric.rules||[]).filter(r=>(r.join||'AND')!=='OR'), orRules=(metric.rules||[]).filter(r=>(r.join||'AND')==='OR'); const passAnd=r=>andRules.every(rule=>metricRulePass(r,rule,source)); if(!orRules.length) return base.filter(passAnd); const set=new Set(); const out=[]; const add=r=>{ if(passAnd(r)&&!set.has(r)){ set.add(r); out.push(r); } }; base.forEach(add); rows.forEach(r=>{ if(orRules.some(rule=>metricRulePass(r,rule,source))) add(r); }); return out; }
+function metricRows(metric,rows,source,warnings=[]){ metric=normalizeMetric(metric); if(metric.dataCategory==='datedStats')return rows||[]; let base=rows||[]; if(metric.field) base=applyMetricGear(base,source,metric.field,metric.gear||{selected:metric.selectedValues},warnings); const andRules=(metric.rules||[]).filter(r=>(r.join||'AND')!=='OR'), orRules=(metric.rules||[]).filter(r=>(r.join||'AND')==='OR'); const passAnd=r=>andRules.every(rule=>metricRulePass(r,rule,source)); if(!orRules.length) return base.filter(passAnd); const set=new Set(); const out=[]; const add=r=>{ if(passAnd(r)&&!set.has(r)){ set.add(r); out.push(r); } }; base.forEach(add); rows.forEach(r=>{ if(orRules.some(rule=>metricRulePass(r,rule,source))) add(r); }); return out; }
 function researchMetricRowSignature(rows,source){
   rows=rows||[];
   const sourceSignature=source+'|'+researchHashText(researchSourceIndexSignature(source));
@@ -198,6 +199,7 @@ function evaluateResearchMetricCached(metric,rows,source,warnings=[],context={})
 }
 function evaluateMetric(metric,rows,source,warnings=[]){
   metric=normalizeMetric(metric); const actualSource=metric.source||source;
+  if(metric.dataCategory==='datedStats') return evaluateDatedStatsMetric(metric,rows,source,warnings);
   if(metric.mode!=='component_avg'&&metricRefName(metric.field)){ warnings.push('Metric fields cannot reference another metric in this version; circular metric references are blocked.'); return null; }
   const hit=metricRows(metric.mode==='component_avg'?{...metric,field:''}:metric,rows,actualSource,warnings);
   if(metric.mode==='component_avg')return window.CoachToolsMetricComponents.evaluate(metric,hit,(r,f)=>researchFieldValue(r,f,actualSource)).value;
@@ -231,7 +233,7 @@ async function openMetricsPage(){ await loadMetrics(); refreshMetricDatalist(); 
 function sourceQualifiedFieldSuggestion(src,h){ return `![${labelSource(src)}].[${plainHeaderName(h)}]`; }
 function refreshMetricDatalist(){ const srcs=metricSources(); if(els.metricSourceSelect) els.metricSourceSelect.innerHTML=srcs.map(o=>`<option value="${esc(o.value)}">${esc(o.label)}</option>`).join(''); const opts=[...new Set(srcs.flatMap(src=>getResearchHeaders(src.value).flatMap(h=>[bracketedHeaderSuggestion(h),sourceQualifiedFieldSuggestion(src.value,h)])),...metricSuggestions(),...orgTokenNames())].filter(Boolean).map(h=>`<option value="${esc(h)}"></option>`).join(''); const dl=el('metricHeaderSuggestions'); if(dl) dl.innerHTML=opts; }
 function metricFromEditor(){ return normalizeMetric({id:els.metricEditId?.value||id(),name:els.metricNameInput?.value||'New Metric',source:els.metricSourceSelect?.value||'qa',mode:els.metricModeSelect?.value||'count',field:els.metricFieldInput?.value||'',percentOfField:els.metricPercentOfField?.value||'',withinCompareField:els.metricWithinCompareField?.value||'',withinUseRange:!!els.metricWithinUseRange?.checked,withinDays:els.metricWithinDays?.value||'',withinRangeMin:els.metricWithinRangeMin?.value||'',withinRangeMax:els.metricWithinRangeMax?.value||'',selectedValues:state.editingMetricGear?.selected||[],gear:state.editingMetricGear||{},rules:state.editingMetricRules||[],notes:els.metricNotesInput?.value||'',...metricComponentSettings()}); }
-function openMetricEditor(metricId){ refreshMetricDatalist(); const m=(state.metrics||[]).find(x=>x.id===metricId)||normalizeMetric({}); state.editingMetricComponentUnits=clonePlain(m.componentUnits||{}); state.editingMetricRules=clonePlain(m.rules||[]); state.editingMetricGear={...researchGearDefault(),...clonePlain(m.gear||{}),selected:clonePlain(m.selectedValues||m.gear?.selected||[])}; els.metricEditId.value=m.id; els.metricNameInput.value=m.name; els.metricSourceSelect.value=m.source; els.metricModeSelect.value=m.mode; els.metricFieldInput.value=m.field; if(els.metricPercentOfField) els.metricPercentOfField.value=m.percentOfField||''; if(els.metricWithinCompareField) els.metricWithinCompareField.value=m.withinCompareField||''; if(els.metricWithinUseRange) els.metricWithinUseRange.checked=!!m.withinUseRange; if(els.metricWithinDays) els.metricWithinDays.value=m.withinDays||''; if(els.metricWithinRangeMin) els.metricWithinRangeMin.value=m.withinRangeMin||''; if(els.metricWithinRangeMax) els.metricWithinRangeMax.value=m.withinRangeMax||''; els.metricNotesInput.value=m.notes||''; renderMetricComponentFields(m.componentFields); if(el('metricExcludeZero'))el('metricExcludeZero').checked=m.excludeZero; if(el('metricExcludeMissing'))el('metricExcludeMissing').checked=m.excludeMissing; if(el('metricMissingAsZero'))el('metricMissingAsZero').checked=m.missingAsZero; if(el('metricComponentUnit'))el('metricComponentUnit').value=m.componentUnit; updateMetricEditorVisibility(); renderMetricRules(); validateMetricNumeric(); openModal('metricEditorModal'); attachModelReferencePicker(els.metricEditorModal); }
+function openMetricEditor(metricId){ if(state.metrics.find(m=>m.id===metricId)?.dataCategory==='datedStats')return openDatedStatsMetricEditor(metricId); refreshMetricDatalist(); const m=(state.metrics||[]).find(x=>x.id===metricId)||normalizeMetric({}); state.editingMetricComponentUnits=clonePlain(m.componentUnits||{}); state.editingMetricRules=clonePlain(m.rules||[]); state.editingMetricGear={...researchGearDefault(),...clonePlain(m.gear||{}),selected:clonePlain(m.selectedValues||m.gear?.selected||[])}; els.metricEditId.value=m.id; els.metricNameInput.value=m.name; els.metricSourceSelect.value=m.source; els.metricModeSelect.value=m.mode; els.metricFieldInput.value=m.field; if(els.metricPercentOfField) els.metricPercentOfField.value=m.percentOfField||''; if(els.metricWithinCompareField) els.metricWithinCompareField.value=m.withinCompareField||''; if(els.metricWithinUseRange) els.metricWithinUseRange.checked=!!m.withinUseRange; if(els.metricWithinDays) els.metricWithinDays.value=m.withinDays||''; if(els.metricWithinRangeMin) els.metricWithinRangeMin.value=m.withinRangeMin||''; if(els.metricWithinRangeMax) els.metricWithinRangeMax.value=m.withinRangeMax||''; els.metricNotesInput.value=m.notes||''; renderMetricComponentFields(m.componentFields); if(el('metricExcludeZero'))el('metricExcludeZero').checked=m.excludeZero; if(el('metricExcludeMissing'))el('metricExcludeMissing').checked=m.excludeMissing; if(el('metricMissingAsZero'))el('metricMissingAsZero').checked=m.missingAsZero; if(el('metricComponentUnit'))el('metricComponentUnit').value=m.componentUnit; updateMetricEditorVisibility(); renderMetricRules(); validateMetricNumeric(); openModal('metricEditorModal'); attachModelReferencePicker(els.metricEditorModal); }
 function updateMetricEditorVisibility(){
   const mode=els.metricModeSelect?.value||'count', dateWithin=['date_within','date_percent_within'].includes(mode), valueWithin=['value_within','value_percent_within'].includes(mode), within=dateWithin||valueWithin, percentItem=['percent_item','pooled_rate'].includes(mode), useRange=!!els.metricWithinUseRange?.checked;
   el('metricComponentOptions')?.classList.toggle('hidden',mode!=='component_avg');
@@ -625,6 +627,7 @@ function researchFieldReferencedSources(field, defaultSource=''){
   return out;
 }
 function researchReferencedSources(item={}){
+  if(item.datedStats){const s=item.datedStats,m=state.metrics.find(m=>m.id===s.metricId);return [...new Set([m?.source,...(s.eventConditions||[]).map(c=>c.source),...((s.groupBy==='coaching_frequency'||s.mode==='before_after')?[s.coachingSource||'documented_coaching']:[]),...(s.modelId?requiredRunSourcesForModel(findModel(s.modelId)||{}):[])].filter(Boolean))];}
   const refs=[]; const add=src=>{ if(src && !isDynamicResearchSource(src) && !refs.includes(src)) refs.push(src); };
   [item.groupField,item.groupExpression,item.dateColumn,item.secondaryGroupField,item.panelField,item.valueField,item.percentOfField,item.numeratorExpression,item.denominatorExpression,item.withinCompareField].forEach(f=>researchFieldReferencedSources(f,item.source).forEach(add));
   (item.columns||[]).forEach(c=>{ const resolved=resolveResearchTypedMeasure(c.measureId||researchMeasureIdFromRef(c.field),item.source); if(resolved?.source) add(resolved.source); researchFieldReferencedSources(c.field,item.source).forEach(add); researchFieldReferencedSources(c.percentOfField,item.source).forEach(add); researchFieldReferencedSources(c.withinCompareField,item.source).forEach(add); });
@@ -800,7 +803,7 @@ async function openResearchWorkspace(){
   setResearchCanvasStatus('Research opened without scanning unrelated sources. Refresh an item to prepare only the sources it uses.');
 }
 function researchHasAnyData(){ return allSourceKeys().some(s=>(getResearchSourceRows(s)||[]).length); }
-function openResearchItemEditor(itemId){
+function openResearchItemEditor(itemId){ if(state.researchItems.find(i=>i.id===itemId)?.datedStats)return openDatedStatsResearchEditor(itemId);
   const existing=state.researchItems.find(x=>x.id===itemId), item=normalizeResearchItem(existing||{guidedEnabled:true});
   state.editingGuidedResearchActive=!!item.guidedEnabled;
   state.editingResearchFilters=clonePlain(item.filters||[]);
@@ -3447,6 +3450,7 @@ function researchLoadingStoredBody(label='Rendering output...', detail=''){ retu
 function researchCompactColumnForStorage(item,c){ return {label:c?.label||'',displayTitle:researchColumnDisplayTitle(item,c)||c?.label||c?.mode||'Value',mode:c?.mode||'',field:c?.field||'',measureId:c?.measureId||researchMeasureIdFromRef(c?.field),missingBehavior:c?.missingBehavior||item.missingBehavior||'missing',showAsPercent:!!c?.showAsPercent,formatRules:c?.formatRules||[],displayRules:c?.displayRules||[],elseDisplay:c?.elseDisplay||''}; }
 function researchCellPresentationSnapshot(value,item,col,rows=[],ctx={},warnings=[]){ const pres=researchColumnCellPresentation(value,item,col,rows,ctx,warnings); return {raw:value,text:pres.text,html:pres.html,style:pres.style||''}; }
 function researchCompactRenderedResult(item,result){
+  if(item.datedStats)return {...clonePlain(result),savedAt:new Date().toISOString()};
   console.time('[Research Builder] compact result save');
   const source={...(result||{}),warnings:[...(result?.warnings||[])]}, renderedAt=new Date().toISOString(), columns=(source.columns||[]).map(c=>researchCompactColumnForStorage(item,c));
   const compact={valueOnly:true,version:4,outputType:item.outputType,title:item.title||'',renderedAt,lineage:source.lineage||researchResultLineage(item,result),totalRowCount:source.totalRowCount||0,joinDiagnostics:source.joinDiagnostics||null,reconciliation:source.reconciliation||null,perf:source.perf?{...source.perf,warnings:undefined}:null,warnings:(source.warnings||[]).map(String).slice(0,25),columns,hasSecondary:!!source.hasSecondary,rowCount:0,columnCount:columns.length,display:{showValues:!!item.showValues,showLegend:item.showLegend!==false,showGridlines:item.showGridlines!==false,barOrientation:item.barOrientation||'vertical',stackedBars:!!item.stackedBars,groupedBars:item.groupedBars!==false,axisMin:item.axisMin??'',axisMax:item.axisMax??'',rotateLabels:!!item.rotateLabels,wrapLabels:item.wrapLabels!==false,smoothLine:!!item.smoothLine,useDots:item.useDots!==false,showPercent:!!item.showPercent,decimals:item.decimals??1,panelField:item.panelField||''}};
@@ -3551,6 +3555,7 @@ function configureResearchCharts(){
   });
 }
 function renderResearchResultByDisplay(item,res){
+  if(item.datedStats)return renderDatedStatsResult(item,res);
   const actions=typeof AllStarCharts!=='undefined'&&Array.isArray(res.data)?AllStarCharts.resultActions(item,res):'';
   return actions+renderResearchResultContent(item,res);
 }
@@ -3663,6 +3668,7 @@ async function prepareResearchPopulation(item,planned,warnings,progress={}){
   return {...value,cacheHit:false};
 }
 async function evaluateResearchItemAsync(item,progress={}){
+  if(item.datedStats)return evaluateDatedStatsResearch(item,progress);
   state.researchActiveCalculations=state.researchActiveCalculations||new Map();
   const key=item.id||researchItemCacheKey(item,'agg'), previous=state.researchActiveCalculations.get(key), operation={cancelled:false,parent:progress.token};
   if(previous) previous.cancelled=true;
@@ -3767,6 +3773,7 @@ async function renderResearchItemBodyAsync(item, progress={}){
 }
 
 function bindResearchCanvasActions(){
+  bindDatedStatsCharts(els.researchCanvas);
   els.researchCanvas.querySelectorAll('[data-research-edit]').forEach(b=>b.onclick=()=>openResearchItemEditor(b.dataset.researchEdit)); els.researchCanvas.querySelectorAll('[data-research-delete]').forEach(b=>b.onclick=()=>deleteResearchItem(b.dataset.researchDelete)); els.researchCanvas.querySelectorAll('[data-research-data]').forEach(b=>b.onclick=()=>exportResearchItemData(b.dataset.researchData)); els.researchCanvas.querySelectorAll('[data-research-image]').forEach(b=>b.onclick=()=>exportResearchItemImage(b.dataset.researchImage)); els.researchCanvas.querySelectorAll('[data-research-size]').forEach(b=>b.onclick=()=>setResearchItemProp(b.dataset.researchSize,{cardSize:b.dataset.size})); els.researchCanvas.querySelectorAll('[data-research-collapse]').forEach(b=>b.onclick=()=>{ const item=state.researchItems.find(x=>x.id===b.dataset.researchCollapse); setResearchItemProp(b.dataset.researchCollapse,{collapsed:!item.collapsed}); }); els.researchCanvas.querySelectorAll('[data-research-move]').forEach(b=>b.onclick=()=>moveResearchItem(b.dataset.researchMove,b.dataset.dir));
   bindResearchConversationViewerActions(els.researchCanvas);
   bindResearchVirtualTables(els.researchCanvas);
@@ -3885,6 +3892,7 @@ async function renderAllResearchItems(){
 function deleteResearchItem(itemId){ if(!confirm('Delete this research item?')) return; state.researchItems=state.researchItems.filter(x=>x.id!==itemId); saveResearchItems(); renderResearchCanvasAsync({reason:'delete'}); }
 async function exportResearchItemData(itemId){
   const item=normalizeResearchItem(state.researchItems.find(x=>x.id===itemId)||{}); if(!item.id) return;
+  if(item.datedStats){const saved=await researchRenderedResultGet(item.id);if(!saved)return alert('Calculate and save the Dated Stats result first.');downloadText((item.title||'Dated_Stats')+'.json',JSON.stringify(saved,null,2));return;}
   try{
     showProgress(item.outputType==='table'?'Preparing research table export...':'Preparing research export...',2);
     const res=await researchRenderedResultGet(item.id);
