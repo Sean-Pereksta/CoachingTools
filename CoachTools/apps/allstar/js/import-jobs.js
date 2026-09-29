@@ -114,11 +114,12 @@ async function readAllStarFileBuffer(file){
     reader.readAsArrayBuffer(file);
   });
 }
-async function parseAllStarWorkbook(buffer){
+async function parseAllStarWorkbook(buffer,parseOptions={}){
   assertAllStarImportActive();
+  const readOptions={type:'array',cellDates:true,raw:false,...parseOptions};
   // Keep large SheetJS parsing off the UI thread. Portable builds contain the
   // same vendor source inline; hosted builds resolve their bundled vendor URL.
-  if(typeof Worker==='undefined' || typeof Blob==='undefined') return XLSX.read(buffer,{type:'array',cellDates:true,raw:false});
+  if(typeof Worker==='undefined' || typeof Blob==='undefined') return XLSX.read(buffer,readOptions);
   const embedded=document.querySelector('script[data-allstar-vendor="xlsx.full.min.js"]');
   // Blob workers cannot import a file:// dependency in desktop browsers.
   // Choose the already-loaded page parser before transferring the buffer.
@@ -127,10 +128,10 @@ async function parseAllStarWorkbook(buffer){
     updateProgress('Parsing local workbook with the loaded spreadsheet library…',10,{force:true});
     await yieldToBrowser();
     assertAllStarImportActive();
-    return XLSX.read(buffer,{type:'array',cellDates:true,raw:false});
+    return XLSX.read(buffer,readOptions);
   }
   const library=embedded?.textContent || `importScripts(${JSON.stringify(new URL('../../vendor/xlsx.full.min.js',document.baseURI).href)});`;
-  const code=library+'\nself.onmessage=function(event){try{self.postMessage({workbook:XLSX.read(event.data,{type:"array",cellDates:true,raw:false})});}catch(error){self.postMessage({error:String(error.message||error)});}};';
+  const code=library+'\nself.onmessage=function(event){try{self.postMessage({workbook:XLSX.read(event.data,'+JSON.stringify(readOptions)+')});}catch(error){self.postMessage({error:String(error.message||error)});}};';
   const url=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));
   const job=state.activeImportJob;
   return new Promise((resolve,reject)=>{

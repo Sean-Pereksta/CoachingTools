@@ -59,7 +59,7 @@ for(const vendor of ['xlsx.full.min.js','html2pdf.bundle.min.js','jspdf.umd.min.
   if(!html.includes(marker)) throw new Error('Portable vendor marker missing: '+vendor);
   html=html.replace(marker,()=>'<script data-allstar-vendor="'+vendor+'">\n'+readSuite('vendor/'+vendor).replace(/<\/script/gi,'<\\/script')+'\n<\/script>');
 }
-for(const shared of ['coachtools-sync.js','coachtools-storage.js','coachtools-identity.js','coachtools-monthly.js','coachtools-monthly-review.js','coachtools-import.js','coachtools-close-policy.js','coachtools-shell.js']){
+for(const shared of ['coachtools-sync.js','coachtools-storage.js','coachtools-identity.js','coachtools-stats-directory.js','coachtools-stats-manager-picker.js','coachtools-monthly.js','coachtools-monthly-review.js','coachtools-import.js','coachtools-close-policy.js','coachtools-shell.js']){
   const marker='<script src="../../shared/'+shared+'"><\/script>';
   if(!html.includes(marker)) throw new Error('Portable shared marker missing: '+shared);
   html=html.replace(marker,()=>'<script data-coachtools-source="shared/'+shared+'">\n'+readSuite('shared/'+shared).replace(/<\/script/gi,'<\\/script')+'\n<\/script>');

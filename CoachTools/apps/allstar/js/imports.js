@@ -3,7 +3,7 @@
  */
 'use strict';
 
-async function readFileWorkbook(file){
+async function readFileWorkbook(file,parseOptions){
   const timing=importTiming('file parsing/loading');
   if(state.activeImportJob) importJobStage(state.activeImportJob,'Parsing');
   updateProgress(`Loading file... ${file?.name||''}`,5);
@@ -16,7 +16,7 @@ async function readFileWorkbook(file){
   if(window.CoachToolsMonthly){
     try{const rows=window.CoachToolsMonthly.delimited(window.CoachToolsMonthly.decode(buf));if(window.CoachToolsMonthly.detect(rows)) wb={SheetNames:['Monthly Export'],Sheets:{},__coachToolsAoaBySheet:{'Monthly Export':rows}};}catch(_){}
   }
-  if(!wb) wb=await parseAllStarWorkbook(buf);
+  if(!wb) wb=await parseAllStarWorkbook(buf,parseOptions);
   timing.end(`${(wb.SheetNames||[]).length} sheets`);
   if(state.activeImportJob) importJobStage(state.activeImportJob,'Parsed');
   return wb;
@@ -686,7 +686,7 @@ function directWorkbookFromCoachToolsDataset(dataset){
   const names=[...(dataset?.workbook?.sheets||[])], aoaBySheet={};
   names.forEach(name=>{ aoaBySheet[name]=dataset?.workbook?.data?.[name]?.aoa||[]; });
   // Loader-compatible adapter: SheetJS objects are intentionally not rebuilt.
-  return {SheetNames:names,Sheets:Object.create(null),Props:{Title:dataset?.meta?.fileName||''},__coachToolsAoaBySheet:aoaBySheet,__coachToolsDirect:true,__monthlySelection:dataset?.meta?.monthlySelection||null,__monthlyBundle:dataset?.meta?.monthlyBundle||null};
+  return {SheetNames:names,Sheets:Object.create(null),Props:{Title:dataset?.meta?.fileName||''},__coachToolsAoaBySheet:aoaBySheet,__coachToolsDirect:true,__datedStatsConfig:dataset?.meta?.datedStatsConfig||null,__datedStatsAudit:dataset?.meta?.datedStatsAudit||[],__monthlySelection:dataset?.meta?.monthlySelection||null,__monthlyBundle:dataset?.meta?.monthlyBundle||null};
 }
 async function coachToolsDatasetFromAllStarBook(bookKey,datasetType){
   if(state.data[bookKey]?.monthlyBundle)return window.CoachToolsMonthly.toDataset(state.data[bookKey].monthlyBundle,bookKey);
@@ -765,7 +765,7 @@ function beginAllStarCentralStage(){
   return {rollback(){ Object.assign(state,previous); }};
 }
 function allStarSourcesForDataset(datasetType){
-  return ({monthlyRetail:['retail_sv2','retail_wiper','retail_team_totals'],monthlyReferral:['referral_sv2','referral_wiper','referral_team_totals'],qa:['qa'],documentedCoaching:['documented_coaching'],checklist:['checklist'],compCoaching:['comp_calls']})[datasetType]||[];
+  return ({weeklyRetail:['weeklyRetail'],weeklyReferral:['weeklyReferral'],monthlyRetail:['retail_sv2','retail_wiper','retail_team_totals'],monthlyReferral:['referral_sv2','referral_wiper','referral_team_totals'],qa:['qa'],documentedCoaching:['documented_coaching'],checklist:['checklist'],compCoaching:['comp_calls']})[datasetType]||[];
 }
 function invalidateAllStarCentralBatch(changedDatasets,options={}){
   const sources=[...new Set((changedDatasets||[]).flatMap(allStarSourcesForDataset))];
@@ -796,6 +796,8 @@ async function syncAllStarFromCoachToolsData(options={}){
   const job=options.job||null;
   await window.CoachToolsData.ready();
   const mappings=[
+    ['weeklyRetail',(file,wb,common)=>loadDatedStatsFile('weeklyRetail',file,{workbook:wb,...common})],
+    ['weeklyReferral',(file,wb,common)=>loadDatedStatsFile('weeklyReferral',file,{workbook:wb,...common})],
     ['monthlyRetail',(file,wb,common)=>loadRetailFile(file,{workbook:wb,...common})],
     ['monthlyReferral',(file,wb,common)=>loadReferralFile(file,{workbook:wb,...common})],
     ['qa',(file,wb,common)=>processImportedSource('qa',file,{label:'QA Stats',bookKey:'qa',workbook:wb,...common})],
@@ -819,7 +821,8 @@ async function syncAllStarFromCoachToolsData(options={}){
     const monthlyArea=datasetType==='monthlyRetail'?'retail':datasetType==='monthlyReferral'?'referral':'';
     const localMonthlyTime=monthlyArea?Date.parse(state.sourceMeta?.[`${monthlyArea}_sv2`]?.lastImportedAt||''):NaN;
     const reviewedMonthlyUpdate=monthlyArea && meta.classificationMethod==='reviewed-monthly-bundle' && !sameAllStarCentralIdentity(synced[datasetType],identity) && (!Number.isFinite(localMonthlyTime)||Date.parse(meta.importedAt)>localMonthlyTime);
-    if(slotReady&&!reviewedMonthlyUpdate){ reused++; continue; }
+    const weeklyUpdate=isDatedStatsSource(datasetType)&&!sameAllStarCentralIdentity(synced[datasetType],identity);
+    if(slotReady&&!reviewedMonthlyUpdate&&!weeklyUpdate){ reused++; continue; }
     changed.push({datasetType,identity});
   }
   if(!changed.length){
@@ -863,7 +866,7 @@ async function syncAllStarFromCoachToolsData(options={}){
     }
     if(!active()) throw Object.assign(new Error('Central synchronization cancelled.'),{cancelled:true});
     const invalidation=invalidateAllStarCentralBatch(applied,{deferTeamRebuild:!!job||!!options.deferTeamRebuild});
-    const categorizable=applied.some(type=>['monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist','compCoaching'].includes(type));
+    const categorizable=applied.some(type=>['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist','compCoaching'].includes(type));
     if(categorizable){
       if(job) setAllStarStartupPhase(job,90,96,'Source data refreshed — categorization is waiting for the button…');
       markCategorizationNeeded(options.reason||'central IndexedDB synchronization',invalidation.sources);
@@ -917,7 +920,7 @@ async function importCoachToolsBatch(){
       showProgress(`Importing ${window.CoachToolsImport.SOURCES[type]?.label||type}...`,Math.round(index/batch.recognized.length*100));
       try{
         let ok=true;
-        if(type==='weeklyRetail'||type==='weeklyReferral') ok=!!(await window.CoachToolsImport.saveRecognizedEntry(entry));
+        if(type==='weeklyRetail'||type==='weeklyReferral'){ ok=!!(await window.CoachToolsImport.saveRecognizedEntry(entry)); if(ok){ const result=await syncAllStarFromCoachToolsData(); if(result.error)throw new Error(result.error); } }
         else if(type==='monthlyRetail') ok=await loadRetailFile(entry.file,{monthlyBundle:entry.parsed?.meta?.monthlyBundle});
         else if(type==='monthlyReferral') ok=await loadReferralFile(entry.file,{monthlyBundle:entry.parsed?.meta?.monthlyBundle});
         else if(type==='qa') ok=await loadQAFile(entry.file);
@@ -1131,7 +1134,7 @@ function mergeCategorizedCell(row, header, value){
   row[header]=vals.join('; ');
 }
 function categorizedSourceRowsForBuild(){
-  return allSourceKeys().filter(src=>!isCategorizedSource(src)&&!TEAM_TOTAL_SOURCE_KEYS.includes(src)&&!['monthly_opportunity','monthly_wiper'].includes(src)).map(src=>({source:src,headers:getHeaders(src)||[],rows:getRowsRaw(src)||[]}));
+  return allSourceKeys().filter(src=>!isCategorizedSource(src)&&!isDatedStatsSource(src)&&!TEAM_TOTAL_SOURCE_KEYS.includes(src)&&!['monthly_opportunity','monthly_wiper'].includes(src)).map(src=>({source:src,headers:getHeaders(src)||[],rows:getRowsRaw(src)||[]}));
 }
 function buildCategorizedHeaderMaps(packs){
   const nondateUsed=new Set(['Representative','Coach']), dateUsed=new Set(['Representative','Coach','Date','Source']);
@@ -1152,6 +1155,7 @@ function buildCategorizedHeaderMaps(packs){
   return maps;
 }
 function renderCategorizedSummary(){
+  if(typeof renderDatedStatsImportSummary==='function')renderDatedStatsImportSummary();
   if(typeof renderMonthlyImportSummary==='function')renderMonthlyImportSummary();
   updateCategorizeImportButton();
   if(!els.categorizedDataSummary) return;
@@ -1278,7 +1282,7 @@ async function categorizeImportedData(options={}){
   const generation=Number(options.generation??state.lifecycle?.generation??0);
   const active=()=>!state.lifecycle?.closing && !state.lifecycle?.hidden && generation===Number(state.lifecycle?.generation||0);
   const packs=categorizedSourceRowsForBuild().filter(p=>(p.rows||[]).length);
-  if(!packs.length){ alert('Import data before categorizing.'); return false; }
+  if(!packs.length&&!datedStatsHasData()){ alert('Import data before categorizing.'); return false; }
   const timing=importTiming('categorization');
   const button=els.categorizeDataBtn;
   const categorizedBefore={...state.categorized,nondated:state.categorized.nondated,dated:state.categorized.dated,warnings:state.categorized.warnings,changedSources:state.categorized.changedSources,sourceSignatures:state.categorized.sourceSignatures,fragments:state.categorized.fragments}, categorizedFragmentsBefore=state.categorizedFragments, categorizationPendingBefore=!!state.categorizationPending, categorizationPendingReasonBefore=state.categorizationPendingReason||'';
@@ -1310,6 +1314,7 @@ async function categorizeImportedData(options={}){
         fragments[pack.source]=fragment; rebuilt.push(pack.source);
       }
     }
+    const legacyChanged=rebuilt.length>0||Object.keys(previousFragments).some(source=>!isDatedStatsSource(source)&&!packs.some(p=>p.source===source));
     const nondateByRep=new Map(), datedRows=[], missingCoachRows=[];
     const nondateHeaders=['Representative','Coach'], datedHeaders=['Representative','Coach','Date','Source'];
     headerMaps.forEach(map=>{ map.nondate.forEach(h=>{ if(!nondateHeaders.includes(h)) nondateHeaders.push(h); }); map.dated.forEach(h=>{ if(!datedHeaders.includes(h)) datedHeaders.push(h); }); });
@@ -1330,7 +1335,10 @@ async function categorizeImportedData(options={}){
     datedRows.sort((a,b)=>(a.Date||'').localeCompare(b.Date||'')||(a.Coach||'').localeCompare(b.Coach||'')||a.Representative.localeCompare(b.Representative));
     const nondateStats=packs.filter(p=>!(headerMaps.get(p.source)||{}).hasDate).map(p=>({source:p.source,rows:p.rows.length}));
     const datedStats=packs.filter(p=>(headerMaps.get(p.source)||{}).hasDate).map(p=>({source:p.source,rows:p.rows.length}));
+    const statsBuild=await buildDatedStatsCategory({active});
+    if(!active())throw Object.assign(new Error('Categorization cancelled.'),{cancelled:true});
     const builtAt=new Date().toISOString();
+    state.categorized={...state.categorized,stats:statsBuild};
     state.categorized.nondated={headers:nondateHeaders,rows:nonRows,builtAt,sourceStats:nondateStats};
     state.categorized.dated={headers:datedHeaders,rows:datedRows,builtAt,sourceStats:datedStats};
     state.categorized.warnings=warnings;
@@ -1343,9 +1351,10 @@ async function categorizeImportedData(options={}){
     updateProgress('Finalizing categorized import...',86); await yieldToBrowser();
     markImportCacheDirty('misc','categorized','categorized database build');
     markImportCacheDirty('misc','sourceMeta','categorized database build');
-    invalidateCategorizedConsumers(NONDATED_SOURCE,nonRows,nondateHeaders,'manual categorized database build');
-    invalidateCategorizedConsumers(DATED_SOURCE,datedRows,datedHeaders,'manual categorized database build');
-    refreshCategorizedGlobalIndexes([NONDATED_SOURCE,DATED_SOURCE]);
+    if(legacyChanged){invalidateCategorizedConsumers(NONDATED_SOURCE,nonRows,nondateHeaders,'manual categorized database build');
+    invalidateCategorizedConsumers(DATED_SOURCE,datedRows,datedHeaders,'manual categorized database build');}
+    for(const source of Object.keys(statsBuild.sources)){ state.sourceMeta[source]={...state.sourceMeta[source],dirtyCategorized:false}; if(categorizedBefore.stats?.sources?.[source]!==statsBuild.sources[source]){invalidateRunSourceIndex(source,'Dated Stats categorized'); selectiveResearchInvalidation({source,reason:'Dated Stats categorized',silent:true});} }
+    if(legacyChanged)refreshCategorizedGlobalIndexes([NONDATED_SOURCE,DATED_SOURCE]);
     if(!dataIndexReady()&&state.indexes&&typeof state.indexes==='object'){ delete state.indexes[NONDATED_SOURCE]; delete state.indexes[DATED_SOURCE]; }
     if(options.render!==false){ setStatus(); renderEditModelSafe(); updateResearchCacheBadge(); }
     if(options.persist!==false){ updateProgress('Saving categorized databases to IndexedDB...',97,{force:true}); const saved=await flushImportCacheSave('categorized database build complete'); if(!saved) throw new Error(state.importCache?.lastError||'The categorized databases could not be saved.'); }
@@ -1468,6 +1477,7 @@ const ALL_STAR_JSON_PACKAGE_TYPE='allstar-data-package';
 const ALL_STAR_JSON_PACKAGE_SCHEMA=1;
 const JSON_PACKAGE_SOURCE_KEYS=['retail_sv2','retail_wiper','referral_sv2','referral_wiper','referral_itac','qa',QA_DIRECT_SOURCE,'checklist','documented_coaching','comp_calls'];
 function jsonPackageSourceRecord(source){
+  if(isDatedStatsSource(source))return clonePlain(state.data[source]||{headers:[],rows:[]});
   const table=sourcePackageTable(source), book=bookForSource(source)||{};
   return {headers:[...(table.headers||[])],rows:table.arrayRows?[]:(table.rows||[]),fileName:sourceFileName(source)||'',selectedWorksheet:book.selectedSheets?.[source]||state.sourceMeta?.[source]?.selectedWorksheet||'',sourceVersion:Number(state.sourceMeta?.[source]?.sourceVersion||0)};
 }
@@ -1476,9 +1486,9 @@ function jsonSafeTeamTotals(source){
   return {fileName:ds.fileName||'',sheetName:ds.sheetName||'',headers:[...(ds.headers||[])],rows:ds.rows||[],mappings:ds.mappings||[],diagnostics:ds.diagnostics||{},rowsVersion:Number(ds.rowsVersion||0),identitySchemaVersion:Number(ds.identitySchemaVersion||TEAM_TOTAL_IDENTITY_SCHEMA_VERSION),identityHeader:ds.identityHeader||''};
 }
 function buildAllStarJsonPackage(){
-  const sources={}; JSON_PACKAGE_SOURCE_KEYS.forEach(source=>{ sources[source]=jsonPackageSourceRecord(source); });
+  const sources={}; ['weeklyRetail','weeklyReferral'].forEach(s=>sources[s]=jsonPackageSourceRecord(s)); JSON_PACKAGE_SOURCE_KEYS.forEach(source=>{ sources[source]=jsonPackageSourceRecord(source); });
   const customSources=(state.customSources||[]).map(c=>({id:c.id||id(),sourceKey:c.sourceKey,name:c.name||c.sourceKey,displayName:c.displayName||c.name||c.sourceKey,sourceType:'custom',framework:c.framework||'generic_table',fileName:c.fileName||'',sheetName:c.sheetName||'',headers:c.headers||[],rows:c.rows||[],headerRow:Number(c.headerRow||1),startCol:Number(c.startCol||1),manualHeaders:c.manualHeaders||[],columns:c.columns||{},aggregation:c.aggregation||{}}));
-  const categorized={nondated:{headers:state.categorized.nondated.headers||[],rows:state.categorized.nondated.rows||[],builtAt:state.categorized.nondated.builtAt||'',sourceStats:state.categorized.nondated.sourceStats||[]},dated:{headers:state.categorized.dated.headers||[],rows:state.categorized.dated.rows||[],builtAt:state.categorized.dated.builtAt||'',sourceStats:state.categorized.dated.sourceStats||[]},warnings:state.categorized.warnings||[],stale:categorizationIsStale(),staleReason:state.categorized.staleReason||'',changedSources:state.categorized.changedSources||[],sourceSignatures:state.categorized.sourceSignatures||{},fragments:state.categorized.fragments||{}};
+  const categorized={stats:state.categorized.stats||{version:1,sources:{}},nondated:{headers:state.categorized.nondated.headers||[],rows:state.categorized.nondated.rows||[],builtAt:state.categorized.nondated.builtAt||'',sourceStats:state.categorized.nondated.sourceStats||[]},dated:{headers:state.categorized.dated.headers||[],rows:state.categorized.dated.rows||[],builtAt:state.categorized.dated.builtAt||'',sourceStats:state.categorized.dated.sourceStats||[]},warnings:state.categorized.warnings||[],stale:categorizationIsStale(),staleReason:state.categorized.staleReason||'',changedSources:state.categorized.changedSources||[],sourceSignatures:state.categorized.sourceSignatures||{},fragments:state.categorized.fragments||{}};
   const totalRows=Object.values(sources).reduce((n,s)=>n+(s.rows||[]).length,0)+customSources.reduce((n,s)=>n+(s.rows||[]).length,0)+(categorized.nondated.rows||[]).length+(categorized.dated.rows||[]).length;
   return {packageType:ALL_STAR_JSON_PACKAGE_TYPE,schemaVersion:ALL_STAR_JSON_PACKAGE_SCHEMA,createdAt:new Date().toISOString(),appVersion:'all-star-modular',sources,rosters:{retail:state.data.retail.controlRoster||[],referral:state.data.referral.controlRoster||[]},teamTotals:{retail:jsonSafeTeamTotals('retail_team_totals'),referral:jsonSafeTeamTotals('referral_team_totals')},categorized,customSources,sourceMeta:state.sourceMeta||{},categorizedFragments:state.categorizedFragments||{},organizations:state.orgs||[],sourceSettings:{activeModelId:activeModelForImport()?.id||'',byModel:Object.fromEntries((state.models||[]).map(m=>[m.id,m.sourceSettings||{}]))},sourceFiles:{retail:state.data.retail.fileName||'',referral:state.data.referral.fileName||''},statistics:{totalRows,sourceCount:Object.keys(sources).length+customSources.length}};
 }
@@ -1528,12 +1538,12 @@ function stageAllStarJsonPackage(pkg,fileName){
   if(!pkg.sources || typeof pkg.sources!=='object' || !Object.keys(pkg.sources).length) throw new Error('Missing source data.');
   if(!pkg.rosters || !pkg.teamTotals || !pkg.categorized || !Array.isArray(pkg.customSources)) throw new Error('Invalid All-Star package: required structures are missing.');
   if(!Array.isArray(pkg.rosters.retail)||!Array.isArray(pkg.rosters.referral)||!Array.isArray(pkg.teamTotals.retail?.rows)||!Array.isArray(pkg.teamTotals.referral?.rows)) throw new Error('Missing source data: roster or Team Totals rows.');
-  const nextData=emptyJsonHydratedData(); JSON_PACKAGE_SOURCE_KEYS.forEach(source=>{ if(pkg.sources[source]) stageJsonSource(nextData,source,pkg.sources[source]); });
+  const nextData=emptyJsonHydratedData(); for(const source of ['weeklyRetail','weeklyReferral'])nextData[source]=pkg.sources[source]?{...validateJsonPackageRecord(pkg.sources[source],source)}:{fileName:'',headers:[],rows:[],config:null,audit:[]}; JSON_PACKAGE_SOURCE_KEYS.forEach(source=>{ if(pkg.sources[source]) stageJsonSource(nextData,source,pkg.sources[source]); });
   nextData.retail.fileName=pkg.sourceFiles?.retail||nextData.retail.fileName||fileName; nextData.referral.fileName=pkg.sourceFiles?.referral||nextData.referral.fileName||fileName;
   nextData.retail.controlRoster=Array.isArray(pkg.rosters.retail)?pkg.rosters.retail:[]; nextData.referral.controlRoster=Array.isArray(pkg.rosters.referral)?pkg.rosters.referral:[];
   nextData.retail.teamTotals=normalizeTeamTotalsDataset({...emptyTeamTotalsDataset('retail'),...(pkg.teamTotals.retail||{})},'retail_team_totals',{force:true});
   nextData.referral.teamTotals=normalizeTeamTotalsDataset({...emptyTeamTotalsDataset('referral'),...(pkg.teamTotals.referral||{})},'referral_team_totals',{force:true});
-  const categorized={nondated:{headers:pkg.categorized.nondated?.headers||['Representative','Coach'],rows:Array.isArray(pkg.categorized.nondated?.rows)?pkg.categorized.nondated.rows:[],builtAt:pkg.categorized.nondated?.builtAt||'',sourceStats:pkg.categorized.nondated?.sourceStats||[]},dated:{headers:pkg.categorized.dated?.headers||['Representative','Coach','Date'],rows:Array.isArray(pkg.categorized.dated?.rows)?pkg.categorized.dated.rows:[],builtAt:pkg.categorized.dated?.builtAt||'',sourceStats:pkg.categorized.dated?.sourceStats||[]},warnings:Array.isArray(pkg.categorized.warnings)?pkg.categorized.warnings:[],stale:!!pkg.categorized.stale,staleReason:pkg.categorized.staleReason||'',changedSources:Array.isArray(pkg.categorized.changedSources)?pkg.categorized.changedSources:[],sourceSignatures:pkg.categorized.sourceSignatures||{},fragments:pkg.categorized.fragments||{}};
+  const categorized={stats:pkg.categorized.stats||{version:1,sources:{}},nondated:{headers:pkg.categorized.nondated?.headers||['Representative','Coach'],rows:Array.isArray(pkg.categorized.nondated?.rows)?pkg.categorized.nondated.rows:[],builtAt:pkg.categorized.nondated?.builtAt||'',sourceStats:pkg.categorized.nondated?.sourceStats||[]},dated:{headers:pkg.categorized.dated?.headers||['Representative','Coach','Date'],rows:Array.isArray(pkg.categorized.dated?.rows)?pkg.categorized.dated.rows:[],builtAt:pkg.categorized.dated?.builtAt||'',sourceStats:pkg.categorized.dated?.sourceStats||[]},warnings:Array.isArray(pkg.categorized.warnings)?pkg.categorized.warnings:[],stale:!!pkg.categorized.stale,staleReason:pkg.categorized.staleReason||'',changedSources:Array.isArray(pkg.categorized.changedSources)?pkg.categorized.changedSources:[],sourceSignatures:pkg.categorized.sourceSignatures||{},fragments:pkg.categorized.fragments||{}};
   const customSources=pkg.customSources.map((c,i)=>{ if(!c?.sourceKey || !Array.isArray(c.headers)||!Array.isArray(c.rows)) throw new Error(`Missing source data: custom source ${i+1}.`); return {...c,id:c.id||id(),sourceType:'custom',aoa:[],aoaBySheet:{},sheetNames:c.sheetName?[c.sheetName]:[]}; });
   const sourceMeta={...(pkg.sourceMeta||{})}; Object.entries(pkg.sources).forEach(([source,record])=>{sourceMeta[source]={...(sourceMeta[source]||{}),sourceVersion:Number(record.sourceVersion||sourceMeta[source]?.sourceVersion||1),originalHeaders:record.headers||[],normalizedHeaders:record.headers||[],rowCount:(record.rows||[]).length,hydratedFromJson:true};});
   if(pkg.organizations!==undefined&&!Array.isArray(pkg.organizations)) throw new Error('Invalid All-Star package: organizations must be an array.');
@@ -1562,7 +1572,7 @@ async function loadJsonPackageFile(file){
   const staged=stageAllStarJsonPackage(parsed,file.name); updateProgress('Hydrating normalized application state...',42,{force:true}); await yieldToBrowser();
   commitStagedJsonPackage(staged);
   try{localStorage.setItem(MODEL_KEY,JSON.stringify(state.models));localStorage.setItem(ORG_BUILDER_KEY,JSON.stringify(state.orgs));}catch(_){}
-  markRetailPersistenceDirty('JSON package hydration'); markReferralPersistenceDirty('JSON package hydration'); JSON_PACKAGE_SOURCE_KEYS.filter(s=>!s.startsWith('retail')&&!s.startsWith('referral')).forEach(s=>markSourceCacheDirty(s,'JSON package hydration')); staged.customSources.forEach(c=>markSourceCacheDirty(c.sourceKey,'JSON package hydration')); ['categorized','customSources','sourceMeta','sourceSettings','orgs'].forEach(k=>markImportCacheDirty('misc',k,'JSON package hydration'));
+  markRetailPersistenceDirty('JSON package hydration'); markReferralPersistenceDirty('JSON package hydration'); [...JSON_PACKAGE_SOURCE_KEYS.filter(s=>!s.startsWith('retail')&&!s.startsWith('referral')),'weeklyRetail','weeklyReferral'].forEach(s=>markSourceCacheDirty(s,'JSON package hydration')); staged.customSources.forEach(c=>markSourceCacheDirty(c.sourceKey,'JSON package hydration')); ['categorized','customSources','sourceMeta','sourceSettings','orgs'].forEach(k=>markImportCacheDirty('misc',k,'JSON package hydration'));
   renderCustomSourcesList(); renderCategorizedSummary(); restoreImportFileLabels(); renderModelList(); populateRunModels(); renderOrgBuilder(); renderTeamTotalsImportControls(); setStatus(); renderEditModelSafe(); renderTeamSelect(); updateResearchCacheBadge();
   if(els.packagedFileName) els.packagedFileName.textContent=`${file.name} · normalized JSON hydrated directly`;
   updateProgress('Saving hydrated package locally...',88,{force:true}); const saved=await flushImportCacheSave('JSON package hydration complete'); if(!saved){ const message=state.importCache.lastError||'The JSON package loaded, but its local IndexedDB save failed.'; console.warn(message); alert(message); }
@@ -1641,6 +1651,7 @@ async function loadPackagedFile(file){
 }
 
 function sourceFileName(source){
+  if(isDatedStatsSource(source))return state.data[source]?.fileName||'';
   if(source===NONDATED_SOURCE || source===DATED_SOURCE) return state.books[source]?.fileName || (categorizedStore(source).rows?.length?'Categorized database':'');
   if(isCustomSource(source)) return customSource(source)?.fileName || state.books[source]?.fileName || '';
   if(source.startsWith('retail')) return state.data.retail.fileName || state.books.retail.fileName;

@@ -106,6 +106,7 @@ function modelHealthDiagnostics(model,settings={}){
     items.forEach(item=>{ if(!headerMatch(headers,item.expected)) out.push(allStarDiagnostic({severity:'error',module:'model',source,title:`Missing column: ${item.expected}`,message:`${item.label||'Model configuration'} expects this column in ${labelSource(source)}.`,entity:item.expected,blocking:true})); });
   });
   (model.criteria||[]).forEach(c=>{
+    if(c.calcType==='datedStats'){try{const m=state.metrics.find(m=>m.id===c.datedStatsMetricId);if(!m)throw new Error('Select a reusable Dated Stats metric.');const pack=datedStatsCategory(m.source);if(pack.pending)throw new Error('Review reporting calendar and Categorize Data.');}catch(error){out.push(allStarDiagnostic({severity:'error',module:'model',source:c.source,title:c.name||'Dated Stats',message:error.message,blocking:true}));}}
     if(!c.name) out.push(allStarDiagnostic({severity:'warning',module:'model',source:c.source,title:'Unnamed criterion',message:'Name this criterion so audit details remain understandable.'}));
     if(c.calcType==='custom'&&!String(c.expression||'').trim()) out.push(allStarDiagnostic({severity:'error',module:'model',source:c.source,title:`${c.name||'Custom criterion'} has no expression`,message:'Enter a valid expression before running.',blocking:true}));
     (rowPullWarnings(c)||[]).filter(Boolean).forEach(w=>out.push(allStarDiagnostic({severity:'warning',module:'model',source:c.source,title:`${c.name||'Criterion'} phrase warning`,message:w})));

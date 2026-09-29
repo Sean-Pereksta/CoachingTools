@@ -344,6 +344,7 @@ function modelTraceRowsForCriterion(c,entry,opts){
 function modelTraceCalcLines(c,row,kind,cellType,traceRows,opts){
   const entry=row.entry, value=row.values?.[c.id], score=Number.isFinite(row.scoreParts?.[c.id]) ? row.scoreParts[c.id] : row.ranks?.[c.id];
   const sourceKeys=traceRows.sourceKeys||[], lines=[`${kind==='team'?'Team':'Representative'}: ${entry.name}`,`Criterion: ${c.name}`,`Cell: ${cellType==='score'?'Score / rank':'Value'}`,`Source: ${sourceKeys.map(s=>labelSource(s)||s).join(', ')}`,`Matching rows after date range and filters: ${(traceRows.refs||[]).length.toLocaleString()}`];
+  if(c.calcType==='datedStats'){const trace=entry.datedStatsTrends?.[c.id];lines.push('Dated numerical statistic',`Metric: ${trace?.metric?.name||''}`,`Calculation: ${trace?.metric?.aggregation||''}`,`Evaluation: ${trace?.rule?.mode||'aggregate'}`,`Complete period window: ${trace?.rule?.startDate||'available'} to ${trace?.rule?.endDate||'available'}`,`Result: ${value??'missing'} ${trace?.unit||''}`,`Valid periods: ${trace?.trend?.validPeriods||0}`,'Events are summarized independently; one representative-period contributes once.');return lines;}
   if(traceRows.displayColumn){ lines.push('Display Column',`Selected column: ${c.column||''}`,`Raw saved value: ${rawDisplayCellValue(value)??''}`,'This value is displayed without numeric conversion and does not affect scoring.');
   }else if(traceRows.trueValue){ const r=(traceRows.rows||[])[0]||{}, raw=r[c.trueValueColumn]; lines.push('True Team Value',`Value source: ${labelSource(c.trueValueSource)}`,`Selected column: ${c.trueValueColumn}`,`Team: ${entry.name}`,`Control tab: ${r._controlTab||''}`,`AA2 lookup key: ${r._summaryLookupKey||''}`,`Original summary name: ${r._summaryDisplayName||''}`,`Summary sheet: ${r._summarySheet||''}`,`Summary row: ${r._summaryRowNumber||''}`,`Raw source value: ${raw??''}`,`Parsed value: ${fmt(value,c.format)}`,'No representative aggregation was performed.');
   }else if(c.calcType==='qaScore' || c.source==='qa' || isCustomQAStyleSource(c.source)){
@@ -489,6 +490,7 @@ function lookupDisplayHtml(c,value){
 }
 function lookupDisplayCellClass(c,value){ const rule=matchingLookupDisplayRule(c,value); return rule?.style==='cell'&&rule.color&&rule.color!=='none'?`lookup-cell-${rule.color}`:''; }
 function valueDisplay(r,c){
+  if(c.calcType==='datedStats'){const trace=r.entry?.datedStatsTrends?.[c.id],unit=trace?.unit==='percentage'?'%':trace?.unit==='percentage points'?'pp':trace?.unit==='count'?'':trace?.unit||'';return `<span>${dsNumber(r.values[c.id])} ${esc(unit)}</span>${trace?.points?.length?datedStatsSparkline(trace.points):''}`;}
   if(c.calcType==='displayColumn') return lookupDisplayHtml(c,r.values?.[c.id]);
   return r.missingScores&&r.missingScores[c.id] ? '<span class="badge warn">No score</span>' : fmt(r.values[c.id],c.format);
 }
@@ -1094,7 +1096,7 @@ function requiredRunSourcesForModel(model, runOptions={}){
   const add=s=>{ if(s && all.has(s)) required.add(s); };
   const inspectValue=v=>{ if(typeof v==='string'){ expressionReferencedSources(v).forEach(add); const m=findMetricByRef(v); if(m) metricDependencies(m).forEach(add); } };
   const inspectObj=obj=>{ if(!obj || typeof obj!=='object') return; if(Array.isArray(obj)){ obj.forEach(inspectObj); return; } Object.entries(obj).forEach(([k,v])=>{ if(/source$/i.test(k) || ['source','leftSource','rightSource','customSource','trueValueSource','qualifierSource','numeratorSource','denominatorSource'].includes(k)) add(v); inspectValue(v); if(v&&typeof v==='object') inspectObj(v); }); };
-  (model?.criteria||[]).forEach(c=>{ if(c.calcType==='qaScore' || criterionUsesQA(c)) add(runOptions.qaTeamScoreMode==='sheetTeam'?activeDirectQASource():'qa'); if(isRowPullCriterion(c)) add(rowPullSourceForCriterion(c)); if(c.trueValueEnabled) add(c.trueValueSource); inspectObj(c); });
+  (model?.criteria||[]).forEach(c=>{ if(c.calcType==='datedStats'){add(state.metrics.find(m=>m.id===c.datedStatsMetricId)?.source||c.source);(c.datedStatsEventConditions||[]).forEach(condition=>add(condition.source));return;} if(c.calcType==='qaScore' || criterionUsesQA(c)) add(runOptions.qaTeamScoreMode==='sheetTeam'?activeDirectQASource():'qa'); if(isRowPullCriterion(c)) add(rowPullSourceForCriterion(c)); if(c.trueValueEnabled) add(c.trueValueSource); inspectObj(c); });
   inspectObj(model?.metrics||[]); inspectObj(model?.expressions||[]);
   return [...required].filter(Boolean);
 }

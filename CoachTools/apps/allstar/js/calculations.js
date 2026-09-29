@@ -647,10 +647,12 @@ function trueTeamCriterionValue(c, entry, opts={}){
 }
 
 function criterionValue(c, entry, opts={}){
+  if(c.calcType==='datedStats')return datedStatsCriterionValue(c,entry,opts);
   if(typeof AllStarAnalysis!=='undefined') return AllStarAnalysis.criterionValue(c,entry,opts,()=>criterionValueUncached(c,entry,opts));
   return criterionValueUncached(c,entry,opts);
 }
 function criterionValueUncached(c, entry, opts){
+  if(c.calcType==='datedStats')return datedStatsCriterionValue(c,entry,opts);
   if(c.calcType==='displayColumn') return displayColumnValue(c,entry,opts);
   if(entry.kind === 'team' && c.trueValueEnabled && TEAM_TOTAL_SOURCE_KEYS.includes(c.trueValueSource)) return trueTeamCriterionValue(c, entry, opts);
   if(c.calcType==='qaScore' || c.source==='qa' || isCustomQAStyleSource(c.source)) return valueQA(c,entry,opts);
