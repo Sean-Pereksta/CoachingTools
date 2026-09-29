@@ -1,6 +1,32 @@
 (function attachCoachToolsImport(root) {
   'use strict';
 
+  // Load small shared settings once. Discovery remains bounded; no report is ingested here.
+  const statsSettingsReady = root.CoachToolsStatsSettingsReady || (root.CoachToolsStatsSettingsReady = (() => {
+    if (!root.document) return Promise.resolve();
+    const scriptUrl = root.document.currentScript && root.document.currentScript.src;
+    function load(name, file) {
+      if (root[name]) return Promise.resolve(root[name]);
+      return new Promise((resolve, reject) => {
+        const script = root.document.createElement('script');
+        script.src = new URL(file, scriptUrl || root.location.href).href;
+        script.onload = () => resolve(root[name]);
+        script.onerror = () => reject(new Error('Could not load local stats settings: ' + file));
+        root.document.head.appendChild(script);
+      });
+    }
+    return load('CoachToolsStatsDirectory', 'coachtools-stats-directory.js').then(async directory => {
+      await directory.ready;
+      if (!root.CoachToolsStatsManagerPickerLoaded) {
+        root.CoachToolsStatsManagerPickerLoaded = true;
+        await load('CoachToolsStatsManagerPicker', 'coachtools-stats-manager-picker.js');
+      }
+    });
+  })());
+  // Surface failure when an upload is attempted, without an unhandled startup rejection.
+  statsSettingsReady.catch(error => { root.console?.warn('[Stats settings]', error.message); });
+
+
   const SOURCE_ORDER = Object.freeze(['documentedCoaching', 'weeklyRetail', 'weeklyReferral', 'qa', 'checklist']);
   const DATASET_ORDER = Object.freeze(['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'qa', 'documentedCoaching', 'checklist', 'compCoaching']);
   const sourceDefinitions = {
@@ -152,6 +178,7 @@
   }
 
   async function resolveScopeSnapshot(scope) {
+    await statsSettingsReady;
     const diagnostics = root.CoachToolsDiagnostics;
     if (diagnostics) diagnostics.start('Scope resolution');
     let identityPeople = [];
@@ -309,6 +336,7 @@
   }
 
   async function discoverFile(file, options) {
+    await statsSettingsReady;
     const workbook = await readWorkbook(file);
     const sheets = workbook.SheetNames || [];
     const data = {};
@@ -393,6 +421,8 @@
   }
 
   async function materializeDiscoveredEntry(entry, scope, options) {
+    await statsSettingsReady;
+    if(['weeklyRetail','weeklyReferral'].includes(entry.classification?.id) && root.CoachToolsStatsDirectory?.snapshot().aliases.some(a=>a.enabled!==false)) return parseFile(entry.file);
     if (!entry || !entry.rawWorkbook) return entry && entry.parsed;
     const source = entry.classification && entry.classification.id;
     if (!source) throw new Error('The file has not been safely classified.');
@@ -761,6 +791,10 @@
   function prepareScopedDataset(parsed, source, scope, options) {
     const aliases = { retail: 'weeklyRetail', referral: 'weeklyReferral', coaching: 'documentedCoaching' };
     source = aliases[source] || source;
+    if(root.CoachToolsStatsDirectory){
+      parsed=root.CoachToolsStatsDirectory.applyDataset(parsed,source);
+      scope=root.CoachToolsStatsDirectory.mapScope(scope,source);
+    }
     if (!SOURCES[source]) throw new Error('Unknown CoachTools source: ' + source);
     if(root.CoachToolsMonthly && ['monthlyRetail','monthlyReferral'].includes(source)){
       if(parsed?.meta?.monthlyBundle){
