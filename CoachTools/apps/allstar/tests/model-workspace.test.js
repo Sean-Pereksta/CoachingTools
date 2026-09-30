@@ -73,11 +73,11 @@ async function integration(){
       state.editModel.criteria[0].points=2;renderEditModel();
     `);
     await app.run('window.AllStarModelWorkspace.preview()');
-    assert.deepEqual(plain(app.run('[...document.querySelectorAll("#modelSamplePreviewResult tbody tr")].map(row=>[...row.querySelectorAll("td")].map(cell=>cell.textContent))')),[['Alice Able','1','20.00','Qualifying'],['Bob Baker','2','60.00','Qualifying']]);
+    assert.deepEqual(plain(app.run('[...document.querySelectorAll("#modelSamplePreviewResult tbody tr")].map(row=>[...row.querySelectorAll("td")].map(cell=>cell.querySelector(":scope > span")?.textContent||cell.textContent))')),[['Alice Able','1','20.00','Qualifying'],['Bob Baker','2','60.00','Qualifying']]);
     assert.equal(app.run('findModel("preview-model").criteria[0].points'),1,'sample preview must not persist unsaved changes');
     app.run(`state.editModel.criteria[0].audience='team';renderEditModel();`);
     await app.run('window.AllStarModelWorkspace.preview()');
-    assert.deepEqual(plain(app.run('[...document.querySelectorAll("#modelSamplePreviewResult tbody tr")].map(row=>[...row.querySelectorAll("td")].map(cell=>cell.textContent))')),[['Alpha','1','80.00','Qualifying']]);
+    assert.deepEqual(plain(app.run('[...document.querySelectorAll("#modelSamplePreviewResult tbody tr")].map(row=>[...row.querySelectorAll("td")].map(cell=>cell.querySelector(":scope > span")?.textContent||cell.textContent))')),[['Alpha','1','80.00','Qualifying']]);
     assert.equal(app.run('document.getElementById("modelSamplePreviewBtn").disabled'),false);
     console.log('PASS actual Model-to-Research shortcuts, numeric/team/display semantics, persisted reopening, and isolated representative/team sample previews');
   }finally{app.close();}

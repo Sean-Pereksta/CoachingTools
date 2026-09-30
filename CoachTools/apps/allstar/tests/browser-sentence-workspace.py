@@ -1,5 +1,5 @@
 # Isolated DOM smoke test. Legacy application APIs are fixture adapters, not the full repository.
-import asyncio,json
+import asyncio,json,os
 from pathlib import Path
 from playwright.async_api import async_playwright
 ROOT=Path(__file__).resolve().parents[1]/'js'
@@ -35,7 +35,7 @@ function evaluateDatedStatsResearch(item,progress){const m=state.metrics.find(m=
 '''
 async def main():
  async with async_playwright() as p:
-  browser=await p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
+  browser=await p.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/chromium'),headless=True,args=['--no-sandbox'])
   page=await browser.new_page(viewport={'width':1280,'height':900})
   errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
   await page.set_content('<html><head></head><body><div class="toolbar"><button id="researchBtn">Research</button></div></body></html>')
@@ -79,6 +79,7 @@ async def main():
   # Reopen: IDs, AND semantics and modifiers must survive.
   await page.get_by_role('button',name='Close sentence builder').click()
   await page.evaluate('(id)=>openResearchItemEditor(id)',created['id'])
+  await page.locator('[data-sq-section="when"]').evaluate('(section)=>section.open=true')
   assert await page.get_by_role('button',name='Description contains “cash”',exact=False).count()==1
   assert await page.get_by_role('button',name='Type equals “Documented”',exact=False).count()==1
   # Output change marks stale; table preview uses the same filtered results.
