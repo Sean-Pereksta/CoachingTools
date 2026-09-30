@@ -424,6 +424,21 @@
     document.head.appendChild(script);
   }
 
+  function installGapsWeekAlignmentScript() {
+    if (!sharedBase || app.id !== 'coaching-gaps' || document.getElementById('coaching-gaps-week-alignment-script')) return;
+    const src = new URL('coaching-gaps-week-alignment.js', sharedBase).href;
+    if (document.readyState === 'loading') {
+      const safeSrc = src.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      document.write(`<script id="coaching-gaps-week-alignment-script" src="${safeSrc}"><\/script>`);
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'coaching-gaps-week-alignment-script';
+    script.src = src;
+    script.async = false;
+    document.head.appendChild(script);
+  }
+
   function loadSharedScript(name, readyCheck) {
     if (typeof readyCheck === 'function' && readyCheck()) return Promise.resolve(true);
     if (!sharedBase) return Promise.resolve(false);
@@ -461,6 +476,7 @@
     else root.setTimeout(run, 650);
   }
 
+  installGapsWeekAlignmentScript();
   installChunkedStartupLoader();
   installDockChunkLoaderScript();
   installCoachTimelineCoordinatorRangeScript();
