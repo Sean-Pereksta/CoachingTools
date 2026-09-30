@@ -54,6 +54,8 @@
   }
 
   const state = {
+    sourceMode: false,
+    sources: {},
     workbook: null,
     fileName: '',
     sheets: [],
@@ -568,41 +570,8 @@
     setTimeout(() => URL.revokeObjectURL(url), 1200);
   }
   async function snipWorkbook(button) {
-    const target = doc?.querySelector('#psUploadOverlay .psUploadShell'), overlay = doc?.getElementById('psUploadOverlay'), wrap = doc?.querySelector('.psUploadTableWrap'), table = wrap?.querySelector('table');
-    if (!target || !overlay || !wrap || !table) throw new Error('Workbook scorecard is not ready to snip.');
-    const old = button?.textContent;
-    if (button) { button.disabled = true; button.textContent = 'Snipping…'; }
-    try {
-      const html2canvas = await ensureHtml2Canvas();
-      const exportWidth = Math.ceil(Math.max(target.getBoundingClientRect().width, target.scrollWidth, table.scrollWidth + 28));
-      const estimatedHeight = Math.ceil(target.scrollHeight + Math.max(0, wrap.scrollHeight - wrap.clientHeight));
-      const scale = Math.max(.72, Math.min(2, Math.sqrt(28000000 / Math.max(1, exportWidth * estimatedHeight))));
-      overlay.classList.add('psUploadExportSafe');
-      let canvas;
-      try {
-        canvas = await html2canvas(target, {
-          backgroundColor: null,
-          scale,
-          useCORS: true,
-          logging: false,
-          windowWidth: Math.max(doc.documentElement.clientWidth, exportWidth),
-          windowHeight: Math.max(doc.documentElement.clientHeight, estimatedHeight),
-          onclone: cloned => {
-            const clonedOverlay = cloned.getElementById('psUploadOverlay'), clonedTarget = cloned.querySelector('#psUploadOverlay .psUploadShell'), clonedWrap = cloned.querySelector('.psUploadTableWrap'), clonedTable = clonedWrap?.querySelector('table');
-            clonedOverlay?.classList.add('psUploadExportSafe');
-            if (clonedTarget) { clonedTarget.style.width = `${exportWidth}px`; clonedTarget.style.maxWidth = 'none'; clonedTarget.style.margin = '0'; }
-            if (clonedWrap) { clonedWrap.style.maxHeight = 'none'; clonedWrap.style.overflow = 'visible'; }
-            if (clonedTable) { clonedTable.style.width = '100%'; clonedTable.style.minWidth = `${Math.max(860, table.scrollWidth)}px`; }
-            cloned.getElementById('psUploadColumns')?.removeAttribute('open');
-          }
-        });
-      } finally { overlay.classList.remove('psUploadExportSafe'); }
-      const department = clean(doc.getElementById('psUploadDepartment')?.value || 'workbook').toLowerCase();
-      const stamp = new Date().toISOString().slice(0, 10);
-      downloadBlob(await canvasBlob(canvas), `performance-scorecard-workbook-${department}-${stamp}.png`);
-    } finally {
-      if (button) { button.disabled = false; button.textContent = old || '✂ Snip'; }
-    }
+    if (!root.CoachToolsScorecardSharing) throw new Error('Image sharing could not load. Reopen the app.');
+    return root.CoachToolsScorecardSharing.open(true);
   }
 
   function setProgress(percent, label, detail) {
@@ -623,7 +592,8 @@
     box.classList.toggle('hide', !message);
   }
   function metricCell(metric, metricId) {
-    if (!metric || !Number.isFinite(metric.value)) return '<span class="psUploadMuted">—</span>';
+    if (!metric) return '<span class="psUploadMuted">—</span>';
+    if (!Number.isFinite(metric.value)) return `<span class="psUploadMuted">—</span><div class="psUploadMetricSub">${Number.isFinite(metric.num) ? formatInt(metric.num) : '—'} / ${Number.isFinite(metric.den) ? formatInt(metric.den) : '—'}</div>`;
     const volume = Number.isFinite(metric.num) && Number.isFinite(metric.den) ? `${formatInt(metric.num)} / ${formatInt(metric.den)}` : 'direct rate';
     const trend = Number.isFinite(metric.trend) ? `${metric.trend >= 0 ? '▲' : '▼'} ${Math.abs(metric.trend * 100).toFixed(1)} pp` : 'No trend';
     const trendClass = Number.isFinite(metric.trend) ? (metric.trend >= 0 ? 'good' : 'bad') : 'psUploadMuted';
@@ -632,8 +602,8 @@
     return `<div class="psUploadMetricMain">${formatPercent(metric.value)}</div><div class="psUploadMetricSub psUploadVolume">${escapeHtml(volume)}</div><div class="psUploadMetricSub ${trendClass} psUploadTrend">${escapeHtml(trend)}</div><div class="psUploadMetricSub psUploadGoalMeta"><span data-ps-goal-label="${metricId}">Goal ${escapeHtml(goal)}</span> · <span data-ps-goal-gap="${metricId}">${escapeHtml(gap)}</span></div>${weeks.length ? `<div class="psUploadWeeks">${weeks.map(value => `<span>${escapeHtml(value)}</span>`).join('')}</div>` : ''}`;
   }
   function availableMetrics(department, rows) {
-    const preferred = department === 'Retail' ? ['consumer', 'insurance', 'commercial', 'wiper'] : ['referral', 'wiper'];
-    return preferred.filter(metric => rows.some(row => row.metrics[metric] && Number.isFinite(row.metrics[metric].value)));
+    const preferred = state.sourceMode || department === 'Retail' ? ['consumer', 'insurance', 'commercial', 'wiper'] : ['referral', 'wiper'];
+    return preferred.filter(metric => rows.some(row => row.metrics[metric] && [row.metrics[metric].value,row.metrics[metric].num,row.metrics[metric].den].some(Number.isFinite)));
   }
   function visibleMetrics(department, rows) {
     return availableMetrics(department, rows).filter(metric => state.columns[metric] !== false);
@@ -670,6 +640,8 @@
   function renderResults(rows, diagnostics) {
     if (!doc) return;
     state.currentRows = rows; state.diagnostics = diagnostics;
+    const sourceNameCounts = new Map();
+    if(state.sourceMode) for(const item of state.sourceResult.allRows) { const name=root.WeeklyCore.nameKey(item.name);sourceNameCounts.set(name,(sourceNameCounts.get(name)||0)+1); }
     const department = doc.getElementById('psUploadDepartment').value, allMetrics = availableMetrics(department, rows), metrics = visibleMetrics(department, rows), searchRows = filteredSortedRows(rows), filtered = root.CoachToolsCompleteness ? root.CoachToolsCompleteness.filter(searchRows,metrics,(row,id)=>row.metrics[id]?.value,doc.getElementById('psCompletenessMode')?.value||'none',doc.getElementById('psCompletenessThreshold')?.value) : searchRows, showCoverage = state.columns.coverage !== false;
     const completenessSummary=doc.getElementById('psCompletenessSummary');
     if(completenessSummary) completenessSummary.textContent=`Showing ${filtered.length} of ${searchRows.length} representatives · ${searchRows.length-filtered.length} hidden for incomplete data`;
@@ -683,20 +655,28 @@
     ];
     doc.getElementById('psUploadSummary').innerHTML = cards.map(card => `<div class="psUploadSummaryCard ${card.metric ? goalClass(card.metric, card.goalValue) : ''}" ${card.metric ? `data-ps-goal-metric="${card.metric}" data-ps-goal-value="${card.goalValue}"` : ''}><div class="psUploadSummaryLabel">${escapeHtml(card.label)}</div><div class="psUploadSummaryValue">${escapeHtml(card.value)}</div><div class="psUploadSummarySub">${card.metric ? `${escapeHtml(card.subVolume)} · <span data-ps-goal-label="${card.metric}">Goal ${escapeHtml(goalService()?.format(card.metric) || 'No goal')}</span>` : escapeHtml(card.sub)}</div></div>`).join('');
     const relevantSheets = state.sheets.filter(sheet => sheetMatchesDepartment(sheet, department)), found = relevantSheets.map(sheetSummaryText).join(' · '), windowText = state.window ? `${formatDate(state.window.start)} – ${formatDate(state.window.end)}` : 'No usable dates detected';
-    doc.getElementById('psUploadMeta').innerHTML = `<b>${escapeHtml(state.fileName || 'Workbook')}</b> · ${escapeHtml(windowText)} · ${escapeHtml(diagnostics.rosterSource)}<br><span>${escapeHtml(found || 'No department-matched sheets')}</span>`;
+    if (state.sourceMode) {
+      const labels = Object.values(state.sources).map(source => `${source.fileName} · ${source.sheet || ''} · ${source.period || 'No source period'}`);
+      doc.getElementById('psUploadMeta').textContent = labels.join(' | ');
+    } else doc.getElementById('psUploadMeta').innerHTML = `<b>${escapeHtml(state.fileName || 'Workbook')}</b> · ${escapeHtml(windowText)} · ${escapeHtml(diagnostics.rosterSource)}<br><span>${escapeHtml(found || 'No department-matched sheets')}</span>`;
     const warning = [];
     if (relevantSheets.some(sheet => !sheet.hasDates)) warning.push('Sheets without a usable date column are read in full unless Workbook Date supplies a week.');
     if (doc.getElementById('psUploadCoach').value !== '__ALL__' && !diagnostics.coachMatchCount) warning.push('No exact coach/team match was found; roster fallback was used.');
     warning.push('This live page reads the uploaded workbook only; stored Retail Weekly / Referral Weekly data and QA are not written or changed.');
-    doc.getElementById('psUploadNotice').textContent = warning.join(' ');
+    doc.getElementById('psUploadNotice').textContent = state.sourceMode ? `${diagnostics.stats.matched} matched · ${diagnostics.stats.appointmentOnly} Opportunities only · ${diagnostics.stats.includedWiperOnly} Wipers only · ${diagnostics.stats.ambiguous} ambiguous · ${diagnostics.stats.conflicts} conflicting · ${diagnostics.stats.skipped} subtotals/duplicates skipped. Missing fields show —. Source exports are kept in this worksheet session.` : warning.join(' ');
+    const review = doc.getElementById('psSourceReview');
+    review.hidden = !state.sourceMode || !diagnostics.review?.length;
+    review.innerHTML = state.sourceMode ? '<summary>Import details / records needing attention</summary>' + diagnostics.review.map(item => `<p><b>${escapeHtml(item.name)}</b> · ${escapeHtml(item.source)} row ${escapeHtml(item.row)} · ${escapeHtml(item.message)}</p>`).join('') : '';
     doc.getElementById('psUploadTableHead').innerHTML = `<tr><th data-ps-sort="name">Representative${state.sort.key === 'name' ? (state.sort.dir > 0 ? ' ↑' : ' ↓') : ''}</th>${metrics.map(metric => `<th data-ps-sort="${metric}">${escapeHtml(METRIC_DEFS[metric].label)}${state.sort.key === metric ? (state.sort.dir > 0 ? ' ↑' : ' ↓') : ''}</th>`).join('')}${showCoverage ? `<th data-ps-sort="coverage">Coverage${state.sort.key === 'coverage' ? (state.sort.dir > 0 ? ' ↑' : ' ↓') : ''}</th>` : ''}</tr>`;
     const colspan = 1 + metrics.length + (showCoverage ? 1 : 0);
-    doc.getElementById('psUploadTableBody').innerHTML = filtered.length ? filtered.map(row => `<tr><td><b>${escapeHtml(row.name)}</b></td>${metrics.map(metric => { const value = row.metrics[metric]?.value; return `<td class="${goalClass(metric, value)}" data-ps-goal-metric="${metric}" data-ps-goal-value="${Number.isFinite(value) ? value : ''}">${metricCell(row.metrics[metric], metric)}</td>`; }).join('')}${showCoverage ? `<td><b>${row.weeks.size}/3 weeks</b><div class="psUploadMetricSub">${Object.keys(row.metrics).length ? 'Matched' : 'No KPI rows matched'}</div></td>` : ''}</tr>`).join('') : `<tr><td colspan="${colspan}" class="psUploadEmpty">No representatives match this view.</td></tr>`;
+    doc.getElementById('psUploadTableBody').innerHTML = filtered.length ? filtered.map(row => `<tr data-ps-identity-ambiguous="${state.sourceMode && sourceNameCounts.get(root.WeeklyCore.nameKey(row.name)) > 1 ? 'true' : 'false'}"><td><b>${escapeHtml(row.name)}</b>${state.sourceMode ? `<div class="psUploadMetricSub">${escapeHtml(row.coach || 'No coach provided')}</div>` : ''}</td>${metrics.map(metric => { const value = row.metrics[metric]?.value; return `<td class="${goalClass(metric, value)}" data-ps-goal-metric="${metric}" data-ps-goal-value="${Number.isFinite(value) ? value : ''}">${metricCell(row.metrics[metric], metric)}</td>`; }).join('')}${showCoverage ? `<td><b>${state.sourceMode ? 'Selected period' : `${row.weeks.size}/3 weeks`}</b><div class="psUploadMetricSub">${Object.keys(row.metrics).length ? 'Matched' : 'No KPI rows matched'}</div></td>` : ''}</tr>`).join('') : `<tr><td colspan="${colspan}" class="psUploadEmpty">No representatives match this view.</td></tr>`;
     doc.getElementById('psUploadIntro')?.classList.add('hide');
     doc.getElementById('psUploadResults').classList.remove('hide');
   }
   function recompute() {
-    if (!doc || !state.sheets.length) return;
+    if (!doc) return;
+    if (state.sourceMode) { recomputeSources(); return; }
+    if (!state.sheets.length) return;
     setError('');
     const department = doc.getElementById('psUploadDepartment').value, coachSelect = doc.getElementById('psUploadCoach');
     const selectedCoach = coachSelect.value === '__ALL__' ? '__ALL__' : coachSelect.options[coachSelect.selectedIndex].textContent;
@@ -705,6 +685,7 @@
   }
   function populateCoachOptions() {
     if (!doc) return;
+    if (state.sourceMode) { populateSourceCoaches(); return; }
     const select = doc.getElementById('psUploadCoach'), currentKey = normalizeName(currentScorecardCoachLabel()), coaches = new Map(), department = doc.getElementById('psUploadDepartment')?.value || currentScorecardDepartment();
     for (const sheet of state.sheets) {
       if (!sheetMatchesDepartment(sheet, department)) continue;
@@ -751,6 +732,7 @@
       }
       parsed.push({ name: target.name, kind: target.kind, department, headerIndex, headers: converted.headers, rows: converted.rows, hasDates: sheetHasDateField(converted.rows) });
     }
+    state.sourceMode = false;
     state.sheets = parsed;
     state.latestDate = dates.length ? new Date(Math.max(...dates.map(date => date.getTime()))) : null;
     state.window = threeWeekWindow(state.latestDate);
@@ -763,6 +745,88 @@
     setTimeout(hideProgress, 350);
   }
 
+  function sourceMarkup() {
+    return `<section class="psUploadIntro" id="psSourceUploads"><div class="psSourceGrid">${[['appointments','Rep Opportunities','Opportunities'],['wipers','Rep Wipers','Wipers']].map(([key,label,exportLabel]) => `<div><label class="psSourceLabel" for="psSourceFile-${key}">${label}</label><p>Upload the same ${exportLabel} export used by Weekly Data Builder.</p><input id="psSourceFile-${key}" type="file" accept=".csv,.tsv,.txt,.xlsx"><div id="psSourceStatus-${key}" role="status">No file loaded</div><label id="psSourceSheetLabel-${key}" hidden>Worksheet <select id="psSourceSheet-${key}"></select></label><label id="psSourcePeriodLabel-${key}" hidden>Source period <select id="psSourcePeriod-${key}"></select></label></div>`).join('')}</div></section>`;
+  }
+  function populateSourceCoaches() {
+    const select = doc.getElementById('psUploadCoach'), previous = select.value;
+    const coaches = new Map();
+    for (const row of state.sourceResult?.allRows || []) if (row.coach) coaches.set(root.WeeklyCore.nameKey(row.coach),row.coach);
+    select.innerHTML = '<option value="__ALL__">All coaches</option>' + [...coaches].sort((a,b)=>a[1].localeCompare(b[1])).map(([key,name])=>`<option value="${escapeHtml(key)}">${escapeHtml(name)}</option>`).join('');
+    select.value = coaches.has(previous) ? previous : '__ALL__';
+  }
+  function recomputeSources() {
+    const sources = Object.values(state.sources);
+    if (!sources.length || sources.some(s=>!s.rows || s.loading || (s.analysis.periods.length > 1 && !s.period))) {
+      state.currentRows = []; state.diagnostics = null;
+      doc.getElementById('psUploadResults').classList.add('hide');
+      return;
+    }
+    try {
+      const result = root.CoachToolsScorecardSourceImport.importSources(state.sources);
+      state.sourceResult = result;
+      populateSourceCoaches();
+      const selectedCoach = doc.getElementById('psUploadCoach').value;
+      const rows = selectedCoach === '__ALL__' ? result.rows : result.rows.filter(row=>root.WeeklyCore.nameKey(row.coach) === selectedCoach);
+      const diagnostics = {...result.diagnostics, matchedNames:rows.filter(row=>Object.keys(row.metrics).length).length};
+      setError(''); renderResults(rows, diagnostics);
+    } catch(error) { state.currentRows=[]; state.diagnostics=null; doc.getElementById('psUploadResults').classList.add('hide'); setError(error.message); }
+  }
+  function chooseSourceSheet(key, name) {
+    const source = state.sources[key], candidate = source.candidates.find(c=>c.name===name);
+    source.sheet = name; source.rows = candidate.rows; source.analysis = candidate.analysis;
+    source.period = candidate.analysis.periods.length === 1 ? candidate.analysis.periods[0] : '';
+    const periods = doc.getElementById(`psSourcePeriod-${key}`);
+    periods.innerHTML = '<option value="">Choose source period…</option>' + candidate.analysis.periods.map(p=>`<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+    periods.value = source.period;
+    doc.getElementById(`psSourcePeriodLabel-${key}`).hidden = candidate.analysis.periods.length < 2;
+    doc.getElementById(`psSourceStatus-${key}`).textContent = `${source.fileName} · ${candidate.analysis.periods.length} source period(s)${source.period ? ' · '+source.period : ''}`;
+    state.sourceMode = true; recomputeSources();
+  }
+  async function loadSourceFile(key, file) {
+    if (!file) return;
+    const existing = state.sources[key], previous = existing?.loading ? existing.previous : existing, pending = {loading:true,previous};
+    state.sources[key] = pending;
+    state.sourceMode = true; recomputeSources();
+    const status = doc.getElementById(`psSourceStatus-${key}`); status.textContent = 'Reading '+file.name+'…';
+    try {
+      if(file.size > 50*1024*1024) throw new Error('This file is larger than 50 MB. Save a smaller source export.');
+      const ext = file.name.split('.').pop().toLowerCase(), buffer = await file.arrayBuffer(), matrices = [];
+      if(ext === 'xlsx') {
+        const XLSX = await ensureXlsx(), workbook = XLSX.read(buffer, {type:'array',raw:true});
+        const rawRows = XLSX.__coachtoolsRawSheetToJson || XLSX.utils.sheet_to_json;
+        for (const name of workbook.SheetNames) matrices.push({name, rows:rawRows.call(XLSX.utils,workbook.Sheets[name],{header:1,defval:'',raw:true,blankrows:true})});
+      } else if(['csv','tsv','txt'].includes(ext)) {
+        const decoded = root.WeeklyCore.decodeText(buffer); matrices.push({name:'', rows:root.WeeklyCore.parseDelimited(decoded.text).rows});
+      } else throw new Error('Use CSV, TSV, TXT, or XLSX, as in Weekly Data Builder.');
+      await root.CoachToolsStatsDirectory?.ready;
+      const candidates=[];
+      for(const matrix of matrices) { try { candidates.push({...matrix,analysis:root.WeeklyCore.analyze(matrix.rows,key)}); } catch (_) {} }
+      if(!candidates.length) throw new Error('Could not identify '+(key === 'appointments' ? 'Opportunities' : 'Wipers')+' headers and representative names. Upload the original export with its headers.');
+      if(state.sources[key] !== pending) return;
+      state.sources[key] = {fileName:file.name,candidates};
+      const select = doc.getElementById(`psSourceSheet-${key}`);
+      select.innerHTML = candidates.map(c=>`<option value="${escapeHtml(c.name)}">${escapeHtml(c.name || 'Text export')}</option>`).join('');
+      const preferred = candidates.find(c=>(key === 'appointments' ? /opportun|appointment/i : /wiper/i).test(c.name)) || candidates[0];
+      select.value=preferred.name; doc.getElementById(`psSourceSheetLabel-${key}`).hidden = candidates.length < 2;
+      chooseSourceSheet(key, preferred.name);
+    } catch(error) {
+      if(state.sources[key] !== pending) return;
+      if(previous) state.sources[key]=previous; else delete state.sources[key];
+      recomputeSources(); status.textContent='Import failed: '+error.message; setError(error.message);
+    }
+  }
+  function initializeSources() {
+    const style=doc.createElement('style');
+    style.textContent='.psSourceGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.psSourceLabel{font-weight:800}.psSourceGrid p,.psSourceGrid [role=status]{font-size:12px;margin:6px 0}.psSourceGrid input,.psSourceGrid select{max-width:100%}#psSourceUploads{margin-bottom:12px}@media(max-width:700px){.psSourceGrid{grid-template-columns:1fr}}';
+    doc.head.append(style);
+    for(const key of ['appointments','wipers']) {
+      doc.getElementById(`psSourceFile-${key}`).addEventListener('change',event=>{loadSourceFile(key,event.target.files?.[0]).finally(()=>event.target.value='');});
+      doc.getElementById(`psSourceSheet-${key}`).addEventListener('change',event=>chooseSourceSheet(key,event.target.value));
+      doc.getElementById(`psSourcePeriod-${key}`).addEventListener('change',event=>{state.sources[key].period=event.target.value; state.sourceMode=true; recomputeSources();});
+    }
+  }
+
   function injectStyles() {
     if (!doc || doc.getElementById('psUploadStyles')) return;
     const style = doc.createElement('style');
@@ -773,18 +837,19 @@
     doc.head.appendChild(style);
   }
   function overlayMarkup() {
-    return `<div id="psUploadOverlay" class="hide"><div class="psUploadShell"><section class="psUploadTop"><div class="psUploadTitle"><div><h2>Live Workbook Scorecard</h2><p>Build a live scorecard directly from Retail / Referral workbook sheets without replacing stored CoachingTools weekly data.</p></div><div class="psUploadActions"><div class="psUploadCtl"><label>Department</label><select id="psUploadDepartment"><option value="Retail">Retail</option><option value="Referral">Referral</option></select></div><div class="psUploadCtl"><label>Coach</label><select id="psUploadCoach"><option value="__ALL__">All coaches</option></select></div><div class="psUploadCtl"><label>Find</label><input id="psUploadSearch" type="search" placeholder="Representative…" /></div><div class="psUploadCtl"><label for="psCompletenessMode">Data completeness</label><select id="psCompletenessMode"><option value="none">No completeness filter</option><option value="populated">Hide X or fewer populated columns</option><option value="missing">Hide X or more missing columns</option></select><label for="psCompletenessThreshold">X</label><input id="psCompletenessThreshold" type="number" min="0" step="1" value="0" style="width:55px" /></div><div class="psUploadCtl" role="group" aria-label="Workbook zoom"><span>Zoom</span><button class="psUploadBtn" type="button" data-scorecard-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button class="psUploadBtn" type="button" data-scorecard-zoom="reset" aria-label="Zoom 100 percent. Reset to 100 percent" title="Reset zoom to 100%">100%</button><button class="psUploadBtn" type="button" data-scorecard-zoom="in" aria-label="Zoom in" title="Zoom in">+</button></div><span id="psCompletenessSummary" aria-live="polite"></span><button class="psUploadBtn primary" id="psUploadChoose" type="button">Choose Excel</button><button class="psUploadBtn" id="psUploadClose" type="button">Back to Scorecard</button></div></div><input class="psUploadFileInput" id="psUploadFile" type="file" accept=".xlsx,.xls,.xlsm,.xlsb" /></section><div id="psUploadError" class="psUploadError hide"></div><div id="psUploadProgress" class="psUploadProgress hide"><div class="psUploadTrack"><div class="psUploadFill" id="psUploadProgressFill"></div></div><div class="psUploadProgressMeta"><span id="psUploadProgressLabel">Starting…</span><span id="psUploadProgressPct">0%</span></div><div class="psUploadProgressDetail" id="psUploadProgressDetail"></div></div><section class="psUploadIntro" id="psUploadIntro"><div class="psUploadDrop" id="psUploadDrop"><b>Drop in a raw Excel workbook</b><p>The reader scans the top 250 rows of every sheet and recognizes KPI pages from their actual headers, so a Retail sheet with Agent_Surname, Agent_Firstname, Team_Name, Cash Opps, Cash Apps, Insurance, Commercial, and similar fields no longer has to be named SV2. Team_Name is treated as the coach/team assignment. Retail and Referral sheets stay department-scoped.</p><button class="psUploadBtn primary" id="psUploadChooseHero" type="button">Select workbook</button></div></section><section class="psUploadResults hide" id="psUploadResults"><div class="psUploadSummary" id="psUploadSummary"></div><div class="psUploadNotice" id="psUploadNotice"></div><section class="psUploadWorkspace"><div class="psUploadWorkspaceHead"><div class="psUploadMeta" id="psUploadMeta">—</div><div class="psUploadWorkspaceTools"><details class="psUploadColumns" id="psUploadColumns"><summary class="psUploadBtn">☰ Columns</summary><div class="psUploadColumnMenu" id="psUploadColumnMenu"></div></details><button class="psUploadBtn" id="psUploadSnip" type="button">✂ Snip</button></div></div><div class="psUploadTableWrap"><table class="psUploadTable"><thead id="psUploadTableHead"></thead><tbody id="psUploadTableBody"></tbody></table></div></section></section></div></div>`;
+    return `<div id="psUploadOverlay" class="hide"><div class="psUploadShell"><section class="psUploadTop"><div class="psUploadTitle"><div><h2>Worksheet / Upload Scorecard</h2><p>Upload source exports or a workbook, then view and share the scorecard.</p></div><div class="psUploadActions"><div class="psUploadCtl"><label>Department</label><select id="psUploadDepartment"><option value="Retail">Retail</option><option value="Referral">Referral</option></select></div><div class="psUploadCtl"><label>Coach</label><select id="psUploadCoach"><option value="__ALL__">All coaches</option></select></div><div class="psUploadCtl"><label>Find</label><input id="psUploadSearch" type="search" placeholder="Representative…" /></div><div class="psUploadCtl"><label for="psCompletenessMode">Data completeness</label><select id="psCompletenessMode"><option value="none">No completeness filter</option><option value="populated">Hide X or fewer populated columns</option><option value="missing">Hide X or more missing columns</option></select><label for="psCompletenessThreshold">X</label><input id="psCompletenessThreshold" type="number" min="0" step="1" value="0" style="width:55px" /></div><div class="psUploadCtl" role="group" aria-label="Workbook zoom"><span>Zoom</span><button class="psUploadBtn" type="button" data-scorecard-zoom="out" aria-label="Zoom out" title="Zoom out">−</button><button class="psUploadBtn" type="button" data-scorecard-zoom="reset" aria-label="Zoom 100 percent. Reset to 100 percent" title="Reset zoom to 100%">100%</button><button class="psUploadBtn" type="button" data-scorecard-zoom="in" aria-label="Zoom in" title="Zoom in">+</button></div><span id="psCompletenessSummary" aria-live="polite"></span><button class="psUploadBtn primary" id="psUploadChoose" type="button">Choose Excel</button><button class="psUploadBtn" id="psUploadClose" type="button">Back to Scorecard</button></div></div><input class="psUploadFileInput" id="psUploadFile" type="file" accept=".xlsx,.xls,.xlsm,.xlsb" /></section>${sourceMarkup()}<div id="psUploadError" class="psUploadError hide"></div><div id="psUploadProgress" class="psUploadProgress hide"><div class="psUploadTrack"><div class="psUploadFill" id="psUploadProgressFill"></div></div><div class="psUploadProgressMeta"><span id="psUploadProgressLabel">Starting…</span><span id="psUploadProgressPct">0%</span></div><div class="psUploadProgressDetail" id="psUploadProgressDetail"></div></div><section class="psUploadIntro" id="psUploadIntro"><div class="psUploadDrop" id="psUploadDrop"><b>Drop in a raw Excel workbook</b><p>The reader scans the top 250 rows of every sheet and recognizes KPI pages from their actual headers, so a Retail sheet with Agent_Surname, Agent_Firstname, Team_Name, Cash Opps, Cash Apps, Insurance, Commercial, and similar fields no longer has to be named SV2. Team_Name is treated as the coach/team assignment. Retail and Referral sheets stay department-scoped.</p><button class="psUploadBtn primary" id="psUploadChooseHero" type="button">Select workbook</button></div></section><section class="psUploadResults hide" id="psUploadResults"><div class="psUploadSummary" id="psUploadSummary"></div><div class="psUploadNotice" id="psUploadNotice"></div><details id="psSourceReview" class="psUploadNotice" hidden></details><section class="psUploadWorkspace"><div class="psUploadWorkspaceHead"><div class="psUploadMeta" id="psUploadMeta">—</div><div class="psUploadWorkspaceTools"><details class="psUploadColumns" id="psUploadColumns"><summary class="psUploadBtn">☰ Columns</summary><div class="psUploadColumnMenu" id="psUploadColumnMenu"></div></details><button class="psUploadBtn" id="psUploadSnip" type="button">Copy Full Scorecard</button></div></div><div class="psUploadTableWrap"><table class="psUploadTable"><thead id="psUploadTableHead"></thead><tbody id="psUploadTableBody"></tbody></table></div></section></section></div></div>`;
   }
   function initializeUi() {
     if (!doc || doc.getElementById('psUploadOverlay')) return;
     const meta = doc.querySelector('meta[name="coachtools-id"]');
     if (!meta || meta.content !== 'performance-scorecard') return;
     injectStyles(); doc.body.insertAdjacentHTML('beforeend', overlayMarkup());
+    initializeSources();
     root.CoachToolsScorecardZoom?.refresh();
     const actions = doc.querySelector('.topbar .actions');
     if (actions) {
       const button = doc.createElement('button');
-      button.className = 'btn icon'; button.id = 'psUploadModeBtn'; button.type = 'button'; button.textContent = '⇪ Workbook Mode';
+      button.className = 'btn icon'; button.id = 'psUploadModeBtn'; button.type = 'button'; button.textContent = '⇪ Worksheet / Upload';
       actions.insertBefore(button, actions.firstChild);
       button.addEventListener('click', () => { doc.getElementById('psUploadDepartment').value = currentScorecardDepartment(); doc.getElementById('psUploadOverlay').classList.remove('hide'); });
     }
@@ -843,7 +908,7 @@
   const api = Object.freeze({
     VERSION,
     open() { if (doc) { initializeUi(); doc.getElementById('psUploadOverlay')?.classList.remove('hide'); } },
-    _test: Object.freeze({ clean, normalizeHeader, normalizeName, normalizePersonDisplay, parseNumber, parseDate, startOfSunday, dayKey, threeWeekWindow, classifySheet, classifySheetFromMatrix, inferSheetDepartment, sheetMatchesDepartment, findHeaderRow, rowsFromMatrix, nameFromRow, coachFromRow, dateFromRow, appointmentMetrics, wiperMetric, metricsFromRow, aggregateWorkbook })
+    _test: Object.freeze({ sourceMarkup, clean, normalizeHeader, normalizeName, normalizePersonDisplay, parseNumber, parseDate, startOfSunday, dayKey, threeWeekWindow, classifySheet, classifySheetFromMatrix, inferSheetDepartment, sheetMatchesDepartment, findHeaderRow, rowsFromMatrix, nameFromRow, coachFromRow, dateFromRow, appointmentMetrics, wiperMetric, metricsFromRow, aggregateWorkbook })
   });
   root.CoachToolsPerformanceScorecardUploadMode = api;
   if (doc) {

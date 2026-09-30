@@ -348,7 +348,7 @@
     if (!oldButton) return;
     const button = doc.createElement('button');
     button.id = 'psUploadExportMenu'; button.className = 'psUploadBtn'; button.type = 'button';
-    button.textContent = 'Share / Copy image';
+    button.textContent = 'Copy Full Scorecard';
     button.onclick = () => root.CoachToolsScorecardSharing.open(true);
     oldButton.replaceWith(button);
   }
