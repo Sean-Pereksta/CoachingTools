@@ -165,3 +165,19 @@
   }
   return { formatName, normalizeResult, wrapCore, mount, modeOf, STORAGE_KEY };
 });
+
+// Keep the optional third workflow separate from the Add/Modify transformation engine.
+(function loadWeeklyUpdateNames(root) {
+  'use strict';
+  const doc = root.document;
+  if (!doc || !root.WeeklyBuilderNames || doc.getElementById('weekly-builder-update-names-script')) return;
+  const current = doc.currentScript;
+  const src = current?.src ? new URL('weekly-data-builder-update-names.js', current.src).href : '../shared/weekly-data-builder-update-names.js';
+  if (doc.readyState === 'loading') {
+    doc.write('<script id="weekly-builder-update-names-script" src="' + src.replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"><\/script>');
+  } else {
+    const script = doc.createElement('script');
+    script.id = 'weekly-builder-update-names-script'; script.src = src; script.async = false;
+    doc.head.appendChild(script);
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : this);
