@@ -89,7 +89,7 @@ async def main():
   # Narrow screen layout must remain within the viewport; Escape closes dialog.
   await page.set_viewport_size({'width':390,'height':844})
   bounds=await page.locator('dialog').bounding_box();assert bounds['width']<=390,bounds
-  await page.keyboard.press('Escape');assert await page.locator('dialog').count()==0
+  await page.keyboard.press('Escape');await page.locator('dialog').wait_for(state='detached')
   assert not errors,errors
   await browser.close()
   print(json.dumps({'browser':'Chromium','result':'PASS','checks':['clickable sentence','plus on existing value','same-row AND','live loaded-row preview','distinct condition outcomes','save/reopen preserves AST','legacy item untouched','table/line use same results','mobile width','Escape closes'], 'page_errors':errors},indent=2))
