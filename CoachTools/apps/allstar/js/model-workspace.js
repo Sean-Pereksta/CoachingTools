@@ -65,6 +65,8 @@
     if(key===definitionKey) return;
     definitionKey=key; revision++;
     if(byId('modelSamplePreviewResult')) byId('modelSamplePreviewResult').textContent='Definition changed. Preview again to update the sample.';
+    if(byId('modelReadinessBody'))byId('modelReadinessBody').textContent='Review the changed definition to update configuration warnings.';
+    els.criteriaList.querySelectorAll('[data-model-found-preview-for]').forEach(box=>{if(!box.classList.contains('hidden'))box.textContent='Criterion definition changed. Preview again to update these matching rows.';});
   }
   function focusCriterion(cid){
     view().selected=cid;
@@ -73,6 +75,23 @@
       box.classList.toggle('modelCriterionSelected',selected);
       box.querySelector('.modelCriterionBody').hidden=!expanded&&!selected;
       box.querySelector('[data-model-edit]').setAttribute('aria-expanded',String(expanded||selected));
+    });
+  }
+  function reveal(node){
+    for(let parent=node?.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
+    if(node?.tagName==='DETAILS')node.open=true;
+    node?.scrollIntoView?.({block:'nearest'});node?.focus?.();
+  }
+  function reviewHealth(){
+    const health=modelHealthDiagnostics(state.editModel),host=byId('modelReadinessBody');
+    host.innerHTML=health.map((d,i)=>`<p class="${d.blocking?'researchWarn':'hint'}"><strong>${esc(d.title)}</strong> ${esc(d.message)} <button type="button" class="smallBtn" data-model-review="${i}">Review setting</button></p>`).join('')||'<p>No configuration warnings found by the existing preflight.</p>';
+    host.querySelectorAll('[data-model-review]').forEach(button=>button.onclick=()=>{
+      const d=health[Number(button.dataset.modelReview)],fields=['column','leftColumn','rightColumn','checkColumn','checkDateColumn','lookupMatchColumn','lookupReturnColumn'];
+      const criterion=state.editModel.criteria.find(c=>fields.some(key=>c[key]&&c[key]===d.entity))||state.editModel.criteria.find(c=>c.source===d.source);
+      if(!criterion)return reveal(byId('sourceSettingsPanel'));
+      byId('modelCriterionSearch').value='';byId('modelCriterionScope').value='all';filter();focusCriterion(criterion.id);
+      const box=[...els.criteriaList.querySelectorAll('[data-crit]')].find(n=>n.dataset.crit===criterion.id),key=fields.find(key=>criterion[key]===d.entity)||'source';
+      reveal(box.querySelector(`[data-cfield="${key}"]`)||box.querySelector('[data-model-edit]'));
     });
   }
   function groupControls(box,c){
@@ -132,6 +151,7 @@
       const host=document.createElement('section'); host.id='modelWorkspace'; host.className='modelWorkspace';
       host.innerHTML='<div class="modelWorkspaceHead"><div><strong>Model workspace</strong><p class="hint">Choose sources, define criteria, then check the results before running a report.</p></div><span id="modelWorkspaceStatus" role="status"></span></div><nav aria-label="Model sections"><button type="button" data-model-jump="modelNameInput">Overview</button><button type="button" data-model-jump="sourceSettingsPanel">Sources</button><button type="button" data-model-section="all">Criteria</button><button type="button" data-model-section="scoring">Scoring</button><button type="button" data-model-section="display">Display fields</button><button type="button" data-model-section="filters">Filters</button><button type="button" data-model-jump="modelWorkspacePreview">Preview</button><button type="button" data-model-jump="modelWorkspaceSummary">Health</button></nav><div id="modelWorkspaceSummary"></div><div class="modelWorkspaceSearch"><label>Find a criterion<input id="modelCriterionSearch" type="search" placeholder="Name, source, or column"></label><label>Show<select id="modelCriterionScope"><option value="all">All criteria</option><option value="scoring">Scoring criteria</option><option value="display">Display fields</option><option value="filters">Criteria with filters</option></select></label></div><div id="modelWorkspacePreview"><button id="modelSamplePreviewBtn" type="button">Preview sample</button> <button id="modelFullRunBtn" type="button">Run saved model</button><p class="hint">Preview up to 30 representatives (or teams for team-only models) using the current unsaved definition and all available dates. Sample ranks are relative to this sample. Reports and saved results are unchanged.</p><div id="modelSamplePreviewResult" role="status"></div></div>';
       body.prepend(host);
+      const readiness=document.createElement('details');readiness.className='modelSettingSection';readiness.id='modelReadiness';readiness.innerHTML='<summary>Readiness and field warnings</summary><button type="button" class="smallBtn" id="modelReviewConfigBtn">Check configuration</button><div id="modelReadinessBody" class="modelSettingContent">Check when ready to review missing fields and source requirements.</div>';host.appendChild(readiness);byId('modelReviewConfigBtn').onclick=reviewHealth;
       body.appendChild(byId('modelWorkspacePreview'));
       const sources=document.createElement('details');sources.className='modelSettingSection';sources.innerHTML='<summary>Source settings <span class="hint">Existing mappings and layout controls</span></summary>';
       byId('sourceSettingsPanel').before(sources);sources.appendChild(byId('sourceSettingsPanel'));
@@ -141,7 +161,7 @@
       byId('modelCriterionSearch').oninput=filter; byId('modelCriterionScope').onchange=filter;
       host.addEventListener('click',event=>{
         const jump=event.target.closest('[data-model-jump]');
-        if(jump){ const node=byId(jump.dataset.modelJump); node?.scrollIntoView?.({block:'start',behavior:'smooth'}); node?.focus?.(); }
+        if(jump){ const node=byId(jump.dataset.modelJump==='modelWorkspaceSummary'?'modelReadiness':jump.dataset.modelJump);reveal(node); }
         const section=event.target.closest('[data-model-section]');
         if(section){ byId('modelCriterionScope').value=section.dataset.modelSection; filter(); els.criteriaList?.scrollIntoView?.({block:'start'}); }
       });
@@ -233,6 +253,7 @@
       return result;
     };
     const list=renderModelList;renderModelList=function(...args){const result=list(...args);overview();return result;};renderModelList();
+    const foundPreview=renderModelCriterionPreview;renderModelCriterionPreview=function(...args){return '<p class="hint">Current criterion draft · all available dates · matching source rows. Matching a filter does not guarantee a usable scoring value.</p>'+foundPreview(...args);};
     const editEvent=event=>{
       if(event.target.closest('#modelWorkspace')||event.target.closest('#modelWorkspacePreview'))return;
       syncEditModelFields();invalidate();clearTimeout(timer);timer=setTimeout(()=>{summary();els.criteriaList.querySelectorAll('[data-crit]').forEach(box=>{const c=getEditCriterion(box.dataset.crit);box.querySelector('.modelCriterionExplanation').textContent=describe(c);box.querySelector('.modelCriterionName').textContent=c.name;});},220);
