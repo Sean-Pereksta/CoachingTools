@@ -98,3 +98,19 @@ test('unknown schema and cancellation fail safely',async()=>{
   const {E,calls}=harness();await assert.rejects(()=>E.research(observations,metric,{sentenceQuery:{version:99}},[]));
   await assert.rejects(()=>E.research(observations,metric,{mode:'fixed',sentenceQuery:{version:1,root:group(event())}},[],{cancelled:()=>true}));assert.equal(calls.length,0);
 });
+
+test('impossible dates remain unknown and invalid date thresholds fail validation',()=>{
+  assert.equal(Q.predicate({d:'2026-02-30'},field('d','before','2026-03-01')),null);
+  assert.throws(()=>Q.validate(event({startDate:'2026-02-30',endDate:'2026-03-01'}),{coaching:['Description','Type']}));
+});
+test('numerical period counts cannot be negative or fractional',()=>{
+  for(const requiredPeriods of [-1,0,1.5])assert.throws(()=>Q.validate({kind:'stat',metricId:'ar',operator:'gte',threshold:50,mode:'qualifying_periods',requiredPeriods},{}));
+});
+test('decimal thresholds and explicit zero remain valid numbers',()=>{
+  Q.validate({kind:'stat',metricId:'ar',operator:'gte',threshold:50.5},{});
+  assert.equal(Q.predicate({value:50.5},field('value','gte',50.4)),true);
+});
+test('summaries expose qualifying periods and human-readable session comparisons',()=>{
+  assert.match(Q.describe(event({op:'lte',value:2})),/at most 2/);
+  assert.match(Q.describe({kind:'stat',metricId:'ar',mode:'qualifying_periods',requiredPeriods:3,operator:'lt',threshold:50}),/at least 3 reporting periods/);
+});
