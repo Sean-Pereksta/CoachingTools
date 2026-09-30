@@ -41,6 +41,10 @@ async function main(){
   assert.equal(h.run('state.editModel.criteria[0].points'),3,'Failed Model save retains the draft');
   assert.match(h.run('document.getElementById("modelWorkspaceStatus").textContent'),/Save failed.*draft retained/);
   h.run(`state.metrics.push(window.AllStarDatedStats.normalizeMetric({id:'dated-view',name:'Dated value',source:'weeklyRetail',statistic:'consumer_ar'}));state.models.push(normalizeModelForStorage({id:'dated-view-model',name:'Dated view model',criteria:[{...emptyCriterion(),id:'dated-criterion',calcType:'datedStats',datedStatsMetricId:'dated-view'}]}));openEditModel('dated-view-model');const datedDraft=clonePlain(state.editModel),datedControlCount=els.criteriaList.querySelectorAll('[data-dsr],[data-dscr]').length;`);
+  const datedSummary=h.run(`window.AllStarCreationViews.metricSummary(window.AllStarDatedStats.normalizeMetric({statistic:'consumer_share',aggregation:'combined_rate',lastPeriods:3,periodSelection:'valid',output:'summary',summary:'change'}))`);
+  assert.match(datedSummary,/Consumer Opportunities ÷ \(Consumer Opportunities \+ Insurance Opportunities \+ Commercial Opportunities\) × 100/,'Saved summaries use the actual standard formula, including all denominator fields');
+  assert.match(datedSummary,/Combine all opportunities into one rate.*latest 3 valid periods per representative.*Change from first to latest/);
+  assert.doesNotMatch(datedSummary,/consumer_share|combined_rate/);
   assert.ok(h.run('datedControlCount')>12,'Focused grouping must retain every dated criterion control');
   h.run('document.getElementById("modelAllSettingsBtn").click();document.getElementById("modelAllSettingsBtn").click();');
   assert.equal(h.run('els.criteriaList.querySelectorAll("[data-dsr],[data-dscr]").length'),h.run('datedControlCount'));

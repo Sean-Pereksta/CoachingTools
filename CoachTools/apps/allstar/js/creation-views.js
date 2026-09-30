@@ -14,7 +14,7 @@
     return ['documented_coaching','checklist','qa','date'].includes(metric.source)||['dated_items','qa_export'].includes(framework)?'Dated events / records':'Non-dated source';
   }
   function metricSummary(m){
-    if(m.dataCategory==='datedStats')return `${m.formulaLabel||m.statistic||m.field||'Custom calculation'} · ${m.aggregation||'existing aggregation'} · ${m.output||'value'}`;
+    if(m.dataCategory==='datedStats')return datedStatsMetricPresentation(m).summary;
     const field=m.field||'source records';
     const modes={count:`Count matching source rows (${field})`,distinct:`Distinct values of ${field}`,sum:`Sum of ${field}`,avg:`Average of ${field}`,median:`Median of ${field}`,min:`Minimum of ${field}`,max:`Maximum of ${field}`,component_avg:`Average selected fields: ${(m.componentFields||[]).join(' · ')}`,percent_item:`${field} ÷ ${m.percentOfField||'choose denominator'} · percentage`,pooled_rate:`${field} ÷ ${m.percentOfField||'choose eligible count'} · pooled rate`,percent:`Matching rows ÷ nonblank ${field} rows · percentage`,percent_total:`Matching rows ÷ nonblank ${field} rows · percentage`,percent_parent:`Matching rows ÷ nonblank ${field} rows · percentage`};
     return (m.mode==='formula'?'Custom calculation':modes[m.mode]||`${m.mode}: ${field}`)+` · ${(m.rules||[]).length} conditions`;
@@ -78,6 +78,7 @@
   const list=renderMetricList;
   renderMetricList=function(...args){const result=list(...args);els.metricsList.querySelectorAll('[data-mid]').forEach(row=>{
     const m=state.metrics.find(m=>m.id===row.dataset.mid);if(!m)return;
+    if(m.dataCategory==='datedStats')row.children[2].textContent='Dated Stats';
     const description=document.createElement('p');description.className='metricDefinitionNote';description.textContent=metricSummary(m);row.appendChild(description);
     const status=document.createElement('span');status.className='hint';status.textContent=category(m);description.append(' · ',status);
     const actions=row.querySelector('.metricListActions'),more=document.createElement('details');more.className='creationMore';more.innerHTML='<summary>More</summary>';
