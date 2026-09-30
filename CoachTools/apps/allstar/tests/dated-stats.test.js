@@ -42,7 +42,7 @@ function numbers(){
   console.log('PASS typed counts, percentage formats, durations, valid zeros, missing states, Cash definitions and distinct wiper mappings');
 }
 function calendarDuplicatesAndTrends(){
-  assert.throws(()=>E.period('2026-09-20',{}),/Review/);
+  assert.equal(E.period('2026-09-20',{}).start,'2026-09-20');
   assert.equal(E.period('2026-09-20',config().calendar).start,'2026-09-14');
   assert.equal(E.period('2026-09-20',{...config().calendar,label:'beginning'}).end,'2026-09-26');
   assert.equal(E.period('2026-09-22',{...config().calendar,label:'publication',offsetDays:-8}).start,'2026-09-14');
@@ -133,7 +133,7 @@ async function integration(){
     assert.equal(await h.run(`researchSaveRenderedResult(item,${JSON.stringify(plain(research))})`),true);
     const restored=await h.run(`researchRenderedResultGet('ds-research')`);assert.equal(restored.definition.metric.aggregation,'equal_rep');assert.ok(restored.data[0].contributions.length);assert.ok(restored.savedAt);
     h.run(`state.data.weeklyRetail.rows[0]['Total Appointments']=9;noteCategorizationSourceVersion('weeklyRetail');`);
-    assert.throws(()=>h.run(`datedStatsCategory('weeklyRetail')`),/Categorize/);
+    assert.equal(h.run(`datedStatsCategory('weeklyRetail').observations[0].values['Total Appointments'].value`),9);
     const frozen=await h.run(`researchRenderedResultGet('ds-research')`);assert.equal(frozen.data[0].value,45,'opening saved results does not refresh');
     h.run(`const pkg=buildAllStarJsonPackage();const staged=stageAllStarJsonPackage(pkg,'backup.json');`);
     assert.equal(h.run(`staged.nextData.weeklyRetail.config.calendar.label`),'ending');assert.equal(h.run(`staged.categorized.stats.sources.weeklyRetail.observations.length`),3);
@@ -162,11 +162,10 @@ async function importAndStorage(){
     h.run(`state.data.weeklyRetail={fileName:'',rows:[],headers:[]};`);
     assert.equal(await h.run(`loadImportedDataFromIndexedDB({deferRender:true})`),true);
     assert.equal(h.run(`state.data.weeklyRetail.rows.length`),2);
-    // Shared source replacement honors its active population; a single-week
-    // direct upload above, in contrast, preserves other historical periods.
+    // Shared uploads retain unrelated history, just like individual uploads.
     h.run(`state.centralSyncGeneration=0;window.CoachToolsData={ready:async()=>{},getDatasetVersion:type=>type==='weeklyRetail'?{datasetId:'weekly-v2',version:2}:null,getCurrent:async()=>({originalFileName:'shared.csv',data:{meta:{datedStatsConfig:config},workbook:{sheets:['Weekly'],data:{Weekly:{aoa:[headers,...[{...firstRows[1],Name:'Bob Baker'}].map(r=>headers.map(h=>r[h]??''))]}}}}})};`);
     const synced=await h.run(`syncAllStarFromCoachToolsData({persist:false,render:false})`);
-    assert.equal(synced.changed,true);assert.equal(h.run(`state.data.weeklyRetail.rows.length`),1);assert.equal(h.run(`state.data.weeklyRetail.rows[0].Name`),'Bob Baker');
+    assert.equal(synced.changed,true);assert.equal(h.run(`state.data.weeklyRetail.rows.length`),3);assert.equal(h.run(`state.data.weeklyRetail.rows[2].Name`),'Bob Baker');
     // A failed source must not discard committed history.
     const before=h.run(`JSON.stringify(state.data.weeklyRetail)`);
     assert.equal(await h.run(`loadDatedStatsFile('weeklyRetail',{name:'bad.csv',size:1},{workbook:{SheetNames:['Bad'],Sheets:{},__coachToolsAoaBySheet:{Bad:[['Wrong'],['No rows']]}},silent:true})`),false);
@@ -177,7 +176,7 @@ async function importAndStorage(){
 function mixedUnitsAndOutputs(){
   const cfg=config();cfg.fields.Rate={kind:'percentage',inputUnit:'per-date',unitsByDate:{'2026-09-06':'fraction','2026-09-13':'percentage-points'}};
   const obs=E.categorize([row('A','2026-09-06',10,1,{Rate:.8}),row('A','2026-09-13',10,2,{Rate:80}),row('A','2026-09-20',10,3,{Rate:1})],cfg,{headers:[...headers,'Rate']}).observations;
-  assert.deepEqual(obs.map(o=>o.values.Rate.value),[80,80,null]);assert.match(obs[2].values.Rate.reason,/unit needs review/);
+  assert.deepEqual(obs.map(o=>o.values.Rate.value),[80,80,null]);assert.match(obs[2].values.Rate.reason,/scale is unclear/);
   const m=metric({statistic:'',field:'Rate',kind:'percentage',output:'series'});
   assert.throws(()=>E.metricResult(obs,m,{scalar:true}),/series/);
   assert.deepEqual(E.metricResult(obs,m).points.map(p=>p.value),[80,80,null]);

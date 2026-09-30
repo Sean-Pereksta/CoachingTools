@@ -5,7 +5,29 @@
 'use strict';
 function isDatedStatsSource(source){return source==='weeklyRetail'||source==='weeklyReferral';}
 function datedStatsHasData(){return ['weeklyRetail','weeklyReferral'].some(s=>state.data[s]?.rows?.length);}
-function datedStatsConfig(source){const data=state.data[source]||{};return data.config||window.AllStarDatedStats.defaultConfig(source,data.headers||[]);}
+function datedStatsConfig(source){
+  const data=state.data[source]||{},detected=window.AllStarDatedStats.defaultConfig(source,data.headers||[],data.config?[]:data.rows||[]);
+  if(!data.config)return detected;
+  const fields={...data.config.fields};
+  // Retire only the former automatic mixed-scale blocker. Saved corrections
+  // and deliberately declared per-date units retain their interpretation.
+  for(const [field,def] of Object.entries(fields))if(def.inputUnit==='per-date'&&!def.unitReviewed&&!Object.keys(def.unitsByDate||{}).length&&detected.fields[field]?.inputUnit)fields[field]={...def,inputUnit:detected.fields[field].inputUnit};
+  return {...data.config,fields};
+}
+function datedStatsUploadedFields(){
+  return ['weeklyRetail','weeklyReferral'].flatMap(source=>Object.entries(datedStatsConfig(source).fields||{}).map(([field,def])=>window.AllStarDatedStats.normalizeMetric({id:'field:'+source+':'+encodeURIComponent(field),name:labelSource(source)+' → '+field,source,field,kind:def.kind,behavior:def.behavior,aggregation:'equal_rep',directField:true})));
+}
+function datedStatsAvailableMetrics(){return [...datedStatsUploadedFields(),...state.metrics.filter(m=>m.dataCategory==='datedStats'&&m.output!=='summary')];}
+function datedStatsResearchMetric(settings){
+  if(settings.fieldMetric)return datedStatsUploadedFields().find(m=>m.id===settings.fieldMetric.id);
+  return state.metrics.find(m=>m.id===settings.metricId);
+}
+function datedStatsSelectMetric(settings,metric){
+  delete settings.fieldMetric;delete settings.metricId;
+  if(metric.directField)settings.fieldMetric=clonePlain(metric);else settings.metricId=metric.id;
+  return settings;
+}
+function datedStatsLoadedObservations(){return ['weeklyRetail','weeklyReferral'].filter(source=>state.data[source]?.rows?.length).flatMap(source=>{try{return datedStatsCategory(source,true,true).observations;}catch(_){return [];}});}
 function datedStatsIdentity(name,source){
   const area=source==='weeklyReferral'?'referral':'retail',D=window.CoachToolsStatsDirectory;
   name=D?D.resolve(name,'name'):name;
@@ -16,19 +38,27 @@ function datedStatsIdentity(name,source){
   if(ensureRosterIndex().byRepKey.get(repId)?.conflict)return {reason:'Representative name matches multiple roster identities; review aliases before joining dated measurements and events'};
   return {id:repId,name:canonical};
 }
-function datedStatsCategory(source,required=true){
-  const pack=state.categorized.stats?.sources?.[source];
+const datedStatsDirectCategories=new Map();
+function datedStatsCategory(source,required=true,sourceDate=false){
+  let pack=sourceDate?datedStatsDirectCategories.get(source):state.categorized.stats?.sources?.[source];
   const signature=datedStatsSourceSignature(source);
-  if(required&&(!pack||pack.signature!==signature))throw new Error(`Dated Stats for ${labelSource(source)} need Categorize Data after the source, calendar, or aliases change.`);
+  if(required&&(!pack||pack.pending||pack.signature!==signature)){
+    const data=state.data[source]||{},config=clonePlain(datedStatsConfig(source));
+    if(sourceDate)config.calendar={reviewed:false,frequency:'observation'};
+    const coachCache=new Map(),resolveCoach=raw=>{if(!coachCache.has(raw))coachCache.set(raw,datedStatsResolveCoach(raw));return coachCache.get(raw);};
+    pack={...window.AllStarDatedStats.categorize(data.rows||[],config,{headers:data.headers||[],fileName:data.fileName,resolveIdentity:name=>datedStatsIdentity(name,source),resolveCoach}),signature};
+    if(sourceDate)datedStatsDirectCategories.set(source,pack);else {state.categorized.stats=state.categorized.stats||{version:1,sources:{}};state.categorized.stats.sources[source]=pack;}
+  }
   return pack;
 }
+function datedStatsResolveCoach(raw){const value=window.CoachToolsStatsDirectory?.resolve(raw,'coach')||raw,candidates=[...new Set([...controlRosterRows().map(r=>r._team||r.team),...(window.CoachToolsStatsDirectory?.grouped()||[]).flatMap(g=>g.coaches)].filter(Boolean))],resolved=resolveWeeklyCoachIdentity(value,'',candidates);return resolved.method==='unresolved'?{value:String(value||''),method:'historical source label; not in current directory'}:resolved;}
 const datedStatsRosterSignatures=new WeakMap();
 function datedStatsRosterSignature(){
   const index=ensureRosterIndex();
   if(!datedStatsRosterSignatures.has(index))datedStatsRosterSignatures.set(index,researchHashText(JSON.stringify(index.rows.map(r=>[r._repKey,r._team,r.sourceArea,r.rosterId]))));
   return datedStatsRosterSignatures.get(index);
 }
-function datedStatsSourceSignature(source){return JSON.stringify([state.sourceMeta[source]?.sourceVersion||0,datedStatsConfig(source),repAliasCacheSignature(),datedStatsRosterSignature(),window.CoachToolsStatsDirectory?.snapshot().revision||0]);}
+function datedStatsSourceSignature(source){return JSON.stringify(['source-dates-v2',state.sourceMeta[source]?.sourceVersion||0,datedStatsConfig(source),repAliasCacheSignature(),datedStatsRosterSignature(),window.CoachToolsStatsDirectory?.snapshot().revision||0]);}
 async function buildDatedStatsCategory(options={}){
   const prior=state.categorized.stats||{version:1,sources:{}},sources={};
   for(const source of ['weeklyRetail','weeklyReferral']){
@@ -38,8 +68,6 @@ async function buildDatedStatsCategory(options={}){
     const config=clonePlain(datedStatsConfig(source));
     const coachCandidates=[...new Set([...controlRosterRows().map(r=>r._team||r.team),...(window.CoachToolsStatsDirectory?.grouped()||[]).flatMap(g=>g.coaches)].filter(Boolean))],coachCache=new Map();
     const resolveCoach=raw=>{if(coachCache.has(raw))return coachCache.get(raw);const value=window.CoachToolsStatsDirectory?.resolve(raw,'coach')||raw,resolved=resolveWeeklyCoachIdentity(value,'',coachCandidates),result=resolved.method==='unresolved'?{value:String(value||''),method:'historical source label; not in current directory'}:resolved;coachCache.set(raw,result);return result;};
-    // Unreviewed weekly calendars cannot corrupt or block existing event builds.
-    if(!config.calendar.reviewed){sources[source]={signature,version:1,config,observations:[],diagnostics:{inputRows:data.rows.length,usableObservations:0,missingMappings:['Review reporting calendar']},issues:[],pending:true};continue;}
     const result=await window.AllStarDatedStats.categorizeAsync(data.rows,config,{headers:data.headers,fileName:data.fileName,resolveIdentity:name=>datedStatsIdentity(name,source),resolveCoach,yield:yieldToBrowser,cancelled:()=>options.active&&!options.active(),progress:(done,total)=>updateProgress(`Dated Stats · ${labelSource(source)} · ${done.toLocaleString()} / ${total.toLocaleString()}`,82)});
     if(signature!==datedStatsSourceSignature(source))throw Object.assign(new Error('Dated Stats changed during categorization; previous results were retained.'),{name:'AbortError'});
     sources[source]={...result,signature};
@@ -48,36 +76,34 @@ async function buildDatedStatsCategory(options={}){
 }
 async function loadDatedStatsFile(source,file,options={}){
   const load=async()=>{
-    const wb=options.workbook||await readFileWorkbook(file,{cellDates:false,raw:true}),headers=[],incoming=[];
+    const wb=options.workbook||await readFileWorkbook(file,{cellDates:false,raw:true,cellNF:true}),headers=[],incoming=[];
     for(const sheet of wb.SheetNames||[]){
       // Preserve counts, fraction percentages and Excel date serials. A cell's
       // display text (e.g. 9/6/26 or a rounded 56%) is not its numerical value.
-      const aoa=wb.__coachToolsAoaBySheet?.[sheet]||XLSX.utils.sheet_to_json(wb.Sheets[sheet],{header:1,defval:'',raw:true});
-      const headerRow=aoa.slice(0,40).findIndex(row=>row.some(v=>norm(v)==='name')&&row.some(v=>norm(v)==='date')&&row.some(v=>norm(v)==='sheet'));
+      const aoa=wb.__coachToolsAoaBySheet?.[sheet]||XLSX.utils.sheet_to_json(wb.Sheets[sheet],{header:1,defval:'',raw:true,range:0});
+      const headerRow=aoa.slice(0,40).findIndex(row=>row.some(v=>['name','representative','agent name','associate name'].includes(norm(v)))&&row.some(v=>['date','stats date','report date','week date'].includes(norm(v))));
       if(headerRow<0)continue;
-      const hs=aoa[headerRow].map(v=>String(v??'').trim());for(const h of hs)if(h&&!headers.includes(h))headers.push(h);
+      const hs=aoa[headerRow].map(v=>String(v??'').trim()),detected=window.AllStarDatedStats.defaultConfig(source,hs);for(const h of hs)if(h&&!headers.includes(h))headers.push(h);
       for(let i=headerRow+1;i<aoa.length;i++){
         const values=aoa[i];if(!values?.some(v=>String(v??'').trim()))continue;
-        const row={};hs.forEach((h,j)=>{if(h)row[h]=values[j]??'';});
+        const row={_dsUnits:{}};hs.forEach((h,j)=>{if(h){row[h]=values[j]??'';const cell=wb.Sheets[sheet]?.[XLSX.utils.encode_cell({r:i,c:j})];if(cell?.z&&/%/.test(cell.z.replace(/"[^"]*"|\\./g,'')))row._dsUnits[h]='fraction';}});
         const D=window.CoachToolsStatsDirectory;
-        for(const [h,role] of [['Name','name'],['Sheet','coach'],['Manager','manager']])if(D&&row[h])row[h]=D.resolve(row[h],role);
-        const identity=datedStatsIdentity(row.Name,source);
-        incoming.push({...row,_rep:identity.name||row.Name,_repKey:identity.id||'',_rawRep:row.Name,_rawRepKey:fullNameIdentityKey(row.Name),_team:row.Sheet||'',_date:row.Date,_sourceKey:source,_sourceArea:source==='weeklyRetail'?'retail':'referral',_dsRow:i+1,_dsFile:file.name});
+        for(const [h,role] of [[detected.repField,'name'],[detected.coachField,'coach'],[detected.managerField,'manager']])if(D&&row[h])row[h]=D.resolve(row[h],role);
+        const identity=datedStatsIdentity(row[detected.repField],source);
+        incoming.push({...row,_rep:identity.name||row[detected.repField],_repKey:identity.id||'',_rawRep:row[detected.repField],_rawRepKey:fullNameIdentityKey(row[detected.repField]),_team:row[detected.coachField]||'',_date:row[detected.dateField],_sourceKey:source,_sourceArea:source==='weeklyRetail'?'retail':'referral',_dsRow:i+1,_dsFile:file.name});
         if(i%1000===0){await yieldToBrowser();assertAllStarImportActive();}
       }
     }
-    if(!incoming.length)throw new Error('Weekly files need Date, Sheet, and Name headers. No recognized representative rows were found.');
-    const previous=state.data[source]||{},config=clonePlain(options.config||wb.__datedStatsConfig||previous.config||window.AllStarDatedStats.defaultConfig(source,headers));
-    config.fields={...window.AllStarDatedStats.defaultConfig(source,headers).fields,...config.fields};
+    if(!incoming.length)throw new Error('Weekly files need a representative and Date column. No recognized rows were found.');
+    const previous=state.data[source]||{},config=clonePlain(options.config||wb.__datedStatsConfig||(previous.config?datedStatsConfig(source):null)||window.AllStarDatedStats.defaultConfig(source,headers,incoming));
+    config.fields={...window.AllStarDatedStats.defaultConfig(source,headers,incoming).fields,...config.fields};
     const unitProfiles=window.AllStarDatedStats.profileUnits(options.fromCentral?incoming:[...(previous.rows||[]),...incoming],config);
-    // A numeric column that changes scale across periods needs explicit review.
-    // Ratio fields may exceed 100%; do not misclassify those as mixed scales.
-    for(const [field,profile] of Object.entries(unitProfiles)){if(profile.fraction>10&&profile.points>10&&profile.dates.some(d=>d.aboveOne>d.lessThanOne)&&profile.dates.some(d=>d.lessThanOne>d.aboveOne)&&config.fields[field].bounded!==false&&!config.fields[field].unitReviewed)config.fields[field]={...config.fields[field],inputUnit:'per-date',unitsByDate:{}};}
-    const merged=window.AllStarDatedStats.mergeRows(options.fromCentral?[]:(previous.rows||[]),incoming,config,{fileName:file.name});
+    const scope=new Set((wb.__weeklyScope||[]).map(coachNameKey)),history=(previous.rows||[]).filter(row=>!options.fromCentral||!scope.size||scope.has(coachNameKey(row[config.coachField])));
+    const merged=window.AllStarDatedStats.mergeRows(history,incoming,config,{fileName:file.name});
     // Compare a new shared snapshot with the old one for corrections, while
     // keeping the shared source's authoritative selected population intact.
     const audit=options.fromCentral?window.AllStarDatedStats.mergeRows(previous.rows||[],incoming,config,{fileName:file.name}).audit:merged.audit;
-    state.data[source]={fileName:file.name,headers:[...new Set([...(options.fromCentral?[]:previous.headers||[]),...headers])],rows:normalizeDatedStatsRawIdentities(merged.rows,source,config),config,unitProfiles,audit:[...(previous.audit||wb.__datedStatsAudit||[]),...audit],lastImport:merged.counts};
+    state.data[source]={fileName:file.name,headers:[...new Set([...(previous.headers||[]),...headers])],rows:normalizeDatedStatsRawIdentities(merged.rows,source,config),config,unitProfiles,audit:[...(previous.audit||wb.__datedStatsAudit||[]),...audit],lastImport:merged.counts};
     noteCategorizationSourceVersion(source,state.data[source].rows,state.data[source].headers);
     markSourceCacheDirty(source,'Dated Stats import');markCategorizationNeeded('Weekly numerical observations changed',[source]);
     return true;
@@ -92,22 +118,22 @@ async function loadDatedStatsFile(source,file,options={}){
 }
 async function publishDatedStatsSharedSource(source){
   const d=state.data[source];if(!d?.rows?.length||!window.CoachToolsData)return;
-  const aoa=[d.headers,...d.rows.map(r=>d.headers.map(h=>r[h]??''))];
+  const aoa=[d.headers,...d.rows.map(r=>d.headers.map(h=>r._dsUnits?.[h]==='fraction'&&typeof r[h]==='number'?String(r[h]*100)+'%':r[h]??''))];
   const data={meta:{fileName:d.fileName,totalRows:d.rows.length,datedStatsConfig:d.config,datedStatsAudit:d.audit||[]},workbook:{sheets:['Dated Stats'],data:{'Dated Stats':{aoa}}}};
   try{const saved=await window.CoachToolsData.importDataset(source,data,{originalFileName:d.fileName,rowCount:d.rows.length,classificationMethod:'allstar-dated-stats',validationStatus:'ready'});const meta=window.CoachToolsData.getDatasetVersion?.(source)||saved?.current||saved?.dataset;if(meta){const sync=readAllStarCentralSyncMap();sync[source]=allStarCentralSyncIdentity(meta);localStorage.setItem(ALLSTAR_SYNC_KEY,JSON.stringify(sync));}}
   catch(error){alert('All-Star data was saved, but the shared weekly dataset could not be updated: '+error.message);}
 }
 function renderDatedStatsImportSummary(){
-  const box=document.getElementById('datedStatsImportSummary');if(!box)return;
-  box.innerHTML=['weeklyRetail','weeklyReferral'].map(source=>{
-    const data=state.data[source]||{},pack=state.categorized.stats?.sources?.[source],d=pack?.diagnostics,ready=pack&&!pack.pending&&pack.signature===datedStatsSourceSignature(source);
-    return `<div class="ds-source"><strong>${esc(labelSource(source))}</strong><span>${Number(data.rows?.length||0).toLocaleString()} imported rows · ${ready?'Categorized':'Categorization / calendar review needed'}</span><button type="button" class="smallBtn" data-ds-config="${source}">Review calendar &amp; field types</button><button type="button" class="smallBtn" data-ds-diagnostics="${source}">Diagnostics / corrections</button>${d?`<small>${d.usableObservations||0} usable representative-periods · ${d.periods?.length||0} periods · ${d.invalidValues||0} invalid values · ${d.unresolvedIdentities||0} unresolved identities · ${d.duplicates||0} duplicates · ${d.conflicts||0} conflicts · ${d.summaryRows||0} summaries/headers excluded</small>`:''}</div>`;
-  }).join('');
-  box.querySelectorAll('[data-ds-config]').forEach(b=>b.onclick=()=>openDatedStatsSourceEditor(b.dataset.dsConfig));
-  box.querySelectorAll('[data-ds-diagnostics]').forEach(b=>b.onclick=()=>datedStatsDiagnostics(b.dataset.dsDiagnostics));
+  document.querySelectorAll('[data-ds-summary]').forEach(box=>{
+    const source=box.dataset.dsSummary,data=state.data[source]||{};
+    let pack,message='';try{if(data.rows?.length)pack=datedStatsCategory(source,true,true);}catch(error){message=error.message;}
+    const issues=[...new Set((pack?.issues||[]).map(i=>(i.field?i.field+': ':'')+i.reason))];
+    box.innerHTML=`<div class="fileName">${esc(data.fileName||'No file uploaded')} · ${Number(data.rows?.length||0).toLocaleString()} rows</div>${data.rows?.length?`<button type="button" class="smallBtn" data-ds-config="${source}">Edit</button><span class="hint"> Uses source Date automatically</span>`:''}${message||issues.length?`<div role="status">${esc(message||issues.slice(0,5).join(' · '))}</div>`:''}`;
+    box.querySelector('[data-ds-config]')?.addEventListener('click',()=>openDatedStatsSourceEditor(source));
+  });
 }
 function evaluateDatedStatsMetric(metric,rows,source,warnings=[]){
-  const pack=datedStatsCategory(metric.source);if(pack.pending)throw new Error('Review the reporting calendar, then Categorize Data.');
+  const pack=datedStatsCategory(metric.source);
   const ids=new Set((rows||[]).map(r=>r._repKey||fullNameIdentityKey(r._rep||r.Representative||r.Name||'')));
   let observations=pack.observations.filter(o=>ids.has(o.repId));
   // A numerical source cohort carries periods; event cohorts supply identities
@@ -200,13 +226,14 @@ function datedStatsDiagnostics(source){
 }
 function openDatedStatsSourceEditor(source){
   const data=state.data[source]||{},c=clonePlain(datedStatsConfig(source)),headers=data.headers||[];
-  const wrap=dsDialog(labelSource(source)+' · Source configuration',`<p><strong>Data category: Dated Stats</strong> · Numerical reporting observations. Existing Dated Items retain their event calculations.</p><div class="grid4">${dsSelect('Representative','repField',headers,c.repField)}${dsSelect('Assigned coach / team','coachField',['',...headers],c.coachField)}${dsSelect('Reporting date label','dateField',headers,c.dateField)}${dsSelect('Historical manager (optional)','managerField',['',...headers],c.managerField)}${dsSelect('Reporting frequency','frequency',[['week','Weekly'],['day','Daily'],['month','Monthly']],c.calendar.frequency)}${dsSelect('Date label means','label',[['','Choose / review'],['ending','Period ending'],['beginning','Period beginning'],['publication','Publication date']],c.calendar.label)}${dsInput('Publication → start offset in days','offsetDays',c.calendar.offsetDays||0,'number')}${dsSelect('Separate scope field (optional)','scopeField',['',...headers],c.scopeField)}</div><p class="hint">The calendar determines the actual boundaries used to match coaching events. Monthly totals are never converted into weeks. Publication offset is measured from the label to the first day of the measured period.</p><div class="tableWrap ds-mapping"><table><thead><tr><th>Field</th><th>Measurement type</th><th>Input unit</th><th>Meaning over time</th></tr></thead><tbody>${headers.filter(h=>!['Name','Sheet','Date','Manager'].includes(h)).map(h=>{const f=c.fields[h]||{};return `<tr data-ds-field="${esc(h)}"><th>${esc(h)}</th><td>${dsSelect('Type','kind',[['','Identifier / not mapped'],['count','Count'],['percentage','Percentage'],['duration','Duration'],['currency','Currency'],['number','Other number']],f.kind)}</td><td>${dsSelect('Unit','inputUnit',['number','fraction','percentage-points','per-date','days','minutes','seconds'],f.inputUnit)}</td><td>${dsSelect('Behavior','behavior',['activity','rate','average','snapshot','cumulative'],f.behavior)}</td></tr>`;}).join('')}</tbody></table></div><div data-ds-unit-review></div><label><input type="checkbox" data-ds="reviewed" ${c.calendar.reviewed?'checked':''}> I reviewed the reporting calendar and field units</label><div class="row"><button class="green" type="button" data-ds-save>Save source configuration</button></div>`);
+  let fieldIssues=[];try{fieldIssues=datedStatsCategory(source,true,true).issues||[];}catch(_){}
+  const wrap=dsDialog(labelSource(source)+' · Source configuration',`<p>Dates and numerical fields are detected automatically. Correct only the fields that need adjustment.</p><div class="grid4">${dsSelect('Representative','repField',headers,c.repField)}${dsSelect('Assigned coach / team','coachField',['',...headers],c.coachField)}${dsSelect('Reporting date label','dateField',headers,c.dateField)}${dsSelect('Historical manager (optional)','managerField',['',...headers],c.managerField)}</div><details><summary>Period alignment for custom analyses (optional)</summary><div class="grid4">${dsSelect('Reporting frequency','frequency',[['week','Weekly'],['day','Daily'],['month','Monthly']],c.calendar.frequency)}${dsSelect('Date label means','label',[['','Choose / review'],['ending','Period ending'],['beginning','Period beginning'],['publication','Publication date']],c.calendar.label)}${dsInput('Publication → start offset in days','offsetDays',c.calendar.offsetDays||0,'number')}${dsSelect('Separate scope field (optional)','scopeField',['',...headers],c.scopeField)}</div><label><input type="checkbox" data-ds="reviewed" ${c.calendar.reviewed?'checked':''}> Use these boundaries for custom period analyses</label></details><p class="hint">Graphs of uploaded fields always use the attached Date. Optional period alignment applies to custom analyses.</p><div class="tableWrap ds-mapping"><table><thead><tr><th>Field</th><th>Measurement type</th><th>Input unit</th><th>Meaning over time</th></tr></thead><tbody>${headers.filter(h=>!['Name','Sheet','Date','Manager'].includes(h)).map(h=>{const f=c.fields[h]||{};return `<tr data-ds-field="${esc(h)}"><th>${esc(h)}<small>${esc([...new Set(fieldIssues.filter(issue=>issue.field===h).map(issue=>issue.reason))].join(' · '))}</small></th><td>${dsSelect('Type','kind',[['','Identifier / not mapped'],['count','Count'],['percentage','Percentage'],['duration','Duration'],['currency','Currency'],['number','Other number']],f.kind)}</td><td>${dsSelect('Unit','inputUnit',[['','Unknown / use cell format'],'number','fraction','percentage-points','per-date','days','minutes','seconds'],f.inputUnit)}</td><td>${dsSelect('Behavior','behavior',['activity','rate','average','snapshot','cumulative'],f.behavior)}</td></tr>`;}).join('')}</tbody></table></div><div data-ds-unit-review></div><div class="row"><button class="green" type="button" data-ds-save>Save source configuration</button></div>`);
   renderDatedStatsUnitReview(wrap,data,c);
   wrap.querySelector('[data-ds-save]').onclick=async()=>{
-    try{const v=dsValues(wrap);if(!v.reviewed)throw new Error('Review and confirm the reporting calendar before saving.');
-      const config={...c,repField:v.repField,coachField:v.coachField,managerField:v.managerField,dateField:v.dateField,scopeField:v.scopeField,calendar:{reviewed:true,frequency:v.frequency,label:v.label,offsetDays:Number(v.offsetDays)},fields:{}};
+    try{const v=dsValues(wrap);
+      const config={...c,repField:v.repField,coachField:v.coachField,managerField:v.managerField,dateField:v.dateField,scopeField:v.scopeField,calendar:v.reviewed?{reviewed:true,frequency:v.frequency,label:v.label,offsetDays:Number(v.offsetDays)}:{reviewed:false,frequency:'observation'},fields:{}};
       window.AllStarDatedStats.period('2026-09-20',config.calendar);
-      wrap.querySelectorAll('[data-ds-field]').forEach(row=>{const f=dsValues(row);if(f.kind)config.fields[row.dataset.dsField]={...c.fields[row.dataset.dsField],kind:f.kind,inputUnit:f.inputUnit,behavior:f.behavior,nonnegative:f.kind==='count'||f.kind==='percentage',unitReviewed:true};});
+      wrap.querySelectorAll('[data-ds-field]').forEach(row=>{const f=dsValues(row);if(f.kind)config.fields[row.dataset.dsField]={...c.fields[row.dataset.dsField],kind:f.kind,inputUnit:f.inputUnit,behavior:f.behavior,nonnegative:f.kind==='count'||f.kind==='percentage',unitReviewed:!!c.fields[row.dataset.dsField]?.unitReviewed||f.kind!==c.fields[row.dataset.dsField]?.kind||f.inputUnit!==c.fields[row.dataset.dsField]?.inputUnit};});
       wrap.querySelectorAll('[data-ds-unit-date]').forEach(input=>{const f=config.fields[input.dataset.dsUnitField];if(f){f.unitsByDate=f.unitsByDate||{};f.unitsByDate[input.dataset.dsUnitDate]=input.value;}});
       if(!Object.keys(config.fields).length)throw new Error('Map at least one numerical field.');
       const before=state.data[source];state.data[source]={...before,config,rows:normalizeDatedStatsRawIdentities(before?.rows||[],source,config)};markSourceCacheDirty(source,'Reporting calendar / field units reviewed');markCategorizationNeeded('Dated Stats mapping changed',[source]);
@@ -306,12 +333,15 @@ function openDatedStatsStatConditions(conditions=[],onSave){
   wrap.querySelector('[data-ds-save]').onclick=()=>{read();onSave(rows);wrap.remove();};render();
 }
 function dsMulti(label,name,options,selected=[]){return `<fieldset class="ds-picker"><legend>${esc(label)}</legend><input type="search" data-ds-search placeholder="Search ${esc(label.toLowerCase())}" aria-label="Search ${esc(label)}"><div>${options.map(([v,l])=>`<label data-ds-choice><input type="checkbox" data-ds-multi="${name}" value="${esc(v)}" ${selected.includes(v)?'checked':''}> ${esc(l)}</label>`).join('')}</div></fieldset>`;}
-function openDatedStatsResearchEditor(itemId){
-  const item=state.researchItems.find(i=>i.id===itemId),settings=clonePlain(item?.datedStats||{}),metrics=state.metrics.filter(m=>m.dataCategory==='datedStats');
-  if(!metrics.length){alert('Create a Dated Stats metric in Metrics first.');return openDatedStatsMetricEditor();}
+function openDatedStatsResearchEditor(itemId,preferredSource){
+  const item=state.researchItems.find(i=>i.id===itemId),settings=clonePlain(item?.datedStats||{}),metrics=datedStatsAvailableMetrics();
+  if(!metrics.length){alert('Upload weekly statistics to choose a numerical field.');return;}
+  const selectedMetric=datedStatsResearchMetric(settings)||metrics.find(m=>m.source===preferredSource)||metrics[0];
   let conditions=settings.eventConditions||[],coverage=settings.coverage||{},statConditions=settings.statConditions||[];
-  const observations=Object.values(state.categorized.stats?.sources||{}).flatMap(p=>p.observations||[]),coaches=[...new Set(observations.map(o=>o.coach).filter(Boolean))].sort(),directory=window.CoachToolsStatsDirectory?.grouped()||[],reps=[...new Map(observations.map(o=>[o.repId,o.rep])).entries()];
-  const wrap=dsDialog('Dated Stats Research',`<p><strong>Who qualifies → What is measured → What each line represents</strong></p><div class="grid3">${dsInput('Research title','title',item?.title||'Weekly performance trends')}${dsSelect('Reusable numerical metric','metricId',metrics.map(m=>[m.id,m.name]),settings.metricId||metrics[0].id)}${dsSelect('Membership','mode',[['fixed','Fixed group from anchor window'],['changing','Membership recalculated each week'],['before_after','Before / after first qualifying coaching']],settings.mode||'fixed')}${dsSelect('One line per','groupBy',[['all','All eligible loaded representatives'],['coach','Assigned coach'],['organization','Organization'],['manager','Manager'],['representative','Representative'],['coaching_frequency','Number of coaching sessions']],settings.groupBy||'all')}${dsInput('Measure from (complete period)','startDate',settings.startDate,'date')}${dsInput('Measure through (complete period)','endDate',settings.endDate,'date')}${dsInput('Anchor / coaching window from','anchorStart',settings.anchorStart,'date')}${dsInput('Anchor / coaching window through','anchorEnd',settings.anchorEnd,'date')}${dsSelect('Coaching-frequency window','frequencyWindow',[['anchor','Selected anchor week / range'],['plotted','Each plotted week'],['fixed','Fixed anchor date range'],['rolling','Rolling complete weeks']],settings.frequencyWindow||'anchor')}${dsInput('Rolling weeks','rollingWeeks',settings.rollingWeeks||4,'number')}${dsInput('Coaching topic (optional)','topic',settings.topic||'')}${dsInput('Frequency buckets (last is +)','buckets',(settings.buckets||[0,1,2,3,4]).join(','))}${dsInput('Weeks before coaching','beforeWeeks',settings.beforeWeeks??4,'number')}${dsInput('Complete weeks after coaching','afterWeeks',settings.afterWeeks??6,'number')}</div><div class="row"><button type="button" data-ds-events>Dated Items conditions / coverage</button><span data-ds-event-count>${conditions.length} conditions</span><button type="button" data-ds-stats>Numerical conditions</button><span data-ds-stat-count>${statConditions.length} conditions</span></div><div class="grid2">${dsMulti('Organizations','orgIds',(state.orgs||[]).map(o=>[o.id,o.name]),settings.orgIds||[])}${dsMulti('Managers','managerNames',directory.map(g=>[g.name,g.name]),settings.managerNames||[])}${dsMulti('Coaches','coachNames',coaches.map(c=>[c,c]),settings.coachNames||[])}${dsMulti('Representatives','selectedRepIds',reps,settings.selectedRepIds||[])}</div><p class="hint">An empty selection includes all eligible representatives in the loaded source. Multiple selected organizations are combined without duplicating representatives. Manager and organization selections use saved current membership; assigned coaches on each point come from that reporting period.</p><div class="grid3">${dsSelect('Optional saved model population','modelId',[['','No model restriction'],...state.models.map(m=>[m.id,m.name])],settings.modelId||'')}${dsInput('Model criterion name (qualification)','modelCriterion',settings.modelCriterion||'')}${dsInput('Criterion value must be at least','modelThreshold',settings.modelThreshold??1,'number')}</div><p class="hint">A saved model/category qualification is static context evaluated in the anchor window. It does not become an invented historical measurement.</p><div class="row"><button type="button" data-ds-run>Calculate</button><button type="button" data-ds-cancel>Cancel calculation</button><button type="button" class="green" data-ds-save>Save definition &amp; calculated result</button></div><div data-ds-preview-result></div>`);
+  const observations=datedStatsLoadedObservations(),coaches=[...new Set(observations.map(o=>o.coach).filter(Boolean))].sort(),directory=window.CoachToolsStatsDirectory?.grouped()||[],reps=[...new Map(observations.map(o=>[o.repId,o.rep])).entries()];
+  const wrap=dsDialog('Weekly Stats Research',`<p>Choose a source, a numerical field, and a display. Its dates are ready to use.</p><div class="grid3">${dsInput('Research title','title',item?.title||'Weekly performance trends')}${dsSelect('Data source','source',['weeklyRetail','weeklyReferral'].map(source=>[source,labelSource(source)]),selectedMetric.source)}${dsSelect('Value','metricId',metrics.filter(m=>m.source===selectedMetric.source).map(m=>[m.id,m.directField?m.field:'Custom metric → '+m.name]),selectedMetric.id)}<div class="field"><label>Date / horizontal axis</label><span data-ds-axis>${esc(labelSource(selectedMetric.source))} → ${esc(datedStatsConfig(selectedMetric.source).dateField)}</span></div>${dsSelect('Display','display',[['line','Line graph']], 'line')}</div><details data-ds-research-options><summary>Filters, grouping, and comparisons</summary><div class="grid3">${dsSelect('Membership','mode',[['fixed','Fixed group from anchor window'],['changing','Membership recalculated each week'],['before_after','Before / after first qualifying coaching']],settings.mode||'fixed')}${dsSelect('One line per','groupBy',[['all','All eligible loaded representatives'],['coach','Assigned coach'],['organization','Organization'],['manager','Manager'],['representative','Representative'],['coaching_frequency','Number of coaching sessions']],settings.groupBy||'all')}${dsInput('Measure from (complete period)','startDate',settings.startDate,'date')}${dsInput('Measure through (complete period)','endDate',settings.endDate,'date')}${dsInput('Anchor / coaching window from','anchorStart',settings.anchorStart,'date')}${dsInput('Anchor / coaching window through','anchorEnd',settings.anchorEnd,'date')}${dsSelect('Coaching-frequency window','frequencyWindow',[['anchor','Selected anchor week / range'],['plotted','Each plotted week'],['fixed','Fixed anchor date range'],['rolling','Rolling complete weeks']],settings.frequencyWindow||'anchor')}${dsInput('Rolling weeks','rollingWeeks',settings.rollingWeeks||4,'number')}${dsInput('Coaching topic (optional)','topic',settings.topic||'')}${dsInput('Frequency buckets (last is +)','buckets',(settings.buckets||[0,1,2,3,4]).join(','))}${dsInput('Weeks before coaching','beforeWeeks',settings.beforeWeeks??4,'number')}${dsInput('Complete weeks after coaching','afterWeeks',settings.afterWeeks??6,'number')}</div><div class="row"><button type="button" data-ds-events>Dated Items conditions / coverage</button><span data-ds-event-count>${conditions.length} conditions</span><button type="button" data-ds-stats>Numerical conditions</button><span data-ds-stat-count>${statConditions.length} conditions</span></div><div class="grid2">${dsMulti('Organizations','orgIds',(state.orgs||[]).map(o=>[o.id,o.name]),settings.orgIds||[])}${dsMulti('Managers','managerNames',[...new Set([...directory.map(g=>g.name),...observations.map(o=>o.manager).filter(Boolean)])].map(name=>[name,name]),settings.managerNames||[])}${dsMulti('Coaches','coachNames',coaches.map(c=>[c,c]),settings.coachNames||[])}${dsMulti('Representatives','selectedRepIds',reps,settings.selectedRepIds||[])}</div><p class="hint">An empty selection includes all eligible representatives in the loaded source. Multiple selected organizations are combined without duplicating representatives. Manager and organization selections use saved current membership; assigned coaches on each point come from that reporting period.</p><div class="grid3">${dsSelect('Optional saved model population','modelId',[['','No model restriction'],...state.models.map(m=>[m.id,m.name])],settings.modelId||'')}${dsInput('Model criterion name (qualification)','modelCriterion',settings.modelCriterion||'')}${dsInput('Criterion value must be at least','modelThreshold',settings.modelThreshold??1,'number')}</div><p class="hint">A saved model/category qualification is static context evaluated in the anchor window. It does not become an invented historical measurement.</p></details><div class="row"><button type="button" data-ds-run>Calculate</button><button type="button" data-ds-cancel>Cancel calculation</button><button type="button" class="green" data-ds-save>Save definition &amp; calculated result</button></div><div data-ds-preview-result></div>`);
+  const sourcePicker=wrap.querySelector('[data-ds="source"]'),valuePicker=wrap.querySelector('[data-ds="metricId"]');
+  sourcePicker.onchange=()=>{valuePicker.innerHTML=metrics.filter(m=>m.source===sourcePicker.value).map(m=>`<option value="${esc(m.id)}">${esc(m.directField?m.field:'Custom metric → '+m.name)}</option>`).join('');wrap.querySelector('[data-ds-axis]').textContent=labelSource(sourcePicker.value)+' → '+datedStatsConfig(sourcePicker.value).dateField;};
   let result=null,resultSignature='',generation=0;
   wrap.querySelectorAll('[data-ds-search]').forEach(input=>input.oninput=()=>{const q=input.value.toLowerCase();input.closest('fieldset').querySelectorAll('[data-ds-choice]').forEach(l=>l.hidden=!l.textContent.toLowerCase().includes(q));});
   wrap.querySelector('[data-ds-events]').onclick=()=>openDatedStatsConditions(conditions,coverage,(c,v)=>{conditions=c;coverage=v;wrap.querySelector('[data-ds-event-count]').textContent=c.length+' conditions';});
@@ -319,7 +349,7 @@ function openDatedStatsResearchEditor(itemId){
   const read=()=>{
     const v=dsValues(wrap),multi={};for(const name of ['orgIds','managerNames','coachNames','selectedRepIds'])multi[name]=[...wrap.querySelectorAll(`[data-ds-multi="${name}"]:checked`)].map(n=>n.value);
     const buckets=v.buckets.split(',').map(n=>Number(n.trim()));if(!buckets.length||buckets[0]!==0||buckets.some((n,i)=>!Number.isInteger(n)||n<0||(i>0&&n<=buckets[i-1])))throw new Error('Buckets must start at 0 and increase, such as 0,1,2,3,4.');
-    const metric=state.metrics.find(m=>m.id===v.metricId);return normalizeResearchItem({...item,id:item?.id||settings.draftId||(settings.draftId=id()),title:v.title,source:metric.source,outputType:'line',cardSize:'full',datedStats:{version:1,...v,...multi,buckets,eventConditions:conditions,coverage,statConditions,coachingSource:'documented_coaching'},columns:[{field:'@'+metric.name,mode:'datedStats'}],groupField:'Date',secondaryGroupField:'Coach',valueMode:'datedStats'});
+    const metric=metrics.find(m=>m.id===v.metricId);if(!metric)throw new Error('Choose an available numerical field or custom metric.');return normalizeResearchItem({...item,id:item?.id||settings.draftId||(settings.draftId=id()),title:v.title,source:metric.source,outputType:'line',cardSize:'full',datedStats:datedStatsSelectMetric({version:1,...v,...multi,buckets,eventConditions:conditions,coverage,statConditions,coachingSource:'documented_coaching'},metric),columns:[{field:'@'+metric.name,mode:'datedStats'}],groupField:'Date',secondaryGroupField:'Coach',valueMode:'datedStats'});
   };
   const run=async()=>{
     const next=read(),current=++generation,signature=JSON.stringify(next.datedStats);dsMessage(wrap,'Calculating complete reporting periods…');
@@ -336,14 +366,14 @@ function openDatedStatsResearchEditor(itemId){
 }
 async function evaluateDatedStatsResearch(item,progress={}){
   const operation={};datedStatsResearchOperations.set(item.id,operation);
-  const E=window.AllStarDatedStats,s=clonePlain(item.datedStats),metric=state.metrics.find(m=>m.id===s.metricId);if(!metric)throw new Error('This Research definition references a missing Dated Stats metric.');
+  const E=window.AllStarDatedStats,s=clonePlain(item.datedStats),metric=datedStatsResearchMetric(s);if(!metric)throw new Error('This Research definition references a missing Dated Stats metric.');
   if(metric.output==='summary')throw new Error('This metric returns a trend summary. Choose a single-value or series metric for period-by-period Research; Models can evaluate the summary.');
-  const pack=datedStatsCategory(metric.source);if(pack.pending)throw new Error('Review the reporting calendar and Categorize Data before Research.');
+  const pack=datedStatsCategory(metric.source,true,!!metric.directField);
   const dependency=()=>JSON.stringify([datedStatsSourceSignature(metric.source),state.metrics,state.orgs,['documented_coaching','checklist','qa'].map(source=>state.sourceMeta[source]?.sourceVersion||0)]),sourceVersion=dependency(),settings={...s},orgs=(state.orgs||[]).filter(o=>s.orgIds?.includes(o.id)),directory=window.CoachToolsStatsDirectory?.grouped()||[];
   const selectedManagers=directory.filter(g=>s.managerNames?.includes(g.name));
   const restrictSets=[];
   if(s.orgIds?.length){if(orgs.length!==s.orgIds.length)throw new Error('A selected organization is missing. Review the population selection.');restrictSets.push(new Set(orgs.flatMap(o=>o.coachNames).map(coachNameKey)));}
-  if(s.managerNames?.length){if(selectedManagers.length!==s.managerNames.length)throw new Error('A selected manager group is missing. Review the population selection.');restrictSets.push(new Set(selectedManagers.flatMap(g=>g.coaches).map(coachNameKey)));}
+  if(s.managerNames?.length){if(metric.directField)settings.managers=s.managerNames;else {if(selectedManagers.length!==s.managerNames.length)throw new Error('A selected manager group is missing. Review the population selection.');restrictSets.push(new Set(selectedManagers.flatMap(g=>g.coaches).map(coachNameKey)));}}
   if(s.coachNames?.length)restrictSets.push(new Set(s.coachNames.map(coachNameKey)));
   const allCoaches=[...new Set(pack.observations.map(o=>o.coach))];settings.coaches=restrictSets.length?allCoaches.filter(c=>restrictSets.every(set=>set.has(coachNameKey(c)))):[];
   if(restrictSets.length&&!settings.coaches.length)throw new Error('No loaded historical coaches match the selected population.');
@@ -361,9 +391,14 @@ async function evaluateDatedStatsResearch(item,progress={}){
   }
   // Managers only fall back to the saved directory with an explicit current
   // membership label. Never rewrite historical assigned-coach observations.
-  if(settings.groupBy==='manager')observations=observations.map(o=>({...o,manager:o.manager||directory.find(g=>g.coaches.some(c=>coachNameKey(c)===coachNameKey(o.coach)))?.name||''}));
+  if(settings.groupBy==='manager'||metric.directField&&s.managerNames?.length)observations=observations.map(o=>({...o,manager:o.manager||directory.find(g=>g.coaches.some(c=>coachNameKey(c)===coachNameKey(o.coach)))?.name||''}));
   const result=await E.research(observations,{...metric,startDate:s.startDate||metric.startDate,endDate:s.endDate||metric.endDate},settings,datedStatsEvents(),{yield:yieldToBrowser,cancelled:()=>progress.token?.cancelled||datedStatsResearchOperations.get(item.id)!==operation||sourceVersion!==dependency(),progress:(n,total)=>updateProgress(`Dated Stats Research · ${n} / ${total} periods`,Math.round(n/total*100))});
   result.calendar=pack.config.calendar;result.sourceSignature=sourceVersion;result.description+=' · '+labelSource(metric.source);result.perf={rowsScanned:observations.length};
+  if(metric.directField){
+    const grouping={all:'All representatives',coach:'One line per coach',representative:'One line per representative',manager:'One line per manager',organization:'One line per organization',coaching_frequency:'One line per coaching frequency'};
+    result.description=metric.name+' · Average of representative values · '+(grouping[settings.groupBy]||grouping.all);
+    if(!s.eventConditions?.length&&!s.statConditions?.length&&!s.sentenceQuery?.root?.children?.length&&s.groupBy!=='coaching_frequency'&&s.mode!=='before_after')result.warnings=result.warnings.filter(w=>!w.startsWith('Observed performance comparison'));
+  }
   if(datedStatsResearchOperations.get(item.id)===operation)datedStatsResearchOperations.delete(item.id);
   return result;
 }
@@ -407,13 +442,11 @@ function bindDatedStatsCharts(host){
   });
 }
 function initDatedStatsWorkspace(){
-  if(document.getElementById('datedStatsImportSummary'))return;
-  const panel=document.createElement('section');panel.className='panel';panel.innerHTML=`<div class="panelTitle">Dated Stats · Weekly numerical performance</div><p class="hint">Import weekly history, review reporting dates and field units, then use Categorize Data. Existing Dated Items count events; Dated Stats measure numerical activity.</p><div class="row"><label>Weekly Retail <input type="file" data-ds-upload="weeklyRetail" accept=".csv,.xlsx,.xls" multiple></label><label>Weekly Referral <input type="file" data-ds-upload="weeklyReferral" accept=".csv,.xlsx,.xls" multiple></label></div><div id="datedStatsImportSummary"></div>`;
-  document.getElementById('categorizedDataSummary')?.parentElement?.appendChild(panel);
-  panel.querySelectorAll('[data-ds-upload]').forEach(input=>input.onchange=async()=>{for(const file of input.files||[]){const ok=await loadDatedStatsFile(input.dataset.dsUpload,file);if(!ok)break;}input.value='';renderDatedStatsImportSummary();});
+  if(document.documentElement.dataset.datedStatsInitialized)return;document.documentElement.dataset.datedStatsInitialized='true';
+  document.querySelectorAll('[data-ds-upload]').forEach(input=>input.onchange=async()=>{for(const file of input.files||[]){const ok=await loadDatedStatsFile(input.dataset.dsUpload,file);if(!ok)break;}input.value='';renderDatedStatsImportSummary();});
   const addButton=(anchor,label,onclick)=>{if(!anchor)return;const b=document.createElement('button');b.type='button';b.className='green';b.textContent=label;b.onclick=onclick;anchor.after(b);};
-  addButton(document.getElementById('newMetricBtn'),'Create Dated Stats Metric',()=>openDatedStatsMetricEditor());
-  addButton(document.getElementById('addResearchItemBtn'),'Dated Stats Trends',()=>openDatedStatsResearchEditor());
+  addButton(document.getElementById('newMetricBtn'),'Create custom weekly metric',()=>openDatedStatsMetricEditor());
+  addButton(document.getElementById('addResearchItemBtn'),'Weekly Stats graph',()=>openDatedStatsResearchEditor());
   renderDatedStatsImportSummary();
 }
 const datedStatsObservationIndexes=new WeakMap(),datedStatsModelTrends=new Map();

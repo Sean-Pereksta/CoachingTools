@@ -27,11 +27,13 @@ const csv=[
       await page.waitForFunction(()=>typeof state!=='undefined'&&state.startup.completed);
       await page.evaluate(()=>window.CoachToolsStatsSettingsReady);
       await page.evaluate(()=>openModal('importModal'));
+      await page.locator('.advancedUploads > summary').click();
       await page.locator('[data-ds-upload="weeklyRetail"]').setInputFiles({name:'synthetic-weekly.csv',mimeType:'text/csv',buffer:Buffer.from(csv)});
       await page.waitForFunction(()=>state.data.weeklyRetail.rows.length===3&&!state.activeImportJob);
       assert.equal(await page.evaluate(()=>state.data.weeklyRetail.config.calendar.reviewed),false);
       await page.locator('[data-ds-config="weeklyRetail"]').click();
       const source=page.getByRole('dialog',{name:/Source configuration/});
+      await source.getByText('Period alignment for custom analyses (optional)',{exact:true}).click();
       await source.locator('[data-ds="label"]').selectOption('ending');
       await source.locator('[data-ds="reviewed"]').check();
       await source.locator('[data-ds-save]').click();
@@ -40,7 +42,7 @@ const csv=[
       await page.waitForFunction(()=>state.categorized.stats?.sources?.weeklyRetail?.observations?.length===3&&!state.categorizationPending);
       assert.equal(await page.evaluate(()=>state.categorized.dated.rows.length),0);
       await page.evaluate(async()=>{closeModal('importModal');await openMetricsPage();});
-      await page.getByRole('button',{name:'Create Dated Stats Metric',exact:true}).click();
+      await page.getByRole('button',{name:'Create custom weekly metric',exact:true}).click();
       const metric=page.getByRole('dialog',{name:'Dated Stats metric',exact:true});
       await metric.locator('[data-ds="name"]').fill('Synthetic weekly AR');
       assert.match(await metric.locator('[data-ds-definition-summary]').innerText(),/Consumer Appointments ÷ Consumer Opportunities × 100/);
@@ -133,7 +135,9 @@ const csv=[
       await page.locator('[data-rw-mode="advanced"]').click();
       await page.locator('#researchSource').selectOption('weeklyRetail');
       assert.equal(await page.locator('#researchEditorModal').isVisible(),false);
-      const research=page.getByRole('dialog',{name:'Dated Stats Research',exact:true});
+      const research=page.getByRole('dialog',{name:'Weekly Stats Research',exact:true});
+      await research.locator('[data-ds="metricId"]').selectOption(await page.evaluate(()=>state.metrics.find(m=>m.name==='Synthetic weekly AR').id));
+      await research.locator('[data-ds-research-options] > summary').click();
       await research.locator('[data-ds="title"]').fill('Saved weekly trends');
       await research.locator('[data-ds="groupBy"]').selectOption('coach');
       await research.locator('[data-ds-run]').click();
@@ -167,7 +171,7 @@ const csv=[
       assert.deepEqual(frozen.data.map(p=>p.value),[45,null,60]);
       await page.evaluate(id=>openResearchItemEditor(id),itemId);
       await page.setViewportSize({width:600,height:800});
-      assert.equal(await page.getByRole('dialog',{name:'Dated Stats Research',exact:true}).isVisible(),true);
+      assert.equal(await page.getByRole('dialog',{name:'Weekly Stats Research',exact:true}).isVisible(),true);
       assert.deepEqual(errors,[],file+' runtime errors');
       console.log('PASS '+file+': CSV upload, reviewed calendar, manual categorization, typed Metric, Model trend, Research gap/evidence/export, frozen save/reload and small-window editor');
       await context.close();

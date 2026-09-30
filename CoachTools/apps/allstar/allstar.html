@@ -140,10 +140,12 @@
         </div>
         <div id="coachtoolsImportReview" class="checkResultList"></div>
         <details class="importDetails advancedUploads">
-          <summary>Advanced individual uploads</summary>
+          <summary>Individual Uploads</summary>
           <div class="grid2 importUploadGrid">
-            <div class="panel"><div class="panelTitle">Retail Stats</div><input id="retailFile" type="file" accept=".xlsx,.xls,.csv"><div id="retailFileName" class="fileName"></div></div>
-            <div class="panel"><div class="panelTitle">Referral Stats</div><input id="referralFile" type="file" accept=".xlsx,.xls,.csv"><div id="referralFileName" class="fileName"></div></div>
+            <div class="panel"><div class="panelTitle">Retail Monthly Stats</div><input id="retailFile" type="file" accept=".xlsx,.xls,.csv"><div id="retailFileName" class="fileName"></div></div>
+            <div class="panel"><div class="panelTitle">Referral Monthly Stats</div><input id="referralFile" type="file" accept=".xlsx,.xls,.csv"><div id="referralFileName" class="fileName"></div></div>
+            <div class="panel"><div class="panelTitle">Retail Weekly Stats</div><input type="file" data-ds-upload="weeklyRetail" accept=".xlsx,.xls,.csv" multiple><div data-ds-summary="weeklyRetail"></div></div>
+            <div class="panel"><div class="panelTitle">Referral Weekly Stats</div><input type="file" data-ds-upload="weeklyReferral" accept=".xlsx,.xls,.csv" multiple><div data-ds-summary="weeklyReferral"></div></div>
             <div class="panel"><div class="panelTitle">QA Stats</div><input id="qaFile" type="file" accept=".xlsx,.xls,.csv"><div id="qaFileName" class="fileName"></div></div>
             <div class="panel"><div class="panelTitle">Direct QA Team Score Override</div><input id="qaDirectFile" type="file" accept=".xlsx,.xls,.csv"><div id="qaDirectFileName" class="fileName"></div><div class="row"><button id="clearQADirectFileBtn" class="gray smallBtn" type="button">Clear Direct Override</button></div><div class="checkResultMeta">Optional. Direct QA team-score mode uses this upload first, then falls back to QA Stats. It never uses the categorized dated database.</div></div>
             <div class="panel"><div class="panelTitle">Checklist Items</div><input id="checklistFile" type="file" accept=".xlsx,.xls,.csv"><div id="checklistFileName" class="fileName"></div></div>

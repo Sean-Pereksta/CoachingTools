@@ -118,6 +118,8 @@
       if(!['fixed','changing'].includes(settings.mode||'fixed'))throw new Error('Sentence conditions currently support fixed groups or qualification each period. Keep before/after studies in the existing editor.');
       const catalog=adapter.catalog(),data=adapter.sources(metric.source,sources(question.root)),byRep=new Map();
       validate(question.root,catalog);
+      // A plain numerical graph has no event-qualification window to configure.
+      if(question.root.kind==='group'&&!question.root.children.length)return original.call(this,observations,metric,settings,events,options);
       for(const o of observations){if(!byRep.has(o.repId))byRep.set(o.repId,[]);byRep.get(o.repId).push(o);}
       const periods=E.series(observations,metric).map(p=>p.period);
       const windows=settings.mode==='changing'?periods:[{start:settings.anchorStart||metric.startDate,end:settings.anchorEnd||metric.endDate}];
