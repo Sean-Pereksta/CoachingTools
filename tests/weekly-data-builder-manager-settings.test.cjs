@@ -12,7 +12,7 @@ const plain=x=>JSON.parse(JSON.stringify(x));
 async function setup(store=new Map()){
  const ctx=vm.createContext({console,TextDecoder,TextEncoder,URL,Intl,setTimeout,clearTimeout,localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v)}});
  vm.runInContext(moduleText,ctx);const D=ctx.CoachToolsStatsDirectory;await D.ready;
- if(html)vm.runInContext(html.match(/<script id="core-script">([\s\S]*?)<\/script>/)[1],ctx);
+ if(html)vm.runInContext(fs.readFileSync(path.join(base,'CoachTools/shared/weekly-data-builder-core.js'),'utf8'),ctx);
  return {D,C:ctx.WeeklyCore,ctx,store};
 }
 function opportunity(details=[['Manager One','Coach A','Alex Reed','Fiscal LW (2026-09-20 – 2026-09-26)','2','1','50%','10','6','60%','20','19','95%']]){

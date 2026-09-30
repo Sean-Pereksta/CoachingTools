@@ -19,3 +19,8 @@ test('empty and representative-only scorecards have bounded pagination', () => {
   assert.deepEqual(pages(0, 5), []);
   assert.deepEqual(pages(1, 1), [{start:0, end:1, columns:[0]}]);
 });
+test('default image plan includes the entire report without segmentation', () => {
+ const {fullReport}=require('../shared/performance-scorecard-sharing.js');
+ const full=fullReport(23,12);assert.equal(full.start,0);assert.equal(full.end,23);
+ assert.deepEqual(full.columns,Array.from({length:12},(_,i)=>i));
+});

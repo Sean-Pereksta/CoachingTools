@@ -279,6 +279,7 @@
       if (!options || options.header !== 1 || !Array.isArray(result)) return result;
       return prepareWorkbookMatrix(result, sheet && sheet.__coachtoolsSheetName || '', workbookIdentity, manualWorkbookDate());
     };
+    XLSX.__coachtoolsRawSheetToJson = originalSheetToJson;
     XLSX.__coachtoolsWorkbookAware = true;
     return true;
   }
@@ -463,11 +464,13 @@
       if (metric) metricIndexes.push({ metric, index });
     });
     if (!metricIndexes.length) return workbookCompareState;
-    const baseline = new Map();
+    const baseline = new Map(), seen = new Set();
     for (const row of doc.querySelectorAll('#tableBody tr')) {
       const name = clean(row.querySelector('.repBtn')?.textContent);
       const personKey = normalizePersonKey(name);
       if (!personKey) continue;
+      if (seen.has(personKey)) { baseline.delete(personKey); continue; }
+      seen.add(personKey);
       const metrics = {};
       for (const { metric, index } of metricIndexes) {
         const cell = row.children[index];
@@ -476,11 +479,9 @@
       }
       if (Object.keys(metrics).length) baseline.set(personKey, metrics);
     }
-    if (baseline.size) {
-      workbookCompareState.baseline = baseline;
-      workbookCompareState.label = clean(doc.getElementById('workspaceMeta')?.textContent) || 'current Scorecard window';
-      workbookCompareState.capturedAt = Date.now();
-    }
+    workbookCompareState.baseline = baseline;
+    workbookCompareState.label = clean(doc.getElementById('workspaceMeta')?.textContent) || 'current Scorecard window';
+    workbookCompareState.capturedAt = Date.now();
     return workbookCompareState;
   }
   function installWorkbookComparisonUi() {
@@ -542,6 +543,7 @@
     });
     let compared = 0;
     for (const row of doc.querySelectorAll('#psUploadTableBody tr')) {
+      if (row.dataset.psIdentityAmbiguous === 'true') continue;
       const personKey = normalizePersonKey(row.children[0]?.querySelector('b')?.textContent || row.children[0]?.textContent);
       const baseline = workbookCompareState.baseline.get(personKey);
       if (!baseline) continue;

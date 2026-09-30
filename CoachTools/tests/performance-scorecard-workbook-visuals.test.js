@@ -77,10 +77,10 @@ test('workbook uses shared goals and filled success or opportunity cells', () =>
   assert.match(visuals, /Columns &amp; Goals/);
 });
 
-test('workbook Snip supports both PNG and paginated PDF export', () => {
+test('workbook sharing uses the full-image control and preserves PDF export', () => {
   const source = read(visualsPath);
   assert.match(source, /CoachToolsScorecardSharing.open\(true\)/);
-  assert.match(source, /Share \/ Copy image/);
+  assert.match(source, /Copy Full Scorecard/);
   assert.match(source, /html2canvas\.min\.js/);
   assert.match(source, /jspdf\.umd\.min\.js/);
   assert.match(source, /new jsPDF\(\{ orientation: 'landscape'/);

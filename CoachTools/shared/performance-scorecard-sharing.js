@@ -1,4 +1,4 @@
-/* Readable, bounded exports shared by stored-data and live-workbook scorecards. */
+/* Compact full-report image exports shared by stored-data and live-workbook scorecards. */
 (function (root) {
   'use strict';
   const doc = root.document;
@@ -11,7 +11,8 @@
     }
     return result;
   }
-  if (typeof module !== 'undefined') module.exports = {pages};
+  function fullReport(rowCount, columnCount) { return {start:0,end:rowCount,columns:Array.from({length:columnCount},(_,i)=>i)}; }
+  if (typeof module !== 'undefined') module.exports = {pages,fullReport};
   if (!doc) return;
   let active = false;
   const loads = new Map();
@@ -47,10 +48,12 @@
     originals.forEach((node, index) => {
       const style = root.getComputedStyle(node), copy = copies[index];
       copy.removeAttribute('id'); copy.removeAttribute('class'); copy.removeAttribute('style');
-      for (const key of ['display','padding','margin','font-family','font-weight','font-style','text-align','vertical-align','border-radius','border-top-width','border-right-width','border-bottom-width','border-left-width','border-top-style','border-right-style','border-bottom-style','border-left-style']) copy.style.setProperty(key, style.getPropertyValue(key));
+      for (const key of ['display','font-family','font-weight','font-style','text-align','vertical-align','border-radius','border-top-width','border-right-width','border-bottom-width','border-left-width','border-top-style','border-right-style','border-bottom-style','border-left-style']) copy.style.setProperty(key, style.getPropertyValue(key));
       for (const key of ['color','background-color','border-top-color','border-right-color','border-bottom-color','border-left-color']) copy.style.setProperty(key, color(style.getPropertyValue(key)));
-      copy.style.fontSize = `${Math.max(12, parseFloat(style.fontSize) || 12)}px`;
-      copy.style.lineHeight = '1.4'; copy.style.whiteSpace = 'normal'; copy.style.overflowWrap = 'anywhere';
+      copy.style.fontSize = `${Math.max(12, Math.min(14, parseFloat(style.fontSize) || 12))}px`;
+      copy.style.padding = '0'; copy.style.margin = '0'; copy.style.gap = '2px 4px';
+      copy.style.lineHeight = '1.25'; copy.style.whiteSpace = 'normal'; copy.style.overflowWrap = 'break-word';
+      if (node.matches('b,strong,.metricMain,.metricInline,.psUploadMetricMain,.psUploadMetricSub,.repNum')) copy.style.whiteSpace = 'nowrap';
       copy.style.position = 'static'; copy.style.maxWidth = '100%'; copy.style.minWidth = '0';
       copy.style.letterSpacing = 'normal'; copy.style.boxShadow = 'none';
       if (node.matches('.goalMet,.psGoalMet,.goalMiss,.psGoalMiss')) {
@@ -59,90 +62,96 @@
       }
       if (node.matches('button')) { copy.style.border = '0'; copy.style.background = 'transparent'; }
     });
-    clone.querySelectorAll('input,select,textarea,.goalEditor,[data-goal-reset]').forEach(node => node.remove());
+    clone.querySelectorAll('input,select,textarea,.goalEditor,.psUploadGoalEditor,[data-goal-reset],[data-ps-goal-reset]').forEach(node => node.remove());
     // Goal editors carry labels outside the input itself; remove the entire editor.
-    source.querySelectorAll('.goalEditor').forEach(node => copies[originals.indexOf(node)]?.remove());
+    source.querySelectorAll('.goalEditor,.psUploadGoalEditor,[data-goal-reset],[data-ps-goal-reset]').forEach(node => copies[originals.indexOf(node)]?.remove());
+    clone.querySelectorAll('button').forEach(button => {const label=doc.createElement('span');label.style.cssText=button.style.cssText;label.append(...button.childNodes);button.replaceWith(label);});
     return clone;
   }
   async function open(workbook) {
     if (active) return;
     const table = doc.querySelector(workbook ? '#psUploadOverlay .psUploadTable' : '#scorecardWorkspace table');
     const rows = Array.from(table?.tBodies[0]?.rows || []), headers = Array.from(table?.tHead?.rows[0]?.cells || []);
-    if (!rows.length || !headers.length || rows[0].cells.length !== headers.length) { root.alert('No scorecard rows to share. Adjust your filters or load data first.'); return; }
+    if (!rows.length || !headers.length || rows[0].cells.length !== headers.length || rows[0].cells[0]?.colSpan > 1) { root.alert('No scorecard rows to share. Adjust your filters or load data first.'); return; }
     active = true;
     const opener = doc.activeElement, dialog = doc.createElement('dialog');
     dialog.className = 'scorecardShareDialog';
-    dialog.innerHTML = '<form method="dialog"><strong>Share Performance Scorecard</strong><button aria-label="Close sharing">Close</button></form><p>Copy an image, then paste it into Teams. PDF files can be attached manually. Each section repeats the representative and column headings.</p><div class="shareActions"><label>Section <select aria-label="Scorecard section"></select></label><button type="button" data-share="copy">Copy image</button><button type="button" data-share="png">Save PNG</button><button type="button" data-share="pdf">Save all as PDF</button></div><p role="status" aria-live="polite">Preparing image…</p><img alt="Selected scorecard section. You can also right-click to copy or save this image.">';
+    dialog.innerHTML = '<form method="dialog"><strong>Share Performance Scorecard</strong><button aria-label="Close sharing">Close</button></form><p>One compact image contains every row and enabled column in your current view. Paste it into Teams or Outlook.</p><div class="shareActions"><button type="button" data-share="copy">Copy Full Scorecard</button><button type="button" data-share="png">Save PNG</button><button type="button" data-share="size" aria-pressed="false">Inspect full size</button><button type="button" data-share="pdf">Save PDF</button></div><p role="status" aria-live="polite">Preparing image…</p><div class="sharePreview"><img alt="Complete scorecard. You can also right-click to copy or save this image."></div>';
     doc.body.append(dialog); dialog.showModal();
-    const status = dialog.querySelector('[role=status]'), select = dialog.querySelector('select'), img = dialog.querySelector('img');
-    const representative = headers.findIndex(cell => /representative|associate|agent|name/i.test(cell.textContent));
-    const plan = pages(rows.length, headers.length, 10, 4, Math.max(0, representative));
-    plan.forEach((page, index) => { const option = doc.createElement('option'); option.value = index; option.textContent = `${index + 1} / ${plan.length} · rows ${page.start + 1}–${page.end} · ${page.columns.slice(1).map(i => headers[i].textContent.trim().split('\n')[0]).join(', ')}`; select.append(option); });
+    const status = dialog.querySelector('[role=status]'), img = dialog.querySelector('img');
+    const representative = Math.max(0,headers.findIndex(cell => /representative|associate|agent|name/i.test(cell.textContent)));
+    const visible = headers.map((cell,index)=>root.getComputedStyle(cell).display !== 'none' ? index : -1).filter(index=>index >= 0);
+    const full = fullReport(rows.length,headers.length); full.columns = visible;
+    const plan = pages(rows.length,headers.length,10,4,representative).map(page=>({...page,columns:page.columns.filter(i=>visible.includes(i))})).filter(page=>page.columns.length > 1 || visible.length === 1);
     const base = root.getComputedStyle(workbook ? doc.getElementById('psUploadOverlay') : doc.querySelector('.main'));
     const background = color(base.getPropertyValue('--panel').trim()) || '#ffffff', ink = color(base.color);
     const meta = doc.getElementById(workbook ? 'psUploadMeta' : 'workspaceMeta')?.textContent || '';
     const coach = doc.getElementById(workbook ? 'psUploadCoach' : 'coachSel');
-    const context = [meta, coach?.selectedOptions[0]?.textContent, doc.querySelector('#quickFilters .active')?.textContent].filter(Boolean).join(' · ');
+    const context = [meta, coach?.selectedOptions[0]?.textContent, workbook ? doc.getElementById('psUploadDepartment')?.value : doc.getElementById('departmentSel')?.value, workbook ? doc.getElementById('psUploadSearch')?.value : doc.querySelector('#quickFilters .active')?.textContent].filter(Boolean).join(' · ');
     // Snapshot once so changing underlying data cannot change later PDF pages.
     const headCopies = headers.map(freeze), rowCopies = rows.map(row => Array.from(row.cells).map(freeze));
-    let currentBlob, currentURL, closed = false, busy = false;
+    let currentBlob, currentURL, imageWidth, closed = false, busy = false;
     const filename = `performance-scorecard-${new Date().toISOString().slice(0,10)}`;
-    function lock(value) { busy = value; select.disabled = value; dialog.querySelectorAll('[data-share]').forEach(button => button.disabled = value); }
-    async function capture(index) {
+    function lock(value) { busy = value; dialog.querySelectorAll('[data-share]').forEach(button => button.disabled = value); }
+    async function capture(page) {
       await library('../vendor/html2canvas.min.js', () => !!root.html2canvas);
       await doc.fonts?.ready;
-      const page = plan[index], card = doc.createElement('section');
+      const card = doc.createElement('section');
       card.dataset.shareCapture = 'true';
-      card.style.cssText = `position:fixed;left:-20000px;top:0;width:1080px;padding:20px;box-sizing:border-box;background:${background};color:${ink};font:14px Arial,sans-serif;zoom:1;`;
-      const title = doc.createElement('h2'); title.textContent = 'Performance Scorecard'; title.style.cssText = 'font:700 24px Arial;margin:0 0 8px';
-      const subtitle = doc.createElement('p'); subtitle.textContent = context; subtitle.style.margin = '0 0 12px';
-      const exportTable = doc.createElement('table'); exportTable.style.cssText = 'width:100%;min-width:0;table-layout:fixed;border-collapse:collapse;font-size:14px';
+      const widths = page.columns.map(i=>i === representative ? 220 : Math.min(210,Math.max(88,...rows.map(row=>Math.ceil((row.cells[i]?.innerText || row.cells[i]?.textContent || '').split('\n').reduce((max,line)=>Math.max(max,line.length),0)*7+14)).slice(0,500))));
+      const width = Math.max(480,widths.reduce((sum,value)=>sum+value,0)+24);
+      card.style.cssText = `position:fixed;left:-20000px;top:0;width:${width}px;padding:12px;box-sizing:border-box;background:${background};color:${ink};font:14px Arial,sans-serif;zoom:1;`;
+      const title = doc.createElement('h2'); title.textContent = 'Performance Scorecard'; title.style.cssText = 'font:700 20px Arial;margin:0 0 5px';
+      const subtitle = doc.createElement('p'); subtitle.textContent = context; subtitle.style.cssText = 'margin:0 0 8px;font:12px/1.3 Arial';
+      const exportTable = doc.createElement('table'); exportTable.style.cssText = 'width:100%;min-width:0;table-layout:auto;border-collapse:collapse;font-size:14px';
+      const cols = doc.createElement('colgroup'); widths.forEach(w=>{const col=doc.createElement('col');col.style.width=w+'px';cols.append(col);}); exportTable.append(cols);
       const head = exportTable.createTHead().insertRow();
-      page.columns.forEach(i => {const cell = headCopies[i].cloneNode(true); cell.style.padding = '10px'; head.append(cell);});
+      page.columns.forEach(i => {const cell = headCopies[i].cloneNode(true); cell.style.padding = '5px 6px';cell.style.whiteSpace='normal';cell.style.borderBottom='1px solid #a6b4c6'; head.append(cell);});
       const body = exportTable.createTBody();
       for (let r = page.start; r < page.end; r++) {
         const row = body.insertRow();
-        page.columns.forEach(i => {const cell = rowCopies[r][i].cloneNode(true); cell.style.padding = '9px 10px'; row.append(cell);});
+        page.columns.forEach(i => {const cell = rowCopies[r][i].cloneNode(true); if(i === representative) {cell.style.maxWidth='260px';cell.querySelectorAll('b,strong,span').forEach(node=>node.style.whiteSpace='normal');} cell.style.padding = '4px 6px';cell.style.borderBottom='1px solid #cbd5e1'; row.append(cell);});
       }
-      const footer = doc.createElement('p'); footer.textContent = `Section ${index + 1} of ${plan.length} · Representatives ${page.start + 1}–${page.end} of ${rows.length} · Current filters, sort, columns and goals · ${new Date().toLocaleDateString()}`;
-      footer.style.cssText = 'margin:12px 0 0;font:12px Arial';
+      const footer = doc.createElement('p'); footer.textContent = `Representatives ${page.start + 1}–${page.end} of ${rows.length} · Current filters, sort, columns and goals`;
+      footer.style.cssText = 'margin:8px 0 0;font:12px Arial';
       card.append(title, subtitle, exportTable, footer); doc.body.append(card);
       try {
         const height = Math.ceil(card.getBoundingClientRect().height);
-        if (height > 7000) throw new Error('This section is too tall. Use Basic display or fewer columns before sharing.');
-        return await root.html2canvas(card, {scale:2, backgroundColor:background, logging:false, width:1080, height, windowWidth:1200, onclone: cloned => { const copy = cloned.querySelector('[data-share-capture]'); if(copy) copy.style.left = '0'; }});
+        const measuredWidth = Math.ceil(card.scrollWidth), scale = Math.min(2,32700 / Math.max(height,measuredWidth),Math.sqrt(64000000 / (height*measuredWidth)));
+        if(scale < 1) throw new Error('The complete scorecard exceeds this browser’s image size limit. Reduce the selected representatives or columns and try again. No rows were omitted.');
+        return await root.html2canvas(card, {scale, backgroundColor:background, logging:false, width:measuredWidth, height, windowWidth:measuredWidth,scrollX:0,scrollY:0, onclone: cloned => { const copy = cloned.querySelector('[data-share-capture]'); if(copy) copy.style.left = '0'; }});
       } finally {card.remove();}
     }
     async function prepare() {
       lock(true); currentBlob = null; status.textContent = 'Preparing full-color image…';
       try {
-        const canvas = await capture(Number(select.value)), blob = await toBlob(canvas);
+        const canvas = await capture(full), blob = await toBlob(canvas);
         if (closed) return;
-        currentBlob = blob; if(currentURL) URL.revokeObjectURL(currentURL); currentURL = URL.createObjectURL(blob); img.src = currentURL;
-        status.textContent = 'Ready. Copy image or save this section. PDF includes every section.';
+        currentBlob = blob; imageWidth = canvas.width; canvas.width = canvas.height = 0; if(currentURL) URL.revokeObjectURL(currentURL); currentURL = URL.createObjectURL(blob); img.src = currentURL;
+        status.textContent = `Ready · ${rows.length} representatives · ${visible.length} columns. Copy or save the complete image; inspect full size to read all details.`;
       } catch(error) {status.textContent = error.message;}
       finally {lock(false);}
     }
-    select.addEventListener('change', prepare);
     dialog.addEventListener('click', async event => {
       const action = event.target.closest('[data-share]')?.dataset.share;
       if (!action || busy) return;
+      if (action === 'size') { const expanded=dialog.classList.toggle('shareFullSize'); img.style.width=expanded ? imageWidth+'px' : ''; event.target.textContent=expanded ? 'Fit preview' : 'Inspect full size';event.target.setAttribute('aria-pressed',String(expanded));return; }
       if (action !== 'pdf' && !currentBlob) {await prepare(); return;}
       lock(true);
       try {
         if(action === 'copy') {
-          if(!root.isSecureContext || !root.ClipboardItem || !root.navigator.clipboard?.write) throw new Error('Image clipboard is unavailable here. Use Save PNG, or right-click the image and choose Copy image.');
+          if(!root.isSecureContext || !root.ClipboardItem || !root.navigator.clipboard?.write) throw new Error('Image clipboard is unavailable here.');
           await root.navigator.clipboard.write([new root.ClipboardItem({'image/png': currentBlob})]);
           status.textContent = 'Image copied. Paste it into your Teams chat.';
         } else if(action === 'png') {
-          download(currentBlob, `${filename}-section-${Number(select.value)+1}.png`); status.textContent = 'PNG saved.';
+          download(currentBlob, `${filename}.png`); status.textContent = 'PNG saved.';
         } else {
           await library('../vendor/jspdf.umd.min.js', () => !!root.jspdf?.jsPDF);
           let pdf;
           for(let i = 0; i < plan.length; i++) {
             if(closed) return;
             status.textContent = `Building PDF section ${i+1} of ${plan.length}…`;
-            const canvas = await capture(i), width = 810, height = canvas.height / canvas.width * width, orientation = width >= height ? 'landscape' : 'portrait';
+            const canvas = await capture(plan[i]), width = 810, height = canvas.height / canvas.width * width, orientation = width >= height ? 'landscape' : 'portrait';
             if(!pdf) pdf = new root.jspdf.jsPDF({orientation, unit:'pt', format:[width,height], compress:true});
             else pdf.addPage([width,height], orientation);
             pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, width, height, undefined, 'FAST');
@@ -156,5 +165,5 @@
     dialog.addEventListener('close', () => {closed = true; active = false; if(currentURL) URL.revokeObjectURL(currentURL); dialog.remove(); opener?.focus();}, {once:true});
     await prepare();
   }
-  root.CoachToolsScorecardSharing = {open};
+  root.CoachToolsScorecardSharing = {open,fullReport};
 })(typeof window === 'undefined' ? globalThis : window);

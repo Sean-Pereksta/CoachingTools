@@ -16,3 +16,6 @@ body[data-scorecard-density="condensed"] #scorecardWorkspace .metricCell{min-wid
 .scorecardShareDialog img:not([src]){display:none}
 .scorecardShareDialog [role="status"]{min-height:22px;font-weight:600}
 .scorecardShareDialog :focus-visible{outline:3px solid #3885f8;outline-offset:3px}
+
+.sharePreview{overflow:auto;max-height:65vh;border:1px solid #cbd5e1;border-radius:8px;background:white}
+.scorecardShareDialog .sharePreview img{width:100%;max-width:none;border:0;border-radius:0}
