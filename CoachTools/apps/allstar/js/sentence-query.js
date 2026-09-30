@@ -6,6 +6,8 @@
   const copy=x=>JSON.parse(JSON.stringify(x));
   const text=x=>String(x??'').normalize('NFKC').trim().toLowerCase();
   const OPS=['contains','not_contains','eq','neq','gt','gte','lt','lte','blank','not_blank','before','after'];
+  const validDate=x=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(String(x)))return false;const d=new Date(x+'T00:00:00Z');return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===x;};
+  const countLabels={gte:'at least',gt:'more than',eq:'exactly',lte:'at most',lt:'fewer than',neq:'not exactly'};
   const numeric=x=>x!==null&&x!==undefined&&String(x).trim()!==''&&Number.isFinite(Number(x))?Number(x):null;
   function combine(mode,values){
     if(mode==='not')return values[0]===null?null:!values[0];
@@ -26,7 +28,7 @@
       case 'eq':return a===b;case 'neq':return a!==b;
       case 'before':case 'after':{
         // Dates must be ISO calendar dates; ambiguous text never gets guessed.
-        if(!/^\d{4}-\d{2}-\d{2}$/.test(String(raw))||!/^\d{4}-\d{2}-\d{2}$/.test(String(node.value)))return null;
+        if(!validDate(String(raw))||!validDate(String(node.value)))return null;
         return node.op==='before'?raw<node.value:raw>node.value;
       }
       default:{const x=numeric(raw),y=numeric(node.value);if(x===null||y===null)return null;return ({gt:x>y,gte:x>=y,lt:x<y,lte:x<=y})[node.op]??null;}
@@ -79,9 +81,12 @@
       if(!catalog[rowSource]?.includes(node.field))throw new Error('Choose an available field in '+rowSource+'.');
       if(!['blank','not_blank'].includes(node.op)&&String(node.value??'').trim()==='')throw new Error('Enter a value for '+node.field+'.');
       if(['gt','gte','lt','lte'].includes(node.op)&&numeric(node.value)===null)throw new Error('Enter a valid number for '+node.field+'.');
+      if(['before','after'].includes(node.op)&&!validDate(String(node.value)))throw new Error('Enter an ISO calendar date: YYYY-MM-DD.');
       return;
     }
     if(node.kind==='stat'){
+      for(const key of ['minPeriods','requiredPeriods'])if(node[key]!==undefined&&(!Number.isInteger(Number(node[key]))||Number(node[key])<1))throw new Error('Period counts must be positive whole numbers.');
+      if(!!node.startDate!==!!node.endDate||node.startDate&&(!validDate(node.startDate)||!validDate(node.endDate)||node.startDate>node.endDate))throw new Error('Choose a complete, valid numerical-condition window.');
       if(!node.metricId)throw new Error('Choose a metric for this numerical condition.');
       if(!['gt','gte','lt','lte','eq','between'].includes(node.operator)||numeric(node.threshold)===null)throw new Error('Choose a valid numerical comparison.');
       if(node.operator==='between'&&(numeric(node.threshold2)===null||Number(node.threshold2)<Number(node.threshold)))throw new Error('Enter an upper threshold at least as large as the lower threshold.');
@@ -89,7 +94,7 @@
     }
     if(node.kind!=='event'||!Object.prototype.hasOwnProperty.call(catalog,node.source))throw new Error('Choose an available event source.');
     if(!['gt','gte','lt','lte','eq','neq'].includes(node.op)||!Number.isInteger(Number(node.value))||Number(node.value)<0)throw new Error('Enter a nonnegative whole session count.');
-    if(!!node.startDate!==!!node.endDate||node.startDate>node.endDate)throw new Error('An event window needs both dates in order.');
+    if(!!node.startDate!==!!node.endDate||node.startDate&&(!validDate(node.startDate)||!validDate(node.endDate)||node.startDate>node.endDate))throw new Error('An event window needs both dates in order.');
     validate(node.where,catalog,depth+1,node.source);
   }
   function sources(node){return [...new Set(node.kind==='group'?node.children.flatMap(sources):node.kind==='event'?[node.source]:[])];}
@@ -101,8 +106,8 @@
       return node.mode==='not'?'NOT ('+parts[0]+')':'('+parts.join(node.mode==='all'?' AND ':' OR ')+')';
     }
     if(node.kind==='field')return node.field+' '+labels[node.op]+(['blank','not_blank'].includes(node.op)?'':' “'+node.value+'”');
-    if(node.kind==='stat')return label(node.metricId)+' '+(labels[node.operator]||node.operator)+' '+node.threshold;
-    return label(node.source)+' has '+node.value+' matching sessions ('+node.op+'), where the SAME ROW matches '+describe(node.where,label)+(node.startDate?' during '+node.startDate+'–'+node.endDate:' during the selected qualifying window');
+    if(node.kind==='stat')return (node.mode==='trend'?(node.summary||'change')+' of ':'')+label(node.metricId)+' '+(labels[node.operator]||node.operator)+' '+node.threshold+(node.mode==='qualifying_periods'?' in at least '+(node.requiredPeriods||1)+' reporting periods':'')+(node.startDate?' during '+node.startDate+'–'+node.endDate:' during the qualifying window');
+    return label(node.source)+' has '+countLabels[node.op]+' '+node.value+' matching sessions, where the SAME ROW matches '+describe(node.where,label)+(node.startDate?' during '+node.startDate+'–'+node.endDate:' during the selected qualifying window');
   }
   function installResearch(E,adapter){
     const original=E.research;
@@ -144,6 +149,6 @@
     };
     return ()=>{E.research=original;};
   }
-  const api={installResearch,copy,OPS,labels,numeric,combine,predicate,countVerdict,evaluate,validate,sources,describe};
+  const api={validDate,countLabels,installResearch,copy,OPS,labels,numeric,combine,predicate,countVerdict,evaluate,validate,sources,describe};
   root.AllStarSentenceQuery=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
