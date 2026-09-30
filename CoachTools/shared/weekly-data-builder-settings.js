@@ -1,3 +1,20 @@
+(function loadWeeklyNameCapitalization(root) {
+  'use strict';
+  const doc = root.document, current = doc.currentScript;
+  if (root.WeeklyBuilderNames || doc.getElementById('weekly-builder-names-script')) return;
+  const src = current?.src ? new URL('weekly-data-builder-names.js', current.src).href : '../shared/weekly-data-builder-names.js';
+  if (doc.readyState === 'loading') {
+    const safeSrc = src.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    doc.write(`<script id="weekly-builder-names-script" src="${safeSrc}"><\/script>`);
+  } else {
+    const script = doc.createElement('script');
+    script.id = 'weekly-builder-names-script';
+    script.src = src;
+    script.async = false;
+    doc.head.appendChild(script);
+  }
+})(window);
+
 (function(root){
   'use strict';
   const D=root.CoachToolsStatsDirectory,B=root.WeeklyBuilder,doc=root.document;
@@ -7,7 +24,7 @@
   panel.innerHTML=`<style>.stats-settings{padding:20px;margin-top:16px}.stats-settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}.stats-settings label{display:block;font-size:12px;margin-top:8px}.stats-settings input:not([type=checkbox]),.stats-settings select{width:100%}.stats-settings .settings-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.stats-settings ul{padding-left:20px;max-height:230px;overflow:auto}.stats-settings td{white-space:normal;overflow-wrap:anywhere}.stats-settings .settings-scroll{max-height:240px;overflow:auto}.stats-settings input[type=file]{position:static;width:auto;height:auto;opacity:1}.stats-settings summary{padding:7px 0}.stats-settings .hint{font-size:12px}@media(max-width:800px){.stats-settings-grid{grid-template-columns:1fr}}</style>
   <h2>Saved managers &amp; automatic name replacements</h2><p class="hint">Settings stay in this browser. Report statistics are not saved here. Export settings to transfer them to another browser or file location.</p>
   <div class="stats-settings-grid"><div><h3>Manager → Coaches</h3><p id="stats-discovered" class="hint"></p><div class="settings-actions"><button type="button" id="stats-save-groups">Save detected manager groups</button></div><div id="stats-groups"></div><details><summary>Change a coach’s manager</summary><label>Coach<input id="stats-group-coach" list="stats-coach-names"></label><label>Manager<input id="stats-group-manager" list="stats-manager-names"></label><button type="button" id="stats-save-link">Save coach assignment</button></details></div>
-  <div><h3>Automatically replace a name on upload</h3><label>Name type<select id="stats-role"><option value="name">Representative</option><option value="coach">Coach</option><option value="manager">Manager</option></select></label><label>Name from the export<input id="stats-from" list="stats-source-names" placeholder="Select or enter the source name"></label><label>Replace it with<input id="stats-to" list="stats-source-names" placeholder="Preferred name"></label><div class="settings-actions"><button type="button" id="stats-save-alias">Save replacement</button><button type="button" id="stats-cancel-alias" hidden>Cancel edit</button></div><div id="stats-rules" class="settings-scroll"></div><p class="hint">Exact full-name matches only; no fuzzy matching. Saved rules apply before matching new reports. Changing rules invalidates the current preview. Existing history stays unchanged in Add mode.</p></div></div>
+  <div><h3>Automatically replace a name on upload</h3><label>Name type<select id="stats-role"><option value="name">Representative</option><option value="coach">Coach</option><option value="manager">Manager</option></select></label><label>Name from the export<input id="stats-from" list="stats-source-names" placeholder="Select or enter the source name"></label><label>Replace it with<input id="stats-to" list="stats-source-names" placeholder="Preferred name"></label><div class="settings-actions"><button type="button" id="stats-save-alias">Save replacement</button><button type="button" id="stats-cancel-alias" hidden>Cancel edit</button></div><div id="stats-rules" class="settings-scroll"></div><p class="hint">Exact full-name matches only; no fuzzy matching. Saved rules apply before matching new reports. Changing rules invalidates the current preview. Saved replacements do not rewrite history in Add mode; the separate name-capitalization option can format names across all dates.</p></div></div>
   <details><summary>Settings backup / transfer</summary><div class="settings-actions"><button type="button" id="stats-export">Export settings</button><label>Import settings<input type="file" id="stats-import" accept=".json,application/json"></label></div></details><p id="stats-settings-message" role="status" class="hint"></p><datalist id="stats-source-names"></datalist><datalist id="stats-coach-names"></datalist><datalist id="stats-manager-names"></datalist>`;
   doc.querySelector('.controls').after(panel);
   const $=id=>doc.getElementById(id);let editing='';
