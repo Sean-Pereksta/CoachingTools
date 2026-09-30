@@ -157,7 +157,12 @@
       byId('sourceSettingsPanel').before(sources);sources.appendChild(byId('sourceSettingsPanel'));
       const toggle=document.createElement('button');toggle.type='button';toggle.id='modelAllSettingsBtn';toggle.textContent='Show all settings';
       toggle.setAttribute('aria-pressed',String(expanded));host.appendChild(toggle);
-      toggle.onclick=()=>{expanded=!expanded;toggle.setAttribute('aria-pressed',String(expanded));try{localStorage.setItem(preferenceKey,expanded?'all':'focused');}catch(_){};renderEditModel();};
+      toggle.onclick=()=>{
+        if(!expanded){els.criteriaList.querySelectorAll('[data-model-group]').forEach(n=>view().sections.set(n.closest('[data-crit]').dataset.crit+':'+n.dataset.modelGroup,n.open));view().sourceOpen=byId('sourceSettingsPanel').parentElement.open;}
+        expanded=!expanded;toggle.setAttribute('aria-pressed',String(expanded));try{localStorage.setItem(preferenceKey,expanded?'all':'focused');}catch(_){}
+        els.criteriaList.querySelectorAll('[data-model-group]').forEach(n=>{n.open=expanded||(view().sections.get(n.closest('[data-crit]').dataset.crit+':'+n.dataset.modelGroup)??n.dataset.modelGroup==='definition');});
+        els.criteriaList.querySelectorAll('.modelCriterionBody').forEach(n=>n.dataset.all=String(expanded));byId('sourceSettingsPanel').parentElement.open=expanded||!!view().sourceOpen;focusCriterion(view().selected);
+      };
       byId('modelCriterionSearch').oninput=filter; byId('modelCriterionScope').onchange=filter;
       host.addEventListener('click',event=>{
         const jump=event.target.closest('[data-model-jump]');

@@ -21,10 +21,10 @@ async function main(){
   const inputCount=h.run('els.criteriaList.querySelectorAll("input,select,textarea").length');
   assert.equal(h.run('[...els.criteriaList.querySelectorAll(".modelCriterionBody")].filter(n=>!n.hidden).length'),1);
   assert.match(h.run('els.criteriaList.textContent'),/2.*filters|1 filters/);
-  h.run(`window.AllStarModelWorkspace.focusCriterion('custom');document.getElementById('modelAllSettingsBtn').click();`);
+  h.run(`window.AllStarModelWorkspace.focusCriterion('custom');const valueScan=uniqueValues;uniqueValues=()=>{throw new Error('View switches must not rescan source values');};document.getElementById('modelAllSettingsBtn').click();`);
   assert.equal(h.run('els.criteriaList.querySelectorAll("input,select,textarea").length'),inputCount);
   assert.deepEqual(plain(h.run('state.editModel')),plain(h.run('openedModel')),'All settings must not change the draft');
-  h.run('document.getElementById("modelAllSettingsBtn").click();');
+  h.run('document.getElementById("modelAllSettingsBtn").click();uniqueValues=valueScan;');
   assert.equal(h.run('els.criteriaList.querySelector("[data-crit=custom] .modelCriterionBody").hidden'),false);
   await h.run('window.AllStarModelWorkspace.preview()');
   const modelPreview=h.run('document.getElementById("modelSamplePreviewResult").innerHTML');
