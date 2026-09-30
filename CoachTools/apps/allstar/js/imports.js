@@ -686,7 +686,7 @@ function directWorkbookFromCoachToolsDataset(dataset){
   const names=[...(dataset?.workbook?.sheets||[])], aoaBySheet={};
   names.forEach(name=>{ aoaBySheet[name]=dataset?.workbook?.data?.[name]?.aoa||[]; });
   // Loader-compatible adapter: SheetJS objects are intentionally not rebuilt.
-  return {SheetNames:names,Sheets:Object.create(null),Props:{Title:dataset?.meta?.fileName||''},__coachToolsAoaBySheet:aoaBySheet,__coachToolsDirect:true,__datedStatsConfig:dataset?.meta?.datedStatsConfig||null,__datedStatsAudit:dataset?.meta?.datedStatsAudit||[],__monthlySelection:dataset?.meta?.monthlySelection||null,__monthlyBundle:dataset?.meta?.monthlyBundle||null};
+  return {SheetNames:names,Sheets:Object.create(null),Props:{Title:dataset?.meta?.fileName||''},__coachToolsAoaBySheet:aoaBySheet,__coachToolsDirect:true,__weeklyScope:dataset?.meta?.automaticImportScope||[],__datedStatsConfig:dataset?.meta?.datedStatsConfig||null,__datedStatsAudit:dataset?.meta?.datedStatsAudit||[],__monthlySelection:dataset?.meta?.monthlySelection||null,__monthlyBundle:dataset?.meta?.monthlyBundle||null};
 }
 async function coachToolsDatasetFromAllStarBook(bookKey,datasetType){
   if(state.data[bookKey]?.monthlyBundle)return window.CoachToolsMonthly.toDataset(state.data[bookKey].monthlyBundle,bookKey);

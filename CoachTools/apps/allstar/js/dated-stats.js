@@ -20,11 +20,12 @@
   }
   const iso=ms=>new Date(ms).toISOString().slice(0,10);
   function day(value){
-    if(value instanceof Date)return Date.UTC(value.getFullYear(),value.getMonth(),value.getDate());
+    if(value instanceof Date)return Date.UTC(value.getUTCFullYear(),value.getUTCMonth(),value.getUTCDate());
     if(typeof value==='number')return Number.isFinite(value)&&value>0?Date.UTC(1899,11,30)+Math.floor(value)*DAY:NaN;
     const s=String(value??'').trim();let y,m,d,hit;
     if((hit=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/)))[,y,m,d]=hit;
-    else if((hit=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)))[,m,d,y]=hit;
+    else if((hit=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/))){[,m,d,y]=hit;if(y.length===2)y=String(+y<70?2000+(+y):1900+(+y));}
+    else if((hit=s.match(/^(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4})$/i))){m=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(hit[1].slice(0,3).toLowerCase())+1;d=hit[2];y=hit[3];}
     else return NaN;
     const ms=Date.UTC(+y,+m-1,+d), dt=new Date(ms);
     return dt.getUTCFullYear()===+y&&dt.getUTCMonth()===+m-1&&dt.getUTCDate()===+d?ms:NaN;
@@ -34,7 +35,7 @@
     const s=String(raw).trim();
     if(/^(?:n\/?a|unavailable|null|nan|—|-)$/i.test(s))return {value:null,status:'unavailable',raw};
     if(/^(?:suppressed|\*+|<\s*\d+)$/i.test(s))return {value:null,status:'suppressed',raw};
-    if(def.kind==='percentage'&&!s.endsWith('%')&&!['fraction','percentage-points'].includes(def.inputUnit))return {value:null,status:'unavailable',raw,reason:'Percentage unit needs review for this reporting date'};
+    if(def.kind==='percentage'&&!s.endsWith('%')&&!['fraction','percentage-points'].includes(def.inputUnit))return {value:null,status:'unavailable',raw,reason:'Percentage scale is unclear. Edit this field’s unit.'};
     let n;
     if(def.kind==='duration'&&s.includes(':')){
       const parts=s.split(':').map(Number);
@@ -43,13 +44,13 @@
     }else{
       const cleaned=s.replace(/,/g,'').replace(/^\$/,'').replace(/%$/,'');
       n=/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(cleaned)?Number(cleaned):NaN;
-      if(def.kind==='percentage'&&!s.endsWith('%'))n*=def.inputUnit==='fraction'?100:1;
+      if(def.kind==='percentage'&&!s.endsWith('%')&&def.inputUnit==='fraction')n=Number((n*100).toPrecision(15));
       if(def.kind==='duration')n*=({days:86400,minutes:60,seconds:1}[def.inputUnit]||1);
     }
     const invalid=!Number.isFinite(n)||(def.nonnegative!==false&&n<0)||(def.kind==='count'&&!Number.isInteger(n))||(def.kind==='percentage'&&(n<0||(def.bounded!==false&&n>100)));
     return {value:invalid?null:n,status:invalid?'invalid':'valid',raw,unit:def.kind==='percentage'?'percentage-points':def.kind==='duration'?'seconds':def.kind||'number'};
   }
-  function defaultConfig(source,headers=[]){
+  function defaultConfig(source,headers=[],rows=[]){
     const fields={};
     const counts=['Total Opportunities','Total Appointments','Consumer Opportunities','Consumer Appointments','Insurance Opportunities','Insurance Appointments','Commercial Opportunities','Commercial Appointments','ACD Calls',...(source==='weeklyRetail'?['Wiper Jobs','Wiper Count']:['Wipers Asked','Wipers Accept'])];
     const rates=['Total Opportunity Rate','Total Appointment Rate','Consumer Appointment Rate','Insurance Appointment Rate','Commercial Appointment Rate','Wiper Rate','% Available','ITAC %','% ACW','Email Collection Rate All Providers','SMS Opt-In %','Total Retention Rate','Total Net Conversion Rate'];
@@ -58,12 +59,20 @@
       else if(rates.some(c=>key(c)===key(h)))fields[h]={kind:'percentage',inputUnit:'fraction',behavior:'rate',bounded:key(h)!=='total opportunity rate'};
       else if(key(h)==='average acd time')fields[h]={kind:'duration',inputUnit:'days',behavior:'average'};
       else if(/^(inbound calls per hour|outbound cph)$/i.test(h))fields[h]={kind:'number',inputUnit:'number',behavior:'average'};
+      else if(!/^(name|representative|agent name|associate name|sheet|coach|team|manager|manager name|.*date|.* id)$/i.test(h)&&!h.startsWith('_')){
+        const values=rows.map(r=>r[h]).filter(v=>v!=null&&String(v).trim()!==''&&!/^(n\/?a|unavailable|null|nan|—|-|suppressed|\*+|<\s*\d+)$/i.test(String(v).trim()));
+        if(values.length&&values.some(v=>/^[+-]?(?:\$?\d[\d,]*(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?%?$/i.test(String(v).trim()))){
+          const percentage=/%|rate|percentage/i.test(h)||values.some(v=>String(v).trim().endsWith('%'));
+          fields[h]={kind:percentage?'percentage':'number',inputUnit:percentage?'':'number',behavior:percentage?'rate':'average',nonnegative:percentage};
+        }
+      }
     }
-    return {version:VERSION,category:'datedStats',source,repField:'Name',coachField:'Sheet',managerField:'Manager',dateField:'Date',scopeField:'',fields,calendar:{reviewed:false,frequency:'week',label:'',offsetDays:0},corrections:'replace'};
+    const column=(names,fallback)=>headers.find(h=>names.includes(key(h)))||fallback;
+    return {version:VERSION,category:'datedStats',source,repField:column(['name','representative','agent name','associate name'],'Name'),coachField:column(['sheet','coach','team','job coach'],'Sheet'),managerField:column(['manager','manager name'],'Manager'),dateField:column(['date','stats date','report date','week date'],'Date'),scopeField:'',fields,calendar:{reviewed:false,frequency:'week',label:'',offsetDays:0},corrections:'replace'};
   }
   function period(raw,calendar={}){
-    if(!calendar.reviewed)throw new Error('Review the reporting calendar before categorizing Dated Stats.');
     const ms=day(raw);if(!Number.isFinite(ms))return null;
+    if(!calendar.reviewed||calendar.frequency==='observation')return {start:iso(ms),end:iso(ms),startMs:ms,endMs:ms,key:iso(ms)+'/'+iso(ms),sourceDate:iso(ms),frequency:'observation'};
     let start=ms,end=ms;
     if(calendar.frequency==='week'){
       if(calendar.label==='ending')start=ms-6*DAY;
@@ -84,19 +93,20 @@
       const k=rawKey(row,config),old=byKey.get(k),fresh={...row,_dsFile:meta.fileName||row._dsFile||'',_dsImportedAt:meta.importedAt||new Date().toISOString()};
       if(seenIncoming.has(k)){
         const prior=seenIncoming.get(k);
-        const same=Object.keys(row).filter(h=>!h.startsWith('_')).every(h=>String(prior[h]??'')===String(row[h]??''));
+        const same=Object.keys(row).filter(h=>!h.startsWith('_')).every(h=>String(prior[h]??'')===String(row[h]??'')&&prior._dsUnits?.[h]===row._dsUnits?.[h]);
         if(same){counts.duplicates++;continue;}
         conflicts.push(fresh);counts.conflicts++;continue;
       }
       seenIncoming.set(k,row);
       if(old){
-        const changed=Object.keys(row).filter(h=>!h.startsWith('_')&&String(old[h]??'')!==String(row[h]??''));
+        const changed=Object.keys(row).filter(h=>!h.startsWith('_')&&(String(old[h]??'')!==String(row[h]??'')||old._dsUnits?.[h]!==row._dsUnits?.[h]));
         if(!changed.length){counts.duplicates++;continue;}
         counts.corrections++;audit.push({key:k,at:fresh._dsImportedAt,file:fresh._dsFile,previousFile:old._dsFile||'',fields:changed.map(field=>({field,before:old[field]??null,after:row[field]??null}))});
       }
       // A partial import changes only columns actually supplied. Blank cells in a
       // supplied column explicitly replace that measurement with missing data.
-      byKey.set(k,{...old,...fresh});
+      const units={...(old?._dsUnits||{})};for(const field of Object.keys(row).filter(h=>!h.startsWith('_'))){delete units[field];if(row._dsUnits?.[field])units[field]=row._dsUnits[field];}
+      byKey.set(k,{...old,...fresh,_dsUnits:units});
     }
     // Importing a different week must not silently resolve an older conflict.
     // A supplied key replaces that key's prior conflicting records only.
@@ -115,11 +125,11 @@
       const identity=options.resolveIdentity?options.resolveIdentity(name,row):{id:key(name),name};
       if(!identity?.id){diagnostics.unresolvedIdentities++;issues.push({row:index+2,name,reason:identity?.reason||'Unresolved representative identity'});return;}
       const p=period(row[config.dateField],config.calendar);
-      if(!p){diagnostics.invalidDates++;issues.push({row:index+2,name,reason:'Invalid reporting date'});return;}
+      if(!p){diagnostics.invalidDates++;issues.push({row:index+2,name,field:config.dateField,reason:'Invalid source date'});return;}
       const scope=config.scopeField?String(row[config.scopeField]??''):'default';
       const id=[config.source,identity.id,p.key,scope].join('|'),values={};
       const coachResult=options.resolveCoach?.(row[config.coachField])||{value:String(row[config.coachField]??'').trim(),method:'source label'};
-      for(const [h,def] of Object.entries(config.fields||{})){const unit=def.inputUnit==='per-date'?def.unitsByDate?.[finite(day(row[config.dateField]))?iso(day(row[config.dateField])):String(row[config.dateField])]:def.inputUnit;values[h]=cell(row[h],{...def,inputUnit:unit});if(values[h].status==='invalid')diagnostics.invalidValues++;}
+      for(const [h,def] of Object.entries(config.fields||{})){const unit=def.inputUnit==='per-date'?def.unitsByDate?.[finite(day(row[config.dateField]))?iso(day(row[config.dateField])):String(row[config.dateField])]:def.inputUnit;values[h]=cell(row[h],{...def,inputUnit:!def.unitReviewed&&row._dsUnits?.[h]||unit});if(['invalid','unavailable'].includes(values[h].status)){diagnostics.invalidValues++;issues.push({row:index+2,name,field:h,reason:values[h].reason||'Unreadable '+h+' value',raw:row[h]});}}
       const o={id,source:config.source,repId:identity.id,rep:identity.name||name,coach:coachResult.value,manager:String(row[config.managerField]??'').trim(),period:p,scope,values,categories:[...new Set(row._dsCategories||[])],provenance:{file:row._dsFile||options.fileName||'',row:row._dsRow||index+2,importedAt:row._dsImportedAt||'',sourceDate:String(row[config.dateField]),method:'imported',rawCoach:row[config.coachField]||'',coachResolution:coachResult.method}};
       const old=observations.get(id);
       if(old){

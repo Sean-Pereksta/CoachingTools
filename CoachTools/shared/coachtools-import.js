@@ -276,14 +276,18 @@
             const wb=root.XLSX.utils.book_new();root.XLSX.utils.book_append_sheet(wb,root.XLSX.utils.aoa_to_sheet(rows),'Monthly Export');return wb;
           }
         }
-        return root.XLSX.read(payload, { type: 'string' });
+        // SheetJS can convert ISO date-only CSV text through local time and
+        // shift it to the previous day. Weekly observations keep source text.
+        const headings=payload.split(/\r?\n/).slice(0,40).join('\n');
+        const weeklyText=/\bweekly\b/i.test(normalizedFileName(file.name))||/(?:^|[,\t;])\s*"?(?:Date|Stats Date|Report Date|Week Date)"?\s*(?:[,\t;]|$)/im.test(headings)&&/(?:^|[,\t;])\s*"?(?:Name|Representative|Agent Name|Associate Name)"?\s*(?:[,\t;]|$)/im.test(headings);
+        return root.XLSX.read(payload, { type: 'string', cellNF: true, raw: weeklyText });
       }
       finally { if (diagnostics) diagnostics.end('XLSX parse', { fileName: file.name }); }
     }
     try { payload = await file.arrayBuffer(); }
     finally { if (diagnostics) diagnostics.end('File read', { fileName: file.name }); }
     if (diagnostics) diagnostics.start('XLSX parse', { fileName: file.name, format: extension.slice(1) });
-    try { return root.XLSX.read(payload, { type: 'array' }); }
+    try { return root.XLSX.read(payload, { type: 'array', cellNF: true }); }
     finally { if (diagnostics) diagnostics.end('XLSX parse', { fileName: file.name }); }
   }
 
@@ -296,6 +300,7 @@
     for (let index = 0; index < sheets.length; index += 1) {
       const name = sheets[index];
       const aoa = trimAOAInPlace(root.XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '' }));
+      if (['weeklyRetail','weeklyReferral'].includes(options?.source)) preserveWeeklyPercentages(aoa, workbook.Sheets[name]);
       data[name] = { aoa };
       totalRows += aoa.length;
       if (onProgress) onProgress({ phase: 'reading-sheet', fileName: file.name, sheetName: name, current: index + 1, total: sheets.length });
@@ -312,6 +317,15 @@
       },
       workbook: { sheets, data }
     };
+  }
+
+  // Preserve a spreadsheet's declared scale when serializing weekly cells.
+  // Explicit percent text keeps raw precision and survives shared-store reloads.
+  function preserveWeeklyPercentages(aoa, sheet) {
+    for (let r=0;r<aoa.length;r++) for (let c=0;c<(aoa[r]?.length||0);c++) {
+      const cell=sheet?.[root.XLSX.utils.encode_cell({r,c})];
+      if (typeof cell?.v==='number' && cell.z && /%/.test(cell.z.replace(/"[^"]*"|\\./g,''))) aoa[r][c]=String(Number((cell.v*100).toPrecision(15)))+'%';
+    }
   }
 
   function decodedSheetRange(sheet) {
@@ -422,7 +436,7 @@
 
   async function materializeDiscoveredEntry(entry, scope, options) {
     await statsSettingsReady;
-    if(['weeklyRetail','weeklyReferral'].includes(entry.classification?.id) && root.CoachToolsStatsDirectory?.snapshot().aliases.some(a=>a.enabled!==false)) return parseFile(entry.file);
+    if(['weeklyRetail','weeklyReferral'].includes(entry.classification?.id) && root.CoachToolsStatsDirectory?.snapshot().aliases.some(a=>a.enabled!==false)) return parseFile(entry.file,{source:entry.classification.id});
     if (!entry || !entry.rawWorkbook) return entry && entry.parsed;
     const source = entry.classification && entry.classification.id;
     if (!source) throw new Error('The file has not been safely classified.');
@@ -461,6 +475,7 @@
           aoa = preview.map(row => Array.isArray(row) ? row.slice() : []);
         }
       }
+      if (['weeklyRetail','weeklyReferral'].includes(source)) preserveWeeklyPercentages(aoa, sheet);
       data[sheetName] = { aoa };
       totalRows += aoa.length;
       if (onProgress) onProgress({ phase: 'materializing-scope', fileName: entry.file && entry.file.name || '', sheetName, current: index + 1, total: sheets.length });

@@ -6,7 +6,7 @@
   const SOURCE_NAMES={documented_coaching:'Documented Coaching',checklist:'Checklist',qa:'Call monitors / QA'};
   const uid=()=> 'sq_'+Math.random().toString(36).slice(2)+Date.now().toString(36);
   const copy=Q.copy,html=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const metrics=()=>state.metrics.filter(m=>m.dataCategory==='datedStats'&&m.output!=='summary');
+  const metrics=()=>datedStatsAvailableMetrics();
   const label=x=>SOURCE_NAMES[x]||state.metrics.find(m=>m.id===x)?.name||x;
   const catalog=()=>Object.fromEntries(Object.keys(SOURCE_NAMES).map(s=>[s,getHeaders(s).filter(h=>!h.startsWith('_'))]));
   const group=()=>({id:uid(),kind:'group',mode:'all',children:[]});
@@ -37,7 +37,7 @@
     }
     return out;
   }
-  Q.installResearch(E,{catalog,sources:readSources,metric:id=>state.metrics.find(m=>m.id===id),label});
+  Q.installResearch(E,{catalog,sources:readSources,metric:id=>metrics().find(m=>m.id===id),label});
   const oldNormalize=normalizeResearchItem,oldOpen=openDatedStatsResearchEditor,oldRender=renderDatedStatsResult,oldResearchOpen=openResearchItemEditor;
   normalizeResearchItem=function(raw){
     const result=oldNormalize(raw),saved=state.researchItems?.find(i=>i.id===raw?.id);
@@ -73,14 +73,12 @@
   }
   function open(itemId){
     const saved=state.researchItems.find(i=>i.id===itemId),ms=metrics();
-    if(!ms.length){starterMetric();return;}
+    if(!ms.length){alert('Upload weekly statistics to choose a numerical field.');return;}
     const draftKey='allstar.sentence.draft.v1.'+(itemId||'new');let remembered=null;
     try{remembered=JSON.parse(localStorage.getItem(draftKey)||'null');}catch(_){}
-    let item=copy(saved||{id:uid(),title:'Weekly performance question',source:ms[0].source,outputType:'line',cardSize:'full',valueMode:'datedStats',groupField:'Date',secondaryGroupField:'Coach',columns:[{field:'@'+ms[0].name,mode:'datedStats'}],datedStats:{version:1,metricId:ms[0].id,mode:'fixed',groupBy:'representative',eventConditions:[],statConditions:[],coverage:{},buckets:[0,1,2,3,4]}});
+    let item=copy(saved||{id:uid(),title:'Weekly performance question',source:ms[0].source,outputType:'line',cardSize:'full',valueMode:'datedStats',groupField:'Date',secondaryGroupField:'Coach',columns:[{field:'@'+ms[0].name,mode:'datedStats'}],datedStats:{version:1,...datedStatsSelectMetric({},ms[0]),mode:'fixed',groupBy:'all',eventConditions:[],statConditions:[],coverage:{},buckets:[0,1,2,3,4]}});
     if(!item.datedStats.sentenceQuery)item.datedStats.sentenceQuery={version:1,view:'line',root:group()};
     markIds(item.datedStats.sentenceQuery.root);
-    const m=state.metrics.find(x=>x.id===item.datedStats.metricId),pack=state.categorized.stats?.sources?.[m?.source];
-    if(!saved&&pack?.observations?.length){const periods=[...new Map(pack.observations.map(o=>[o.period.key,o.period])).values()].filter(p=>p.end<new Date().toISOString().slice(0,10)).sort((a,b)=>a.start.localeCompare(b.start)).slice(-6);if(periods.length)Object.assign(item.datedStats,{startDate:periods[0].start,endDate:periods.at(-1).end,anchorStart:periods[0].start,anchorEnd:periods.at(-1).end});}
     const previousFocus=document.activeElement,dialog=document.createElement('dialog');dialog.className='sq-dialog';
     dialog.innerHTML=`<header><div><small>ALL-STAR · SENTENCE RESEARCH</small><h2>Build your question</h2></div><button type="button" data-sq-close aria-label="Close sentence builder">Close</button></header><p>Click a phrase to change it. Use <strong>+</strong> beside a value to add modifiers. Existing Models, Metrics and Research remain unchanged.</p>${remembered?'<button type="button" data-sq-restore>Restore your unsaved draft</button>':''}<div data-sq-sentence></div><section data-sq-edit hidden aria-label="Edit selected sentence phrase"></section><div class="sq-actions"><button type="button" data-sq-preview>Update preview</button><label><input type="checkbox" data-sq-auto> Auto-refresh preview</label><button type="button" data-sq-save>Save question and result</button><button type="button" data-sq-advanced>Open saved version in existing editor</button></div><p data-sq-status role="status" aria-live="polite">Ready to preview. Uses loaded data, never invented sample values.</p><section class="sq-preview" data-sq-preview-result><h3>Preview</h3><p>Your chart or table will appear here, followed by sample people and the source rows explaining their results.</p></section>`;
     document.body.appendChild(dialog);dialog.showModal();
@@ -89,7 +87,7 @@
     // View state never enters the question definition or its calculation signature.
     let sectionOpen={show:true,people:false,when:false};
     try{sectionOpen={...sectionOpen,...JSON.parse(localStorage.getItem('allstar.sentence.view.v1')||'{}')};}catch(_){}
-    const metric=()=>state.metrics.find(x=>x.id===item.datedStats.metricId);
+    const metric=()=>datedStatsResearchMetric(item.datedStats);
     const s=()=>item.datedStats,q=()=>s().sentenceQuery;
     const token=(key,title)=>`<button type="button" class="sq-token" data-sq-edit="${html(key)}">${html(title)} <span aria-hidden="true">▾</span></button>`;
     const plus=(id,source='')=>`<button type="button" class="sq-plus" data-sq-add="${html(id)}" data-sq-source="${html(source)}" aria-label="Add ${source?'same-row modifier':'condition'}">+</button>`;
@@ -101,9 +99,9 @@
     function draw(){
       sentence.querySelectorAll('[data-sq-section]').forEach(n=>sectionOpen[n.dataset.sqSection]=n.open);
       const people=s().selectedRepIds?.length?s().selectedRepIds.length+' selected representatives':s().coachNames?.length?'representatives under '+s().coachNames.length+' selected coaches':s().managerNames?.length?'representatives under selected managers':s().orgIds?.length?'representatives in selected organizations':'all loaded representatives';
-      const dates=(s().startDate||'choose start')+' → '+(s().endDate||'choose end');
+      const dates=s().startDate||s().endDate?(s().startDate||'first source date')+' → '+(s().endDate||'last source date'):'all source dates';
       const part=(key,title,summary,body)=>`<details class="sq-question-section" data-sq-section="${key}" ${sectionOpen[key]?'open':''}><summary><strong>${title}</strong><span class="sq-muted">${html(summary)}</span></summary>${body}</details>`;
-      sentence.innerHTML=`<button type="button" data-sq-all>Show all question settings</button>${part('show','Show',(q().view==='table'?'Table':'Line graph')+' · '+(metric()?.name||'Choose a statistic'),`<div class="sq-sentence">Show ${token('view',q().view==='table'?'a table':'a line graph')} of ${token('metric',metric()?.name||'choose a statistic')}.<div class="sq-muted">People included in this question ${plus(q().root.id)}</div></div><p class="sq-muted">${html(metric()?.formulaLabel||metric()?.field||metric()?.name||'')} · ${html(metric()?.aggregation||'')}</p>`)}${part('people','For',people+' · '+s().groupBy,`<div class="sq-subline">For ${token('people',people)}, ${token('group','broken down by '+(s().groupBy==='all'?'one combined group':s().groupBy))}.</div><p class="sq-muted">${s().groupBy==='manager'||s().groupBy==='organization'?'Manager/organization selection may use current saved membership; assigned coach comes from historical observations.':''}</p>`)}${part('when','When',dates+' · '+q().root.children.length+' population requirements',`<div class="sq-subline">Measure during ${token('dates',dates)}. ${token('membership',s().mode==='changing'?'Check who qualifies each reporting period':'Follow the same qualifying people')}. Qualifying window: ${token('anchor',(s().anchorStart||'choose start')+' → '+(s().anchorEnd||'choose end'))}.</div>${tree(q().root)}${token('coverage','Review event coverage')}<p class="sq-muted">Actual reporting periods from the reviewed source calendar.</p>`)}${token('name',item.title)} ${token('standard','Create a standard stat')}`;
+      sentence.innerHTML=`<button type="button" data-sq-all>Show all question settings</button>${part('show','Show',(q().view==='table'?'Table':'Line graph')+' · '+(metric()?.name||'Choose a statistic'),`<div class="sq-sentence">Show ${token('view',q().view==='table'?'a table':'a line graph')} of ${token('metric',metric()?.name||'choose a statistic')} by ${html(labelSource(metric()?.source))} → ${html(datedStatsConfig(metric()?.source).dateField||'Date')}.<div class="sq-muted">People included in this question ${plus(q().root.id)}</div></div><p class="sq-muted">${html(metric()?.formulaLabel||metric()?.field||metric()?.name||'')} · ${html(metric()?.aggregation==='equal_rep'?'Average of representative values':metric()?.aggregation==='combined_rate'?'Combined rate':metric()?.aggregation||'')}</p>`)}${part('people','For',people+' · '+s().groupBy,`<div class="sq-subline">For ${token('people',people)}, ${token('group','broken down by '+(s().groupBy==='all'?'one combined group':s().groupBy))}.</div><p class="sq-muted">${s().groupBy==='manager'||s().groupBy==='organization'?'Manager/organization selection may use current saved membership; assigned coach comes from historical observations.':''}</p>`)}${part('when','When',dates+' · '+q().root.children.length+' population requirements',`<div class="sq-subline">Measure during ${token('dates',dates)}. ${token('membership',s().mode==='changing'?'Check who qualifies each reporting period':'Follow the same qualifying people')}. Qualifying window: ${token('anchor',(s().anchorStart||'choose start')+' → '+(s().anchorEnd||'choose end'))}.</div>${tree(q().root)}${token('coverage','Review event coverage')}<p class="sq-muted">Uploaded fields use their attached source dates. Date filters are optional.</p>`)}${token('name',item.title)} ${token('standard','Create a standard stat')}`;
       sentence.querySelectorAll('[data-sq-section]').forEach(n=>n.addEventListener('toggle',()=>{sectionOpen[n.dataset.sqSection]=n.open;try{localStorage.setItem('allstar.sentence.view.v1',JSON.stringify(sectionOpen));}catch(_){}}));
       sentence.querySelector('[data-sq-all]').onclick=()=>sentence.querySelectorAll('[data-sq-section]').forEach(n=>n.open=true);
     }
@@ -126,24 +124,28 @@
     }
     function edit(key){
       if(key==='view')return form('Choose the result',select('Show','view',[['line','Line graph — reporting dates'],['table','Table — group and reporting date']],q().view),v=>q().view=v.view);
-      if(key==='metric')return form('Choose a saved statistic',select('Statistic','metricId',metrics().map(m=>[m.id,m.name+' · '+m.source]),s().metricId),v=>{s().metricId=v.metricId;item.source=metric().source;item.columns=[{field:'@'+metric().name,mode:'datedStats'}];});
+      if(key==='metric'){
+        const available=metrics();
+        form('Choose a source and value',select('Data source','source',[['weeklyRetail','Retail Weekly Stats'],['weeklyReferral','Referral Weekly Stats']],metric().source)+select('Value','metricId',available.filter(m=>m.source===metric().source).map(m=>[m.id,m.directField?m.field:'Custom metric → '+m.name]),metric().id),v=>{const chosen=available.find(m=>m.id===v.metricId);if(!chosen)throw new Error('Choose a numerical field.');datedStatsSelectMetric(s(),chosen);item.source=chosen.source;item.columns=[{field:'@'+chosen.name,mode:'datedStats'}];});
+        editor.querySelector('[data-sq-value="source"]').onchange=e=>{editor.querySelector('[data-sq-value="metricId"]').innerHTML=available.filter(m=>m.source===e.target.value).map(m=>`<option value="${html(m.id)}">${html(m.directField?m.field:'Custom metric → '+m.name)}</option>`).join('');};return;
+      }
       if(key==='name')return form('Name this question',input('Title','title',item.title),v=>{if(!v.title.trim())throw new Error('Enter a title.');item.title=v.title;});
       if(key==='group')return form('What does each line or table group represent?',select('One result per','groupBy',[['all','All included representatives combined'],['representative','Representative'],['coach','Assigned coach'],['manager','Manager'],['organization','Organization']],s().groupBy),v=>s().groupBy=v.groupBy);
       if(key==='membership')return form('Who qualifies over time?',select('Membership','mode',[['fixed','Follow the same qualifying people'],['changing','Check who qualifies each reporting period']],s().mode),v=>s().mode=v.mode);
       if(key==='dates'||key==='anchor'){
         const a=key==='dates'?'startDate':'anchorStart',b=key==='dates'?'endDate':'anchorEnd';
-        return form(key==='dates'?'When is performance measured?':'When do people qualify?',input('From','start',s()[a]||'','date')+input('Through','end',s()[b]||'','date')+'<p>Only complete reporting periods are measured. Event dates and performance dates may differ.</p>',v=>{if(!Number.isFinite(E.day(v.start))||!Number.isFinite(E.day(v.end))||v.start>v.end)throw new Error('Choose valid dates in order.');s()[a]=v.start;s()[b]=v.end;});
+        return form(key==='dates'?'When is performance measured?':'When do people qualify?',input('From','start',s()[a]||'','date')+input('Through','end',s()[b]||'','date')+'<p>Uploaded fields use their source Date. Leave bounds blank to include all available dates. Event windows may differ.</p>',v=>{if(v.start&&!Number.isFinite(E.day(v.start))||v.end&&!Number.isFinite(E.day(v.end))||v.start&&v.end&&v.start>v.end)throw new Error('Choose valid dates in order.');s()[a]=v.start;s()[b]=v.end;});
       }
       if(key==='people'){
-        const observations=state.categorized.stats?.sources?.[metric().source]?.observations||[],directory=root.CoachToolsStatsDirectory?.grouped()||[];
-        const sections=[['selectedRepIds','Representatives',[...new Map(observations.map(o=>[o.repId,o.rep])).entries()]],['coachNames','Coaches',[...new Set(observations.map(o=>o.coach).filter(Boolean))].sort().map(x=>[x,x])],['managerNames','Managers',directory.map(g=>[g.name,g.name])],['orgIds','Organizations',(state.orgs||[]).map(o=>[o.id,o.name])]];
+        const observations=datedStatsCategory(metric().source,true,!!metric().directField).observations||[],directory=root.CoachToolsStatsDirectory?.grouped()||[];
+        const sections=[['selectedRepIds','Representatives',[...new Map(observations.map(o=>[o.repId,o.rep])).entries()]],['coachNames','Coaches',[...new Set(observations.map(o=>o.coach).filter(Boolean))].sort().map(x=>[x,x])],['managerNames','Managers',[...new Set([...directory.map(g=>g.name),...observations.map(o=>o.manager).filter(Boolean)])].map(name=>[name,name])],['orgIds','Organizations',(state.orgs||[]).map(o=>[o.id,o.name])]];
         form('Select people; blank selections include everyone',sections.map(([key,title,entries])=>`<fieldset><legend>${title}</legend><input type="search" data-sq-search placeholder="Search ${title.toLowerCase()}"><div class="sq-picker">${entries.map(([value,title])=>`<label><input type="checkbox" data-sq-multi="${key}" value="${html(value)}" ${(s()[key]||[]).includes(value)?'checked':''}>${html(title)}</label>`).join('')}</div></fieldset>`).join('')+'<p>Selections within a section are combined. Different sections narrow each other. Managers use the saved manager-to-coach directory.</p>',()=>{for(const [key] of sections)s()[key]=[...editor.querySelectorAll(`[data-sq-multi="${key}"]:checked`)].map(x=>x.value);});
         editor.querySelectorAll('[data-sq-search]').forEach(input=>input.oninput=()=>input.nextElementSibling.querySelectorAll('label').forEach(l=>l.hidden=!l.textContent.toLowerCase().includes(input.value.toLowerCase())));return;
       }
       if(key==='coverage')return form('Confirm completeness only when you know the source is complete',Object.entries(SOURCE_NAMES).map(([source,title])=>{const c=s().coverage?.[source]||{};return `<fieldset><legend>${title}</legend>${input('Coverage from',source+'_start',c.start||'','date')}${input('Coverage through',source+'_end',c.end||'','date')}<label><input type="checkbox" data-sq-value="${source}_complete" ${c.complete?'checked':''}> All selected representatives and events are covered for these dates</label></fieldset>`;}).join('')+'<p>Exact and zero-session counts require complete coverage. Invalid dates or unresolved identities prevent completeness from being assumed.</p>',v=>{s().coverage=s().coverage||{};for(const source of Object.keys(SOURCE_NAMES)){if(v[source+'_complete']&&(!Number.isFinite(E.day(v[source+'_start']))||!Number.isFinite(E.day(v[source+'_end']))||v[source+'_start']>v[source+'_end']))throw new Error('Choose valid coverage dates.');s().coverage[source]={start:v[source+'_start'],end:v[source+'_end'],complete:v[source+'_complete']};}});
       if(key==='standard'){
         const source=metric().source;
-        return form('Create a reusable standard statistic',select('Statistic','statistic',E.standardMetrics(source).map(m=>[m.id,m.name]),E.standardMetrics(source)[0]?.id)+select('Combining people','aggregation',[['equal_rep','Each representative counts equally'],['combined_rate','Each opportunity counts equally']], 'equal_rep'),async v=>{const def=E.standardMetrics(source).find(m=>m.id===v.statistic);const m=E.normalizeMetric({id:uid(),name:def.name,source,statistic:def.id,aggregation:v.aggregation});const previous=state.metrics;state.metrics=[...previous,m];try{if(!await saveMetrics())throw new Error('The new metric could not be saved.');}catch(e){state.metrics=previous;throw e;}s().metricId=m.id;item.columns=[{field:'@'+m.name,mode:'datedStats'}];renderMetricList();});
+        return form('Create a reusable standard statistic',select('Statistic','statistic',E.standardMetrics(source).map(m=>[m.id,m.name]),E.standardMetrics(source)[0]?.id)+select('Combining people','aggregation',[['equal_rep','Each representative counts equally'],['combined_rate','Each opportunity counts equally']], 'equal_rep'),async v=>{const def=E.standardMetrics(source).find(m=>m.id===v.statistic);const m=E.normalizeMetric({id:uid(),name:def.name,source,statistic:def.id,aggregation:v.aggregation});const previous=state.metrics;state.metrics=[...previous,m];try{if(!await saveMetrics())throw new Error('The new metric could not be saved.');}catch(e){state.metrics=previous;throw e;}datedStatsSelectMetric(s(),m);item.columns=[{field:'@'+m.name,mode:'datedStats'}];renderMetricList();});
       }
       const n=walk(q().root,key);if(!n)return;
       if(n.kind==='group')return form('How should these conditions combine?',select('Match','mode',[['all','All of these conditions'],['any','At least one condition'],...(n.children.length===1?[['not','Not this condition']]:[])],n.mode),v=>n.mode=v.mode);
@@ -157,7 +159,7 @@
     }
     function checked(){
       if(!metric())throw new Error('Choose an available metric.');Q.validate(q().root,catalog());
-      if(!s().startDate||!s().endDate)throw new Error('Choose the performance reporting dates.');
+
       item.source=metric().source;item.outputType=q().view;return normalizeResearchItem(copy(item));
     }
     function signature(){return JSON.stringify([item,state.metrics,state.sourceMeta,state.orgs,root.CoachToolsStatsDirectory?.snapshot().revision]);}
@@ -187,7 +189,7 @@
     dialog.querySelector('[data-sq-restore]')?.addEventListener('click',()=>{if(remembered?.datedStats?.sentenceQuery?.version!==1){status.textContent='This draft version is not supported.';return;}item=copy(remembered);markIds(q().root);changed();});
     dialog.querySelector('[data-sq-close]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{running++;clearTimeout(timer);dialog.remove();previousFocus?.focus();});draw();
   }
-  openDatedStatsResearchEditor=function(id){if(state.researchItems.find(i=>i.id===id)?.datedStats?.sentenceQuery)return open(id);return oldOpen(id);};
+  openDatedStatsResearchEditor=function(id,source){if(state.researchItems.find(i=>i.id===id)?.datedStats?.sentenceQuery)return open(id);return oldOpen(id,source);};
   openResearchItemEditor=function(id){if(state.researchItems.find(i=>i.id===id)?.datedStats?.sentenceQuery)return open(id);return oldResearchOpen(id);};
   const button=document.createElement('button');button.type='button';button.id='allstarSentenceBuilder';button.className='toolbarBtn';button.textContent='Build a question +';button.onclick=()=>open();
   document.querySelector('.toolbar')?.insertBefore(button,document.getElementById('researchBtn'));

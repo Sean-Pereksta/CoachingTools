@@ -627,7 +627,7 @@ function researchFieldReferencedSources(field, defaultSource=''){
   return out;
 }
 function researchReferencedSources(item={}){
-  if(item.datedStats){const s=item.datedStats,m=state.metrics.find(m=>m.id===s.metricId);return [...new Set([m?.source,...(s.eventConditions||[]).map(c=>c.source),...((s.groupBy==='coaching_frequency'||s.mode==='before_after')?[s.coachingSource||'documented_coaching']:[]),...(s.modelId?requiredRunSourcesForModel(findModel(s.modelId)||{}):[])].filter(Boolean))];}
+  if(item.datedStats){const s=item.datedStats,m=datedStatsResearchMetric(s);return [...new Set([m?.source,...(s.eventConditions||[]).map(c=>c.source),...((s.groupBy==='coaching_frequency'||s.mode==='before_after')?[s.coachingSource||'documented_coaching']:[]),...(s.modelId?requiredRunSourcesForModel(findModel(s.modelId)||{}):[])].filter(Boolean))];}
   const refs=[]; const add=src=>{ if(src && !isDynamicResearchSource(src) && !refs.includes(src)) refs.push(src); };
   [item.groupField,item.groupExpression,item.dateColumn,item.secondaryGroupField,item.panelField,item.valueField,item.percentOfField,item.numeratorExpression,item.denominatorExpression,item.withinCompareField].forEach(f=>researchFieldReferencedSources(f,item.source).forEach(add));
   (item.columns||[]).forEach(c=>{ const resolved=resolveResearchTypedMeasure(c.measureId||researchMeasureIdFromRef(c.field),item.source); if(resolved?.source) add(resolved.source); researchFieldReferencedSources(c.field,item.source).forEach(add); researchFieldReferencedSources(c.percentOfField,item.source).forEach(add); researchFieldReferencedSources(c.withinCompareField,item.source).forEach(add); });
