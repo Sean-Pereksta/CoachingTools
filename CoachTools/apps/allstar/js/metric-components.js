@@ -48,3 +48,19 @@
   }
   const api={component,evaluate};root.CoachToolsMetricComponents=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
+
+/* Optional creation UI bootstrap. The rate utility above remains unchanged.
+ * Defer until all legacy scripts are ready; no source scans or categorization. */
+(function(){
+  if(typeof document==='undefined'||!document.currentScript?.src)return;
+  const base=document.currentScript.src;
+  const load=file=>new Promise((resolve,reject)=>{
+    const script=document.createElement('script');script.src=new URL(file,base).href;
+    script.onload=resolve;script.onerror=()=>{script.remove();reject(new Error('Could not load '+file));};document.head.appendChild(script);
+  });
+  const start=async()=>{
+    try{if(!window.AllStarSentenceQuery)await load('sentence-query.js');if(!window.AllStarSentenceWorkspace)await load('sentence-workspace.js');}
+    catch(error){console.warn('[All-Star sentence builder]',error);const toolbar=document.querySelector('.toolbar');if(toolbar&&!document.getElementById('sentenceBuilderRetry')){const button=document.createElement('button');button.id='sentenceBuilderRetry';button.textContent='Retry sentence builder';button.onclick=()=>{button.remove();start();};toolbar.appendChild(button);}}
+  };
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+})();
