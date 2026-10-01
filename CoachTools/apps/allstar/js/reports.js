@@ -10,12 +10,12 @@ async function buildRun(runRequest={}){
   const start=parseDateOnly(settings.startDate), end=parseDateOnly(settings.endDate); if(start&&end&&start>end){ const err=new Error('Start Date must be on or before End Date.'); if(runRequest.rethrow) throw err; alert(err.message); return null; }
   let teams=[], includeOrgNames=new Set(), excludeOrgNames=new Set();
   if(runRequest.org){
-    includeOrgNames=orgCoachSet(runRequest.org); teams=knownCoachNames().filter(t=>includeOrgNames.has(normalizeOrgName(t)));
+    includeOrgNames=orgCoachSet(runRequest.org); teams=knownCoachNames().filter(t=>includeOrgNames.has(coachNameKey(t)));
     if(!teams.length){ const err=new Error(`Organization "${runRequest.org.name}" does not contain any coaches found in the imported data.`); if(runRequest.rethrow) throw err; alert(err.message); return null; }
   }else{
     const selectedTeams=(settings.selectedTeams||[]).map(canonicalCoachName).filter(Boolean); includeOrgNames=selectedRunOrgSet(new Set(settings.includeOrgIds||[])); excludeOrgNames=selectedRunOrgSet(new Set(settings.excludeOrgIds||[]));
     if(!selectedTeams.length&&!includeOrgNames.size){ alert('Select at least one team or include org before running the report.'); return null; }
-    teams=[...new Map([...selectedTeams,...knownCoachNames().filter(t=>includeOrgNames.has(normalizeOrgName(t)))].map(t=>[coachNameKey(t),canonicalCoachName(t)])).values()].filter(t=>!excludeOrgNames.has(normalizeOrgName(t)));
+    teams=[...new Map([...selectedTeams,...knownCoachNames().filter(t=>includeOrgNames.has(coachNameKey(t)))].map(t=>[coachNameKey(t),canonicalCoachName(t)])).values()].filter(t=>!excludeOrgNames.has(coachNameKey(t)));
     if(!teams.length){ alert('No teams/coaches remain after org filters.'); return null; }
   }
   const qaDateMode=settings.qaDateMode||'interaction', qaTeamScoreMode=settings.qaTeamScoreMode||'assignedReps', view=settings.view||'both';

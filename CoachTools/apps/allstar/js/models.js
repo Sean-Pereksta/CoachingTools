@@ -356,7 +356,7 @@ function normalizeFullNameDisplay(value,options={}){
 }
 function cleanName(s){ return normalizeFullNameDisplay(s); }
 function titleCase(s){return String(s||'').toLowerCase().replace(/\b[a-z]/g,m=>m.toUpperCase()).replace(/\b([ivx]+|jr|sr)\b/gi,m=>m.toUpperCase()).replace(/\s+/g,' ').trim();}
-function canonicalCoachName(s){ return cleanName(String(s ?? '').trim()); }
+function canonicalCoachName(s){ const raw=String(s??'').trim();return cleanName(window.CoachToolsStatsDirectory?.resolve(raw,'coach')||raw); }
 function coachNameKey(s){ return norm(canonicalCoachName(s)); }
 function resolveWeeklyCoachIdentity(value,sourceArea='',candidates=null){
   const raw=canonicalCoachName(value); if(!raw) return {value:'',method:'unresolved',raw};
@@ -991,6 +991,7 @@ function researchMonthBucket(ms){ if(!Number.isFinite(ms)) return ''; const d=ne
 function researchDayBucket(ms){ return Number.isFinite(ms) ? ymd(new Date(ms)) : ''; }
 function sourceDescriptionHeaders(source){ const hs=getHeaders(source)||[]; return hs.filter(h=>/description|desc|note|comment|compliment|detail|summary|item|category|result/i.test(h)); }
 function rowDateMillisForSource(source,row){
+  if(isDatedStatsSource(source))return parseDateOnly(weeklySourceRowIdentity(row,source).date)?.getTime()||NaN;
   if(source===DATED_SOURCE) return parseDateOnly(row.Date||row._date)?.getTime()||NaN;
   if(source===NONDATED_SOURCE) return NaN;
   if(source==='qa' || source===QA_DIRECT_SOURCE) return parseDateOnly(row._interactionDate||row._assignedDate||row._date)?.getTime()||NaN;
@@ -999,6 +1000,7 @@ function rowDateMillisForSource(source,row){
   return h ? (parseDateOnly(row[h])?.getTime()||NaN) : (parseDateOnly(row._date)?.getTime()||NaN);
 }
 function sourceIndexDateReader(source){
+  if(isDatedStatsSource(source)){const dateField=weeklyIdentityContext(source).config.dateField;return row=>parseDateOnly(row[dateField]??row._date)?.getTime()||NaN;}
   if(source===DATED_SOURCE) return row=>parseDateOnly(row.Date||row._date)?.getTime()||NaN;
   if(source===NONDATED_SOURCE) return ()=>NaN;
   if(source==='qa'||source===QA_DIRECT_SOURCE) return row=>parseDateOnly(row._interactionDate||row._assignedDate||row._date)?.getTime()||NaN;
@@ -1011,7 +1013,7 @@ function makeResearchSourceIndex(source, rows){
   return {source,dateReader:sourceIndexDateReader(source),entityTable:ensureResearchCanonicalEntityTable(),version:state.dataIndex?.version||0,rows,headers,descriptionHeaders:descHeaders,byRep:new Map(),byTeam:new Map(),byTeamKey:new Map(),byCoach:new Map(),byCoachKey:new Map(),bySourceName:new Map(),byCategory:new Map(),byDate:new Map(),byDateBucket:new Map(),byWeek:new Map(),byMonth:new Map(),byHeader:new Map(),byHeaderName:new Map(),byColumnValue:new Map(),byWord:new Map(),byRepWord:new Map(),byRepSortedDate:new Map(),byTeamSortedDate:new Map(),byRowId:new Map(),dateValues:[],dateSortedRows:[],searchText:new WeakMap(),tokens:new WeakMap(),rowMeta:new WeakMap(),lazyIndexes:new Map(),reps:new Map(),perf:{rowsIndexed:0,lazyBuilds:[]}};
 }
 function addResearchIndexedRow(idx,source,row,rowId){
-  const key=row._repKey||'', team=rowTeam(row), coach=team, ms=idx.dateReader?idx.dateReader(row):rowDateMillisForSource(source,row), day=researchDayBucket(ms), month=researchMonthBucket(ms), week=Number.isFinite(ms)?ymd(startOfWeekDate(new Date(ms),'sunday')):'';
+  const key=isDatedStatsSource(source)?weeklySourceRowIdentity(row,source).repKey:(row._repKey||''), team=rowTeam(row,{source}), coach=team, ms=idx.dateReader?idx.dateReader(row):rowDateMillisForSource(source,row), day=researchDayBucket(ms), month=researchMonthBucket(ms), week=Number.isFinite(ms)?ymd(startOfWeekDate(new Date(ms),'sunday')):'';
   state.researchBuildingRowMeta=state.researchBuildingRowMeta instanceof WeakMap?state.researchBuildingRowMeta:new WeakMap(); state.researchBuildingRowMeta.set(row,{source,rowId});
   idx.rowMeta.set(row,{rowId,source});
   const canonical=researchCanonicalEntityForRow(row,source,team,idx.entityTable);
@@ -1088,7 +1090,7 @@ function researchSourceIndexSignature(source){
   const fileName=cs?.fileName || (source.startsWith('retail')?state.data.retail.fileName:source.startsWith('referral')?state.data.referral.fileName:(state.data[source]?.fileName||''));
   const sourceVersion=state.sourceMeta?.[source]?.sourceVersion??state.sourceMeta?.[source]?.version??state.versions?.data??0;
   const importModel=activeModelForImport(); if(!importModel?.sourceSettings?.[source]) getSourceSetting(importModel,source);
-  return [RESEARCH_SOURCE_INDEX_SCHEMA_VERSION,source,sourceVersion,rows.length,headers.join('\u001f'),fileName,state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0,state.versions?.roster||0,stableSerialize({settings:importModel?.sourceSettings?.[source]||null,mapping:state.sourceMappings?.[source]||cs?.mappings||cs?.fieldMappings||null,columns:cs?.columns||null})].join('\u001e');
+  return [RESEARCH_SOURCE_INDEX_SCHEMA_VERSION,source,sourceVersion,rows.length,headers.join('\u001f'),fileName,state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0,state.versions?.roster||0,stableSerialize({settings:importModel?.sourceSettings?.[source]||null,mapping:state.sourceMappings?.[source]||cs?.mappings||cs?.fieldMappings||null,columns:cs?.columns||null,weeklyConfig:isDatedStatsSource(source)?state.data[source]?.config:null,statsDirectory:typeof weeklyDirectoryRevision==='function'?weeklyDirectoryRevision():0})].join('\u001e');
 }
 async function ensureResearchSourceIndex(source,opts={}){
   if(!source || isDynamicResearchSource(source)) return null;

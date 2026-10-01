@@ -17,7 +17,7 @@ const csv='Date,Sheet,Name,Manager,Consumer Appointment Rate,Alternate Date\n'+d
       await page.waitForFunction(()=>state.startup.completed);
       await page.evaluate(()=>window.CoachToolsStatsSettingsReady);
       await page.evaluate(()=>openModal('importModal'));
-      const uploads=page.locator('.advancedUploads');await uploads.locator('summary').first().click();
+      const uploads=page.locator('.coreSourcesSection');assert.equal(await uploads.isVisible(),true);
       assert.deepEqual(await uploads.locator('.importUploadGrid .panelTitle').allTextContents().then(x=>x.slice(0,4)),['Retail Monthly Stats','Referral Monthly Stats','Retail Weekly Stats','Referral Weekly Stats']);
       assert.equal(await page.getByText('Review calendar & field types',{exact:true}).count(),0);
       for(const source of ['weeklyRetail','weeklyReferral']){
@@ -52,7 +52,6 @@ const csv='Date,Sheet,Name,Manager,Consumer Appointment Rate,Alternate Date\n'+d
       }
       // Optional mapping correction is saved without calendar confirmation.
       await page.evaluate(()=>{openModal('importModal');state.data.weeklyRetail.rows[2]['Alternate Date']='2026-09-28';markSourceCacheDirty('weeklyRetail','test date correction');renderDatedStatsImportSummary();});
-      await page.locator('.advancedUploads > summary').click();
       await page.locator('[data-ds-config="weeklyRetail"]').click();
       const editor=page.getByRole('dialog',{name:/Retail Weekly Stats · Source configuration/});
       await editor.locator('[data-ds="dateField"]').selectOption('Alternate Date');

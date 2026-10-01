@@ -27,7 +27,7 @@ const csv=[
       await page.waitForFunction(()=>typeof state!=='undefined'&&state.startup.completed);
       await page.evaluate(()=>window.CoachToolsStatsSettingsReady);
       await page.evaluate(()=>openModal('importModal'));
-      await page.locator('.advancedUploads > summary').click();
+      assert.equal(await page.locator('.coreSourcesSection').isVisible(),true);
       await page.locator('[data-ds-upload="weeklyRetail"]').setInputFiles({name:'synthetic-weekly.csv',mimeType:'text/csv',buffer:Buffer.from(csv)});
       await page.waitForFunction(()=>state.data.weeklyRetail.rows.length===3&&!state.activeImportJob);
       assert.equal(await page.evaluate(()=>state.data.weeklyRetail.config.calendar.reviewed),false);

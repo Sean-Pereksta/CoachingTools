@@ -128,8 +128,9 @@ function renderDatedStatsImportSummary(){
     const source=box.dataset.dsSummary,data=state.data[source]||{};
     let pack,message='';try{if(data.rows?.length)pack=datedStatsCategory(source,true,true);}catch(error){message=error.message;}
     const issues=[...new Set((pack?.issues||[]).map(i=>(i.field?i.field+': ':'')+i.reason))];
-    box.innerHTML=`<div class="fileName">${esc(data.fileName||'No file uploaded')} · ${Number(data.rows?.length||0).toLocaleString()} rows</div>${data.rows?.length?`<button type="button" class="smallBtn" data-ds-config="${source}">Edit</button><span class="hint"> Uses source Date automatically</span>`:''}${message||issues.length?`<div role="status">${esc(message||issues.slice(0,5).join(' · '))}</div>`:''}`;
+    box.innerHTML=weeklySourceStatusHtml(source)+`${data.rows?.length?`<button type="button" class="smallBtn" data-ds-config="${source}">Edit fields</button><span class="hint"> Uses source Date automatically</span>`:''}${message||issues.length?`<div role="status">${esc(message||issues.slice(0,5).join(' · '))}</div>`:''}`;
     box.querySelector('[data-ds-config]')?.addEventListener('click',()=>openDatedStatsSourceEditor(source));
+    box.querySelector('[data-source-fix-teams]')?.addEventListener('click',()=>els.fixTeamsBtn?.click());
   });
 }
 function evaluateDatedStatsMetric(metric,rows,source,warnings=[]){

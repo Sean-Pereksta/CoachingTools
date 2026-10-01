@@ -116,3 +116,15 @@ PLAYWRIGHT_MODULE to its module path and CHROMIUM_PATH to an existing Chromium
 binary if they are not on the normal Node/browser paths. It exercises both the
 modular and portable file:// builds without publishing or generating previews.
 See docs/modernization-validation.md for measured coverage and limitations.
+
+Weekly Research population and coverage
+--------------------------------------
+Retail/Referral Weekly Stats use their saved representative, coach (including Sheet), and date mappings in Reports, Research, Models, and readiness checks. Trusted roster assignments take precedence, while a valid source coach remains usable when a representative is absent from the roster. Manual team fixes and the Stats Directory remain supported.
+
+Guided weekly line charts use the actual imported dates as X and the requested Coach/Team breakdown as series. Unique representative percentages are computed separately within each coach/week; duplicate rows do not multiply people, and missing points remain blank. Natural order is chronological. Advanced axes and secondary grouping remain configurable.
+
+Representative data coverage optionally requires at least X distinct observed weeks. Date and population filters run first; coverage runs before qualifying conditions and percentage aggregation. Its preview and result diagnostics include excluded representatives.
+
+Update Data shows core upload/status cards immediately. Weekly cards list detected fields, dates, coaches, roster matches, and names needing review. The multi-file import and specialized sources remain available below.
+
+Regression: node tests/weekly-research-population.test.js (also in the modernization suite).

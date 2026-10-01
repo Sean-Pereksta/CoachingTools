@@ -204,7 +204,7 @@ async function buildOrgReadiness(org,saved,settings={},options={}){
   // Intersect the current organization membership with the saved population via
   // the evaluator's optional inspection scope; never replace saved filters.
   const reps=new Set(coverage.reps.map(r=>normalizeIdentityName(r.key||r.name))), readers=researchCohortIdentityReaders(item.source);
-  const all=getResearchSourceRows(item.source), scopeRows=new Set(all.filter(r=>reps.has(readers.rep(r))));
+  const all=getResearchSourceRows(item.source), scopeRows=new Set(all.filter(r=>reps.has(readers.rep(r))||inOrg(researchRowTeam(r,item.source),org)));
   if(item.outputType==='table'&&!(item.columns||[]).length)issues.push({level:'blocking',text:'The saved table has no output columns to evaluate.'});
   if(!coverage.complete)issues.push({level:'blocking',text:`Organization coverage is incomplete for: ${coverage.noRoster.join(', ')||'unidentified representatives'}.`});
   if(!coverage.count)issues.push({level:'blocking',text:'No current representatives can be identified for this organization.'});
