@@ -1,0 +1,32 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+const gaps = read('apps/coaching-gaps.html');
+const ctx = vm.createContext({ toNumRaw: Number });
+vm.runInContext(gaps.slice(gaps.indexOf('function pickField(allKeys'), gaps.indexOf('\nfunction ', gaps.indexOf('function computeTeamForRows') + 10)), ctx);
+const rows = [{ 'Wipers Accept': 1, 'Wipers Accepted Rate': 99, 'Wipers Accepted': 6, 'Wipers Asked Rate': 88, 'Wipers Asked': 20, 'Wiper Count': 9, 'Wiper Jobs': 10 }];
+const fields = ctx.buildFieldMap(rows);
+assert.equal(fields.wipersAccept, 'Wipers Accepted');
+assert.equal(fields.wipersAsked, 'Wipers Asked');
+assert.equal(ctx.computeTeamForRows(rows, 'referral', fields).wiperRate, .3);
+assert.equal(ctx.computeTeamForRows(rows, 'retail', fields).wiperRate, .9);
+for (const name of ['performance-scorecard.html', 'performance-scorecard-enhanced.html']) {
+  const src = read('apps/' + name);
+  const c = vm.createContext({ window: {} });
+  vm.runInContext('const rowLookupCache = new WeakMap();' + src.match(/function clean\(v\)[^\n]*/)[0] + src.slice(src.indexOf('function parseNum('), src.indexOf('function extract(')) + src.slice(src.indexOf('function metricFromRows('), src.indexOf('function installWeeklyDiagnostics(')), c);
+  const actual = c.metricFromRows(rows, 'weeklyReferral').wiper;
+  assert.equal(actual.num, 6); assert.equal(actual.den, 20); assert.equal(actual.value, .3);
+  assert.equal(c.metricFromRows(rows, 'weeklyRetail').wiper.value, .9);
+  assert.equal(c.metricFromRows([{'Wipers Accept': 3, 'Wipers Asked': 10}], 'weeklyReferral').wiper.value, .3);
+}
+const old = [{'Wipers Accept': 3, 'Wipers Asked': 10}];
+assert.equal(ctx.computeTeamForRows(old, 'referral', ctx.buildFieldMap(old)).wiperRate, .3);
+const normalized = [{' wipers_accepted ': 4, ' Wipers-Asked ': 20}];
+assert.equal(ctx.computeTeamForRows(normalized, 'referral', ctx.buildFieldMap(normalized)).wiperRate, .2);
+require('../shared/performance-scorecard-upload-mode-core.js');
+const uploaded = globalThis.CoachToolsPerformanceScorecardUploadMode._test.wiperMetric(rows[0], 'Referral');
+assert.equal(uploaded.num, 6); assert.equal(uploaded.den, 20); assert.equal(uploaded.value, .3);
+console.log('Referral wiper header priority, opportunities, legacy compatibility, and Retail preservation passed.');
