@@ -179,8 +179,7 @@
       let url;
       try {
         const rows = session.exportRows();
-        const base = (builder.getSources().weekly.fileName || 'Weekly_Data').replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]/g, '_');
-        const filename = base + '_names_' + capitalization.value + '.csv';
+        const filename = builder.getExportFileName();
         url = root.URL.createObjectURL(new root.Blob([core.csv(rows)], { type: 'text/csv;charset=utf-8;' }));
         const link = doc.createElement('a'); link.href = url; link.download = filename;
         doc.body.appendChild(link); link.click(); link.remove();

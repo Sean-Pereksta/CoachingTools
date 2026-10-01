@@ -25,7 +25,7 @@ Changing the file, worksheet, column mappings, or capitalization invalidates the
 
 ## File format scope
 
-The original upload is never overwritten. The output is a new CSV, named `<original>_names_title.csv` or `<original>_names_lower.csv`. Preservation refers to parsed cell values and row/column structure, not byte-for-byte CSV encoding or quoting. As in the existing builder, XLSX imports read the selected worksheet's saved values; CSV cannot retain workbook styling, live formulas, or other worksheets.
+The original upload is never overwritten. The output is a new CSV, named `Retail Weekly.csv` or `Referral Weekly.csv` according to the **Export file** selector. Recognized weekly filenames or worksheet names select the department automatically; it can also be selected manually. Add, Modify, new/impacted rows, and Update Names exports all use these fixed filenames, without dates or action suffixes. Preservation refers to parsed cell values and row/column structure, not byte-for-byte CSV encoding or quoting. As in the existing builder, XLSX imports read the selected worksheet's saved values; CSV cannot retain workbook styling, live formulas, or other worksheets.
 
 ## Validation
 
