@@ -131,24 +131,17 @@ function researchWeeklyCoverageHtml(coverage){
   return `<div role="status">${esc(text)}</div>${coverage.excluded.length?`<details><summary>View ${coverage.excludedReps} excluded representatives</summary><ul>${coverage.excluded.map(p=>`<li>${esc(p.name)} · ${p.weeks} weeks</li>`).join('')}</ul></details>`:''}`;
 }
 function readResearchWeeklyCoverageEditor(){return normalizeResearchCoverage({enabled:el('researchWeeklyCoverageEnabled')?.checked,minWeeks:el('researchWeeklyCoverageMin')?.value});}
-let researchWeeklyPreviewTimer;
 function scheduleResearchWeeklyPreview(){
-  clearTimeout(researchWeeklyPreviewTimer);
   const source=state.editingGuidedResearchActive?els.guidedPrimarySource?.value:els.researchSource?.value,section=el('researchWeeklyCoverageSection');
   section?.classList.toggle('hidden',!isDatedStatsSource(source));
-  if(!isDatedStatsSource(source))return;
-  researchWeeklyPreviewTimer=setTimeout(()=>{
-    const item=effectiveResearchItem(currentResearchItemFromEditor());
-    const plan=buildQueryPlan(item.source,{dateColumn:item.dateColumn,startDate:item.startDate,endDate:item.endDate,filters:item.filters||[],item}).plan;
-    const preview=el('researchWeeklyCoveragePreview');if(preview)preview.innerHTML=researchWeeklyCoverageHtml(plan.coverage);
-  },120);
+  const preview=el('researchWeeklyCoveragePreview');if(preview)preview.textContent='Weekly coverage uses the complete selected period when you run Research. Sample previews do not estimate coverage eligibility.';
 }
 function weeklyGuidedInterpretation(cfg){
   if(!isDatedStatsSource(cfg.guidedPrimarySource))return [];
-  const source=cfg.guidedPrimarySource,health=weeklySourceHealth(source),scope=normalizeResearchPopulationScope(state.editingResearchPopulationScope),orgs=scope.includeOrgs.map(findOrg).filter(Boolean),keys=researchPopulationMatchKeys(scope),coverage=readResearchWeeklyCoverageEditor();
+  const source=cfg.guidedPrimarySource,data=state.data[source]||{},config=data.config||window.AllStarDatedStats.defaultConfig(source,data.headers||[]),scope=normalizeResearchPopulationScope(state.editingResearchPopulationScope),orgs=scope.includeOrgs.map(findOrg).filter(Boolean),keys=researchPopulationMatchKeys(scope),coverage=readResearchWeeklyCoverageEditor();
   const line=cfg.guidedDisplay==='line',series=!['none','day','week','month','quarter'].includes(cfg.guidedBreakdown)?cfg.guidedBreakdown:(cfg.guidedBreakdown==='none'?'None':cfg.guidedSubject);
-  const possible=keys.includeTeamKeys.size||health.coaches.length,start=els.researchStartDate?.value,end=els.researchEndDate?.value,weeks=health.weeks.filter(week=>inRange(week,start,end));
-  return [['Population',orgs.length?orgs.map(o=>`${o.name} · ${o.coachNames.length} coaches · ${orgRepCount(o)} roster representatives`).join(' | '):guidedPopulationDescription()],['Source observations',`${health.weeks.length} loaded weekly periods · ${health.validRows} representative/week observations`],['Eligibility',coverage.enabled?`Representatives appearing in at least ${coverage.minWeeks} weeks within the selected population and date range`:'All eligible representatives with an observation'],...(line?[['Chart interpretation',`Each point = ${cfg.guidedQuestion==='percentage'?'percentage of eligible unique representatives for':'result for'} one ${series==='None'?'group':series} during one imported week · X-axis = ${health.dateField} (weekly source dates) · Line = ${series} · ${cfg.guidedSort==='default'?'Natural chronological order':cfg.guidedSort}`],['Expected',`Up to ${series==='coach'||series==='team'?possible:series==='None'?1:health.uniqueReps} lines across ${weeks.length} weekly points in the selected date range`]]:[])];
+  const possible=keys.includeTeamKeys.size;
+  return [['Population',orgs.length?orgs.map(o=>`${o.name} · ${orgCoachSet(o).size} coaches`).join(' | '):guidedPopulationDescription()],['Preview','Click Run preview for a small sample; full results are calculated by Save & Run Research.'],['Eligibility',coverage.enabled?`Representatives appearing in at least ${coverage.minWeeks} weeks within the selected population and date range`:'All eligible representatives with an observation'],...(line?[['Chart interpretation',`Each point = ${cfg.guidedQuestion==='percentage'?'percentage of eligible unique representatives for':'result for'} one ${series==='None'?'group':series} during one imported week · X-axis = ${config.dateField||'Date'} (weekly source dates) · Line = ${series} · ${cfg.guidedSort==='default'?'Natural chronological order':cfg.guidedSort}`],['Expected',`${possible&&['coach','team'].includes(series)?'Up to '+possible+' coach lines':'One line per selected '+series} across imported weeks in the selected date range`]]:[])];
 }
 function sourceCoachDetailHtml(health){
   return `<details><summary>View ${health.coaches.length} coaches</summary><div class="tableWrap"><table class="sourceCoachTable"><thead><tr><th>Coach</th><th>Weekly Reps</th><th>Roster Matches</th><th>Direct Source Matches</th><th>Unresolved Reps</th></tr></thead><tbody>${health.coaches.map(c=>`<tr><td>${esc(c.name)}</td><td>${c.reps}</td><td>${c.rosterReps}</td><td>${c.directReps}</td><td>${c.unresolvedReps}</td></tr>`).join('')}</tbody></table></div></details>`;

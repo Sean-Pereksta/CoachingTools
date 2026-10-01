@@ -123,8 +123,18 @@ Retail/Referral Weekly Stats use their saved representative, coach (including Sh
 
 Guided weekly line charts use the actual imported dates as X and the requested Coach/Team breakdown as series. Unique representative percentages are computed separately within each coach/week; duplicate rows do not multiply people, and missing points remain blank. Natural order is chronological. Advanced axes and secondary grouping remain configurable.
 
-Representative data coverage optionally requires at least X distinct observed weeks. Date and population filters run first; coverage runs before qualifying conditions and percentage aggregation. Its preview and result diagnostics include excluded representatives.
+Representative data coverage optionally requires at least X distinct observed weeks. Date and population filters run first; coverage runs before qualifying conditions and percentage aggregation. Full result diagnostics include excluded representatives.
 
 Update Data shows core upload/status cards immediately. Weekly cards list detected fields, dates, coaches, roster matches, and names needing review. The multi-file import and specialized sources remain available below.
 
 Regression: node tests/weekly-research-population.test.js (also in the modernization suite).
+
+Research viewing and sample previews
+-----------------------------------
+Use Cards, List, or One item to browse saved Research. Search by title, source, or chart type, select an item directly, or use Previous/Next. Fullscreen is available for the Research workspace, its editor, and each individual result. Exit fullscreen or press Escape to restore the prior view; saved sizes, collapse preferences, and calculations are retained. Less-used controls remain under Research tools and each card's More menu.
+
+Opening or changing the builder does not launch join, weekly coverage, or background source-preparation scans. Run preview examines at most 500 rows spread across the primary source and displays at most 100 sample matches. Sample counts are not full totals or percentages. Cross-source/expression/model/metric and grouped-count checks, advanced value selections, and complete weekly coverage are deferred explicitly to Save & Run Research. Refresh, Render All, and Prepare Used Sources still process complete data when requested.
+
+Saved cards bind charts only for the item inserted or refreshed, preventing repeated whole-workspace redraws. Viewing/fullscreen changes reuse existing results.
+
+Regressions: node tests/research-viewing.test.js and node tests/research-sample-preview.test.js (also in the modernization suite).
