@@ -315,6 +315,7 @@
       for(const a of aps){const ws=wiByName.get(a.nameKey)||[];const remaining=ws.filter(x=>!pairedWipers.has(x.id)),exact=remaining.filter(x=>x.coach===a.coach);const w=exact.length===1?exact[0]:(remaining.length===1&&aps.filter(x=>x.nameKey===a.nameKey).length===1?remaining[0]:null);if(w)pairedWipers.add(w.id);makeNew(a,w);}
       const wipers=wi.records.filter(w=>!existingTargetNames.has(w.nameKey)&&!pairedWipers.has(w.id)).sort((a,b)=>collator.compare(a.name,b.name));for(const w of wipers)makeNew(null,w);
     }
+    sortNewRecordsByCoach(newRecords);
     const sourceMissing=[];
     for(const a of ap.records)if(!existingTargetNames.has(a.nameKey))sourceMissing.push({name:a.name,source:'appointments',row:a.rows.join(', ')});
     for(const w of wi.records)if(!existingTargetNames.has(w.nameKey)&&!sourceMissing.some(x=>nameKey(x.name)===w.nameKey))sourceMissing.push({name:w.name,source:'wipers',row:w.rows.join(', ')});
@@ -329,13 +330,33 @@
     const stats={mode:'modify',oldRecords,targetDateRows:targetIndexes.length,matchedRows,modifiedRows:modifiedRecords.length,modifiedCells,newRows:newRows.length,totalRecords:oldRecords+newRows.length,firstNewRow:newRows.length?insertAt+1:0,unchangedMatches,sourceMissing:sourceMissing.length,coaches:new Set(ap.records.map(a=>a.coach).filter(Boolean)).size,appointmentRows:ap.records.length,wiperRecords:wi.records.length,matched:matchedRows,wiperOnly:0,includedWiperOnly:0,appointmentOnly:0,ambiguous:ambiguousKeys.size,sharedNames:[...apByName.values()].filter(v=>v.length>1).length,conflicts:ap.conflicts.length+wi.conflicts.length,skipped:ap.skipped.length+wi.skipped.length,invalid:ap.invalid.length+wi.invalid.length,trailingBlanksRemoved:weeklyRows.length-last-1};
     return {mode:'modify',header,headerRow:ta.headerRow,previousRows,newRows,newRecords,impactRecords,allRows,mapping,stats,warnings,review,publication,analyses:{appointments:aa,wipers:wa,weekly:ta},appointmentRecords:ap.records};
   }
+  function newWeeklyHeader(analyses) {
+    const header=['Date','Sheet','Name','Manager'];
+    for(const segment of ['Commercial','Consumer','Insurance','Total'])for(const metric of ['Opportunities','Appointments','Appointment Rate','Opportunity Rate'])header.push(segment+' '+metric);
+    header.push('Wiper Count','Wiper Jobs','Wiper Rate','ACD Calls','Inbound Calls Per Hour','% Available');
+    const seen=new Set(header.map(norm));
+    for(const analysis of analyses.filter(Boolean))for(const column of analysis.columns){
+      if(!column.raw||column.dim||column.key||Object.values(analysis.dims).includes(column.index)||seen.has(norm(column.raw)))continue;
+      header.push(column.raw);seen.add(norm(column.raw));
+    }
+    return header;
+  }
+  function sortNewRecordsByCoach(records){
+    const collator=new Intl.Collator('en',{sensitivity:'base',numeric:true});
+    records.sort((a,b)=>{if(!a.coach&&b.coach)return 1;if(a.coach&&!b.coach)return -1;return collator.compare(a.coach,b.coach)||collator.compare(a.name,b.name);});
+  }
   function assemble(input) {
     if((input.options||{}).mode==='modify')return assembleModify(input);
-    const {appointmentRows,wiperRows,weeklyRows}=input,options=input.options||{},publication=dateInfo(input.date), warnings=[];
-    const aa=analyze(appointmentRows,'appointments',options.appointmentColumns||{}), wa=analyze(wiperRows,'wipers',options.wiperColumns||{}), ta=analyze(weeklyRows,'weekly',options.weeklyColumns||{});
-    const ap=sourceRecords(appointmentRows,aa,{period:options.appointmentPeriod,carryCoach:options.carryCoach,choices:options.sourceChoices}), wi=sourceRecords(wiperRows,wa,{period:options.wiperPeriod,choices:options.sourceChoices});
-    if(!ap.records.length && !options.allowEmptyAppointments) throw new Error('No named appointment records were found for the selected source period.');
-    if(!wi.records.length) warnings.push('No named wiper records were found. Appointment rows will still be appended with blank wiper fields.');
+    const appointmentRows=input.appointmentRows||[],wiperRows=input.wiperRows||[],options=input.options||{},publication=dateInfo(input.date),warnings=[];
+    if(!appointmentRows.length&&!wiperRows.length)throw new Error('Upload an appointment report, a wiper report, or both.');
+    const aa=appointmentRows.length?analyze(appointmentRows,'appointments',options.appointmentColumns||{}):null,wa=wiperRows.length?analyze(wiperRows,'wipers',options.wiperColumns||{}):null;
+    const empty=()=>({records:[],conflicts:[],invalid:[],skipped:[]});
+    const ap=aa?sourceRecords(appointmentRows,aa,{period:options.appointmentPeriod,carryCoach:options.carryCoach,choices:options.sourceChoices}):empty(),wi=wa?sourceRecords(wiperRows,wa,{period:options.wiperPeriod,choices:options.sourceChoices}):empty();
+    if(!ap.records.length&&!wi.records.length)throw new Error('No named records were found in the supplied reports for the selected source period.');
+    if(aa&&!ap.records.length)warnings.push('No named appointment records were found. Wiper rows will use blank appointment fields.');
+    if(wa&&!wi.records.length)warnings.push('No named wiper records were found. Appointment rows will use blank wiper fields.');
+    const hasHistory=!!input.weeklyRows?.length,weeklyRows=hasHistory?input.weeklyRows:[newWeeklyHeader([aa,wa])],ta=analyze(weeklyRows,'weekly',hasHistory?(options.weeklyColumns||{}):{});
+    const includeWiperOnly=!ap.records.length||options.includeWiperOnly!==false;
     const header=weeklyRows[ta.headerRow].map(text), width=header.length;
     const headerNames=header.filter(tidy).map(norm); if(new Set(headerNames).size<headerNames.length) throw new Error('The previous weekly file has duplicate column headers. Give each column a unique name before exporting.');
     let last=weeklyRows.length-1;while(last>ta.headerRow && blankRow(weeklyRows[last]))last--;
@@ -344,7 +365,7 @@
     const oldRecords=previousRows.slice(ta.headerRow+1).filter(r=>!blankRow(r)).length;
     const oldSameDate=previousRows.slice(ta.headerRow+1).filter(r=>comparableDate(r[ta.dims.date])===publication.iso).length;
     if(oldSameDate) warnings.push(countFmt(oldSameDate)+' existing rows already use '+publication.us+'. This tool appends another batch; it never replaces that date.');
-    const apPeriods=options.appointmentPeriod?[options.appointmentPeriod]:aa.periods,wPeriods=options.wiperPeriod?[options.wiperPeriod]:wa.periods;
+    const apPeriods=aa?(options.appointmentPeriod?[options.appointmentPeriod]:aa.periods):[],wPeriods=wa?(options.wiperPeriod?[options.wiperPeriod]:wa.periods):[];
     if(apPeriods.length>1) warnings.push('The appointment report contains multiple periods. Use the source-period selector to limit the import; conflicting values will not be added together.');
     if(wPeriods.length>1) warnings.push('The wiper report contains multiple periods. Use the source-period selector to limit the import; conflicting values will not be added together.');
     if(apPeriods.length&&wPeriods.length&&JSON.stringify(apPeriods.map(comparableDate).sort())!==JSON.stringify(wPeriods.map(comparableDate).sort())) warnings.push('Source date labels differ. Appointments: '+apPeriods.join('; ')+'. Wipers: '+wPeriods.join('; ')+'. Every new Date will still be '+publication.us+'.');
@@ -356,10 +377,10 @@
       if(dim)return {index:i,target:h,dimension:dim,status:'filled',description:dim==='date'?'Entered publication date':dim==='coach'?'Coach from appointment or wiper report':dim==='manager'?'Manager from the source or saved coach group':'Representative name'};
       if(col.key&&activeTargets.get(col.key)?.index!==i)return {index:i,target:h,key:col.key,status:'blank',description:'A more explicit destination column is used for this statistic.'};
       let src=null,source='';
-      if(col.key){ if(col.key.startsWith('wiper.')) {src=wa.keys.get(col.key);source='wipers';} else {src=aa.keys.get(col.key);source='appointments';} }
+      if(col.key){ if(col.key.startsWith('wiper.')) {src=wa?.keys.get(col.key);source='wipers';} else {src=aa?.keys.get(col.key);source='appointments';} }
       else if(tidy(h)) {
-        src=aa.columns.find(c=>!c.dim&&!Object.values(aa.dims).includes(c.index)&&c.raw&&norm(c.raw)===norm(h));source='appointments';
-        if(!src){src=wa.columns.find(c=>!c.dim&&!Object.values(wa.dims).includes(c.index)&&c.raw&&norm(c.raw)===norm(h));source='wipers';}
+        src=aa?.columns.find(c=>!c.dim&&!Object.values(aa.dims).includes(c.index)&&c.raw&&norm(c.raw)===norm(h));source='appointments';
+        if(!src){src=wa?.columns.find(c=>!c.dim&&!Object.values(wa.dims).includes(c.index)&&c.raw&&norm(c.raw)===norm(h));source='wipers';}
       }
       let percentOutput=false;
       if(col.key&&/rate$/.test(col.key)) {
@@ -385,7 +406,7 @@
       else if((candidates.length>1&&!manual)||(target&&assigned.has(target.id))){
         const item={kind:'ambiguous',name:w.name,source:'wipers',row:w.rows.join(', '),wiperId:w.id,candidates:target?[target]:candidates,message:target?'More than one wiper record points to this representative. No second assignment was made.':'More than one appointment record has this name. Wipers are held for review, not assigned twice.'};ambiguous.push(item);review.push(item);
       } else {
-        wiperOnly.push(w);review.push({kind:'wiper-only',name:w.name,source:'wipers',row:w.rows.join(', '),wiperId:w.id,message:options.includeWiperOnly===false?'No appointment name match. Excluded by your option.':'No appointment name match. Included with the wiper-source coach and blank appointment fields.'});
+        wiperOnly.push(w);review.push({kind:'wiper-only',name:w.name,source:'wipers',row:w.rows.join(', '),wiperId:w.id,message:!includeWiperOnly?'No appointment name match. Excluded by your option.':'Included with the wiper-source coach and blank appointment fields.'});
       }
     }
     const newRecords=[];
@@ -404,17 +425,16 @@
       });
       newRecords.push({values,name,coach,kind,appointmentId:a?.id||'',wiperId:w?.id||'',appointmentRows:a?.rows||[],wiperRows:w?.rows||[]});
     }
-    const collator=new Intl.Collator('en',{sensitivity:'base',numeric:true});
-    ap.records.sort((a,b)=>{if(!a.coach&&b.coach)return 1;if(a.coach&&!b.coach)return -1;return collator.compare(a.coach,b.coach)||collator.compare(a.name,b.name);});
     for(const a of ap.records)makeRow(a,assigned.get(a.id),assigned.has(a.id)?'matched':'appointment-only');
-    if(options.includeWiperOnly!==false)for(const w of wiperOnly.sort((a,b)=>collator.compare(a.name,b.name)))makeRow(null,w,'wiper-only');
+    if(includeWiperOnly)for(const w of wiperOnly)makeRow(null,w,'wiper-only');
+    sortNewRecordsByCoach(newRecords);
     for(const a of ap.records)if(!assigned.has(a.id))review.push({kind:'appointment-only',name:a.name,source:'appointments',row:a.rows.join(', '),message:'No wiper record was assigned. Wiper fields remain blank.'});
     if(ambiguous.length)warnings.push(countFmt(ambiguous.length)+' wiper name match(es) need review. Their values are not assigned or duplicated.');
     if(sharedNames.length)warnings.push(countFmt(sharedNames.length)+' representative name(s) occur under different coaches. These remain separate people unless the source is corrected.');
     if(ap.conflicts.length+wi.conflicts.length)warnings.push(countFmt(ap.conflicts.length+wi.conflicts.length)+' source record conflict(s). Conflicting cells are blank; use Review → Source conflicts to select a source row.');
     if(protectedText.count)warnings.push(countFmt(protectedText.count)+' new text values were prefixed with an apostrophe to prevent spreadsheet formula execution.');
     const newRows=newRecords.map(r=>r.values),allRows=previousRows.concat(newRows);
-    const stats={oldRecords,newRows:newRows.length,totalRecords:oldRecords+newRows.length,firstNewRow:previousRows.length+1,coaches:new Set(ap.records.map(a=>a.coach).filter(Boolean)).size,appointmentRows:ap.records.length,wiperRecords:wi.records.length,matched,wiperOnly:wiperOnly.length,includedWiperOnly:options.includeWiperOnly===false?0:wiperOnly.length,appointmentOnly:ap.records.length-matched,ambiguous:ambiguous.length,sharedNames:sharedNames.length,conflicts:ap.conflicts.length+wi.conflicts.length,skipped:ap.skipped.length+wi.skipped.length,invalid:ap.invalid.length+wi.invalid.length,trailingBlanksRemoved:weeklyRows.length-last-1};
+    const stats={oldRecords,newRows:newRows.length,totalRecords:oldRecords+newRows.length,firstNewRow:previousRows.length+1,coaches:new Set(newRecords.map(r=>coachKey(r.coach)).filter(Boolean)).size,appointmentRows:ap.records.length,wiperRecords:wi.records.length,matched,wiperOnly:wiperOnly.length,includedWiperOnly:includeWiperOnly?wiperOnly.length:0,appointmentOnly:ap.records.length-matched,ambiguous:ambiguous.length,sharedNames:sharedNames.length,conflicts:ap.conflicts.length+wi.conflicts.length,skipped:ap.skipped.length+wi.skipped.length,invalid:ap.invalid.length+wi.invalid.length,trailingBlanksRemoved:weeklyRows.length-last-1};
     return {header,headerRow:ta.headerRow,previousRows,newRows,newRecords,allRows,mapping,stats,warnings,review,publication,analyses:{appointments:aa,wipers:wa,weekly:ta},appointmentRecords:ap.records};
   }
   function csv(rows) { return '\uFEFF'+rows.map(r=>r.map(v=>{const s=text(v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(',')).join('\r\n')+'\r\n'; }
