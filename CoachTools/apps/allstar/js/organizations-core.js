@@ -8,8 +8,8 @@ function normalizeOrg(o={}){ const now=new Date().toISOString(), coaches=new Map
 function loadOrgs(){ try{ const raw=JSON.parse(localStorage.getItem(ORG_BUILDER_KEY)||'[]'); state.orgs=(Array.isArray(raw)?raw:(raw.orgs||[])).map(normalizeOrg); }catch(_){ state.orgs=[]; } }
 function saveOrgs(){ state.orgs=(state.orgs||[]).map(normalizeOrg); localStorage.setItem(ORG_BUILDER_KEY,JSON.stringify(state.orgs)); selectiveResearchInvalidation({reason:'org builder changed',teams:true}); renderRunOrgSelect(); renderMultiRunOrgSelect(); }
 function findOrg(ref){ const raw=String(ref||'').replace(/^\$/,'').trim(), n=normalizeOrgName(raw); return (state.orgs||[]).find(o=>o.id===raw||normalizeOrgName(o.name)===n); }
-function orgCoachSet(ref){ const o=typeof ref==='object'?ref:findOrg(ref); return new Set((o?.coachNames||[]).map(normalizeOrgName)); }
-function inOrg(value, orgNameOrId){ const set=orgCoachSet(orgNameOrId); return set.has(normalizeOrgName(value)); }
+function orgCoachSet(ref){ const o=typeof ref==='object'?ref:findOrg(ref); return new Set((o?.coachNames||[]).map(coachNameKey)); }
+function inOrg(value, orgNameOrId){ const set=orgCoachSet(orgNameOrId); return set.has(coachNameKey(value)); }
 function orgTokenNames(){ return (state.orgs||[]).map(o=>'$'+o.name); }
 
 function parseListTesterNames(value,commaSeparated=false){
@@ -29,13 +29,13 @@ function createOrg(){ const o=normalizeOrg({name:'New Org'}); state.orgs.push(o)
 function orgCoverage(org){
   const teams=orgCoachSet(org), reps=new Map(), coveredTeams=new Set(), missing=[];
   for(const rep of currentTeamIndex().reps||[]){
-    if(!teams.has(normalizeOrgName(rep.team))) continue;
+    if(!teams.has(coachNameKey(rep.team))) continue;
     const key=normalizeIdentityName(rep.key||rep.name||'');
     if(!key){ missing.push(rep.team); continue; }
     if(!reps.has(key)) reps.set(key,rep);
-    coveredTeams.add(normalizeOrgName(rep.team));
+    coveredTeams.add(coachNameKey(rep.team));
   }
-  const noRoster=(org?.coachNames||[]).filter(team=>!coveredTeams.has(normalizeOrgName(team)));
+  const noRoster=(org?.coachNames||[]).filter(team=>!coveredTeams.has(coachNameKey(team)));
   return {reps:[...reps.values()],count:reps.size,noRoster,missing,complete:!noRoster.length&&!missing.length};
 }
 function renderOrgBuilder(){
@@ -47,9 +47,9 @@ function renderOrgBuilder(){
     els.orgList.innerHTML=orgRows.map(o=>{ const coverage=orgCoverage(o); return `<button type="button" class="teamManagerItem orgCard ${o.id===state.activeOrgId?'active':''}" aria-pressed="${o.id===state.activeOrgId}" data-org-id="${esc(o.id)}"><strong>${esc(o.name)}</strong><span>${o.coachNames.length} coaches · ${coverage.count} unique reps${coverage.complete?'':' · coverage incomplete'}</span></button>`; }).join('')||`<div class="teamManagerItem">${q?'No organizations match your search.':'Create an organization to start assigning teams.'}</div>`;
     els.orgList.querySelectorAll('[data-org-id]').forEach(x=>x.onclick=()=>{ state.activeOrgId=x.dataset.orgId; invalidateOrgReadiness('Organization selection changed'); renderOrgBuilder(); });
   }
-  const selected=new Set((act?.coachNames||[]).map(normalizeOrgName)), coaches=knownCoachNames().filter(c=>!cq||normalizeOrgName(c).includes(cq));
+  const selected=orgCoachSet(act), coaches=knownCoachNames().filter(c=>!cq||normalizeOrgName(c).includes(cq));
   const summary=document.getElementById('orgCoachSummary'); if(summary) summary.textContent=`${coaches.length} teams shown · ${selected.size} selected`;
-  if(els.orgCoachList) els.orgCoachList.innerHTML=coaches.map(c=>`<label class="checkItem orgCoachRow ${selected.has(normalizeOrgName(c))?'selected':''}"><input type="checkbox" ${act?'':'disabled'} data-org-coach="${esc(c)}" ${selected.has(normalizeOrgName(c))?'checked':''}><span>${esc(c)}</span></label>`).join('')||'<div class="checkItem">No coaches match.</div>';
+  if(els.orgCoachList) els.orgCoachList.innerHTML=coaches.map(c=>`<label class="checkItem orgCoachRow ${selected.has(coachNameKey(c))?'selected':''}"><input type="checkbox" ${act?'':'disabled'} data-org-coach="${esc(c)}" ${selected.has(coachNameKey(c))?'checked':''}><span>${esc(c)}</span></label>`).join('')||'<div class="checkItem">No coaches match.</div>';
   if(els.orgSelectedList) els.orgSelectedList.innerHTML=(act?.coachNames||[]).map(c=>`<div class="checkItem orgMembership"><span>${esc(c)}</span><button class="smallBtn red" data-remove-org-coach="${esc(c)}" type="button" aria-label="Remove ${esc(c)} from this organization">Remove</button></div>`).join('')||'<div class="checkItem">No coaches selected.</div>';
   const coverage=orgCoverage(act);
   if(els.orgCountBadge) els.orgCountBadge.textContent=`${act?.coachNames?.length||0} coaches · ${coverage.count} unique reps covered`;
@@ -68,9 +68,9 @@ function renderOrgBuilder(){
   renderOrgReadinessControls();
 }
 function orgHealthIssues(){
-  const known=new Map(knownCoachNames().map(c=>[normalizeOrgName(c),c])), memberships=new Map();
+  const known=new Map(knownCoachNames().map(c=>[coachNameKey(c),c])), memberships=new Map();
   for(const org of state.orgs||[]) for(const coach of org.coachNames||[]){
-    const key=normalizeOrgName(coach); if(!memberships.has(key)) memberships.set(key,{coach,orgs:[]}); memberships.get(key).orgs.push(org);
+    const key=coachNameKey(coach); if(!memberships.has(key)) memberships.set(key,{coach,orgs:[]}); memberships.get(key).orgs.push(org);
   }
   const orgIssue=org=>({label:org.name,orgs:[org]});
   return [
@@ -101,9 +101,9 @@ function updateRunQADateField(){
   if(els.qaDateField) els.qaDateField.classList.toggle('hidden', !show);
   if(els.qaTeamScoreModeField) els.qaTeamScoreModeField.classList.toggle('hidden', !show);
 }
-function selectedRunOrgSet(set){ const names=[]; (set||new Set()).forEach(idv=>{ const o=(state.orgs||[]).find(x=>x.id===idv); if(o) names.push(...(o.coachNames||[])); }); return new Set(names.map(normalizeOrgName)); }
+function selectedRunOrgSet(set){ const names=[]; (set||new Set()).forEach(idv=>{ const o=(state.orgs||[]).find(x=>x.id===idv); if(o) names.push(...(o.coachNames||[])); }); return new Set(names.map(coachNameKey)); }
 function renderRunOrgSelect(){ if(!els.runIncludeOrgGrid) return; const q=normalizeOrgName(state.runOrgSearch||''); const orgs=(state.orgs||[]).filter(o=>!q||normalizeOrgName(o.name).includes(q)); const grid=(set,kind)=>orgs.map(o=>`<label class="checkItem"><input type="checkbox" data-run-org="${esc(kind)}" value="${esc(o.id)}" ${set.has(o.id)?'checked':''}> ${esc(o.name)} <span class="badge">${o.coachNames.length}</span></label>`).join('')||'<div class="checkItem">No orgs found.</div>'; els.runIncludeOrgGrid.innerHTML=grid(state.runIncludeOrgs,'include'); els.runExcludeOrgGrid.innerHTML=grid(state.runExcludeOrgs,'exclude'); document.querySelectorAll('[data-run-org]').forEach(x=>x.onchange=()=>{ const s=x.dataset.runOrg==='include'?state.runIncludeOrgs:state.runExcludeOrgs; x.checked?s.add(x.value):s.delete(x.value); updateRunOrgBadge(); saveRunSettings(); }); updateRunOrgBadge(); }
-function updateRunOrgBadge(){ if(!els.runOrgBadge) return; const ids=new Set([...(state.runIncludeOrgs||[]),...(state.runExcludeOrgs||[])]), coaches=new Set(); ids.forEach(idv=>{ const o=(state.orgs||[]).find(x=>x.id===idv); (o?.coachNames||[]).forEach(c=>coaches.add(normalizeOrgName(c))); }); const reps=new Set(); (currentTeamIndex().reps||[]).forEach(r=>{ if(coaches.has(normalizeOrgName(r.team))) reps.add(r.key||r.name); }); els.runOrgBadge.textContent=`${ids.size} orgs selected · ${coaches.size} coaches · ${reps.size} reps covered`; }
+function updateRunOrgBadge(){ if(!els.runOrgBadge) return; const ids=new Set([...(state.runIncludeOrgs||[]),...(state.runExcludeOrgs||[])]), coaches=new Set(); ids.forEach(idv=>{ const o=(state.orgs||[]).find(x=>x.id===idv); (o?.coachNames||[]).forEach(c=>coaches.add(coachNameKey(c))); }); const reps=new Set(); (currentTeamIndex().reps||[]).forEach(r=>{ if(coaches.has(coachNameKey(r.team))) reps.add(r.key||r.name); }); els.runOrgBadge.textContent=`${ids.size} orgs selected · ${coaches.size} coaches · ${reps.size} reps covered`; }
 
 function captureRunExecutionSettings(){
   syncTeamSelectionsFromDom();

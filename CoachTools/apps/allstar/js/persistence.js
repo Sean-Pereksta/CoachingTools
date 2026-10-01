@@ -429,6 +429,7 @@ async function saveImportedDataToIndexedDB(reason='manual save', opts={}){
   }
 }
 function restoreImportFileLabels(){
+  if(typeof renderCoreSourceStatus==='function')renderCoreSourceStatus();
   const set=(node,txt)=>{ if(node) node.textContent=txt||''; };
   const retailRoster=(state.data.retail.controlRoster||[]).length, referralRoster=(state.data.referral.controlRoster||[]).length;
   set(els.retailFileName, (state.data.retail.fileName || state.books.retail.fileName) + (retailRoster?` · ${retailRoster.toLocaleString()} Control reps`:''));

@@ -294,5 +294,5 @@ function openListTester(){
 }
 
 function knownCoachNames(){ const s=new Map(); const add=t=>{ t=canonicalCoachName(t); if(t) s.set(coachNameKey(t),t); }; (currentTeamIndex().teamCounts||[]).forEach(x=>add(x.team)); (state.teams||[]).forEach(add); (state.repTeams||new Map()).forEach(add); return [...s.values()].filter(Boolean).sort((a,b)=>a.localeCompare(b)); }
-function orgRepCount(o){ const set=orgCoachSet(o); return (currentTeamIndex().reps||[]).filter(r=>set.has(normalizeOrgName(r.team))).length; }
+function orgRepCount(o){ const set=orgCoachSet(o); return (currentTeamIndex().reps||[]).filter(r=>set.has(coachNameKey(r.team))).length; }
 function activeOrg(){ return (state.orgs||[]).find(o=>o.id===state.activeOrgId) || null; }

@@ -1155,6 +1155,7 @@ function buildCategorizedHeaderMaps(packs){
   return maps;
 }
 function renderCategorizedSummary(){
+  if(typeof renderCoreSourceStatus==='function')renderCoreSourceStatus();
   if(typeof renderDatedStatsImportSummary==='function')renderDatedStatsImportSummary();
   if(typeof renderMonthlyImportSummary==='function')renderMonthlyImportSummary();
   updateCategorizeImportButton();
@@ -1875,6 +1876,8 @@ function addDateToRange(range,d){
 }
 function pushMapArray(map,key,row){ if(!key) return; if(!map.has(key)) map.set(key,[]); map.get(key).push(row); }
 function rowTeam(row,options={}){
+  const source=rowSourceKey(row,options.source||'');
+  if(isDatedStatsSource(source))return weeklySourceRowIdentity(row,source).coach;
   if(row?._monthly)return canonicalCoachName(row.Coach||row._team||'');
   const mutate=options.mutate!==false;
   if(!row) return '';
@@ -1899,7 +1902,8 @@ function rowTeam(row,options={}){
 }
 function teamNameFromAnyRow(row,options={}){
   if(!row) return '';
-  if(String(row._rosterId||'').startsWith('monthly|'))return rowTeam(row,options);
+  if(isDatedStatsSource(rowSourceKey(row,options.source||'')))return rowTeam(row,options);
+  if(row._monthly||String(row._rosterId||'').startsWith('monthly|'))return rowTeam(row,options);
   if(TEAM_TOTAL_SOURCE_KEYS.includes(rowSourceKey(row))) return rowTeam(row,options);
   if(hasTrustedControlRoster()){
     const repKey=repKeyFromAnyRow(row);

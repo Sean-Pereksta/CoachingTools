@@ -589,3 +589,12 @@ button.green:hover,button.dark:hover,button.red:hover,button.gray:hover{transfor
 .headerSuggestItem[aria-selected=true]{background:#dbeafe;outline:2px solid #60a5fa;outline-offset:-2px}
 @media(max-width:1050px){#orgBuilderModal .orgWorkspace{grid-template-columns:1fr 1fr}#orgBuilderModal .orgWorkspace>.panel:last-child{grid-column:1/-1}}
 @media(max-width:680px){#orgBuilderModal .orgWorkspace{grid-template-columns:minmax(0,1fr)}#orgBuilderModal .teamManagerList,#orgBuilderModal .teamRepList{max-height:32vh}}
+
+/* Core imports remain visible; only coach and unresolved-name details collapse. */
+.coreSourcesSection .sourceStatusCard{border:1px solid #ccd4de;background:#fff;min-width:0}
+.coreSourcesSection .sourceStatusCard:nth-child(-n+4){border-top:4px solid #c51b2d}
+.sourceStatusCard [data-source-status],.sourceStatusCard [data-ds-summary]{display:grid;gap:7px;margin-top:10px;overflow-wrap:anywhere}
+.sourceStatusCard details{margin-top:6px}
+.sourceCoachTable{width:100%;border-collapse:collapse;font-size:12px}
+.sourceCoachTable th,.sourceCoachTable td{padding:6px;text-align:left;border-bottom:1px solid #e1e5ea}
+.weeklyPopulationFlow details{margin-top:10px}
