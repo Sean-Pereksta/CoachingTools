@@ -12,7 +12,7 @@
 <section class="intro"><div><div class="eyebrow">WEEKLY REPORTING, SIMPLIFIED</div><h1>Add a week or safely modify one.</h1><p>Combine appointment and wiper stats, group representatives by coach, append a new week, or preview targeted corrections before you finalize them.</p></div><div class="intro-actions"><span class="tag" id="modeTag">ADD MODE</span><button id="demoBtn" class="small ghost" type="button">Try a demo</button><button id="resetBtn" class="small" type="button">Reset</button></div></section>
 <section class="upload-grid" id="uploadGrid" aria-label="Upload source files"></section>
 <section class="panel controls" aria-label="Publication settings">
-<div><label class="field-label" for="updateMode">Update mode</label><select id="updateMode" aria-label="Update mode"><option value="add">Add</option><option value="modify">Modify</option></select><div class="hint" id="modeHint">Append a new batch at the first blank row.</div></div>
+<div><label class="field-label" for="updateMode">Update mode</label><select id="updateMode" aria-label="Update mode"><option value="add">Add</option><option value="modify">Modify</option></select><div class="hint" id="modeHint">Append a new batch at the first blank row.</div><label class="field-label" for="exportDepartment" style="margin-top:12px">Export file</label><select id="exportDepartment"><option value="retail">Retail Weekly.csv</option><option value="referral">Referral Weekly.csv</option></select><div class="hint">Selected from the weekly filename when recognized. Change it here if needed.</div></div>
 <div class="date-field"><label class="field-label" for="publicationDate">Publication date</label><input type="date" id="publicationDate" min="1900-01-01" max="9999-12-31" required><div class="hint" id="dateHint">Used in Date for every new row.</div></div>
 <div><label class="option-label" id="includeWiperOnlyLabel"><input type="checkbox" id="includeWiperOnly" checked><span>Include representatives found only in the wiper file<small>Keep them at the end with a blank Sheet. No coach or appointment values are guessed.</small></span></label><label class="option-label" id="addNewLabel" hidden><input type="checkbox" id="addNew"><span>Add new<small>When modifying, insert source representatives missing from this date directly after that date block.</small></span></label><label class="option-label" style="margin-bottom:0"><input type="checkbox" id="carryCoach"><span>Carry down blank coach cells in the appointment report<small>Leave off unless blank cells intentionally repeat the coach above.</small></span></label></div>
 <div class="build-group"><button class="primary" id="buildBtn" type="button" disabled>Build preview <span aria-hidden="true">→</span></button><div class="hint" id="buildHint">Add your three files and a date.</div></div>
@@ -201,14 +201,14 @@ async function loadFile(key,file){
       const parsed=await parseTextInWorker(buffer);rows=parsed.rows;s.format=(parsed.delimiter==='\t'?'Tab-separated':parsed.delimiter===','?'CSV':parsed.delimiter===';'?'Semicolon-separated':'Delimited text')+' · '+parsed.encoding.toUpperCase();
     }
     if(state.session!==session||state.sources[key]!==s)return;
-    s.rows=rows;reAnalyze(key);$('filesub-'+key).textContent=(file.size/1024).toFixed(1)+' KB · Click to replace';
+    s.rows=rows;reAnalyze(key);if(key==='weekly')selectWeeklyExport(s);$('filesub-'+key).textContent=(file.size/1024).toFixed(1)+' KB · Click to replace';
   }catch(e){if(state.session===session&&state.sources[key]===s){s.error=e.message;$('status-'+key).textContent=e.message;$('status-'+key).className='file-status error';$('filesub-'+key).textContent='Could not load · Click to replace';}}
   finally{if(state.session===session&&state.sources[key]===s){sourceBusy(key,false);syncButtons();}}
 }
 async function selectSheet(key,sheet){
   const s=state.sources[key];if(!s.book)return;s.overrides={};s.period='';s.analysis=null;s.sheet=sheet;s.selectionToken=(s.selectionToken||0)+1;const token=s.selectionToken;
   sourceBusy(key,true,'Reading worksheet…');invalidate();
-  try{const rows=await s.book.rows(sheet);if(state.sources[key]!==s||s.selectionToken!==token)return;s.rows=rows;reAnalyze(key);}catch(e){if(state.sources[key]===s&&s.selectionToken===token){s.error=e.message;$('status-'+key).textContent=e.message;$('status-'+key).className='file-status error';}}
+  try{const rows=await s.book.rows(sheet);if(state.sources[key]!==s||s.selectionToken!==token)return;s.rows=rows;reAnalyze(key);if(key==='weekly')selectWeeklyExport(s);}catch(e){if(state.sources[key]===s&&s.selectionToken===token){s.error=e.message;$('status-'+key).textContent=e.message;$('status-'+key).className='file-status error';}}
   finally{if(state.sources[key]===s&&s.selectionToken===token)sourceBusy(key,false);}
 }
 function reAnalyze(key){
@@ -312,8 +312,15 @@ function renderReview(){
 function download(rows,fileName){
   const blob=new Blob([C.csv(rows)],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=fileName;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
 }
+function selectWeeklyExport(source){
+  for(const label of [source.sheet,source.fileName]){
+    const retail=/retail/i.test(label||''),referral=/referral/i.test(label||'');
+    if(retail!==referral){$('exportDepartment').value=referral?'referral':'retail';return;}
+  }
+}
+function weeklyExportFileName(){return $('exportDepartment').value==='referral'?'Referral Weekly.csv':'Retail Weekly.csv';}
 function exportResult(mode){
-  if(!state.result||state.stale||state.busy)return;const r=state.result;if(r.mode==='modify'&&!state.modifyFinalized)return;const base=(state.sources.weekly.fileName||'Weekly_Data').replace(/\.[^.]+$/,'').replace(/[\\/:*?"<>|]/g,'_'),name=base+(r.mode==='modify'?(mode==='new'?'_impacted_rows_':'_modified_'):(mode==='new'?'_new_rows_':'_updated_'))+r.publication.iso+'.csv';
+  if(!state.result||state.stale||state.busy)return;const r=state.result;if(r.mode==='modify'&&!state.modifyFinalized)return;const name=weeklyExportFileName();
   const rows=mode==='new'?(r.mode==='modify'?[r.header,...r.impactRecords.map(x=>x.values)]:[r.header,...r.newRows]):r.allRows;download(rows,name);$('exportNotice').textContent='CSV prepared: '+name;$('exportNotice').hidden=false;toast(r.mode==='modify'?(mode==='new'?'Impacted rows CSV prepared.':'Full modified CSV prepared — unchanged history plus finalized changes.'):(mode==='new'?'New rows CSV prepared. This file excludes history.':'Full updated CSV prepared — history plus all new rows.'));
 }
 function finalizeModify(){if(!state.result||state.result.mode!=='modify'||state.stale||state.busy)return;state.modifyFinalized=true;renderResults();toast('Modify finalized. Export is now unlocked for the previewed changes.');}
@@ -336,7 +343,7 @@ for(const id of ['reviewFilter','reviewSearch'])$(id).addEventListener(id==='rev
 $('reviewPrev').addEventListener('click',()=>{state.reviewPage--;renderReview();});$('reviewNext').addEventListener('click',()=>{state.reviewPage++;renderReview();});
 // Small public test surface: no storage and no network access.
 window.addEventListener('coachtools-stats-directory-change',()=>{invalidate();window.dispatchEvent(new CustomEvent('weekly-builder-sources-change'));});
-window.WeeklyBuilder={getSources:()=>state.sources,getStats:()=>state.result?.stats||null,getResult:()=>state.result,isStale:()=>state.stale,getMode:()=>state.mode,isModifyFinalized:()=>state.modifyFinalized,version:'1.2'};
+window.WeeklyBuilder={getSources:()=>state.sources,getStats:()=>state.result?.stats||null,getResult:()=>state.result,isStale:()=>state.stale,getMode:()=>state.mode,isModifyFinalized:()=>state.modifyFinalized,getExportFileName:weeklyExportFileName,version:'1.2'};
 updateModeUI();
 })();
 </script>

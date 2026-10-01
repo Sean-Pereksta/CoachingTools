@@ -25,7 +25,8 @@ const state={mode:'add',sources:{weekly:{},appointments:{},wipers:{}},stale:fals
 window.legacyModeEvents=0;window.assemblyCalls=0;
 window.WeeklyCore={assemble(){assemblyCalls++;throw Error('Stats assembler must not run in Update Names');},assembleModify(){assemblyCalls++;throw Error('Modify assembler must not run in Update Names');},
  csv(rows){return '\uFEFF'+rows.map(r=>r.map(v=>{const s=v==null?'':String(v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(',')).join('\r\n');}};
-window.WeeklyBuilder={getSources:()=>state.sources,getMode:()=>state.mode,getResult:()=>state.result,getStats:()=>state.result?.stats||null,isStale:()=>state.stale,isModifyFinalized:()=>false};
+window.exportDepartment='retail';
+window.WeeklyBuilder={getExportFileName:()=>exportDepartment==='referral'?'Referral Weekly.csv':'Retail Weekly.csv',getSources:()=>state.sources,getMode:()=>state.mode,getResult:()=>state.result,getStats:()=>state.result?.stats||null,isStale:()=>state.stale,isModifyFinalized:()=>false};
 $('updateMode').addEventListener('change',()=>{legacyModeEvents++;state.mode=$('updateMode').value==='modify'?'modify':'add';$('updateMode').value=state.mode;$('modeTag').textContent=state.mode.toUpperCase();$('modeHint').textContent=state.mode;state.stale=true;});
 $('publicationDate').addEventListener('input',()=>{state.stale=true;});
 $('file-weekly').addEventListener('change',async()=>{
@@ -69,7 +70,10 @@ with sync_playwright() as p:
     original_rows = list(csv.reader(io.StringIO(raw)))
     assert page.evaluate('WeeklyBuilder.getSources().weekly.rows') == original_rows
     page.click('#updateNamesExport')
-    assert page.evaluate('exportDownload') == 'Weekly_names_title.csv'
+    assert page.evaluate('exportDownload') == 'Retail Weekly.csv'
+    page.evaluate("exportDepartment='referral'")
+    page.click('#updateNamesExport')
+    assert page.evaluate('exportDownload') == 'Referral Weekly.csv'
     exported_text = page.evaluate('exportBlob.text()')
     exported = list(csv.reader(io.StringIO(exported_text.lstrip('\ufeff'))))
     assert len(exported) == len(original_rows)
