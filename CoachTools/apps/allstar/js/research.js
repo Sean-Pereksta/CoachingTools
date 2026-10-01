@@ -801,13 +801,13 @@ function researchJoinPreviewSnapshot(item){
   return {population:population.size,mode,baseSource:item.source,totalSourceRows:rows.reduce((n,x)=>n+x.sourceRows,0),rows};
 }
 function renderResearchJoinPreview(){
-  if(!els.researchJoinPreview||!els.researchSource?.value) return;
-  try{
-    const snap=researchJoinPreviewSnapshot(currentResearchItemFromEditor()), label={strict_rep:'Strict representative',strict_team:'Strict team',rep_then_team:'Representative, then disclosed team fallback'}[snap.mode]||snap.mode;
-    els.researchJoinPreview.innerHTML=`<strong>Join preview · ${esc(label)}</strong><div class="researchPreviewSummary"><span class="badge">Population: ${snap.population.toLocaleString()} entities</span><span class="badge">Sources: ${snap.rows.length.toLocaleString()}</span><span class="badge">Imported rows across used sources: ${snap.totalSourceRows.toLocaleString()}</span><span class="badge">Primary: ${esc(labelSource(snap.baseSource))}</span><span class="badge">Unmatched: ${currentResearchItemFromEditor().unmatchedBehavior==='blank'?'kept as blank':'excluded'}</span></div><div class="researchJoinPreviewGrid">${snap.rows.map(x=>`<div class="researchJoinPreviewCard"><strong>${esc(labelSource(x.source))}</strong><span>${x.sourceRows.toLocaleString()} imported rows</span><br><span class="good">Matched population: ${x.matched.toLocaleString()}</span><br><span class="${x.unmatched?'warn':'good'}">Unmatched: ${x.unmatched.toLocaleString()}</span>${x.fallback?`<br><span class="warn">Disclosed fallbacks: ${x.fallback.toLocaleString()}</span>`:''}</div>`).join('')}</div>`;
-  }catch(err){ els.researchJoinPreview.innerHTML=`<strong>Join preview unavailable</strong><span class="hint">${esc(err.message||err)}</span>`; }
+  if(els.researchJoinPreview)els.researchJoinPreview.innerHTML='<strong>Preview on demand</strong><span class="hint">Click Run preview to inspect up to 500 source rows. Full joins, coverage, and calculations run with Save &amp; Run Research.</span>';
 }
-const scheduleResearchJoinPreview=debounce(renderResearchJoinPreview,180);
+function scheduleResearchJoinPreview(){
+  if(state.researchPreviewCancel)state.researchPreviewCancel.cancelled=true;
+  renderResearchJoinPreview();
+  if(els.researchFoundPreview&&!els.researchFoundPreview.classList.contains('hidden'))els.researchFoundPreview.innerHTML='<div class="hint">Settings changed. Click Run preview for an updated sample.</div>';
+}
 async function openResearchWorkspace(){
   loadResearchItems();
   openModal('researchModal');
@@ -2854,10 +2854,8 @@ async function ensureResearchDataIndexReady(opts={}){
 }
 function researchIdle(){ return new Promise(resolve=>{ if(window.requestIdleCallback) requestIdleCallback(resolve,{timeout:250}); else setTimeout(resolve,25); }); }
 function scheduleResearchCacheWarm(reason='background'){
-  if(state.researchWarmToken) state.researchWarmToken.cancelled=true;
-  const token={cancelled:false,id:Date.now()+Math.random(),reason};
-  state.researchWarmToken=token;
-  setTimeout(()=>warmResearchCacheInBackground(token),60);
+  if(state.researchWarmToken)state.researchWarmToken.cancelled=true;
+  // Source preparation is explicit: Refresh, Render All, or Prepare Used Sources.
 }
 async function warmResearchCacheInBackground(token){
   if(!researchHasAnyData()) return;
@@ -3426,52 +3424,60 @@ function renderResearchVisualization(item,result){
   return renderResearchBarChart(item,result);
 }
 
-async function renderResearchFoundPreview(){
-  if(!els.researchFoundPreview) return;
-  const item=effectiveResearchItem(currentResearchItemFromEditor());
-  const chunkSize=900;
-  const cancelToken=state.researchPreviewCancel={cancelled:false,scanned:0};
-  els.researchFoundPreview.classList.remove('hidden');
-  els.researchFoundPreview.innerHTML='<div class="researchPreviewSummary"><span class="badge">Preview Found is scanning in chunks...</span><button class="smallBtn red" type="button" data-research-preview-stop>End Here</button></div>';
-  els.researchFoundPreview.querySelector('[data-research-preview-stop]').onclick=()=>{ cancelToken.cancelled=true; };
-  try{
-    showProgress('Preview Found: preparing only the required sources...', 2);
-    if(!cancelToken.cancelled) await ensureResearchExecutionIndexes(item,{token:cancelToken});
-    const raw=researchSourceRowsForItem(item); const hs=getResearchHeaders(item.source);
-    const planned=buildQueryPlan(item.source,{dateColumn:item.dateColumn,startDate:item.startDate,endDate:item.endDate,filters:item.filters||[],item,groupFields:[item.groupField,item.secondaryGroupField,item.panelField],valueFields:[item.valueField,...(item.columns||[]).map(c=>c.field)],customExpressions:[item.groupExpression,item.numeratorExpression,item.denominatorExpression]});
-    let rows=[]; const plannedRows=planned.rows||[]; cancelToken.scanned=planned.plan?.initialRows||raw.length;
-    for(let i=0;i<plannedRows.length;i+=chunkSize){
-      if(cancelToken.cancelled) break;
-      rows.push(...plannedRows.slice(i,i+chunkSize));
-      updateProgress(`Preview Found: preparing optimized candidates (${Math.min(i+chunkSize,plannedRows.length).toLocaleString()}/${plannedRows.length.toLocaleString()})`, 35 + 55*Math.min(1,(i+chunkSize)/Math.max(1,plannedRows.length)));
-      await yieldToBrowser();
+const RESEARCH_PREVIEW_ROW_LIMIT=500;
+function researchSamplePreview(item){
+  item=effectiveResearchItem(normalizeResearchItem(item));
+  const raw=getRowsRaw(item.source)||[],headers=getResearchHeaders(item.source)||[],notes=[],fields=new Map();
+  const resolve=field=>{
+    if(fields.has(field))return fields.get(field);
+    const key=plainHeaderName(field),actual=['_rep','_repKey','_team'].includes(field)?field:headers.find(h=>plainHeaderName(h)===key)||'';
+    fields.set(field,actual);return actual;
+  };
+  const read=(row,field)=>{const actual=resolve(field);if(actual==='_team')return getCoachIdentity(row,item.source).displayName;if(actual==='_rep')return getRepIdentity(row,item.source).displayName;if(actual==='_repKey')return getRepIdentity(row,item.source).normalizedName;return actual?row[actual]:'';};
+  const size=Math.min(RESEARCH_PREVIEW_ROW_LIMIT,raw.length),sample=[];
+  for(let i=0;i<size;i++)sample.push(raw[size>1?Math.floor(i*(raw.length-1)/(size-1)):0]);
+  const population=researchPopulationMatchKeys(item.populationScope),includes=population.includeTeamKeys.size||population.includeRepKeys.size;
+  if(population.missingOrgs.length)notes.push('Population organization not found: '+population.missingOrgs.join(', '));
+  let rows=sample.filter(row=>{
+    if(isDatedStatsSource(item.source)&&!weeklySourceRowIdentity(row,item.source).validRep)return false;
+    if(item.dateColumn&&(item.startDate||item.endDate)&&!inRange(read(row,item.dateColumn),item.startDate,item.endDate))return false;
+    if(item.weeklyTimeAxis&&!parseDateOnly(read(row,item.dateColumn)))return false;
+    if(!includes&&!population.excludeTeamKeys.size&&!population.excludeRepKeys.size)return true;
+    const rep=getRepIdentity(row,item.source).normalizedName,team=coachNameKey(getCoachIdentity(row,item.source).displayName);
+    return (!includes||population.includeRepKeys.has(rep)||population.includeTeamKeys.has(team))&&!population.excludeRepKeys.has(rep)&&!population.excludeTeamKeys.has(team);
+  });
+  const filters=(item.filters||[]).filter(filter=>filter.field||filter.column||filter.expression||filter.targetValue);
+  for(const filter of filters){
+    const field=filter.field||filter.column,op=filter.op||filter.operator||'contains';
+    if(filter.expression||filter.dynamic||filter.dynamicColumn||filter.include==='includeWithin'||filter.include==='excludeWithin'||!resolve(field)||parseResearchBangField(field)||findMetricByRef(field)||parseModelRef(field)){
+      notes.push('Advanced expressions, model/metric filters, and cross-source filters are checked by Save & Run Research.');continue;
     }
-    if(!cancelToken.cancelled){
-      rows=applyResearchGearRowFilters(rows,item,[]);
-      if((item.guidedConditions||[]).some(guidedValidCondition)) rows=applyGuidedConditionsToRows(rows,item);
-    }
-    updateProgress('Preview Found: preparing preview table', 96);
-    await yieldToBrowser();
-    const active=(item.filters||[]).filter(f=>f.expression||f.field||f.targetValue||f.include==='includeWithin'||f.include==='excludeWithin').length;
-    const activeConditions=(item.guidedConditions||[]).filter(guidedValidCondition);
-    const outCols=(item.columns||[]).filter(c=>c.field).map(c=>c.field);
-    const base=[item.source==='documented_coaching'?'Associate name':'Associate Name','Agent Name','Representative','Job Coach','Coach Assigned','Team',item.dateColumn,'Date','Interaction Start Time','Assigned Date'].filter(Boolean);
-    const filterCols=[...(item.filters||[]).map(f=>f.field||f.targetValueColumn),...activeConditions.map(c=>c.field)].filter(Boolean);
-    const cols=[]; [...base,'Source','Matched / filter column','Matched value',...filterCols,...outCols].forEach(c=>{ if(c&&!cols.includes(c)) cols.push(c); });
-    const shown=rows.slice(0,100);
-    const repVals=[...new Set(rows.map(r=>r._rep||r['Agent Name']||r['Associate Name']||r['Associate name']).filter(Boolean))].slice(0,25);
-    const teamVals=[...new Set(rows.map(researchRowTeam).filter(Boolean))].slice(0,25);
-    const rowHtml=shown.map(r=>`<tr>${cols.map(c=>{ let v=''; if(c==='Source') v=labelSource(item.source); else if(c==='Matched / filter column') v=filterCols.join(', '); else if(c==='Matched value') v=filterCols.map(fc=>researchFieldValue(r,fc,item.source)).filter(x=>String(x).trim()).join(' | '); else v=researchFieldValue(r,c,item.source); return `<td><div class="cellScroll">${esc(v??'')}</div></td>`; }).join('')}</tr>`).join('');
-    els.researchFoundPreview.classList.remove('hidden');
-    els.researchFoundPreview.innerHTML=`${cancelToken.cancelled?'<div class="researchWarn">Preview stopped early. Showing partial results found so far.</div>':''}${queryPlanBadge(planned.plan)}<div class="researchPreviewSummary"><span class="badge">Rows scanned: ${(cancelToken.scanned||raw.length).toLocaleString()}</span><span class="badge">Matching rows: ${rows.length}</span><span class="badge">Showing first ${shown.length}${rows.length>100?' of 100':''}</span><span class="badge">Source: ${esc(labelSource(item.source))}</span><span class="badge">Population filters: ${active}</span><span class="badge">Qualifying conditions: ${activeConditions.length}</span></div><div class="hint"><strong>Coach/team preview:</strong> ${esc(teamVals.join(', ')||'none')}<br><strong>Representative preview:</strong> ${esc(repVals.join(', ')||'none')}</div><div class="researchTableWrap"><table class="researchConversationTable compact wrapText"><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rowHtml||`<tr><td colspan="${cols.length||1}">No rows matched.</td></tr>`}</tbody></table></div>`;
-    updateProgress('Preview Found complete',100);
-    await yieldToBrowser();
-  }catch(e){
-    els.researchFoundPreview.classList.remove('hidden');
-    els.researchFoundPreview.innerHTML=`<div class="researchWarn">${esc(e.message||e)}</div>`;
-  }finally{
-    hideProgress();
+    rows=rows.filter(row=>{const matched=compareFilter(read(row,field),op,filter.value,filter.value2);return filter.include==='exclude'?!matched:matched;});
   }
+  const conditions=(item.guidedConditions||[]).filter(guidedValidCondition);
+  const groupedConditions=item.guidedSubject==='representatives'&&['show','count','compare'].includes(item.guidedQuestion);
+  const safeConditions=!groupedConditions&&conditions.every(condition=>!condition.expression&&!guidedConditionIsCount(condition.operator)&&(!condition.source||condition.source===item.source)&&!!resolve(condition.field)&&!findMetricByRef(condition.field)&&!parseModelRef(condition.field)&&!parseResearchBangField(condition.field));
+  if(safeConditions)rows=rows.filter(row=>{let matched=true;conditions.forEach((condition,index)=>{const hit=guidedConditionValueMatches(read(row,condition.field),condition);matched=index===0?hit:condition.logic==='or'?matched||hit:matched&&hit;});return matched;});
+  else if(conditions.length)notes.push('Cross-source, expression, and grouped/count qualifying conditions are checked by Save & Run Research.');
+  if(item.weeklyCoverage?.enabled)notes.push('Minimum weekly coverage is checked using the complete selected period when you run Research; this sample does not establish eligibility.');
+  if(Object.keys(item.gearFilters||{}).length)notes.push('Advanced field/value selections are checked by Save & Run Research.');
+  const columns=[...new Set(['_rep','_team',item.dateColumn,...filters.map(f=>f.field||f.column),...conditions.map(c=>c.field),item.valueField,...(item.columns||[]).map(c=>c.field)].filter(field=>field&&resolve(field)))].slice(0,12);
+  return {source:item.source,importedRows:raw.length,sampledRows:size,matchedRows:rows.length,rows:rows.slice(0,100),columns,read,notes:[...new Set(notes)]};
+}
+async function renderResearchFoundPreview(){
+  if(!els.researchFoundPreview)return;
+  if(state.researchPreviewCancel)state.researchPreviewCancel.cancelled=true;
+  const token=state.researchPreviewCancel={cancelled:false},item=currentResearchItemFromEditor();
+  const button=els.previewResearchFoundBtn;if(button)button.disabled=true;
+  els.researchFoundPreview.classList.remove('hidden');els.researchFoundPreview.innerHTML='<div class="hint">Preparing a small sample…</div>';
+  try{
+    await yieldToBrowser();if(token.cancelled)return;
+    const preview=researchSamplePreview(item),label=field=>field==='_rep'?'Representative':field==='_team'?'Coach':field;
+    const rows=preview.rows.map(row=>`<tr>${preview.columns.map(field=>`<td>${esc(preview.read(row,field)??'')}</td>`).join('')}</tr>`).join('');
+    els.researchFoundPreview.innerHTML=`<strong>Sample preview · ${esc(labelSource(preview.source))}</strong><div class="researchPreviewSummary"><span class="badge">Sampled ${preview.sampledRows.toLocaleString()} of ${preview.importedRows.toLocaleString()} imported rows</span><span class="badge">${preview.matchedRows} sample rows match</span><span class="badge">Showing ${preview.rows.length}</span></div><p class="hint">Small sample spread across the source. Counts are sample counts, not complete population totals or final percentages. Save &amp; Run Research calculates the full result.</p>${preview.notes.map(note=>`<p class="hint">${esc(note)}</p>`).join('')}<div class="researchTableWrap"><table><thead><tr>${preview.columns.map(field=>`<th>${esc(label(field))}</th>`).join('')}</tr></thead><tbody>${rows||`<tr><td colspan="${preview.columns.length||1}">No rows in this sample matched. Matching rows may exist outside the sample.</td></tr>`}</tbody></table></div>`;
+    if(els.researchJoinPreview)els.researchJoinPreview.innerHTML='<strong>Sample preview complete</strong><span class="hint">The sample is shown below. Full joins and totals are calculated only when you run Research.</span>';
+  }catch(error){els.researchFoundPreview.innerHTML=`<div class="researchWarn">${esc(error.message||error)}</div>`;}
+  finally{if(state.researchPreviewCancel===token&&button)button.disabled=false;}
 }
 
 function researchProcessingStepCount(item){
@@ -3816,16 +3822,17 @@ async function renderResearchItemBodyAsync(item, progress={}){
   catch(e){ if(e.name==='AbortError') throw e; return researchFailedBody(e); }
 }
 
-function bindResearchCanvasActions(){
-  bindDatedStatsCharts(els.researchCanvas);
-  els.researchCanvas.querySelectorAll('[data-research-edit]').forEach(b=>b.onclick=()=>openResearchItemEditor(b.dataset.researchEdit)); els.researchCanvas.querySelectorAll('[data-research-delete]').forEach(b=>b.onclick=()=>deleteResearchItem(b.dataset.researchDelete)); els.researchCanvas.querySelectorAll('[data-research-data]').forEach(b=>b.onclick=()=>exportResearchItemData(b.dataset.researchData)); els.researchCanvas.querySelectorAll('[data-research-image]').forEach(b=>b.onclick=()=>exportResearchItemImage(b.dataset.researchImage)); els.researchCanvas.querySelectorAll('[data-research-size]').forEach(b=>b.onclick=()=>setResearchItemProp(b.dataset.researchSize,{cardSize:b.dataset.size})); els.researchCanvas.querySelectorAll('[data-research-collapse]').forEach(b=>b.onclick=()=>{ const item=state.researchItems.find(x=>x.id===b.dataset.researchCollapse); setResearchItemProp(b.dataset.researchCollapse,{collapsed:!item.collapsed}); }); els.researchCanvas.querySelectorAll('[data-research-move]').forEach(b=>b.onclick=()=>moveResearchItem(b.dataset.researchMove,b.dataset.dir));
-  bindResearchConversationViewerActions(els.researchCanvas);
-  bindResearchVirtualTables(els.researchCanvas);
-  bindResearchCanvasCharts(els.researchCanvas);
-  if(typeof AllStarCharts!=='undefined'){ configureResearchCharts(); AllStarCharts.bind(els.researchCanvas); }
-  els.researchCanvas.querySelectorAll('[data-trace-id]').forEach(c=>c.onclick=e=>{ e.stopPropagation(); openResearchCellFeedback(c.dataset.traceId); }); els.researchCanvas.querySelectorAll('[data-drilldown-id]:not([data-trace-id])').forEach(c=>c.onclick=e=>{ e.stopPropagation(); openResearchCellDrilldown(c.dataset.drilldownId); });
-  els.researchCanvas.querySelectorAll('[data-research-refresh]').forEach(b=>b.onclick=async()=>{ const item=state.researchItems.find(x=>x.id===b.dataset.researchRefresh); if(!item) return; await refreshResearchItem(item.id,b); });
-  els.researchCanvas.querySelectorAll('[data-research-render]').forEach(button=>button.onclick=async()=>{ const item=state.researchItems.find(row=>row.id===button.dataset.researchRender); if(!item) return; state.renderedLargeResearchCards.add(item.id); await refreshResearchItem(item.id,button); });
+function bindResearchCanvasActions(root=els.researchCanvas){
+  if(!root)return;
+  bindDatedStatsCharts(root);
+  root.querySelectorAll('[data-research-edit]').forEach(b=>b.onclick=()=>openResearchItemEditor(b.dataset.researchEdit)); root.querySelectorAll('[data-research-delete]').forEach(b=>b.onclick=()=>deleteResearchItem(b.dataset.researchDelete)); root.querySelectorAll('[data-research-data]').forEach(b=>b.onclick=()=>exportResearchItemData(b.dataset.researchData)); root.querySelectorAll('[data-research-image]').forEach(b=>b.onclick=()=>exportResearchItemImage(b.dataset.researchImage)); root.querySelectorAll('[data-research-size]').forEach(b=>b.onclick=()=>setResearchItemProp(b.dataset.researchSize,{cardSize:b.dataset.size})); root.querySelectorAll('[data-research-collapse]').forEach(b=>b.onclick=()=>{ const item=state.researchItems.find(x=>x.id===b.dataset.researchCollapse); setResearchItemProp(b.dataset.researchCollapse,{collapsed:!item.collapsed}); }); root.querySelectorAll('[data-research-move]').forEach(b=>b.onclick=()=>moveResearchItem(b.dataset.researchMove,b.dataset.dir));
+  bindResearchConversationViewerActions(root);
+  bindResearchVirtualTables(root);
+  bindResearchCanvasCharts(root);
+  if(typeof AllStarCharts!=='undefined'){ configureResearchCharts(); AllStarCharts.bind(root); }
+  root.querySelectorAll('[data-trace-id]').forEach(c=>c.onclick=e=>{ e.stopPropagation(); openResearchCellFeedback(c.dataset.traceId); }); root.querySelectorAll('[data-drilldown-id]:not([data-trace-id])').forEach(c=>c.onclick=e=>{ e.stopPropagation(); openResearchCellDrilldown(c.dataset.drilldownId); });
+  root.querySelectorAll('[data-research-refresh]').forEach(b=>b.onclick=async()=>{ const item=state.researchItems.find(x=>x.id===b.dataset.researchRefresh); if(!item) return; await refreshResearchItem(item.id,b); });
+  root.querySelectorAll('[data-research-render]').forEach(button=>button.onclick=async()=>{ const item=state.researchItems.find(row=>row.id===button.dataset.researchRender); if(!item) return; state.renderedLargeResearchCards.add(item.id); await refreshResearchItem(item.id,button); });
 }
 async function refreshResearchItem(itemId,button){
   const item=state.researchItems.find(x=>x.id===itemId); if(!item) return;
@@ -3845,7 +3852,7 @@ async function refreshResearchItem(itemId,button){
     if(!researchProgressActive(token)){ if(state.researchRenderToken===token&&card) card.innerHTML=researchQueuedPlaceholder(item); return; }
     updateResearchProgress(token,'Inserting rendered table/chart...',95);
     if(card) card.innerHTML=html;
-    bindResearchCanvasActions();
+    bindResearchCanvasActions(card?.closest('[data-research-card]'));
     updateResearchCacheBadge();
     finishResearchProgress(token,'Research item rendered');
     setResearchCanvasStatus(`Refreshed ${item.title||'Research item'} from newly calculated values.`);
@@ -3856,7 +3863,7 @@ async function refreshResearchItem(itemId,button){
     setResearchCanvasStatus(`Research refresh failed: ${e.message||e}`);
   }finally{
     if(button){ button.disabled=false; button.textContent=button.dataset.originalText||'Refresh / Re-run'; }
-    bindResearchCanvasActions();
+    bindResearchCanvasActions(card?.closest('[data-research-card]'));
     hideResearchProgress(token);
     if(state.researchRenderToken===token) state.researchRenderToken=null;
   }
@@ -3877,7 +3884,7 @@ async function renderResearchCanvasAsync(opts={}){
     setResearchCanvasStatus(`Rendering ${idx+1} of ${items.length}...`);
     const card=els.researchCanvas.querySelector(`[data-research-card="${CSS.escape(item.id)}"] .researchCardBody`);
     if(card){ const html=researchStoredResultValid(item) ? await researchStoredResultBodyAsync(item) : researchNoStoredResultBody(item); if(token.cancelled) break; card.innerHTML=html; }
-    bindResearchCanvasActions();
+    bindResearchCanvasActions(card?.closest('[data-research-card]'));
     await yieldToBrowser();
   }
   if(!token.cancelled) setResearchCanvasStatus('Research items loaded from saved rendered results. Use Refresh or Render All to regenerate.');
@@ -3919,7 +3926,7 @@ async function renderAllResearchItems(){
         if(e.name==='AbortError'||token.cancelled){ token.cancelled=true; break; }
         if(card) card.innerHTML=researchFailedBody(e); failed++; completedWeight+=itemWeight;
       }
-      bindResearchCanvasActions(); updateResearchCacheBadge(); await yieldToBrowser();
+      bindResearchCanvasActions(card?.closest('[data-research-card]')); updateResearchCacheBadge(); await yieldToBrowser();
     }
     if(token.cancelled&&state.researchRenderToken===token){ items.forEach(item=>{ if(renderedThisRun.has(item.id)) return; const card=els.researchCanvas.querySelector(`[data-research-card="${CSS.escape(item.id)}"] .researchCardBody`); if(card) card.innerHTML=researchQueuedPlaceholder(item); }); }
     if(!token.cancelled) finishResearchProgress(token,'Render All complete');
