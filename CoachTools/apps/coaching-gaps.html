@@ -2888,8 +2888,8 @@ function buildFieldMap(sampleRows){
   map.wiperCount = pickField(keys, [/^Wiper[_\s-]*Count$/i, /wiper.*count/i, /^Wiper\s*Count$/i]);
   map.wiperJobs  = pickField(keys, [/^Wiper[_\s-]*Jobs$/i, /wiper.*jobs?/i]);
 
-  map.wipersAccept = pickField(keys, [/wipers?[_\s-]*accept/i, /wipers? accept/i]);
-  map.wipersAsked  = pickField(keys, [/wipers?[_\s-]*asked/i, /wipers? asked/i]);
+  map.wipersAccept = pickField(keys, [/^\s*Wipers[_\s-]*Accepted\s*$/i, /^\s*Wiper[_\s-]*Accepted\s*$/i, /^\s*Wipers?[_\s-]*Accept\s*$/i, /wipers?[_\s-]*accept/i]);
+  map.wipersAsked  = pickField(keys, [/^\s*Wipers?[_\s-]*Asked\s*$/i, /wipers?[_\s-]*asked/i]);
 
   return map;
 }
