@@ -4,7 +4,7 @@
 'use strict';
 
 function normalizeOrgName(v){ return normalizeResearchText(v); }
-function normalizeOrg(o={}){ const now=new Date().toISOString(), coaches=new Map(); (o.coachNames||[]).forEach(x=>{ const name=canonicalCoachName(x); if(name) coaches.set(coachNameKey(name),name); }); return {id:o.id||id(),name:String(o.name||'New Org').trim()||'New Org',coachNames:[...coaches.values()].sort((a,b)=>a.localeCompare(b)),createdAt:o.createdAt||now,updatedAt:o.updatedAt||now}; }
+function normalizeOrg(o={}){ return window.CoachToolsOrganizationImport.normalize(o,{canonicalCoach:canonicalCoachName,coachKey:coachNameKey,createId:id}); }
 function loadOrgs(){ try{ const raw=JSON.parse(localStorage.getItem(ORG_BUILDER_KEY)||'[]'); state.orgs=(Array.isArray(raw)?raw:(raw.orgs||[])).map(normalizeOrg); }catch(_){ state.orgs=[]; } }
 function saveOrgs(){ state.orgs=(state.orgs||[]).map(normalizeOrg); localStorage.setItem(ORG_BUILDER_KEY,JSON.stringify(state.orgs)); selectiveResearchInvalidation({reason:'org builder changed',teams:true}); renderRunOrgSelect(); renderMultiRunOrgSelect(); }
 function findOrg(ref){ const raw=String(ref||'').replace(/^\$/,'').trim(), n=normalizeOrgName(raw); return (state.orgs||[]).find(o=>o.id===raw||normalizeOrgName(o.name)===n); }
@@ -93,7 +93,7 @@ function renderOrgHealth(){
 }
 
 function exportOrgs(){ downloadText('all_star_orgs.json',JSON.stringify({version:1,orgs:state.orgs||[]},null,2)); }
-function importOrgs(text){ const obj=JSON.parse(text), incoming=(Array.isArray(obj)?obj:(obj.orgs||[])).map(normalizeOrg); incoming.forEach(o=>{ const byId=state.orgs.findIndex(x=>x.id===o.id); if(byId>=0) state.orgs[byId]=o; else { if(state.orgs.some(x=>normalizeOrgName(x.name)===normalizeOrgName(o.name))) o.name+=' copy'; state.orgs.push(o); } }); saveOrgs(); renderOrgBuilder(); }
+function importOrgs(text){ state.orgs=window.CoachToolsOrganizationImport.merge(text,state.orgs,{normalizeOrg,nameKey:normalizeOrgName}).orgs; saveOrgs(); renderOrgBuilder(); }
 
 function updateRunQADateField(){
   const model=findModel(els.runModelSelect?.value);

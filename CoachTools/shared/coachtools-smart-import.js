@@ -306,8 +306,11 @@
       <div class="smart-import-controls">
         <label class="smart-import-search"><span>Coach search</span><input id="smartImportSearch" type="search" placeholder="Type Aisha Villalobos, Villalobos, etc."></label>
         <label class="smart-import-org"><span>All-Star Org</span><select id="smartImportOrg"><option value="">Choose an org…</option></select></label>
+        <button id="smartImportUploadOrgs" class="command-button secondary" type="button">Upload All-Star Orgs</button>
+        <input id="smartImportOrgsFile" type="file" accept=".json,application/json" hidden>
         <button id="smartImportAddOrg" class="command-button secondary" type="button">Add Org Coaches</button>
       </div>
+      <div id="smartImportOrgStatus" role="status" aria-live="polite"></div>
       <div id="smartImportSelected" class="smart-import-selected"></div>
       <div id="smartImportSources" class="smart-import-sources"></div>
       <div class="smart-import-actions">
@@ -329,7 +332,34 @@
       resolveChooser({ mode: 'filtered', selections: selectionBySource() });
     });
     chooser.querySelector('#smartImportAddOrg').addEventListener('click', () => addSelectedOrg());
+    chooser.querySelector('#smartImportUploadOrgs').addEventListener('click', () => chooser.querySelector('#smartImportOrgsFile').click());
+    chooser.querySelector('#smartImportOrgsFile').addEventListener('change', importOrgFile);
     return chooser;
+  }
+
+  async function importOrgFile(event) {
+    const input = event.target, file = input.files && input.files[0];
+    if (!file) return;
+    const chooser = state.chooser, button = chooser.querySelector('#smartImportUploadOrgs'), status = chooser.querySelector('#smartImportOrgStatus');
+    if (button.disabled) return;
+    button.disabled = true;
+    status.textContent = 'Importing All-Star organizations…';
+    try {
+      const text = await file.text();
+      const saved = JSON.parse(root.localStorage.getItem(ORG_KEY) || '[]');
+      const existing = Array.isArray(saved) ? saved : saved.orgs || [];
+      const result = root.CoachToolsOrganizationImport.merge(text, existing);
+      root.localStorage.setItem(ORG_KEY, JSON.stringify(result.orgs));
+      const selected = chooser.querySelector('#smartImportOrg').value;
+      renderOrgs();
+      if (Array.from(chooser.querySelector('#smartImportOrg').options).some(option => option.value === selected)) chooser.querySelector('#smartImportOrg').value = selected;
+      status.textContent = result.imported ? `Imported ${result.imported} organization${result.imported === 1 ? '' : 's'}. Choose an org, then Add Org Coaches.` : 'No organizations were found in that file.';
+    } catch (error) {
+      status.textContent = `Org import failed: ${error.message || error}`;
+    } finally {
+      input.value = '';
+      button.disabled = false;
+    }
   }
 
   function renderOrgs() {
