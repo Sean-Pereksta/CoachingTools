@@ -520,10 +520,15 @@
       if (action === 'clean-upload-data' || action === 'quick-upload-data') {
         event.preventDefault();
         event.stopImmediatePropagation?.();
+        if (root.CoachToolsRememberedData?.isBusy()) return;
         updateSession = null;
         mode = 'clean';
         pendingScope = null;
         pendingFiles = [];
+        if (action === 'clean-upload-data' && root.CoachToolsRememberedData?.canChooseCleanUploadFolder()) {
+          root.CoachToolsRememberedData.cleanUploadFromDirectory();
+          return;
+        }
         const input = $('quickDataInput');
         if (input) { input.removeAttribute?.('webkitdirectory'); input.removeAttribute?.('directory'); input.multiple=true; input.value=''; input.click(); }
       } else if (action === 'update-data' && root.location.protocol === 'file:') {
