@@ -189,3 +189,58 @@ test('permission can be reauthorized without selecting the folder again', async 
   assert.equal(h.calls.folders, 0);
   assert.deepEqual(h.calls.saved, [selected.file]);
 });
+
+function records(names) {
+  return names.map((name, index) => ({ path: `exports/${name}`, file: { name, size: 5, lastModified: index + 1 } }));
+}
+
+for (const [department, type] of [['Retail', 'weeklyRetail'], ['Referral', 'weeklyReferral']]) {
+  for (const separator of [' ', '_', '-']) {
+    test(`${department} weekly CSV matches ${JSON.stringify(separator)} separators and added filename text`, () => {
+      const h = harness();
+      const name = `October updated team statistics ${department}${separator}Weekly extra report details (12).CSV`;
+      const files = records([name]);
+      const result = h.api.selectBaselineCandidates(files, {
+        files: [{ name: `${department} Weekly.csv` }], datasetTypes: [type]
+      }, {});
+      assert.deepEqual(Array.from(result), files);
+    });
+  }
+}
+
+test('newest matching weekly CSV replaces an exact older filename without crossing departments', () => {
+  const h = harness();
+  const files = records([
+    'Retail Weekly.csv',
+    'October Retail-Weekly export for all current teams.csv',
+    'October Referral_Weekly export for all current teams.csv',
+    'October Retail-Monthly export for all current teams.csv',
+    'Retail Weekly.csv.bak'
+  ]);
+  const result = h.api.selectBaselineCandidates(files, {
+    files: [{ name: 'Retail Weekly.csv' }], datasetTypes: ['weeklyRetail']
+  }, { weeklyReferral: ['Referral Weekly.csv'] });
+  assert.deepEqual(Array.from(result), [files[1]]);
+});
+
+test('both selected weekly sources are found even when baseline files used unrelated names', () => {
+  const h = harness();
+  const files = records(['Retail_Weekly new column layout.csv', 'Referral-Weekly new column layout.csv']);
+  const result = h.api.selectBaselineCandidates(files, {
+    files: [{ name: 'legacy.csv' }], datasetTypes: ['weeklyRetail', 'weeklyReferral']
+  }, {});
+  assert.deepEqual(Array.from(result), files);
+});
+
+test('weekly broad matching excludes ambiguous names and leaves other selected sources unchanged', () => {
+  const h = harness();
+  const files = records(['QA.csv', 'Retail Weekly Referral Weekly.csv', 'Unrelated Retail Weekly notes.txt']);
+  const result = h.api.selectBaselineCandidates(files.slice(0, 2), {
+    files: [{ name: 'QA.csv' }], datasetTypes: ['qa']
+  }, {});
+  assert.deepEqual(Array.from(result), [files[0]]);
+  const weekly = h.api.selectBaselineCandidates(files.slice(0, 2), {
+    files: [{ name: 'Retail Weekly.csv' }], datasetTypes: ['weeklyRetail']
+  }, {});
+  assert.equal(weekly.length, 0);
+});

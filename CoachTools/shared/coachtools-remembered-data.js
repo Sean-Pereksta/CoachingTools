@@ -55,7 +55,22 @@
   function familyTokens(name) {
     return normalizeFamily(name).split(' ').filter(token => token.length > 1);
   }
+  function weeklyFileFamily(name) {
+    const value = String(name || '').replace(/\.[a-z0-9]+$/i, '');
+    const retail = /(?:^|[^a-z0-9])retail[\s_-]+weekly(?:$|[^a-z0-9])/i.test(value);
+    const referral = /(?:^|[^a-z0-9])referral[\s_-]+weekly(?:$|[^a-z0-9])/i.test(value);
+    // An ambiguous filename must not cross-load the other department's data.
+    return retail === referral ? '' : retail ? 'weeklyRetail' : 'weeklyReferral';
+  }
   function nameMatchScore(candidateName, templateName) {
+    const templateWeekly = weeklyFileFamily(templateName);
+    const candidateWeekly = weeklyFileFamily(candidateName);
+    if (templateWeekly && extensionOf(candidateName) === '.csv') {
+      // Weekly CSV names often acquire dates, download counters, or long report
+      // descriptions. Match their source label regardless of those extra words.
+      return candidateWeekly === templateWeekly ? 100 : 0;
+    }
+    if (templateWeekly && candidateWeekly && templateWeekly !== candidateWeekly) return 0;
     const candidate = normalizeFamily(candidateName);
     const template = normalizeFamily(templateName);
     if (!candidate || !template) return 0;
@@ -77,6 +92,8 @@
       if (file && file.name) names.push(file.name);
     }
     for (const type of baseline?.datasetTypes || []) {
+      if (type === 'weeklyRetail') names.push('Retail Weekly.csv');
+      if (type === 'weeklyReferral') names.push('Referral Weekly.csv');
       const values = rememberedNames?.[type];
       if (Array.isArray(values)) names.push(...values);
     }
