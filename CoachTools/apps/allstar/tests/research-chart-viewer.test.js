@@ -62,7 +62,7 @@ async function interactiveWorkflow(){
     h.run("const line=explorer.querySelector('[data-chart-hit]');line.onclick();");
     assert.equal(h.run("explorer.querySelectorAll('.asc-series-focused').length"),1);
     const selected=plain(h.run('viewer.session.preferences.selectedPoint'));
-    h.run("setLayer('endLabels',true);explorer.querySelector('[data-v-defaults]').click();");
+    h.run("setLayer('endLabelMode','all');explorer.querySelector('[data-v-defaults]').click();");
     assert.equal(JSON.parse(h.storage.get('allstar.researchChartViews.v1')).views[0].preferences.endLabels,true);
     h.run("explorer.querySelector('[data-v-panel-toggle]').click();");assert.equal(h.run("explorer.classList.contains('asc-panel-collapsed')"),true);
     assert.equal(h.run("explorer.querySelector('.asc-view-panel').hidden"),true,'collapsed controls are excluded from the focus trap');
@@ -153,7 +153,7 @@ function calendarAndChartCompatibility(){
     assert.equal(h.run('windowView.allSeries[1].points[0].value'),null);
     h.run(`
       const endResult={columns:[{label:'Value'}],data:['Coach A','Coach B','Coach C'].map(secondary=>({label:'2026-09-27',secondary,values:[45]}))};
-      const endSession=AllStarCharts.viewerSession({...datedItem,id:'ends'},endResult);endSession.preferences.endLabels=true;const ends=AllStarCharts.viewerDataset(endSession),endSvg=document.createElement('div');endSvg.innerHTML=AllStarCharts.renderSVG(ends.def,ends.data).svg;
+      const endSession=AllStarCharts.viewerSession({...datedItem,id:'ends'},endResult);endSession.preferences.endLabelMode="all";const ends=AllStarCharts.viewerDataset(endSession),endSvg=document.createElement('div');endSvg.innerHTML=AllStarCharts.renderSVG(ends.def,ends.data).svg;
       const labelYs=[...endSvg.querySelectorAll('text')].filter(node=>node.querySelector('title')?.textContent.startsWith('Coach')).map(node=>Number(node.getAttribute('y'))).sort((a,b)=>a-b);
     `);
     assert.equal(h.run('labelYs.length'),3);assert.ok(h.run('labelYs[1]-labelYs[0]>=18&&labelYs[2]-labelYs[1]>=18'),'equal endpoint values get separate labels');

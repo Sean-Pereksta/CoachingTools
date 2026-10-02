@@ -76,3 +76,14 @@ The loaded weekly statistics define the population. Event-only populations are n
 Coaching/event conditions also accept an optional **Short item label**, and calculated results have a separate **Result label**. These labels affect presentation only. Imported source headers and records are unchanged. The standard editor retains calculated definitions when editing shared filters or titles.
 
 Regression coverage: `node apps/allstar/tests/calculated-research.test.js` exercises distinct aggregation methods, per-rep/coach/item denominators, duplicate imports, same-row filtering, date windows, coach reassignment, source mapping failures, real builder controls, immediate loading, saved snapshots, and reopened definitions.
+
+
+## Smooth line displays and a compact Research workspace
+
+- In a standard Research graph, open **Fullscreen → Analysis layers**, choose a moving-average window, and set **Line display → Rolling average only**. The original paths are hidden while every visible series keeps its own rolling curve, even when a line is focused. Choose **Original + rolling average** to restore the overlay. Chart Designer has the same display choice with a window measured in displayed points.
+- Dated statistics, coaching activity, and calculated-ratio graphs expose **Line display and labels** below their legend. Dated averages use trailing calendar weeks; relative-period graphs use trailing points. Starting windows use available observations. Rolling-only displays retain gaps at missing original points.
+- **Line labels** supports none, all (up to eight), top N, bottom N, or top and bottom N. Ranked labels show each line’s average before smoothing within the displayed dates, giving available points equal weight and excluding blanks. Hidden lines and all-missing series are omitted from the ranking; tied averages use name order. Top/bottom overlap is labeled once. This controls labels, not which lines remain plotted. Save chart defaults to retain these preferences.
+- Research’s update status is a compact top-bar value. **Diagnostics** opens the existing live performance timings in a popup. **Inspect ambiguous joins** appears only in the affected card’s More menu when ambiguity exists.
+- Use a card’s dotted drag handle to change its position. The handle also supports Space/Enter to pick up, arrow keys to move, Enter/Space to save, and Escape to cancel. Drops save the order and reuse the existing chart/table nodes; they do not query data or recalculate results. A failed save restores the previous order. One-item/fullscreen viewing disables reordering.
+
+The presentation regression suite is `node apps/allstar/tests/research-presentation.test.js`. It checks mean-based ranking (including 23 lines), gaps, ties, visible windows, rolling-only captures/defaults, dated-chart evidence, compact controls, conditional ambiguity details, pointer/keyboard ordering, cancellation, and storage-failure rollback.

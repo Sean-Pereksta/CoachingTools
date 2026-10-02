@@ -205,7 +205,7 @@
     (fullscreen?card.querySelector('[data-rw-fullscreen-item]'):card)?.focus();
   }
   function setCanvasView(view){
-    if(!['cards','list','focus'].includes(view))return;
+    if(!['cards','list','focus'].includes(view))return;if(researchDrag)finishResearchDrag(false);
     if(itemFullscreenReturn)exitItemFullscreen(false);
     canvasView=view;applyCanvasView();
   }
@@ -223,6 +223,7 @@
       const selected=card.dataset.researchCard===focusedItemId;
       card.hidden=!matchingIds.has(card.dataset.researchCard)||(canvasView==='focus'&&!selected);
       card.classList.toggle('rwFocusedItem',canvasView==='focus'&&selected);
+      const drag=card.querySelector('[data-rw-drag]');if(drag)drag.disabled=canvasView==='focus'||!!itemFullscreenReturn;
       const fullscreen=card.querySelector('[data-rw-fullscreen-item]');if(fullscreen){const active=!!itemFullscreenReturn&&selected;fullscreen.innerHTML=active?'×':fullscreenGlyph;fullscreen.setAttribute('aria-label',active?'Close fullscreen':'Open fullscreen');fullscreen.setAttribute('aria-pressed',String(active));}
     });
     selectViewingOption(byId('rwCanvasView'),canvasView);
@@ -237,11 +238,66 @@
     if(!items.length&&(state.researchItems||[]).length){if(!empty){empty=document.createElement('div');empty.className='researchEmpty';empty.dataset.rwNoMatches='';empty.textContent='No Research items match this search. Clear the search to see all items.';canvas.appendChild(empty);}}else empty?.remove();
     if(reflow===true)reflowResearchViews();
   }
+  let researchDrag=null;
+  function positionResearchCards(ids){
+    const canvas=byId('researchCanvas'),cards=new Map([...canvas.querySelectorAll('[data-research-card]')].map(card=>[card.dataset.researchCard,card]));
+    ids.forEach(id=>{const card=cards.get(id);if(card)canvas.appendChild(card);});
+  }
+  function researchOrderAt(ids,id,target,before){
+    if(id===target||!ids.includes(id)||!ids.includes(target))return ids;
+    const next=ids.filter(value=>value!==id),index=next.indexOf(target);next.splice(index+(before?0:1),0,id);return next;
+  }
+  function finishResearchDrag(save=false){
+    const drag=researchDrag;if(!drag)return;researchDrag=null;drag.cleanup?.();
+    const canvas=byId('researchCanvas');canvas.querySelectorAll('.rwDragging,.rwDropBefore,.rwDropAfter').forEach(node=>node.classList.remove('rwDragging','rwDropBefore','rwDropAfter'));
+    drag.handle.setAttribute('aria-pressed','false');
+    const previous=state.researchItems,ids=previous.map(item=>item.id);
+    if(save&&JSON.stringify(drag.order)!==JSON.stringify(ids)){
+      const byId=new Map(previous.map(item=>[item.id,item]));
+      state.researchItems=[...drag.order.filter(id=>byId.has(id)).map(id=>byId.get(id)),...previous.filter(item=>!drag.order.includes(item.id))];
+      try{persistResearchItemsToLocalStorage();setResearchCanvasStatus('Item order saved.');}
+      catch(error){state.researchItems=previous;setResearchCanvasStatus('Could not save the new order. The previous order was restored.');}
+    }else setResearchCanvasStatus(save?'Item order unchanged.':'Reordering cancelled.');
+    positionResearchCards(state.researchItems.map(item=>item.id));applyCanvasView(false);drag.handle.focus();
+  }
+  function addResearchDragHandle(card){
+    if(card.querySelector('[data-rw-drag]'))return;
+    const heading=card.querySelector('.researchCardHead>div'),handle=document.createElement('button');if(!heading)return;
+    handle.type='button';handle.className='rwDragHandle';handle.dataset.rwDrag=card.dataset.researchCard;handle.textContent='⠿';handle.setAttribute('aria-label','Reorder '+(state.researchItems.find(i=>i.id===card.dataset.researchCard)?.title||'Research item'));handle.setAttribute('aria-pressed','false');handle.title='Drag to reorder. Keyboard: Space to pick up, arrow keys to move, Enter to place, Escape to cancel.';heading.classList.add('rwCardHeading');heading.prepend(handle);
+    const begin=kind=>{
+      if(handle.disabled)return false;if(researchDrag)finishResearchDrag(false);
+      researchDrag={id:card.dataset.researchCard,handle,kind,order:state.researchItems.map(item=>item.id)};handle.setAttribute('aria-pressed','true');card.classList.add('rwDragging');
+      setResearchCanvasStatus('Move the item, then release to place it. Keyboard: arrows to move, Enter to place, Escape to cancel.');return true;
+    };
+    handle.onpointerdown=event=>{
+      if(event.button!==0||!begin('pointer'))return;event.preventDefault();handle.focus();const drag=researchDrag;
+      const move=e=>{
+        if(researchDrag!==drag)return;
+        const canvas=byId('researchCanvas'),rect=canvas.getBoundingClientRect?.(),target=document.elementFromPoint?.(e.clientX,e.clientY)?.closest('[data-research-card]');
+        canvas.querySelectorAll('.rwDropBefore,.rwDropAfter').forEach(node=>node.classList.remove('rwDropBefore','rwDropAfter'));
+        if(rect&&e.clientX>=rect.left&&e.clientX<=rect.right){if(e.clientY<rect.top+40)canvas.scrollTop-=20;else if(e.clientY>rect.bottom-40)canvas.scrollTop+=20;}
+        drag.order=state.researchItems.map(item=>item.id);
+        if(!target||target===card||target.hidden||!canvas.contains(target))return;
+        const bounds=target.getBoundingClientRect(),horizontal=canvasView==='cards'&&rect&&bounds.width<rect.width*.75,before=horizontal?e.clientX<bounds.left+bounds.width/2:e.clientY<bounds.top+bounds.height/2;
+        target.classList.add(before?'rwDropBefore':'rwDropAfter');drag.order=researchOrderAt(drag.order,drag.id,target.dataset.researchCard,before);
+      };
+      const up=e=>{move(e);finishResearchDrag(true);},cancel=()=>finishResearchDrag(false),key=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cancel();}};
+      document.addEventListener('pointermove',move);document.addEventListener('pointerup',up);document.addEventListener('pointercancel',cancel);document.addEventListener('keydown',key,true);
+      drag.cleanup=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',cancel);document.removeEventListener('keydown',key,true);};
+    };
+    handle.onkeydown=event=>{
+      if(event.key==='Escape'&&researchDrag?.handle===handle){event.preventDefault();event.stopPropagation();finishResearchDrag(false);return;}
+      if([' ','Enter'].includes(event.key)){event.preventDefault();if(researchDrag?.handle===handle)finishResearchDrag(true);else begin('keyboard');return;}
+      if(researchDrag?.handle!==handle||researchDrag.kind!=='keyboard'||!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key))return;
+      event.preventDefault();const drag=researchDrag,visible=new Set([...byId('researchCanvas').querySelectorAll('[data-research-card]')].filter(c=>!c.hidden).map(c=>c.dataset.researchCard)),ids=drag.order.filter(id=>visible.has(id)),index=ids.indexOf(drag.id),before=['ArrowUp','ArrowLeft'].includes(event.key),target=ids[index+(before?-1:1)];
+      if(target){drag.order=researchOrderAt(drag.order,drag.id,target,before);positionResearchCards(drag.order);handle.focus();setResearchCanvasStatus(`Item position ${drag.order.indexOf(drag.id)+1} of ${drag.order.length}. Enter to save; Escape to cancel.`);}
+    };
+  }
   function enhanceCanvas(){
     const canvas=byId('researchCanvas');if(!canvas)return;
     canvas.querySelectorAll('[data-research-card]').forEach(card=>{
       const actions=card.querySelector('.researchActions');if(!actions)return;
-      card.tabIndex=0;
+      card.tabIndex=0;addResearchDragHandle(card);
       if(!card.querySelector('[data-rw-fullscreen-item]')){
         const more=document.createElement('details');more.className='rwCardMore';more.innerHTML='<summary aria-label="More Research actions" title="More actions">⋯</summary><div class="rwCardMoreMenu"></div>';
         const menu=more.querySelector('div');[...actions.children].forEach(button=>menu.appendChild(button));
@@ -250,6 +306,9 @@
       }
       const body=card.querySelector('.researchCardBody'),menu=card.querySelector('.rwCardMoreMenu'),resultActions=body?.querySelector('.asc-result-actions');
       if(resultActions){menu.querySelector('.asc-result-actions')?.remove();resultActions.querySelector('.hint')?.remove();menu.appendChild(resultActions);}
+      const ambiguity=body?.querySelector('[data-research-ambiguous-joins]');
+      if(ambiguity){menu.querySelector('[data-research-ambiguous-joins]')?.remove();menu.appendChild(ambiguity);}
+      else if(!body?.querySelector('[data-ambiguous-count]:not([data-ambiguous-count="0"])'))menu.querySelector('[data-research-ambiguous-joins]')?.remove();
       if(body?.querySelector('[data-asc-viewer]')){
         card.classList.add('rwChartCard');
         let details=body.querySelector(':scope > .rwResultDetails');
@@ -265,10 +324,14 @@
     const modal=byId('researchModal'),toolbar=modal?.querySelector('.researchToolbar');if(!toolbar)return;
     toolbar.insertAdjacentHTML('beforeend','<button class="dark" type="button" id="rwAnalysisBoard">Charts / Analysis board</button>');byId('rwAnalysisBoard').onclick=()=>root.AllStarCharts?.openBoard();
     const tools=document.createElement('details');tools.className='rwWorkspaceTools';tools.innerHTML='<summary>Research tools</summary><div class="rwToolsMenu"></div>';
-    const menu=tools.querySelector('div');[...toolbar.children].filter(control=>!['addResearchItemBtn','renderAllResearchBtn','stopResearchRenderBtn','rwAnalysisBoard'].includes(control.id)).forEach(control=>menu.appendChild(control));toolbar.appendChild(tools);
+    const menu=tools.querySelector('div');[...toolbar.children].filter(control=>!['addResearchItemBtn','renderAllResearchBtn','stopResearchRenderBtn','rwAnalysisBoard','researchDiagnosticsBtn','researchCanvasStatus','addCalculatedResearchBtn'].includes(control.id)).forEach(control=>menu.appendChild(control));toolbar.appendChild(tools);
     const browse=document.createElement('nav');browse.className='rwBrowseBar';browse.setAttribute('aria-label','View Research items');
     browse.innerHTML='<label>View<select id="rwCanvasView"><option value="cards">Cards</option><option value="list">List</option><option value="focus">One item</option></select></label><label class="rwItemPickerLabel">View item<select id="rwItemPicker"><option value="">Choose an item…</option></select></label><button type="button" class="smallBtn" id="rwPreviousItem" hidden>Previous</button><button type="button" class="smallBtn" id="rwNextItem" hidden>Next</button><label class="rwSearchLabel">Find analysis<input type="search" id="rwResearchSearch" placeholder="Title, source, or chart type"></label><button type="button" class="smallBtn" id="rwClearSearch" hidden>Clear search</button><span id="rwViewCount" class="hint" role="status" aria-live="polite"></span>';
-    toolbar.after(browse);byId('rwCanvasView').onchange=event=>setCanvasView(event.target.value);byId('rwItemPicker').onchange=event=>focusResearchItem(event.target.value);byId('rwPreviousItem').onclick=()=>stepResearchItem(-1);byId('rwNextItem').onclick=()=>stepResearchItem(1);byId('rwResearchSearch').oninput=()=>applyCanvasView();byId('rwClearSearch').onclick=()=>{byId('rwResearchSearch').value='';applyCanvasView();byId('rwResearchSearch').focus();};
+    toolbar.after(browse);
+    const diagnostics=byId('researchDiagnosticsDrawer'),diagnosticsButton=byId('researchDiagnosticsBtn');
+    diagnosticsButton.onclick=()=>{if(diagnostics.open)return;if(diagnostics.showModal)diagnostics.showModal();else diagnostics.setAttribute('open','');diagnostics.querySelector('button').focus();};
+    diagnostics.querySelector('[data-rw-close-diagnostics]').onclick=()=>{if(diagnostics.close)diagnostics.close();else diagnostics.removeAttribute('open');diagnosticsButton.focus();};
+    diagnostics.addEventListener('close',()=>diagnosticsButton.focus());diagnostics.addEventListener('keydown',event=>{if(event.key==='Escape'){event.stopPropagation();if(!diagnostics.close){diagnostics.removeAttribute('open');diagnosticsButton.focus();}}});byId('rwCanvasView').onchange=event=>setCanvasView(event.target.value);byId('rwItemPicker').onchange=event=>focusResearchItem(event.target.value);byId('rwPreviousItem').onclick=()=>stepResearchItem(-1);byId('rwNextItem').onclick=()=>stepResearchItem(1);byId('rwResearchSearch').oninput=()=>applyCanvasView();byId('rwClearSearch').onclick=()=>{byId('rwResearchSearch').value='';applyCanvasView();byId('rwResearchSearch').focus();};
     ['researchModal','researchEditorModal'].forEach(modalId=>{
       const target=byId(modalId),head=target.querySelector('.modalHead'),button=document.createElement('button');button.type='button';button.className='dark';button.dataset.rwFullscreen=modalId;button.textContent='Fullscreen';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label',modalId==='researchModal'?'Toggle Research fullscreen':'Toggle Research editor fullscreen');head.insertBefore(button,head.querySelector('[data-close]'));button.onclick=()=>toggleResearchFullscreen(modalId);
       target.addEventListener('keydown',event=>{const itemActive=modalId==='researchModal'&&itemFullscreenReturn;if(event.key!=='Escape'||(!target.classList.contains('rwWorkspaceFullscreen')&&!itemActive))return;event.preventDefault();event.stopPropagation();if(itemActive)exitItemFullscreen();else setResearchFullscreen(modalId,false);});
@@ -350,7 +413,7 @@
     const draft=readStored(DRAFT_KEY,null);byId('rwDraftRecovery').classList.toggle('hidden',!draft||draft.itemId!==editingId||JSON.stringify(draft.snapshot)===baseline);renderFilterSets();
   };
   const previousCloseModal=closeModal;
-  closeModal=function(modalId){hideHeaderSuggestions();if(modalId==='researchEditorModal'){clearTimeout(captureTimer);capture();closePicker();setResearchFullscreen(modalId,false);}if(modalId==='researchModal'){exitItemFullscreen(false);setResearchFullscreen(modalId,false);}return previousCloseModal(modalId);};
+  closeModal=function(modalId){hideHeaderSuggestions();if(modalId==='researchEditorModal'){clearTimeout(captureTimer);capture();closePicker();setResearchFullscreen(modalId,false);}if(modalId==='researchModal'){if(researchDrag)finishResearchDrag(false);exitItemFullscreen(false);setResearchFullscreen(modalId,false);}return previousCloseModal(modalId);};
   const previousSave=saveResearchItemFromEditor;
   saveResearchItemFromEditor=async function(){capture();const key=els.researchEditId.value;const result=await previousSave();if(!byId('researchEditorModal')?.classList.contains('open')&&(state.researchItems||[]).some(item=>item.id===key)){baseline=JSON.stringify(controlsSnapshot());openedExisting=true;notice('Saved');try{const draft=readStored(DRAFT_KEY,null);if(draft?.itemId===editingId)localStorage.removeItem(DRAFT_KEY);}catch(_){}}return result;};
   if(typeof bindResearchCanvasActions==='function'){const previousBind=bindResearchCanvasActions;bindResearchCanvasActions=function(scope){previousBind(scope);enhanceCanvas();};}
