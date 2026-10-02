@@ -94,7 +94,7 @@ async function editorAndLoading(){
       document.createElement=(tag,...args)=>{const node=createElement(tag,...args);if(tag==='dialog'){node.showModal=()=>node.setAttribute('open','');node.close=()=>node.dispatchEvent(new Event('close'));}return node;};
       window.AllStarSentenceWorkspace.open('coaching-question');
     `);
-    assert.equal(h.context.document.querySelectorAll('[data-sq-preset]').length,6);
+    assert.equal(h.context.document.querySelectorAll('[data-sq-preset]').length,9);
     h.run("document.querySelector('[data-sq-preset=average]').click();");
     assert.match(h.context.document.querySelector('[data-sq-sentence]').textContent,/Average coachings per rep/);
     h.run("document.querySelector('[data-sq-edit=coaching]').click();");
