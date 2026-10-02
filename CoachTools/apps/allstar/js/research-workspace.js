@@ -272,6 +272,7 @@
     panel.insertBefore(metadata,byId('metricNotesInput')?.closest('.field')||null);byId('rwBuildMetricFormula').onclick=()=>formulaBuilder(els.metricFieldInput);
   }
   function init(){
+    initResearchRateControls();
     if(initialized||!byId('researchEditorModal'))return;initialized=true;
     const editor=byId('researchEditorModal'),body=editor.querySelector('.modalBody');
     const toolbar=document.createElement('div');toolbar.className='rwEditorBar';toolbar.innerHTML='<div class="rwMode" role="group" aria-label="Research presentation"><button type="button" data-rw-mode="guided">Guided</button><button type="button" data-rw-mode="advanced">Advanced</button></div><span id="rwSaveState" role="status" aria-live="polite">New analysis</span><button type="button" class="smallBtn" id="rwUndo" disabled>Undo</button><button type="button" class="smallBtn" id="rwRedo" disabled>Redo</button><button type="button" class="smallBtn" id="rwExportDraft">Export configuration</button>';
