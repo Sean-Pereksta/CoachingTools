@@ -32,7 +32,7 @@ async function run(){
     assert.equal(h.run("el('rwPreviousItem').disabled"),true);
     h.run("el('rwNextItem').click();bindResearchCanvasActions(document.querySelector('[data-research-card=b]'));");
     assert.equal(h.run('visibleResearchIds()'),'b','Next and rebinding preserve individual fullscreen');
-    assert.equal(h.run("document.querySelector('[data-rw-fullscreen-item=b]').textContent"),'Exit fullscreen');
+    assert.equal(h.run("document.querySelector('[data-rw-fullscreen-item=b]').textContent"),'×');
     h.run("escapeResearch('researchModal');");
     assert.equal(h.run('visibleResearchIds()'),'a,b,c');
     assert.equal(h.run('els.researchCanvas.dataset.view'),'list');
