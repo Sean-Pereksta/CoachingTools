@@ -78,6 +78,7 @@
   let baseline='',editingId='',restoring=false,captureTimer,initialized=false;
   let metricCycle=false,openedExisting=false;
   let canvasView='cards',focusedItemId='',itemFullscreenReturn=null,layoutPending=false;
+  const fullscreenGlyph='<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M 7 3 H 3 V 7 M 13 3 H 17 V 7 M 3 13 V 17 H 7 M 17 13 V 17 H 13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
   function notice(message){const status=byId('rwSaveState');if(status)status.textContent=message;}
   function readStored(key,fallback){try{return JSON.parse(localStorage.getItem(key)||'null')||fallback;}catch(_){return fallback;}}
   function writeStored(key,value){try{localStorage.setItem(key,JSON.stringify(value));return true;}catch(_){return false;}}
@@ -197,6 +198,7 @@
   function focusResearchItem(itemId,fullscreen=false){
     const canvas=byId('researchCanvas'),card=[...canvas.querySelectorAll('[data-research-card]')].find(c=>c.dataset.researchCard===itemId);
     if(!card||!matchingResearchItems().some(item=>item.id===itemId))return;
+    if(fullscreen&&card.querySelector('[data-asc-viewer]')&&root.AllStarCharts){root.AllStarCharts.openViewer(itemId).catch(error=>root.alert?.(error.message));return;}
     if(fullscreen&&itemFullscreenReturn&&focusedItemId===itemId){exitItemFullscreen();return;}
     if(fullscreen&&!itemFullscreenReturn)itemFullscreenReturn={view:canvasView,itemId:focusedItemId,returnItemId:itemId,workspaceFullscreen:byId('researchModal').classList.contains('rwWorkspaceFullscreen')};
     focusedItemId=itemId;canvasView='focus';if(fullscreen)setResearchFullscreen('researchModal',true);applyCanvasView();
@@ -221,7 +223,7 @@
       const selected=card.dataset.researchCard===focusedItemId;
       card.hidden=!matchingIds.has(card.dataset.researchCard)||(canvasView==='focus'&&!selected);
       card.classList.toggle('rwFocusedItem',canvasView==='focus'&&selected);
-      const fullscreen=card.querySelector('[data-rw-fullscreen-item]');if(fullscreen){const active=!!itemFullscreenReturn&&selected;fullscreen.textContent=active?'Exit fullscreen':'Fullscreen';fullscreen.setAttribute('aria-pressed',String(active));}
+      const fullscreen=card.querySelector('[data-rw-fullscreen-item]');if(fullscreen){const active=!!itemFullscreenReturn&&selected;fullscreen.innerHTML=active?'×':fullscreenGlyph;fullscreen.setAttribute('aria-label',active?'Close fullscreen':'Open fullscreen');fullscreen.setAttribute('aria-pressed',String(active));}
     });
     selectViewingOption(byId('rwCanvasView'),canvasView);
     const picker=byId('rwItemPicker');if(picker){picker.innerHTML='<option value="">Choose an item…</option>'+items.map(item=>`<option value="${safeText(item.id)}">${safeText(item.title||'Research Item')}</option>`).join('');selectViewingOption(picker,canvasView==='focus'?focusedItemId:'');picker.disabled=!items.length;}
@@ -238,14 +240,23 @@
   function enhanceCanvas(){
     const canvas=byId('researchCanvas');if(!canvas)return;
     canvas.querySelectorAll('[data-research-card]').forEach(card=>{
-      if(card.querySelector('[data-rw-fullscreen-item]'))return;
       const actions=card.querySelector('.researchActions');if(!actions)return;
-      card.tabIndex=-1;
-      const more=document.createElement('details');more.className='rwCardMore';more.innerHTML='<summary>More</summary><div class="rwCardMoreMenu"></div>';
-      const menu=more.querySelector('div');
-      [...actions.children].filter(button=>!button.matches('[data-research-refresh],[data-research-edit]')).forEach(button=>menu.appendChild(button));
-      actions.insertAdjacentHTML('afterbegin',`<button type="button" class="smallBtn" data-rw-view-item="${safeText(card.dataset.researchCard)}">View</button><button type="button" class="smallBtn dark" data-rw-fullscreen-item="${safeText(card.dataset.researchCard)}" aria-pressed="false">Fullscreen</button>`);
-      menu.insertAdjacentHTML('beforeend',`<button type="button" class="smallBtn" data-rw-duplicate="${safeText(card.dataset.researchCard)}">Duplicate</button>`);actions.appendChild(more);
+      card.tabIndex=0;
+      if(!card.querySelector('[data-rw-fullscreen-item]')){
+        const more=document.createElement('details');more.className='rwCardMore';more.innerHTML='<summary aria-label="More Research actions" title="More actions">⋯</summary><div class="rwCardMoreMenu"></div>';
+        const menu=more.querySelector('div');[...actions.children].forEach(button=>menu.appendChild(button));
+        actions.insertAdjacentHTML('afterbegin',`<button type="button" class="smallBtn rwFullscreenButton" data-rw-fullscreen-item="${safeText(card.dataset.researchCard)}" aria-label="Open fullscreen" title="Open fullscreen (F)" aria-pressed="false">${fullscreenGlyph}</button>`);
+        menu.insertAdjacentHTML('beforeend',`<button type="button" class="smallBtn" data-rw-view-item="${safeText(card.dataset.researchCard)}">View one item</button><button type="button" class="smallBtn" data-rw-duplicate="${safeText(card.dataset.researchCard)}">Duplicate</button>`);actions.appendChild(more);
+      }
+      const body=card.querySelector('.researchCardBody'),menu=card.querySelector('.rwCardMoreMenu'),resultActions=body?.querySelector('.asc-result-actions');
+      if(resultActions){menu.querySelector('.asc-result-actions')?.remove();resultActions.querySelector('.hint')?.remove();menu.appendChild(resultActions);}
+      if(body?.querySelector('[data-asc-viewer]')){
+        card.classList.add('rwChartCard');
+        let details=body.querySelector(':scope > .rwResultDetails');
+        const diagnostics=[...body.children].filter(node=>node!==details&&node.matches('.hint,.researchDiag,.researchDiagnostics,.researchPreviewSummary,.researchJoinPreview,.researchWeeklyFlow,.expressionSummary,details'));
+        if(diagnostics.length){if(!details){details=document.createElement('details');details.className='rwResultDetails';details.innerHTML='<summary>Result details</summary>';body.appendChild(details);}diagnostics.forEach(node=>details.appendChild(node));}
+        body.querySelectorAll(':scope > .researchWarn').forEach(node=>body.appendChild(node));
+      }
     });
     if(!(state.researchItems||[]).length&&!canvas.querySelector('[data-rw-first]')){const empty=document.createElement('div');empty.className='rwEmptyStart';empty.innerHTML='<strong>Create your first Research analysis</strong><p>Compare metrics, discover trends, or investigate performance.</p><button class="green" type="button" data-rw-first="guided">Start Guided Research</button> <button class="dark" type="button" data-rw-first="advanced">Build Advanced Research</button>';canvas.appendChild(empty);}
     applyCanvasView(false);
@@ -264,6 +275,7 @@
     });
     canvasView=readStored('allstar.research.canvasView.v1','cards');if(!['cards','list','focus'].includes(canvasView))canvasView='cards';
     byId('rwCanvasView').addEventListener('change',()=>writeStored('allstar.research.canvasView.v1',canvasView));
+    modal.addEventListener('keydown',event=>{if(event.key?.toLowerCase()!=='f'||event.ctrlKey||event.metaKey||event.altKey||event.target.closest('input,textarea,select,[contenteditable=true]'))return;const card=event.target.closest('[data-research-card]');if(card){event.preventDefault();focusResearchItem(card.dataset.researchCard,true);}});
     root.addEventListener?.('resize',reflowResearchViews);enhanceCanvas();
   }
   function addMetricControls(){const panel=byId('metricEditorModal')?.querySelector('.panel');if(!panel||byId('rwMetricMetadata'))return;
