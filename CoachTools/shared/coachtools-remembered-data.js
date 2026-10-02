@@ -12,6 +12,9 @@
   let cachedDirectoryHandle = null;
   let handleLoaded = false;
   let updateRunning = false;
+  let cleanUploadRunning = false;
+  let handleVersion = 0;
+  let handleLoadPromise = null;
 
   function $(id) { return root.document && root.document.getElementById(id); }
   function clone(value) {
@@ -152,6 +155,7 @@
     });
   }
   async function loadSavedHandle() {
+    const version = handleVersion;
     try {
       const db = await openHandleDb();
       const handle = await new Promise((resolve, reject) => {
@@ -161,9 +165,9 @@
         request.onerror = () => reject(request.error || new Error('Could not read the saved folder.'));
       });
       db.close();
-      cachedDirectoryHandle = handle && handle.kind === 'directory' ? handle : null;
+      if (version === handleVersion) cachedDirectoryHandle = handle && handle.kind === 'directory' ? handle : null;
     } catch (_) {
-      cachedDirectoryHandle = null;
+      if (version === handleVersion) cachedDirectoryHandle = null;
     } finally {
       handleLoaded = true;
       refreshAvailabilityNote();
@@ -171,7 +175,10 @@
     return cachedDirectoryHandle;
   }
   async function saveHandle(handle) {
+    handleVersion += 1;
+    handleLoaded = true;
     cachedDirectoryHandle = handle || null;
+    refreshAvailabilityNote();
     if (!handle || !root.indexedDB) return;
     try {
       const db = await openHandleDb();
@@ -189,6 +196,8 @@
     refreshAvailabilityNote();
   }
   async function clearSavedHandle() {
+    handleVersion += 1;
+    handleLoaded = true;
     cachedDirectoryHandle = null;
     try {
       const db = await openHandleDb();
@@ -234,6 +243,7 @@
     return normalized;
   }
   async function resolveDirectoryForClick() {
+    if (!handleLoaded && handleLoadPromise) await handleLoadPromise;
     if (cachedDirectoryHandle) {
       if (await permissionGranted(cachedDirectoryHandle, true)) return cachedDirectoryHandle;
       await clearSavedHandle();
@@ -241,6 +251,57 @@
     if (!handleLoaded && typeof root.showDirectoryPicker === 'function') return chooseDirectory();
     if (typeof root.showDirectoryPicker === 'function') return chooseDirectory();
     return null;
+  }
+
+  function canChooseCleanUploadFolder() {
+    return typeof root.showDirectoryPicker === 'function'
+      && typeof root.showOpenFilePicker === 'function'
+      && typeof root.CoachToolsSmartImport?.importFiles === 'function';
+  }
+
+  async function cleanUploadFromDirectory() {
+    if (cleanUploadRunning || updateRunning || !canChooseCleanUploadFolder()) return;
+    cleanUploadRunning = true;
+    let savedFolder = null;
+    let rememberFolder = null;
+    try {
+      // File inputs cannot expose their parent folder. Acquire read access here,
+      // then keep explicit file selection and the existing coach/scope chooser.
+      const directory = await root.showDirectoryPicker({ id: 'coachtools-storage', mode: 'read' });
+      const handles = await root.showOpenFilePicker({
+        id: 'coachtools-clean-upload', startIn: directory, multiple: true,
+        types: [{ description: 'CoachTools data files', accept: {
+          'text/csv': ['.csv'],
+          'application/vnd.ms-excel': ['.xls'],
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
+        } }], excludeAcceptAllOption: true
+      });
+      const files = [];
+      for (const handle of handles) {
+        const relativePath = await directory.resolve(handle);
+        if (!relativePath || relativePath.length > 5) {
+          throw new Error('Choose files inside the folder selected for Clean Upload (up to four subfolders deep).');
+        }
+        files.push(await handle.getFile());
+      }
+      if (!files.length) return;
+      // Commit the exact selected directory only when the import establishes a
+      // baseline. Cancelling either picker or coach selection keeps the old one.
+      rememberFolder = () => { savedFolder = saveHandle(directory); };
+      root.addEventListener('coachtools:clean-upload-baseline', rememberFolder, { once: true });
+      await root.CoachToolsSmartImport.importFiles(files);
+      if (savedFolder) await savedFolder;
+    } catch (error) {
+      if (error?.name === 'AbortError') showToast('Clean Upload cancelled.');
+      else {
+        console.error('[CoachToolsRememberedData] Clean Upload failed.', error);
+        showToast(`Clean Upload: ${error && error.message || error}`, 6500);
+      }
+    } finally {
+      if (rememberFolder) root.removeEventListener('coachtools:clean-upload-baseline', rememberFolder);
+      root.CoachToolsCleanUploadBaseline?.cancelPending?.();
+      cleanUploadRunning = false;
+    }
   }
   async function walkDirectory(directory, prefix, depth, output) {
     if (!directory || depth > 4) return output;
@@ -312,12 +373,14 @@
   }
   function refreshAvailabilityNote() {
     const note = $('storageAvailability');
-    if (!note || root.location.protocol !== 'file:') return;
+    if (!note || (root.location.protocol !== 'file:' && !cachedDirectoryHandle)) return;
     const baseline = readJson(BASELINE_KEY, null);
     if (cachedDirectoryHandle && baseline && baseline.scope) {
       note.textContent = `Update Data replays the last successful Clean Upload scope from ${cachedDirectoryHandle.name || 'your saved storage folder'} and automatically finds the matching export names.`;
     } else if (cachedDirectoryHandle) {
       note.textContent = 'Folder connected. Run Clean Upload once to establish the authoritative scope and source-name baseline that Update Data should replay.';
+    } else if (canChooseCleanUploadFolder()) {
+      note.textContent = 'Clean Upload remembers your selected folder for Update Data. Choose the folder, select the source files inside it, then choose your coaches.';
     } else if (typeof root.showDirectoryPicker === 'function') {
       note.textContent = 'Run Clean Upload once, then click Update Data to connect the folder containing those exports. CoachTools will reuse that folder after permission is granted.';
     } else {
@@ -473,13 +536,14 @@
   }
 
   async function runUpdate() {
-    if (updateRunning) {
-      showToast('A data update is already running.');
+    if (updateRunning || cleanUploadRunning) {
+      showToast('A data upload or update is already running.');
       return;
     }
     updateRunning = true;
     try {
-      if (root.location.protocol !== 'file:') {
+      if (!handleLoaded && handleLoadPromise) await handleLoadPromise;
+      if (root.location.protocol !== 'file:' && !cachedDirectoryHandle) {
         delegateToLauncherScanner();
         return;
       }
@@ -513,13 +577,16 @@
     root.addEventListener('coachtools:data-updated', () => root.setTimeout(refreshAvailabilityNote, 0));
     root.addEventListener('coachtools:clean-upload-baseline', () => root.setTimeout(refreshAvailabilityNote, 0));
     root.addEventListener('focus', refreshAvailabilityNote);
-    loadSavedHandle();
+    handleLoadPromise = loadSavedHandle();
     refreshAvailabilityNote();
   }
 
   root.CoachToolsRememberedData = Object.freeze({
     VERSION: '2.0.0',
     runUpdate,
+    cleanUploadFromDirectory,
+    canChooseCleanUploadFolder,
+    isBusy: () => cleanUploadRunning || updateRunning,
     refreshAvailabilityNote,
     clearSavedHandle,
     selectBaselineCandidates,
