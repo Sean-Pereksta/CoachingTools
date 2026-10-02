@@ -504,6 +504,7 @@ function normalizeResearchItem(item={}){
   normalized.guidedPrimarySource=item.guidedPrimarySource||item.source||DYNAMIC_RESEARCH_SOURCE;
   normalized.guidedConditions=Array.isArray(item.guidedConditions)?item.guidedConditions.map((c,i)=>({id:c.id||`condition_${i+1}`,logic:i===0?'and':(c.logic==='or'?'or':'and'),source:c.source||item.source||'',field:c.field||'',expression:!!c.expression,operator:c.operator||'contains',value:c.value??'',value2:c.value2??'',countValue:c.countValue??'',caseSensitive:!!c.caseSensitive,exactPhrase:!!c.exactPhrase,normalizeSpacing:c.normalizeSpacing!==false})):[];
   normalized.guidedBreakdown=item.guidedBreakdown||(!item.groupField?'none':(item.dateGrouping==='weekly'?'week':item.dateGrouping==='monthly'?'month':item.dateGrouping==='quarterly'?'quarter':'column'));
+  normalized.guidedTimeGrouping=['daily','weekly','monthly','quarterly','period'].includes(item.guidedTimeGrouping)?item.guidedTimeGrouping:'weekly';
   normalized.guidedBreakdownColumn=item.guidedBreakdownColumn||item.groupField||'';
   normalized.guidedDisplay=item.guidedDisplay||(item.outputType==='bar'?'bar':item.outputType==='line'?'line':item.outputType==='heatmap'?'heatmap':'detailed_table');
   normalized.guidedSubject=normalized.guidedSubject==='coaches'?'teams':normalized.guidedSubject;
@@ -722,7 +723,7 @@ function researchFieldReferencedSources(field, defaultSource=''){
   return out;
 }
 function researchReferencedSources(item={}){
-  if(item.datedStats){const s=item.datedStats,m=datedStatsResearchMetric(s);return [...new Set([m?.source,...(s.eventConditions||[]).map(c=>c.source),...((s.groupBy==='coaching_frequency'||s.mode==='before_after')?[s.coachingSource||'documented_coaching']:[]),...(s.modelId?requiredRunSourcesForModel(findModel(s.modelId)||{}):[])].filter(Boolean))];}
+  if(item.datedStats){const s=item.datedStats,m=datedStatsResearchMetric(s);return [...new Set([m?.source,...(s.eventConditions||[]).map(c=>c.source),...(s.sentenceQuery?.root?window.AllStarSentenceQuery?.sources(s.sentenceQuery.root)||[]:[]),...((s.groupBy==='coaching_frequency'||s.mode==='before_after'||['coaching_count','coaching_per_rep','coached_percent'].includes(s.measure))?[s.coachingSource||'documented_coaching']:[]),...(s.modelId?requiredRunSourcesForModel(findModel(s.modelId)||{}):[])].filter(Boolean))];}
   const refs=[]; const add=src=>{ if(src && !isDynamicResearchSource(src) && !refs.includes(src)) refs.push(src); };
   [item.groupField,item.groupExpression,item.dateColumn,item.secondaryGroupField,item.panelField,item.valueField,item.percentOfField,item.numeratorExpression,item.denominatorExpression,item.withinCompareField].forEach(f=>researchFieldReferencedSources(f,item.source).forEach(add));
   (item.columns||[]).forEach(c=>{ const resolved=resolveResearchTypedMeasure(c.measureId||researchMeasureIdFromRef(c.field),item.source); if(resolved?.source) add(resolved.source); researchFieldReferencedSources(c.field,item.source).forEach(add); researchFieldReferencedSources(c.percentOfField,item.source).forEach(add); researchFieldReferencedSources(c.withinCompareField,item.source).forEach(add); });
@@ -751,6 +752,14 @@ function effectiveResearchItem(item={}){
     if(['organization','column'].includes(breakdown))out.secondaryGroupField=guidedBreakdownField(out.source,breakdown,out.guidedBreakdownColumn);
     out.analysisGrain='representatives';out.crossSourceJoinMode=out.crossSourceJoinMode==='strict_team'?'strict_rep':out.crossSourceJoinMode;
   }
+  if(out.guidedEnabled&&!isDatedStatsSource(out.source)&&out.outputType==='line'&&!out.groupMultiAdd){
+    const fields=researchMappedSourceFields(out.source);
+    out.dateColumn=fields.date||out.dateColumn;out.groupField=out.dateColumn;out.groupExpression='';
+    out.dateGrouping=out.guidedTimeGrouping==='period'?'other':out.guidedTimeGrouping||'weekly';out.eventTimeAxis=true;
+    out.secondaryGroupField=guidedBreakdownField(out.source,out.guidedBreakdown,out.guidedBreakdownColumn);
+    if(['day','week','month','quarter'].includes(out.guidedBreakdown))out.secondaryGroupField='';
+    out.useSecondaryGroup=!!out.secondaryGroupField;
+  }
   return out;
 }
 function researchSourceRowsForItem(item={}){ return getResearchSourceRows(resolveDynamicResearchSource(item)); }
@@ -766,7 +775,7 @@ function researchDisplayFieldLabel(field,fallback='Group'){
 }
 function researchFieldNeedsHeaderWarning(item,field){
   const raw=String(field||'').trim(); if(!raw) return false;
-  if(isDatedStatsSource(item.source)&&['_rep','_repKey','_team'].includes(raw))return false;
+  if(['_rep','_repKey','_team'].includes(raw))return false;
   if(researchMeasureIdFromRef(raw) || findMetricByRef(raw) || parseModelRef(raw) || parseResearchBangField(raw) || findModelCriterionReferenceByName(raw.replace(/^;/,''))) return false;
   if(/[!\[\]'"().+\-*/@]/.test(raw)) return false;
   { const actual=resolveColumn(item.source,raw); return !(actual && (getHeaders(item.source)||[]).includes(actual)); }
@@ -774,22 +783,63 @@ function researchFieldNeedsHeaderWarning(item,field){
 
 const REP_IDENTITY_COLUMNS=['Agent Name','Associate Name','Associate name','Associate','Representative','Rep Name','CSR','SSR','Employee Name','Name','Teammate','User','Username','Email Username','Email','Person','Individual','Agent'];
 const COACH_IDENTITY_COLUMNS=['Coach','Coach Name','Job Coach','Team','Team Name','Manager','Supervisor','Leader','Coach Assigned','Assigned Coach','QA Coach','Team Lead'];
+function researchSourceMappings(){
+  if(!state.researchSourceMappings){try{state.researchSourceMappings=JSON.parse(localStorage.getItem('allstar.research.sourceMappings.v1')||'{}');}catch(_){state.researchSourceMappings={};}}
+  if(!state.researchSourceMappings||typeof state.researchSourceMappings!=='object'||Array.isArray(state.researchSourceMappings))state.researchSourceMappings={};
+  return state.researchSourceMappings;
+}
+function saveResearchSourceMapping(source,next){
+  const mappings=researchSourceMappings();
+  localStorage.setItem('allstar.research.sourceMappings.v1',JSON.stringify({...mappings,[source]:next}));
+  mappings[source]=next;state.researchIdentityColumnCache?.clear();clearResearchComputedCaches('Research source columns changed');markDataIndexDirty('Research source columns changed',{sources:[source]});
+}
+function researchMappedSourceFields(source){
+  const mappings=researchSourceMappings(),saved=mappings[source]||(mappings[source]={}),base=isCustomSource(source)?customSourceDefaultSettings(source):SOURCE_SETTING_DEFAULTS[source],config={...(base?.columns||{}),...(activeModelForImport()?.sourceSettings?.[source]?.columns||{})};
+  const headers=getHeaders(source),signature=JSON.stringify([config.rep,config.fullName,config.team,config.coach,config.date,config.interactionDate]),cache=state.researchMappedFieldsCache||(state.researchMappedFieldsCache=new Map()),prior=cache.get(source);
+  if(prior?.headers===headers&&prior.saved===saved&&prior.signature===signature)return prior.fields;
+  const fields={rep:researchExactHeader(source,[saved.rep,config.rep,config.fullName,...REP_IDENTITY_COLUMNS]),coach:researchExactHeader(source,[saved.coach,config.team,config.coach,...COACH_IDENTITY_COLUMNS]),date:researchExactHeader(source,[saved.date,config.date,config.interactionDate,...(source==='qa'?['Interaction Start Time','Assigned Date','Date']:checklistLikeDefaultDateHeaders(source))]),text:researchExactHeader(source,[saved.text,'Description','Documented Coaching Condition','Coaching Description','Subject','Topic','Type-Multi','Coaching Type'])};
+  for(const key of ['rep','coach','date','text'])if(saved[key])fields[key]=researchExactHeader(source,[saved[key]])||saved[key];
+  cache.set(source,{headers,saved,signature,fields});return fields;
+}
+function renderResearchSourceMapping(source){
+  const host=el('researchSourceMappingFields');if(!host)return;
+  el('researchSourceMappingPanel')?.classList.toggle('hidden',isDatedStatsSource(source));
+  if(isDatedStatsSource(source))return;
+  const headers=(getHeaders(source)||[]).filter(h=>!h.startsWith('_')),fields=researchMappedSourceFields(source);
+  const signature=JSON.stringify([source,fields]);if(host.dataset.mappingSignature!==signature){host.dataset.mappingSignature=signature;el('researchMappingSample').textContent='Use Check 20 source rows to verify these columns.';}
+  host.innerHTML=Object.entries({coach:'Coach / Team column',rep:'Representative column',date:'Event date column',text:'Coaching text / subject column'}).map(([key,label])=>`<label class="field">${label}<select data-research-source-map="${key}"><option value="">Auto-detect / choose a column</option>${fields[key]&&!headers.includes(fields[key])?`<option selected value="${esc(fields[key])}">Missing: ${esc(fields[key])}</option>`:''}${headers.map(h=>`<option value="${esc(h)}" ${fields[key]===h?'selected':''}>${esc(h)}</option>`).join('')}</select></label>`).join('');
+  host.querySelectorAll('[data-research-source-map]').forEach(input=>input.onchange=()=>{
+    const mappings=researchSourceMappings(),previous=mappings[source]||{},next={...previous,[input.dataset.researchSourceMap]:input.value};
+    try{saveResearchSourceMapping(source,next);}catch(_){el('researchMappingSample').textContent='The mapping could not be saved. Free browser storage and try again.';return;}
+    if(input.dataset.researchSourceMap==='date')els.researchDateColumn.value=input.value;
+    if(input.dataset.researchSourceMap==='text')for(const condition of state.editingGuidedResearchConditions||[])if(condition.source===source&&(!condition.field||condition.field===fields.text))condition.field=input.value;
+    renderGuidedResearchConditions();activateGuidedResearch();
+  });
+  el('researchMappingSampleBtn').onclick=()=>{
+    const sample=getRowsRaw(source).slice(0,20),current=researchMappedSourceFields(source);
+    const rows=sample.map(row=>({coach:researchRowTeam(row,source),rep:researchRowRepName(row,source),date:row[current.date],text:row[current.text]}));
+    const invalid=rows.filter(row=>!row.coach||/^(yes|no|true|false)$/i.test(row.coach)||!row.rep||!parseDateOnly(row.date)).length;
+    el('researchMappingSample').innerHTML=`<p>${rows.length} sampled rows · ${invalid} have missing names, a yes/no coach value, or an invalid date. Check the selected columns if values look wrong.</p><div class="researchTableWrap"><table><thead><tr><th>Coach / Team</th><th>Representative</th><th>Date</th><th>Text</th></tr></thead><tbody>${rows.map(row=>'<tr>'+Object.values(row).map(v=>`<td>${esc(String(v??'').slice(0,160))}</td>`).join('')+'</tr>').join('')}</tbody></table></div>`;
+  };
+}
 function normalizeIdentityName(v,options={}){ let s=String(v??'').trim(); if(!s) return ''; if(options.lastFirst && /,/.test(s)){ const [last,...rest]=s.split(','); const first=rest.join(',').trim(); if(first&&last) s=(first+' '+last.trim()).trim(); } if(/@/.test(s)) s=s.split('@')[0].replace(/[._-]+/g,' '); return norm(s).replace(/[\s\p{P}]+/gu,' ').trim(); }
 function displayIdentityName(v){ return String(v??'').trim().replace(/\s+/g,' '); }
-function sourceConfiguredIdentityColumn(sourceKey,type){ if(isDatedStatsSource(sourceKey)){const config=weeklyIdentityContext(sourceKey).config;return type==='rep'?config.repField:config.coachField;}const cs=customSource?.(sourceKey)||{}; const maps=cs.mappings||cs.fieldMappings||state.sourceMappings?.[sourceKey]||{}; const keys=type==='rep'?['rep','representative','agent','associate','name','person','employee','user','email']:['coach','team','manager','supervisor','leader']; for(const [k,v] of Object.entries(maps||{})){ if(keys.some(x=>String(k).toLowerCase().includes(x)) && v) return v; } return ''; }
+function sourceConfiguredIdentityColumn(sourceKey,type){ if(isDatedStatsSource(sourceKey)){const config=weeklyIdentityContext(sourceKey).config;return type==='rep'?config.repField:config.coachField;}const chosen=researchMappedSourceFields(sourceKey)[type];if(chosen)return chosen;const cs=customSource?.(sourceKey)||{}; const maps=cs.mappings||cs.fieldMappings||state.sourceMappings?.[sourceKey]||{}; const keys=type==='rep'?['rep','representative','agent','associate','name','person','employee','user','email']:['coach','team','manager','supervisor','leader']; for(const [k,v] of Object.entries(maps||{})){ if(keys.some(x=>String(k).toLowerCase().includes(x)) && v) return v; } return ''; }
 function detectIdentityColumn(row,sourceKey,type){
   const headers=getHeaders(sourceKey)||Object.keys(row||{}), configured=sourceConfiguredIdentityColumn(sourceKey,type), key=type+'|'+configured+'|'+headers.join('\u001f');
   state.researchIdentityColumnCache=state.researchIdentityColumnCache||new Map();
   const cached=state.researchIdentityColumnCache.get(key); if(cached) return cached;
   if(configured&&headers.includes(configured)) return boundedMapSet(state.researchIdentityColumnCache,key,{column:configured,confidence:1},200);
-  const aliases=(type==='rep'?REP_IDENTITY_COLUMNS:COACH_IDENTITY_COLUMNS).map(alias=>normalizeIdentityName(alias)), exact=new Set(aliases); let best='',score=0;
-  headers.forEach(h=>{ const name=normalizeIdentityName(h); if(exact.has(name)){ best=h; score=Math.max(score,.95); } else if(score<.75&&aliases.some(alias=>name.includes(alias)||alias.includes(name))){ best=h; score=.75; } });
+  const aliases=(type==='rep'?REP_IDENTITY_COLUMNS:COACH_IDENTITY_COLUMNS).map(alias=>normalizeIdentityName(alias)); let best='',score=0;
+  for(const alias of aliases){const found=headers.find(h=>normalizeIdentityName(h)===alias);if(found){best=found;score=.95;break;}}
   return boundedMapSet(state.researchIdentityColumnCache,key,{column:best,confidence:score},200);
 }
-function getRepIdentity(row,sourceKey,options={}){ sourceKey=rowSourceKey(row,sourceKey);if(isDatedStatsSource(sourceKey)){const identity=weeklySourceRowIdentity(row,sourceKey);return {rawName:identity.rawRep,normalizedName:identity.validRep?normalizeIdentityName(identity.repKey):'',displayName:identity.repName,sourceKey,confidence:identity.rosterMatched?1:.95,matchedColumn:identity.repField,rosterMatched:identity.rosterMatched};}const found=detectIdentityColumn(row,sourceKey,'rep'), rawName=found.column?row?.[found.column]:(row?._rep||row?._repKey||''); let normalizedName=normalizeIdentityName(rawName,{lastFirst:options.lastFirst}); const mapped=(state.repAliases?.get?.(aliasLookupKey(rawName))||state.repAliases?.get?.(normalizedName)||state.masterRepMap?.get?.(normalizedName)||''); if(mapped) normalizedName=normalizeIdentityName(mapped); return {rawName,normalizedName,displayName:displayIdentityName(mapped||rawName)||normalizedName,sourceKey,sourceRowIndex:researchRowSourceIndex?.(sourceKey,row),confidence:found.confidence,matchedColumn:found.column||'_rep'}; }
+function getRepIdentity(row,sourceKey,options={}){ sourceKey=rowSourceKey(row,sourceKey);if(isDatedStatsSource(sourceKey)){const identity=weeklySourceRowIdentity(row,sourceKey);return {rawName:identity.rawRep,normalizedName:identity.validRep?normalizeIdentityName(identity.repKey):'',displayName:identity.repName,sourceKey,confidence:identity.rosterMatched?1:.95,matchedColumn:identity.repField,rosterMatched:identity.rosterMatched};}const found=detectIdentityColumn(row,sourceKey,'rep'),explicit=researchSourceMappings()[sourceKey]?.rep&&researchMappedSourceFields(sourceKey).rep,rawName=explicit?(row?.[explicit]||''):found.column?row?.[found.column]:(row?._rep||row?._repKey||''); let normalizedName=normalizeIdentityName(rawName,{lastFirst:options.lastFirst}); const mapped=(state.repAliases?.get?.(aliasLookupKey(rawName))||state.repAliases?.get?.(normalizedName)||state.masterRepMap?.get?.(normalizedName)||''); if(mapped) normalizedName=normalizeIdentityName(mapped); return {rawName,normalizedName,displayName:displayIdentityName(mapped||rawName)||normalizedName,sourceKey,sourceRowIndex:researchRowSourceIndex?.(sourceKey,row),confidence:found.confidence,matchedColumn:found.column||'_rep'}; }
 function getCoachIdentity(row,sourceKey,options={}){
   sourceKey=rowSourceKey(row,sourceKey);
   if(isDatedStatsSource(sourceKey)){const identity=weeklySourceRowIdentity(row,sourceKey);return {rawName:identity.rawCoach,normalizedName:normalizeIdentityName(identity.coach),displayName:identity.coach,sourceKey,confidence:identity.coach?1:0,matchedColumn:identity.coachMethod==='trusted roster'?'rep-to-team mapping':identity.coachField,rosterMatched:identity.rosterMatched};}
+  const explicit=researchSourceMappings()[sourceKey]?.coach&&researchMappedSourceFields(sourceKey).coach;
+  if(explicit){const rawName=row?.[explicit]||'',displayName=canonicalCoachName(rawName);return {rawName,displayName,normalizedName:normalizeIdentityName(displayName),sourceKey,confidence:rawName?1:0,matchedColumn:explicit};}
   if(row?._monthly){const displayName=rowTeam(row,{source:sourceKey});return {rawName:row.Coach||row._team||'',normalizedName:normalizeIdentityName(displayName),displayName,sourceKey,confidence:displayName?1:0,matchedColumn:'Coach'};}
   if(rowSkipsTeamBuild(row,sourceKey)){
     const rep=getRepIdentity(row,sourceKey,options);
@@ -800,11 +850,12 @@ function getCoachIdentity(row,sourceKey,options={}){
   }
   const found=detectIdentityColumn(row,sourceKey,'coach'); let rawName=found.column?row?.[found.column]:(row?._team||''); if(!rawName){ const rep=getRepIdentity(row,sourceKey,options); rawName=state.repTeams?.get?.(rep.normalizedName)||''; } const displayName=canonicalCoachName(rawName); const normalizedName=normalizeIdentityName(displayName); return {rawName,normalizedName,displayName:displayName||normalizedName,sourceKey,sourceRowIndex:researchRowSourceIndex?.(sourceKey,row),confidence:found.confidence||(rawName?.length?.valueOf?.()?0.55:0),matchedColumn:found.column||(rawName?'rep-to-team mapping':'')};
 }
-function researchRowRepName(r,sourceKey=''){ const rep=getRepIdentity(r,sourceKey); return rep.displayName || displayIdentityName(r?._rep || r?.['Agent Name'] || r?.['Associate Name'] || r?.['Associate name'] || r?.Representative || r?.Associate || r?.Rep || r?.Name || ''); }
-function personKeyFromRow(r,sourceKey=''){ return getRepIdentity(r,sourceKey).normalizedName || r?._repKey || norm(r?._rep||r?.['Agent Name']||r?.['Associate Name']||r?.['Associate name']||r?.Agent||r?.Representative||''); }
+function researchRowRepName(r,sourceKey=''){ const rep=getRepIdentity(r,sourceKey); if(researchSourceMappings()[rowSourceKey(r,sourceKey)]?.rep)return rep.displayName; return rep.displayName || displayIdentityName(r?._rep || r?.['Agent Name'] || r?.['Associate Name'] || r?.['Associate name'] || r?.Representative || r?.Associate || r?.Rep || r?.Name || ''); }
+function personKeyFromRow(r,sourceKey=''){ if(researchSourceMappings()[rowSourceKey(r,sourceKey)]?.rep)return getRepIdentity(r,sourceKey).normalizedName; return getRepIdentity(r,sourceKey).normalizedName || r?._repKey || norm(r?._rep||r?.['Agent Name']||r?.['Associate Name']||r?.['Associate name']||r?.Agent||r?.Representative||''); }
 function researchRowTeam(r,sourceKey=''){
   const src=rowSourceKey(r,sourceKey);
   const mapped=getCoachIdentity(r,src).displayName;
+  if(researchSourceMappings()[src]?.coach)return mapped;
   if(rowSkipsTeamBuild(r,src)) return mapped;
   return mapped || r?._team || r?.['Job Coach'] || r?.['Coach Assigned'] || r?.Coach || r?.Team || '';
 }
@@ -999,7 +1050,12 @@ function applyResearchTypedMeasureToEditor(asColumn=false){
   if(asColumn){ state.editingResearchColumns=state.editingResearchColumns||[]; state.editingResearchColumns.push(col); renderResearchColumnsEditor(); }
   else {
     els.researchValueMode.value='measure';els.researchValueField.value=col.field;
-    if(state.editingGuidedResearchActive){els.guidedMeasureField.value=col.field;els.guidedResearchQuestion.value='average_total';els.guidedAggregate.value='avg';syncGuidedResearchToAdvanced();}
+    if(state.editingGuidedResearchActive){
+      els.guidedMeasureField.value=col.field;
+      if(['count','unique_rep'].includes(def.aggregation)){els.guidedResearchQuestion.value='count';els.guidedResearchSubject.value=def.aggregation==='count'?'records':'representatives';}
+      else {els.guidedResearchQuestion.value='average_total';els.guidedAggregate.value=def.aggregation==='sum'?'sum':'avg';}
+      syncGuidedResearchToAdvanced();
+    }
     if(els.researchShowPercent)els.researchShowPercent.checked=def.valueType==='percentage';updateResearchBuilderVisibility();
   }
   renderResearchTypedMeasureMeta(); scheduleResearchJoinPreview();
@@ -1721,7 +1777,7 @@ function guidedRecordPercentUnit(recordType,source){ if(recordType==='documented
 function guidedValidCondition(c){ const op=c?.operator||'contains'; if(!String(c?.field||'').trim()) return false; if(!guidedConditionNeedsValue(op)) return true; if(!String(c?.value??'').trim()) return false; if(['between','date_between'].includes(op)&&!String(c?.value2??'').trim()) return false; return true; }
 function guidedConfigFromForm(){
   const evidence=guidedSelectedEvidenceSources(), primary=els.guidedPrimarySource?.value||evidence[0]||els.researchSource?.value||firstImportedResearchSource();
-  return {guidedEnabled:true,showLinesFor:['coach','team'].includes(els.guidedBreakdown?.value)?'teams':els.guidedBreakdown?.value==='representative'?'representatives':el('researchShowLinesFor')?.value||'representatives',groupAggregation:el('researchGroupAggregation')?.value||'average',guidedSubject:els.guidedResearchSubject?.value||'representatives',guidedRecordType:els.guidedRecordType?.value||'documented_coaching',guidedQuestion:els.guidedResearchQuestion?.value||'show',guidedPercentageUnit:els.guidedPercentageUnit?.value||'unique_reps',guidedAggregate:els.guidedAggregate?.value||'avg',guidedRankUnit:els.guidedRankUnit?.value||'records',guidedMeasureField:els.guidedMeasureField?.value||'',guidedEvidenceSources:evidence.length?evidence:[primary],guidedPrimarySource:primary,guidedConditions:clonePlain(state.editingGuidedResearchConditions||[]),guidedBreakdown:els.guidedBreakdown?.value||'none',guidedBreakdownColumn:els.guidedBreakdownColumn?.value||'',guidedDisplay:els.guidedDisplay?.value||'detailed_table',guidedSort:els.guidedSort?.value||'default'};
+  return {guidedEnabled:true,guidedTimeGrouping:el('guidedTimeGrouping')?.value||'weekly',showLinesFor:['coach','team'].includes(els.guidedBreakdown?.value)?'teams':els.guidedBreakdown?.value==='representative'?'representatives':el('researchShowLinesFor')?.value||'representatives',groupAggregation:el('researchGroupAggregation')?.value||'average',guidedSubject:els.guidedResearchSubject?.value||'representatives',guidedRecordType:els.guidedRecordType?.value||'documented_coaching',guidedQuestion:els.guidedResearchQuestion?.value||'show',guidedPercentageUnit:els.guidedPercentageUnit?.value||'unique_reps',guidedAggregate:els.guidedAggregate?.value||'avg',guidedRankUnit:els.guidedRankUnit?.value||'records',guidedMeasureField:els.guidedMeasureField?.value||'',guidedEvidenceSources:evidence.length?evidence:[primary],guidedPrimarySource:primary,guidedConditions:clonePlain(state.editingGuidedResearchConditions||[]),guidedBreakdown:els.guidedBreakdown?.value||'none',guidedBreakdownColumn:els.guidedBreakdownColumn?.value||'',guidedDisplay:els.guidedDisplay?.value||'detailed_table',guidedSort:els.guidedSort?.value||'default'};
 }
 function guidedApplyOutputColumns(cfg){
   const q=cfg.guidedQuestion, title=els.guidedResearchTitle?.value||els.researchTitleInput?.value||'Research Item';
@@ -1773,6 +1829,15 @@ function syncGuidedResearchToAdvanced(){
     els.researchUseSecondaryGroup.value=series?'yes':'no';els.researchSecondaryGroupField.value=series;
     const saved=state.researchItems.find(item=>item.id===els.researchEditId.value);if(els.researchShowLegend&&saved?.showLegend!==false)els.researchShowLegend.checked=true;if(els.researchUseDots&&saved?.useDots!==false)els.researchUseDots.checked=true;
   }
+  if(!isDatedStatsSource(source)&&display==='line'){
+    const fields=researchMappedSourceFields(source);els.researchDateColumn.value=fields.date||els.researchDateColumn.value;
+    els.researchGroupField.value=els.researchDateColumn.value;
+    els.researchDateGrouping.value=cfg.guidedTimeGrouping==='period'?'other':cfg.guidedTimeGrouping;
+    const series=['day','week','month','quarter'].includes(cfg.guidedBreakdown)?'':requestedBreakdown;
+    els.researchUseSecondaryGroup.value=series?'yes':'no';els.researchSecondaryGroupField.value=series;
+    if(els.researchShowLegend)els.researchShowLegend.checked=true;
+    if(cfg.guidedSort==='default')els.researchSort.value='xAsc';
+  }
   populateResearchTypedMeasurePicker({...cfg,source});renderResearchTypedMeasureMeta();
   guidedApplyOutputColumns(cfg); renderResearchColumnsEditor(); renderPercentBuilderEditor({...cfg,source,groupField:breakdownField}); updateGuidedResearchUi(); updateResearchBuilderVisibility();
 }
@@ -1788,6 +1853,7 @@ function fillGuidedResearchForm(item){
   if(els.guidedPrimarySource){ els.guidedPrimarySource.innerHTML=guidedSourceOptions(primary); els.guidedPrimarySource.value=primary; }
   el('researchShowLinesFor').value=item.showLinesFor;el('researchGroupAggregation').value=item.groupAggregation;
   els.guidedResearchSubject.value=item.guidedSubject||'representatives'; els.guidedRecordType.value=item.guidedRecordType||'documented_coaching'; els.guidedResearchQuestion.value=item.guidedQuestion||'show'; els.guidedPercentageUnit.value=item.guidedPercentageUnit||'unique_reps'; els.guidedAggregate.value=item.guidedAggregate||'avg'; els.guidedRankUnit.value=item.guidedRankUnit||'records'; els.guidedMeasureField.value=item.guidedMeasureField||item.valueField||''; els.guidedBreakdown.value=item.guidedBreakdown||'none'; els.guidedBreakdownColumn.value=item.guidedBreakdownColumn||''; els.guidedDisplay.value=item.guidedDisplay||'detailed_table'; els.guidedSort.value=item.guidedSort||item.sort||'default'; els.guidedResearchTitle.value=item.title||'New Research Item';
+  el('guidedTimeGrouping').value=item.guidedTimeGrouping||'weekly';el('guidedTimeGrouping').onchange=activateGuidedResearch;
   state.editingGuidedResearchConditions=clonePlain(item.guidedConditions||[]); renderGuidedResearchConditions(); updateGuidedResearchUi();
 }
 function guidedConditionDescription(c){
@@ -1827,6 +1893,11 @@ function validateGuidedResearch(show=false){
   if(cfg.guidedQuestion==='percentage'&&!cfg.guidedConditions.some(guidedValidCondition)) errors.push('Add at least one complete condition so the percentage numerator is valid.');
   if((cfg.guidedQuestion==='average_total'||(cfg.guidedQuestion==='rank'&&cfg.guidedRankUnit==='value'))&&!String(cfg.guidedMeasureField||'').trim()) errors.push('Choose the numeric field to calculate.');
   if(cfg.guidedBreakdown==='column'&&!String(cfg.guidedBreakdownColumn||'').trim()) errors.push('Choose the source column used to break down results.');
+  if(cfg.guidedDisplay==='line'&&!isDatedStatsSource(cfg.guidedPrimarySource)){
+    const fields=researchMappedSourceFields(cfg.guidedPrimarySource);
+    if(!(getHeaders(cfg.guidedPrimarySource)||[]).includes(fields.date||els.researchDateColumn.value))errors.push('Choose an available event date column under Confirm source columns.');
+    if(['coach','team'].includes(cfg.guidedBreakdown)&&!(getHeaders(cfg.guidedPrimarySource)||[]).includes(fields.coach))errors.push('Choose an available Coach / Team column under Confirm source columns.');
+  }
   const ok=!errors.length; if(show&&!ok) alert(errors.join('\n')); return {ok,errors,cfg};
 }
 function updateGuidedResearchUi(){
@@ -1844,6 +1915,12 @@ function updateGuidedResearchUi(){
   const validation=validateGuidedResearch(false), items=[['One result represents',subjectLabel],['Population examined',guidedPopulationDescription()],['Filters',(state.editingResearchFilters||[]).length?`${state.editingResearchFilters.length} population filter(s)`:'None'],['Evidence source',evidence],['Conditions',cfg.guidedConditions.length?cfg.guidedConditions.map(guidedConditionDescription).join(' • '):'None'],['Numerator',guidedNumeratorDescription(cfg)],['Denominator',guidedDenominatorDescription(cfg)],['Breakdown',breakdown],['Sort order',cfg.guidedSort],['Expected output',cfg.guidedDisplay.replaceAll('_',' ')]];
   el('researchWeeklyLines')?.classList.toggle('hidden',!isDatedStatsSource(cfg.guidedPrimarySource)||cfg.guidedDisplay!=='line');
   els.guidedBreakdown.closest('.field')?.classList.toggle('hidden',isDatedStatsSource(cfg.guidedPrimarySource)&&cfg.guidedDisplay==='line');
+  const eventLine=cfg.guidedDisplay==='line'&&!isDatedStatsSource(cfg.guidedPrimarySource),fields=researchMappedSourceFields(cfg.guidedPrimarySource);
+  el('guidedTimeGroupingWrap')?.classList.toggle('hidden',!eventLine);
+  const rate=researchResolvedRate(cfg.guidedMeasureField,{source:cfg.guidedPrimarySource,guidedEnabled:true});
+  el('researchGroupAggregation')?.closest('.field')?.classList.toggle('hidden',!((isAgg||isRank)&&rate?.baseGrain==='representative'));
+  if(eventLine)items.push(['Horizontal axis',`${fields.date||els.researchDateColumn.value||'Choose date column'} · ${cfg.guidedTimeGrouping}`],['Separate lines',cfg.guidedBreakdown==='coach'?fields.coach||'Choose coach column':cfg.guidedBreakdown],['Value',cfg.guidedQuestion==='count'?'Matching record count (no rate weighting)':cfg.guidedQuestion]);
+  renderResearchSourceMapping(cfg.guidedPrimarySource);
   items.push(...weeklyGuidedInterpretation(cfg),...researchCalculationPlan(cfg));scheduleResearchWeeklyPreview();
   els.guidedCalculationGrid.innerHTML=items.filter(([k])=>isPct||!['Numerator','Denominator'].includes(k)).map(([k,v])=>`<div class="guidedCalculationItem"><strong>${esc(k)}</strong><span>${esc(v)}</span></div>`).join('');
   const guidedActive=state.editingGuidedResearchActive!==false;
@@ -1877,7 +1954,13 @@ function applyGuidedResearchTemplate(key){
 
 function currentResearchItemFromEditor(){ const valueField=els.researchValueField.value; return normalizeResearchItem({id:els.researchEditId.value||id(),title:els.researchTitleInput.value||'Research Item',outputType:els.researchOutputType.value,mode:els.researchMode.value,filterDuplicateReps:!!els.researchFilterDuplicateReps?.checked,source:els.researchSource.value,groupAggregation:el('researchGroupAggregation')?.value||'average',showLinesFor:el('researchShowLinesFor')?.value||'representatives',analysisGrain:els.researchAnalysisGrain?.value||'auto',crossSourceJoinMode:els.researchCrossSourceJoin?.value||'grain',populationScope:normalizeResearchPopulationScope(state.editingResearchPopulationScope),weeklyCoverage:readResearchWeeklyCoverageEditor(),unmatchedBehavior:els.researchUnmatchedBehavior?.value||'exclude',calculationGroupLimit:+els.researchCalculationGroupLimit?.value||0,reconcile:!!els.researchReconcile?.checked,missingBehavior:els.researchMissingBehavior?.value||'missing',bucketSize:els.researchBucketSize?.value||'',dateColumn:els.researchDateColumn.value,startDate:els.researchStartDate.value,endDate:els.researchEndDate.value,groupField:els.researchGroupField.value,groupMultiAdd:!!els.researchGroupMultiAdd?.checked,groupAxisItems:state.editingResearchGroupAxisItems||[],groupExpression:els.researchGroupExpression.value,useSecondaryGroup:els.researchUseSecondaryGroup?.value==='yes',secondaryGroupField:els.researchSecondaryGroupField?.value||'',panelField:els.researchPanelField?.value||'',valueMode:els.researchValueMode.value,valueField,measureId:researchMeasureIdFromRef(valueField),percentOfField:els.researchPercentOfField?.value||'',withinCompareField:els.researchWithinCompareField?.value||'',withinUseRange:!!els.researchWithinUseRange?.checked,withinDays:els.researchWithinDays?.value||'',withinRangeMin:els.researchWithinRangeMin?.value||'',withinRangeMax:els.researchWithinRangeMax?.value||'',dateGrouping:els.researchDateGrouping.value,modelId:els.researchModelSelect.value,criteriaId:els.researchCriteriaSelect.value,modelResult:els.researchModelResult.value,population:els.researchPopulation.value,numeratorExpression:els.researchNumeratorExpression.value,numeratorCount:els.researchNumeratorCount.value,denominator:els.researchDenominator.value,denominatorExpression:els.researchDenominatorExpression.value,zeroDenominator:els.researchZeroDenominator.value,percentBuilder:readPercentBuilderEditor(),sort:els.researchSort.value,axisMin:els.researchAxisMin.value,axisMax:els.researchAxisMax.value,decimals:+((els.researchOutputType.value==='table'?els.researchTableDecimals?.value:els.researchDecimals?.value)||0)||0,showValues:els.researchShowValues.checked,showDateLabels:!!els.researchShowDateLabels?.checked,showPercent:els.researchOutputType.value==='table'?!!els.researchTableShowPercent?.checked:els.researchShowPercent.checked,graphSort:els.researchGraphSort?.value||'inherit',topN:+(els.researchTopN?.value||0)||0,showSummaryLine:!!els.researchShowSummaryLine?.checked,goalValue:els.researchGoalValue?.value??'',rotateLabels:!!els.researchRotateLabels?.checked,wrapLabels:els.researchWrapLabels?els.researchWrapLabels.checked:true,showLegend:!!els.researchShowLegend?.checked,showGridlines:els.researchShowGridlines?els.researchShowGridlines.checked:true,smoothLine:!!els.researchSmoothLine?.checked,useDots:els.researchUseDots?els.researchUseDots.checked:true,barOrientation:els.researchBarOrientation?.value||'vertical',stackedBars:!!els.researchStackedBars?.checked,groupedBars:els.researchGroupedBars?els.researchGroupedBars.checked:true,hideZeroGroups:!!els.researchHideZeroGroups?.checked,highlightBest:!!els.researchHighlightBest?.checked,highlightWorst:!!els.researchHighlightWorst?.checked,rowLimit:+els.researchRowLimit.value||0,totals:els.researchTotals.checked,textWrap:els.researchTextWrap?els.researchTextWrap.checked:true,rowDensity:els.researchRowDensity?.value||'comfortable',cardSize:(state.researchItems.find(x=>x.id===(els.researchEditId.value||''))?.cardSize)||'medium',collapsed:!!(state.researchItems.find(x=>x.id===(els.researchEditId.value||''))?.collapsed),filters:state.editingResearchFilters||[],columns:state.editingResearchColumns||[],gearFilters:state.editingResearchGear||{},...(state.editingGuidedResearchActive?guidedConfigFromForm():{guidedEnabled:false})}); }
 async function saveResearchItemFromEditor(){
+  if(state.researchEditorSaving)return;
+  state.researchEditorSaving=true;
+  const button=els.saveResearchItemBtn,previousLabel=button?.textContent;
+  if(button){button.disabled=true;button.textContent='Saving and running…';}
+  const saveToken=beginResearchProgress('Saving and preparing Research…',1);
   try{
+    await yieldToBrowser();
     if(state.editingGuidedResearchActive) syncGuidedResearchToAdvanced();
     const guidedValidation=state.editingGuidedResearchActive?validateGuidedResearch(false):{ok:true,errors:[]};
     if(!guidedValidation.ok){ alert(guidedValidation.errors.join('\n')); return; }
@@ -1897,6 +1980,10 @@ async function saveResearchItemFromEditor(){
   }catch(err){
     console.error(err);
     alert('Research item save failed. Check the console for details.');
+  }finally{
+    state.researchEditorSaving=false;
+    if(button){button.disabled=false;button.textContent=previousLabel;}
+    hideResearchProgress(saveToken);
   }
 }
 function updateResearchBuilderVisibility(){ const type=els.researchOutputType?.value||'table', graphTypes=['line','bar','scatter','histogram','heatmap','box','pie'], isGraph=graphTypes.includes(type); document.querySelectorAll('#researchEditorModal [data-show]').forEach(el=>{ const v=(el.dataset.show||'').split(/\s+/); const show=v.includes('all')||v.includes(type)||(v.includes('graph')&&isGraph)||(v.includes('table')&&type==='table')||(v.includes('conversation')&&type==='conversation'); el.classList.toggle('hidden', !show); }); const mode=els.researchValueMode?.value||'count', within=['date_within','date_percent_within','value_within','value_percent_within'].includes(mode), withinGraph=within&&isGraph, useRange=!!els.researchWithinUseRange?.checked; const valueWrap=els.researchValueField?.closest('.field'); if(valueWrap) valueWrap.classList.toggle('hidden', !isGraph || (type!=='scatter'&&['count','percent_total','percent_parent','percent','model'].includes(mode))); document.querySelectorAll('[data-secondary-group-field]').forEach(el=>el.classList.toggle('hidden', els.researchUseSecondaryGroup?.value!=='yes' && type!=='heatmap')); document.querySelectorAll('[data-percent-item-mode]').forEach(el=>el.classList.toggle('hidden', mode!=='percent_item')); document.querySelectorAll('[data-within-mode]').forEach(el=>el.classList.toggle('hidden', !withinGraph)); document.querySelectorAll('[data-within-days]').forEach(el=>el.classList.toggle('hidden', !withinGraph || useRange)); document.querySelectorAll('[data-within-range]').forEach(el=>el.classList.toggle('hidden', !withinGraph || !useRange)); const showPercentBuilder=(isGraph&&mode==='percent')||(type==='table'&&(state.editingResearchColumns||[]).some(c=>c.mode==='percent')); document.querySelectorAll('[data-percent-builder-panel]').forEach(el=>el.classList.toggle('hidden', !showPercentBuilder)); if(showPercentBuilder) renderPercentBuilderEditor(currentResearchItemFromEditor()); validateResearchEditor(); renderResearchColumnsEditor(); attachResearchGearButtons(els.researchEditorModal); attachModelReferencePicker(els.researchEditorModal); }
@@ -1905,8 +1992,9 @@ function evaluateResearchExpression(row, expression, ctx={}){ if(!expression) re
 function normalizeResearchText(v){ return String(v??'').replace(/[“”]/g,'"').replace(/[‘’]/g,"'").trim().replace(/^['"]|['"]$/g,'').replace(/\s+/g,' ').toLowerCase(); }
 function researchFieldValue(row, field, source){
   if(!field) return '';
-  if(field==='_team'&&isDatedStatsSource(source))return weeklySourceRowIdentity(row,source).coach;
+  if(field==='_team')return researchRowTeam(row,source);
   if((field==='_rep'||field==='_repKey')&&isDatedStatsSource(source)){const identity=weeklySourceRowIdentity(row,source);return field==='_rep'?identity.repName:identity.repKey;}
+  if(field==='_rep')return researchRowRepName(row,source);if(field==='_repKey')return personKeyFromRow(row,source);
   const typed=researchTypedMeasureDefinition(researchMeasureIdFromRef(field)); if(typed) return evaluateResearchTypedMeasure(typed,[row],{source,missingBehavior:'missing',zeroDenominator:'zero'},{},{warnings:[]});
   const metric=findMetricByRef(field); if(metric){ const metricSource=metric.source||source; const metricRows=metricSource===source?[row]:crossRowsForRow(metricSource,row,{}); return evaluateMetric(metric,metricRows,metricSource,[]); }
   const raw=String(field).trim();
@@ -1925,7 +2013,7 @@ function researchFieldValue(row, field, source){
 }
 function researchFieldReader(field,source){
   const raw=String(field||'').trim();
-  if(isDatedStatsSource(source)&&['_team','_rep','_repKey'].includes(raw))return row=>researchFieldValue(row,raw,source);
+  if(['_team','_rep','_repKey'].includes(raw))return row=>researchFieldValue(row,raw,source);
   if(!raw||researchTypedMeasureDefinition(researchMeasureIdFromRef(raw))||findMetricByRef(raw)||parseModelRef(raw)) return row=>researchFieldValue(row,field,source);
   const ref=parseResearchSourceFieldRef(raw);
   if(ref){ if(!ref.missingSource&&!ref.missingField&&ref.source===source) return row=>Object.prototype.hasOwnProperty.call(row,ref.field)?row[ref.field]:''; return row=>researchFieldValue(row,field,source); }
@@ -1946,6 +2034,7 @@ function researchNumericReader(field,source){
   const read=researchFieldReader(field,source); return row=>toNum(read(row));
 }
 function researchGroupLabelReader(item){
+  if(item.eventTimeAxis&&item.guidedTimeGrouping==='period')return ()=>researchGroupKey(item,{});
   const cfg=researchGearGetForItem(item,'groupField');
   if(cfg.valueLevel==='level1'&&item.groupField) return ()=>item.groupExpression||researchDisplayFieldLabel(item.groupField,item.groupField);
   if(item.groupField&&!item.groupExpression&&!researchGroupDateField(item)&&!findMetricByRef(item.groupField)){ const read=researchFieldReader(item.groupField,item.source); return row=>String(read(row)||'(blank)')||'(blank)'; }
@@ -2496,12 +2585,12 @@ function researchFieldNameLooksDate(item,field){
 function researchGroupDateField(item){
   item=effectiveResearchItem(item||{});
   if(item.dateGrouping==='other') return '';
-  if(item.weeklyTimeAxis)return item.dateColumn;
+  if(item.weeklyTimeAxis||item.eventTimeAxis)return item.dateColumn;
   if(item.groupField && researchFieldNameLooksDate(item,item.groupField)) return item.groupField;
   if(item.outputType==='line' && !item.groupField && item.dateColumn && researchFieldNameLooksDate(item,item.dateColumn)) return item.dateColumn;
   return '';
 }
-function researchGroupKey(item,r){ item=effectiveResearchItem(item||{}); const dateGroup=researchGroupDateField(item); if(dateGroup) return researchBucketDate(researchFieldValue(r,dateGroup,item.source),item.weeklyTimeAxis?'daily':(item.dateGrouping||'daily'),customSource(item.source)?.columns?.weekStart||'sunday'); if(item.groupExpression) return String(evaluateResearchExpression(r,item.groupExpression,{source:item.source,context:'Research group expression',row:r})??'(blank)'); const metric=findMetricByRef(item.groupField); if(metric) return metric.name||metricRefName(item.groupField)||'Metric'; return String(researchFieldValue(r,item.groupField,item.source)||'(blank)')||'(blank)'; }
+function researchGroupKey(item,r){ item=effectiveResearchItem(item||{});if(item.eventTimeAxis&&item.guidedTimeGrouping==='period')return (item.startDate||'Start')+' → '+(item.endDate||'End'); const dateGroup=researchGroupDateField(item); if(dateGroup) return researchBucketDate(researchFieldValue(r,dateGroup,item.source),item.weeklyTimeAxis?'daily':(item.dateGrouping||'daily'),customSource(item.source)?.columns?.weekStart||'sunday'); if(item.groupExpression) return String(evaluateResearchExpression(r,item.groupExpression,{source:item.source,context:'Research group expression',row:r})??'(blank)'); const metric=findMetricByRef(item.groupField); if(metric) return metric.name||metricRefName(item.groupField)||'Metric'; return String(researchFieldValue(r,item.groupField,item.source)||'(blank)')||'(blank)'; }
 function researchSecondaryKey(item,r){ item=effectiveResearchItem(item||{}); if(!(item.useSecondaryGroup&&item.secondaryGroupField)) return ''; const metric=findMetricByRef(item.secondaryGroupField); if(metric){ const cfg=researchGearGetForItem(item,'secondaryGroupField'); const counts=getMetricEntityCounts(metric,{item,warnings:[]},cfg); const e=metricEntityDisplayKey(r,item.source,counts.entityMode,counts.coachMethod); return counts.bucketByEntity.get(e)||'0'; } return String(researchFieldValue(r,item.secondaryGroupField,item.source)||'(blank)'); }
 function researchPanelKey(item,r){ item=effectiveResearchItem(item||{}); return item.panelField&&['line','bar','scatter','histogram','heatmap','box','pie'].includes(item.outputType)?String(researchFieldValue(r,item.panelField,item.source)||'(blank)'):''; }
 function uniqueCount(rows, field, source){ return new Set(rows.map(r=>field?researchFieldValue(r,field,source):personKeyFromRow(r)).map(v=>String(v??'').trim()).filter(Boolean)).size; }
@@ -2907,7 +2996,7 @@ function researchHealthCheck(item,result={}){
 }
 function researchExecutionDataSignature(item){
   const sources=[...new Set([...researchExecutionSources(item),...researchDefinitionDependencies(item).sources])].filter(source=>allSourceKeys().includes(source));
-  return 'used:'+researchHashText(sources.sort().map(source=>researchSourceIndexSignature(source)).join('\u001d'));
+  return 'used:'+researchHashText(sources.sort().map(source=>researchSourceIndexSignature(source)+stableSerialize(researchSourceMappings()[source]||{})).join('\u001d'));
 }
 function researchAnalysisCacheItem(item,kind){
   const copy={...item}; ['title','cardSize','collapsed','renderedResult','textWrap','rowDensity','decimals','showPercent','showValues','showDateLabels','axisMin','axisMax','graphSort','topN','showSummaryLine','goalValue','rotateLabels','wrapLabels','showLegend','showGridlines','smoothLine','useDots','barOrientation','stackedBars','groupedBars','hideZeroGroups','highlightBest','highlightWorst','guidedDisplay','subtitle','lineThickness','pointSize','areaFill','chartAppearance','chartType','chartDesigner','favorite','updatedAt','createdAt'].forEach(key=>delete copy[key]);
@@ -3046,7 +3135,15 @@ async function warmResearchCacheInBackground(token){
   updateResearchCacheBadge();
 }
 
-function researchDefaultDateColumn(item){ item=effectiveResearchItem(item||{});if(isDatedStatsSource(item.source))return weeklyIdentityContext(item.source).config.dateField||'Date'; const hs=getResearchHeaders(item.source); if(item.source===DATED_SOURCE) return findHeader(hs,['Date'])||'Date'; if(item.source===NONDATED_SOURCE) return ''; if(isCustomSource(item.source)){ const c=customSource(item.source)||{}, cols=c.columns||{}; return findHeader(hs,[cols.date,cols.week,cols.month,'Date','Week','Month','Interaction Start Time','Assigned Date','Created Date'].filter(Boolean))||''; } const opts=item.source==='qa'?['Interaction Start Time','Assigned Date','Date']:checklistLikeDefaultDateHeaders(item.source); return findHeader(hs,opts)||''; }
+function researchDefaultDateColumn(item){
+  item=effectiveResearchItem(item||{});
+  if(isDatedStatsSource(item.source))return weeklyIdentityContext(item.source).config.dateField||'Date';
+  if(item.source===NONDATED_SOURCE)return '';
+  const mapped=researchMappedSourceFields(item.source).date;if(mapped)return mapped;
+  if(item.source===DATED_SOURCE)return researchExactHeader(item.source,['Date'])||'Date';
+  if(isCustomSource(item.source)){const cols=customSource(item.source)?.columns||{};return researchExactHeader(item.source,[cols.date,cols.week,cols.month,'Date','Week','Month','Interaction Start Time','Assigned Date','Created Date']);}
+  return '';
+}
 function researchSortDateValue(item, rows){ item=effectiveResearchItem(item||{}); const idx=sourceIndex(item.source); if((rows||[]).length===1){ const ms=idx?.rowMeta?.get?.(rows[0])?.dateMs; if(Number.isFinite(ms)) return ms; } const col=item.dateColumn||researchDefaultDateColumn(item); const vals=(rows||[]).map(r=>idx?.rowMeta?.get?.(r)?.dateMs||parseDateOnly(researchFieldValue(r,col,item.source))?.getTime()).filter(Number.isFinite); return vals.length?researchMin(vals):0; }
 function researchGroupLabel(item,r){ const gcfg=researchGearGetForItem(item,'groupField'); if(gcfg.valueLevel==='level1' && item.groupField) return item.groupExpression||researchDisplayFieldLabel(item.groupField,item.groupField); if(!item.groupField&&!item.groupExpression){ const grain=researchAnalysisGrain(item,[r]); if(grain==='teams') return researchRowTeam(r,item.source)||'(blank team)'; if(grain==='representatives') return researchRowRepName(r,item.source)||'(blank representative)'; } return researchGroupKey(item,r); }
 function researchGearGetForItem(item,key){ return {...researchGearDefault(),...((item.gearFilters||{})[key]||{})}; }
@@ -4097,6 +4194,8 @@ async function refreshResearchItem(itemId,button){
   if(button){ button.disabled=true; button.dataset.originalText=button.textContent; button.textContent='⟳ Rendering...'; }
   if(card) card.innerHTML=researchLoadingStoredBody(`Rendering ${item.outputType}...`,'Preparing optimized candidate rows.');
   try{
+    await yieldToBrowser();
+    if(!researchProgressActive(token))return;
     updateResearchProgress(token,'Preparing only the sources used by this item...',4);
     const prep=await ensureResearchExecutionIndexes(item,{token,progressToken:token,start:4,end:16});
     state.researchLastPreparation={itemId:item.id,...prep};

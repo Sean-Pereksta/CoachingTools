@@ -113,8 +113,8 @@ that scope; those weeks remain excluded for fixed cohort members.
 
 Coaching-frequency lines count sessions received, not distinct coaches. Choose
 anchor, fixed, plotted-period or rolling coverage and increasing buckets such as
-0, 1, 2, 3, 4+. A source event ID is preferred for deduplication; otherwise the
-fallback uses source, representative, date, delivering coach and event text.
+0, 1, 2, 3, 4+, or separate every exact count. A source event ID is preferred for
+deduplication; imported events without one collapse only exact source-row copies.
 Separate tagged records should carry the same explicit session ID.
 
 An observed session can establish an at-least threshold. Exact counts, upper
@@ -129,6 +129,53 @@ resolved calendar, metric, population rules, date windows, grouping, observation
 and exclusions. Saved output remains frozen after source or definition changes.
 Descriptions identify loaded eligible representatives; they do not imply a
 company-wide population or a causal coaching effect.
+
+## Common coaching questions
+
+For **matching coaching records per week by coach**, use the guided Research
+editor: Records/events → Documented Coaching → Count → Coach / Team → Line chart.
+Choose Weekly under **Time on the horizontal axis**, select the population and
+date range, and add a condition on the coaching text. Comma- or semicolon-separated
+phrases in a guided contains condition match any listed phrase, so `save the sale,
+STS, Saving the sale` works as alternatives. Record Count keeps the question as
+a count; opportunity weighting is hidden because it does not apply.
+
+**Confirm source columns** shows the representative, coach, event date and text
+columns. Choose an assigned coach for team reporting or a delivering coach when
+that is the question. **Check 20 source rows** displays the mapped values without
+running the full query. Research uses exact identity-header matches and saved
+choices; a similarly named yes/no field is not a coach-name fallback. These
+source mappings also apply to the sentence editor and event/performance joins.
+Mapping changes invalidate cached results, and missing saved headers need review.
+
+The time selector also supports daily, monthly, quarterly and entire-period
+counts. Dates form the horizontal axis; the breakdown creates separate lines.
+Weekly event buckets run Sunday through Saturday. Weekly performance sources
+retain their uploaded reporting dates rather than inventing daily measurements.
+
+**Build a question +** includes six starting questions: movement by coaching
+count, one line per coaching count, team statistics for qualified representatives,
+average coachings per representative, weekly coaching activity, and percentage of
+representatives coached. Topic and coaching-type conditions must match the same
+session row. Use nested all/any requirements for more complex population rules.
+
+Movement tables compare the first and last selected reporting dates using the
+same representatives with valid values at both endpoints. They show the start,
+end, change and paired-representative count. Missing endpoints stay missing, and
+rate changes use percentage points. Tables can include six additional statistics
+from the same source and date alignment; each reports its own eligible counts.
+
+Activity questions use the weekly source to define the representative population.
+Covered representatives with zero matching sessions remain in averages and
+percentages; missing observations and unconfirmed event coverage are excluded
+explicitly. The default activity window is seven days ending at each reporting
+date, with reporting-period boundaries available as an alternative. This is
+different from the calendar-week buckets in the record-count editor.
+
+Save and rerun shows loading before validation or calculation, disables duplicate
+save clicks, and restores controls on failure. Source categorization yields in
+batches, event summaries are reused per person/window, and superseded runs cannot
+replace the latest result.
 
 ## Compatibility and validation
 

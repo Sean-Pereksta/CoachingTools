@@ -299,12 +299,18 @@
       if(!event.repId||!finite(day(event.date)))continue;
       const id=event.id?`${event.source}|${event.repId}|${event.id}`:[event.source,event.repId,event.date,event.deliveredBy||'',event.text||''].join('|');
       if(!map.has(id))map.set(id,{...event,id,date:iso(day(event.date)),topics:[...new Set(event.topics||[])]});
-      else map.get(id).topics=[...new Set([...map.get(id).topics,...(event.topics||[])])];
+      else {
+        const existing=map.get(id);
+        existing.variants=existing.variants||[{fields:existing.fields,text:existing.text,topics:existing.topics}];
+        existing.variants.push(...(event.variants||[{fields:event.fields,text:event.text,topics:event.topics}]));
+        existing.topics=[...new Set([...existing.topics,...(event.topics||[])])];
+      }
     }
     return [...map.values()];
   }
   function eventSummary(events,repId,window,coverage={},condition={}){
-    const matching=events.filter(e=>e.repId===repId&&(!condition.source||e.source===condition.source)&&e.date>=window.start&&e.date<=window.end&&(!condition.topic||key([e.text,...(e.topics||[])].join(' ')).includes(key(condition.topic))));
+    const matches=e=>(!condition.topic||key([e.text,...(e.topics||[])].join(' ')).includes(key(condition.topic)))&&(!condition.field||!condition.value||(condition.match==='is'?key(e.fields?.[condition.field])===key(condition.value):key(e.fields?.[condition.field]).includes(key(condition.value))));
+    const matching=events.filter(e=>e.repId===repId&&(!condition.source||e.source===condition.source)&&e.date>=window.start&&e.date<=window.end&&(e.variants||[e]).some(matches));
     const covered=coverage.complete===true&&coverage.start<=window.start&&coverage.end>=window.end&&(!coverage.repIds||coverage.repIds.includes(repId));
     // Observed sessions remain evidence, but an exact frequency (including zero)
     // needs reviewed coverage of the entire window and population.
@@ -323,13 +329,22 @@
     const available=observations.filter(o=>o.source===m.source), config={mode:'fixed',groupBy:'all',buckets:[0,1,2,3,4],...settings};
     if(config.mode==='before_after'&&available.some(o=>o.period.frequency!=='week'))throw new Error('Before/after weekly alignment requires a weekly source.');
     const allEvents=dedupeEvents(events),rows=available.filter(o=>(!config.repIds||config.repIds.includes(o.repId))&&(!config.coaches?.length||config.coaches.map(key).includes(key(o.coach)))&&(!config.managers?.length||config.managers.map(key).includes(key(o.manager))));
+    const activity=['coaching_count','coaching_per_rep','coached_percent'].includes(config.measure);
+    const eventsByRep=new Map(),summaryCache=new Map();
+    for(const event of allEvents){if(!eventsByRep.has(event.repId))eventsByRep.set(event.repId,[]);eventsByRep.get(event.repId).push(event);}
+    const summary=(id,window,condition)=>{
+      const cacheKey=JSON.stringify([id,window,condition]);
+      if(!summaryCache.has(cacheKey))summaryCache.set(cacheKey,eventSummary(eventsByRep.get(id)||[],id,window,coverageFor(condition.source),condition));
+      return summaryCache.get(cacheKey);
+    };
+    const coachingCondition={source:config.coachingSource||'documented_coaching',topic:config.topic,field:config.coachingField,value:config.coachingValue,match:config.coachingMatch};
     const byRep=new Map();for(const o of available){if(!byRep.has(o.repId))byRep.set(o.repId,[]);byRep.get(o.repId).push(o);}for(const history of byRep.values())history.sort((a,b)=>a.period.startMs-b.period.startMs);const ids=[...new Set(rows.map(o=>o.repId))];
     const anchor={start:config.anchorStart||m.startDate,end:config.anchorEnd||m.endDate};
     if((config.eventConditions?.length||config.groupBy==='coaching_frequency'||config.mode==='before_after')&&config.mode!=='changing'&&(!anchor.start||!anchor.end))throw new Error('Choose an explicit anchor/coaching window.');
     const coverageFor=source=>config.coverage?.[source]||config.coverage||{};
     const qualifies=(id,window)=>{
-      for(const condition of config.eventConditions||[]){const w=condition.startDate&&condition.endDate?{start:condition.startDate,end:condition.endDate}:window,s=eventSummary(allEvents,id,w,coverageFor(condition.source),condition);if(!eventConditionPass(s,condition))return false;}
-      for(const condition of config.statConditions||[]){const def=condition.metric;if(!def)throw new Error('A population condition references a missing metric.');const rule={...condition,startDate:condition.startDate||window.start,endDate:condition.endDate||window.end};if(!criterion(available.filter(o=>o.repId===id),def,rule).pass)return false;}
+      for(const condition of config.eventConditions||[]){const w=condition.startDate&&condition.endDate?{start:condition.startDate,end:condition.endDate}:window,s=summary(id,w,condition);if(!eventConditionPass(s,condition))return false;}
+      for(const condition of config.statConditions||[]){const def=condition.metric;if(!def)throw new Error('A population condition references a missing metric.');const rule={...condition,startDate:condition.startDate||window.start,endDate:condition.endDate||window.end};if(!criterion(byRep.get(id)||[],def,rule).pass)return false;}
       return true;
     };
     const inScope=o=>(!config.coaches?.length||config.coaches.map(key).includes(key(o.coach)))&&(!config.managers?.length||config.managers.map(key).includes(key(o.manager)));
@@ -340,7 +355,7 @@
     const labels=config.mode==='before_after'?Array.from({length:Number(config.beforeWeeks??4)+Number(config.afterWeeks??6)+1},(_,i)=>i-Number(config.beforeWeeks??4)):periods;
     const frequencyWindow=(p)=>config.frequencyWindow==='fixed'?anchor:config.frequencyWindow==='rolling'?{start:iso(p.startMs-(Math.max(1,Number(config.rollingWeeks)||4)-1)*WEEK),end:p.end}:config.frequencyWindow==='anchor'?anchor:p;
     const lineFor=(id,o,p)=>{
-      if(config.groupBy==='coaching_frequency'){const w=frequencyWindow(p),s=eventSummary(allEvents,id,w,coverageFor(config.coachingSource||'documented_coaching'),{source:config.coachingSource||'documented_coaching',topic:config.topic});return [bucket(s.count,config.buckets)];}
+      if(config.groupBy==='coaching_frequency'){const w=frequencyWindow(p),s=summary(id,w,coachingCondition);return [config.exactBuckets&&s.count!=null?`${s.count} session${s.count===1?'':'s'}`:bucket(s.count,config.buckets)];}
       if(config.groupBy==='representative')return [o.rep];
       if(config.groupBy==='coach')return [o.coach||'Unknown assigned coach'];
       if(config.groupBy==='manager')return [o.manager||'Unknown manager'];
@@ -359,20 +374,59 @@
           if(!groups.has(line))groups.set(line,{ids:[],observations:[],excluded:new Map()});const g=groups.get(line);g.ids.push(id);
           const validPeriods=eligibility.get(id)?.size||0;
           if(observed&&!o)g.excluded.set(id,{status:'excluded',reason:'Assigned coach or manager is outside the selected population for this period'});
-          else if(validPeriods<m.minValidPeriods)g.excluded.set(id,{status:'insufficient',reason:`Requires ${m.minValidPeriods} valid periods; found ${validPeriods}`});
+          else if(!activity&&validPeriods<m.minValidPeriods)g.excluded.set(id,{status:'insufficient',reason:`Requires ${m.minValidPeriods} valid periods; found ${validPeriods}`});
           else if(o)g.observations.push(o);
+          if(activity){
+            if(!g.activity)g.activity=[];
+            const w=config.activityWindow==='trailing_week'?{start:iso(p.endMs-6*DAY),end:p.end}:p,s=summary(id,w,coachingCondition);
+            g.activity.push({repId:id,rep:context.rep,coach:context.coach,period:p,value:s.count,numerator:s.count,denominator:1,status:s.covered&&o?'valid':'missing',reason:!o?'No population observation for this period':!s.covered?'Coaching coverage is not confirmed for this person and window':'',events:s.events.map(e=>({id:e.id,date:e.date,text:e.text})),observedCount:s.observedCount});
+          }
         }
       }
-      return [...groups].map(([line,g])=>{const result=aggregate(g.observations,{...m,startDate:'',endDate:'',lastPeriods:0,minValidPeriods:1},g.ids);result.exclusions=result.exclusions.map(e=>g.excluded.has(e.repId)?{...e,...g.excluded.get(e.repId)}:e);return {line,label:typeof label==='number'?(label===0?'Coaching week (mixed timing)':`Week ${label>0?'+':''}${label}`):label.start,relativeWeek:typeof label==='number'?label:null,period:typeof label==='number'?null:label,...result,members:g.ids};});
+      return [...groups].map(([line,g])=>{
+        let result;
+        if(activity){
+          const valid=(g.activity||[]).filter(v=>v.status==='valid'),excluded=(g.activity||[]).filter(v=>v.status!=='valid'),total=sum(valid.map(v=>v.value)),coached=valid.filter(v=>v.value>0).length;
+          result={value:valid.length?(config.measure==='coaching_count'?total:config.measure==='coached_percent'?100*coached/valid.length:total/valid.length):null,numerator:config.measure==='coached_percent'?coached:total,denominator:valid.length,eligibleRepresentatives:valid.length,missingRepresentatives:excluded.length,contributions:valid,exclusions:excluded,representatives:valid.map(v=>({repId:v.repId,rep:v.rep,value:v.value})),aggregation:config.measure,unit:config.measure==='coached_percent'?'%':config.measure==='coaching_per_rep'?'sessions / rep':'sessions'};
+        }else result=aggregate(g.observations,{...m,startDate:'',endDate:'',lastPeriods:0,minValidPeriods:1},g.ids);
+        result.exclusions=result.exclusions.map(e=>g.excluded.has(e.repId)?{...e,...g.excluded.get(e.repId)}:e);return {line,label:typeof label==='number'?(label===0?'Coaching week (mixed timing)':`Week ${label>0?'+':''}${label}`):label.start,relativeWeek:typeof label==='number'?label:null,period:typeof label==='number'?null:label,...result,members:g.ids};});
     };
     return {labels,compute,definition:{metric:m,settings:copy(config)},description:`${m.name||m.formulaLabel||m.field} · ${config.mode==='changing'?'Membership recalculated each week':config.mode==='before_after'?'First qualifying session; coaching week has mixed timing; Week +1 is the first complete subsequent week':'Fixed qualifying group'} · ${config.groupBy} · ${m.aggregation==='equal_rep'?'Equal-representative average':m.aggregation} · Loaded eligible representatives only`,warnings:['Observed performance comparison; does not establish that coaching caused a change.',...(config.currentMembership?['Organization/manager selection uses current saved membership; point coaches come from historical observations.']:[])]};
   }
   async function research(observations,metric,settings,events,options={}){
+    if(options.cancelled?.())throw Object.assign(new Error('Research cancelled.'),{name:'AbortError'});
+    await (options.yield?.()||Promise.resolve());
     const setup=researchSetup(observations,metric,settings,events),data=[];
     for(let i=0;i<setup.labels.length;i++){if(options.cancelled?.())throw Object.assign(new Error('Dated Stats research cancelled.'),{name:'AbortError'});data.push(...setup.compute(setup.labels[i]));options.progress?.(i+1,setup.labels.length);await (options.yield?.()||Promise.resolve());}
     const {compute,labels,...meta}=setup;
     const axisLabels=labels.map(label=>typeof label==='number'?(label===0?'Coaching week (mixed timing)':`Week ${label>0?'+':''}${label}`):label.start);
-    return {...meta,version:VERSION,data,axisLabels,calculatedAt:new Date().toISOString(),columns:[{label:metric.name||metric.field,mode:'datedStats'}]};
+    const result={...meta,version:VERSION,data,axisLabels,calculatedAt:new Date().toISOString(),columns:[{label:metric.name||metric.field,mode:'datedStats'}]};
+    if(settings?.measure&&settings.measure!=='performance'){
+      result.measureLabel=({coaching_count:'Documented coaching sessions',coaching_per_rep:'Average documented coachings per representative',coached_percent:'Percentage of representatives coached'}[settings.measure]||settings.measure);
+      result.columns=[{label:result.measureLabel,mode:'datedStats'}];
+      result.description=result.measureLabel+' · '+settings.groupBy+' · '+(settings.activityWindow==='trailing_week'?'7 days ending at each reporting date':'Each reporting period')+' · Only representatives with confirmed event coverage and a population observation; covered zeros included';
+      result.warnings=result.warnings.filter(w=>!w.startsWith('Observed performance comparison'));
+    }
+    result.movement=researchMovement(result,metric);
+    return result;
+  }
+  function researchMovement(result,metric){
+    const m=normalizeMetric(metric),first=result.axisLabels?.[0],last=result.axisLabels?.at(-1),out=[];
+    for(const line of new Set(result.data.map(p=>p.line))){
+      const start=result.data.find(p=>p.line===line&&p.label===first),end=result.data.find(p=>p.line===line&&p.label===last),endIds=new Set((end?.contributions||[]).map(v=>v.repId));
+      const paired=new Set((start?.contributions||[]).filter(v=>endIds.has(v.repId)).map(v=>v.repId));
+      const value=p=>{
+        const rows=(p?.contributions||[]).filter(v=>paired.has(v.repId));if(!rows.length)return null;
+        if(p.aggregation==='coached_percent')return 100*rows.filter(v=>v.value>0).length/rows.length;
+        if(p.aggregation==='combined_rate'){const denominator=sum(rows.map(v=>v.denominator));return denominator?100*sum(rows.map(v=>v.numerator))/denominator:null;}
+        if(p.aggregation==='sum'||p.aggregation==='coaching_count')return sum(rows.map(v=>v.value));
+        if(p.aggregation==='min')return Math.min(...rows.map(v=>v.value));if(p.aggregation==='max')return Math.max(...rows.map(v=>v.value));
+        return mean(rows.map(v=>v.value));
+      };
+      const a=value(start),b=value(end),comparable=first!==last&&a!=null&&b!=null;
+      out.push({line,firstPeriod:first,lastPeriod:last,first:comparable?a:null,latest:comparable?b:null,change:comparable?b-a:null,pairedRepresentatives:comparable?paired.size:0,unit:start?.unit||end?.unit||resultUnit(m),changeUnit:(start?.unit||end?.unit)==='%'?'percentage points':start?.unit||end?.unit||resultUnit(m,'change')});
+    }
+    return out;
   }
   const api={profileUnits,metricResult,VERSION,SOURCES,DAY,WEEK,key,day,iso,cell,defaultConfig,period,summaryName,mergeRows,categorize,categorizeAsync,standardMetrics,normalizeMetric,formula,measure,aggregate,series,trend,criterion,compare,dedupeEvents,eventSummary,eventConditionPass,research};
   root.AllStarDatedStats=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;

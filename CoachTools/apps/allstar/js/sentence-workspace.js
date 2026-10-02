@@ -17,14 +17,13 @@
     const out={};
     for(const source of required){
       const rows=getRowsRaw(source),headers=getHeaders(source);if(!rows.length&&!headers.length)continue;
-      const cfg=getSourceSetting(activeModelForImport(),source)?.columns||{};
-      const dateField=cfg.date||cfg.interactionDate||findHeader(headers,['Coaching Date','Date','Incident Date','Interaction Start Time','Created Date','Completed Date']);
-      const idField=findHeader(headers,['Coaching ID','Session ID','Evaluation ID','Event ID','Record ID','ID']);
+      const mapped=researchMappedSourceFields(source),dateField=mapped.date;
+      const idField=researchExactHeader(source,['Coaching ID','Session ID','Evaluation ID','Event ID','Record ID','ID']);
       const byRep=new Map();let invalidRows=0;
       rows.forEach((r,index)=>{
-        const name=r._rep||r[cfg.rep]||r['Associate Name']||r['Associate name']||r['Agent Name']||'';
-        const resolved=r._repKey?{id:r._repKey}:datedStatsIdentity(name,statSource);
-        const raw=r[dateField]??r._date,ms=E.day(raw),parsed=Number.isFinite(ms)?ms:E.day(parseDateOnly(raw));
+        const name=researchRowRepName(r,source);
+        const resolved=r._repKey&&!researchSourceMappings()[source]?.rep?{id:r._repKey}:datedStatsIdentity(name,statSource);
+        const raw=dateField?r[dateField]:r._date,ms=E.day(raw),parsed=Number.isFinite(ms)?ms:E.day(parseDateOnly(raw));
         if(!resolved.id||!Number.isFinite(parsed)){invalidRows++;return;}
         const date=E.iso(parsed),fields=Object.fromEntries(headers.map(h=>[h,r[h]]));
         // A real source event ID wins. Without one, only exact duplicate records
@@ -53,7 +52,9 @@
   }
   renderDatedStatsResult=function(item,result){
     const question=item?.datedStats?.sentenceQuery;if(!question)return oldRender(item,result);
-    if(question.view==='table')return `<section><h3>${html(item.title)}</h3><p>${html(result.description)}</p><p>${result.data.length} calculated points. Showing up to 250 below; the saved result retains all points.</p><div class="sq-scroll"><table><thead><tr><th>Group</th><th>Period</th><th>Value</th><th>Eligible representatives</th><th>Missing / excluded</th></tr></thead><tbody>${result.data.slice(0,250).map(p=>`<tr><td>${html(p.line)}</td><td>${html(p.label)}</td><td>${num(p.value)} ${html(p.unit||'')}</td><td>${p.eligibleRepresentatives??'—'}</td><td>${p.missingRepresentatives??'—'}</td></tr>`).join('')}</tbody></table></div></section>`+evidence(result);
+    const results=[{name:result.measureLabel||result.definition?.metric?.name||'Value',result},...(result.additionalMetrics||[])];
+    if(question.view==='movement')return `<section><h3>${html(item.title)}</h3><p>Movement from the first to the last selected reporting date, using only the same representatives with valid values at both ends. Missing endpoints stay missing. Rate changes are percentage points.</p><p>${html((result.warnings||[]).join(' '))}</p><div class="sq-scroll"><table><thead><tr><th>Group</th><th>Statistic</th><th>From</th><th>Through</th><th>Start</th><th>End</th><th>Change</th><th>Paired reps</th></tr></thead><tbody>${results.flatMap(entry=>(entry.result.movement||[]).map(p=>`<tr><td>${html(p.line)}</td><td>${html(entry.name)}</td><td>${html(p.firstPeriod)}</td><td>${html(p.lastPeriod)}</td><td>${num(p.first)}</td><td>${num(p.latest)}</td><td>${num(p.change)} ${html(p.changeUnit)}</td><td>${p.pairedRepresentatives}</td></tr>`)).join('')}</tbody></table></div></section>`+evidence(result);
+    if(question.view==='table')return `<section><h3>${html(item.title)}</h3><p>${html(result.description)}</p><p>${html((result.warnings||[]).join(' '))}</p><p>Showing up to 250 points per statistic; the saved result retains all points. Eligible reps are the denominator for averages and percentages; covered reps with no coaching count as zero.</p>${results.map(entry=>`<h4>${html(entry.name)}</h4><div class="sq-scroll"><table><thead><tr><th>Group</th><th>Period</th><th>Value</th><th>Eligible representatives</th><th>Missing / excluded</th></tr></thead><tbody>${entry.result.data.slice(0,250).map(p=>`<tr><td>${html(p.line)}</td><td>${html(p.label)}</td><td>${num(p.value)} ${html(p.unit||'')}</td><td>${p.eligibleRepresentatives??'—'}</td><td>${p.missingRepresentatives??'—'}</td></tr>`).join('')}</tbody></table></div>`).join('')}</section>`+evidence(result);
     return oldRender(item,result)+evidence(result);
   };
   function markIds(n){n.id=n.id||uid();if(n.children)n.children.forEach(markIds);if(n.where)markIds(n.where);}
@@ -84,6 +85,17 @@
     document.body.appendChild(dialog);dialog.showModal();
     const sentence=dialog.querySelector('[data-sq-sentence]'),editor=dialog.querySelector('[data-sq-edit]'),status=dialog.querySelector('[data-sq-status]'),out=dialog.querySelector('[data-sq-preview-result]');
     let revision=0,result=null,resultKey='',timer=null,running=0,saving=false;
+    const measurementNames={performance:'Performance statistic',coaching_count:'Total coachings',coaching_per_rep:'Average coachings per rep',coached_percent:'Percentage of reps coached'};
+    const groupNames={all:'one combined group',coach:'coach / team',representative:'representative',manager:'manager',organization:'organization',coaching_frequency:'exact coaching count'};
+    const presets=document.createElement('div');presets.className='sq-actions';
+    presets.innerHTML='<strong>Start with a question:</strong>'+[['movement','Movement by coaching count'],['frequency','A line for each coaching count'],['team','Team stats for qualified reps'],['average','Average coachings per rep'],['activity','Coachings per week'],['reach','Percent of reps coached']].map(([key,title])=>`<button type="button" data-sq-preset="${key}">${title}</button>`).join('');
+    sentence.before(presets);
+    presets.onclick=e=>{const key=e.target.closest('[data-sq-preset]')?.dataset.sqPreset;if(!key)return;
+      Object.assign(s(),{measure:['average','activity','reach'].includes(key)?({average:'coaching_per_rep',activity:'coaching_count',reach:'coached_percent'}[key]):'performance',groupBy:['movement','frequency'].includes(key)?'coaching_frequency':'coach',frequencyWindow:'anchor',exactBuckets:true,activityWindow:'trailing_week',mode:'fixed'});
+      q().view=key==='movement'?'movement':key==='average'?'table':'line';
+      sectionOpen={show:true,people:true,when:true};changed();
+      status.textContent=['movement','frequency'].includes(key)?'Choose the coaching window, a topic or coaching type if needed, and review coverage. Counts of 1, 2, 3, and so on form separate groups.':key==='team'?'Choose the team and statistic, then use + to add the conditions representatives must meet.':'Select the team and coaching topic/type. Review coverage so zero sessions and per-rep averages are accurate. Weekly counts use 7 days ending at each reporting date.';
+    };
     // View state never enters the question definition or its calculation signature.
     let sectionOpen={show:true,people:false,when:false};
     try{sectionOpen={...sectionOpen,...JSON.parse(localStorage.getItem('allstar.sentence.view.v1')||'{}')};}catch(_){}
@@ -101,12 +113,12 @@
       const people=s().selectedRepIds?.length?s().selectedRepIds.length+' selected representatives':s().coachNames?.length?'representatives under '+s().coachNames.length+' selected coaches':s().managerNames?.length?'representatives under selected managers':s().orgIds?.length?'representatives in selected organizations':'all loaded representatives';
       const dates=s().startDate||s().endDate?(s().startDate||'first source date')+' → '+(s().endDate||'last source date'):'all source dates';
       const part=(key,title,summary,body)=>`<details class="sq-question-section" data-sq-section="${key}" ${sectionOpen[key]?'open':''}><summary><strong>${title}</strong><span class="sq-muted">${html(summary)}</span></summary>${body}</details>`;
-      sentence.innerHTML=`<button type="button" data-sq-all>Show all question settings</button>${part('show','Show',(q().view==='table'?'Table':'Line graph')+' · '+(metric()?.name||'Choose a statistic'),`<div class="sq-sentence">Show ${token('view',q().view==='table'?'a table':'a line graph')} of ${token('metric',metric()?.name||'choose a statistic')} by ${html(labelSource(metric()?.source))} → ${html(datedStatsConfig(metric()?.source).dateField||'Date')}.<div class="sq-muted">People included in this question ${plus(q().root.id)}</div></div><p class="sq-muted">${html(metric()?.formulaLabel||metric()?.field||metric()?.name||'')} · ${html(metric()?.aggregation==='equal_rep'?'Average of representative values':metric()?.aggregation==='combined_rate'?'Combined rate':metric()?.aggregation||'')}</p>`)}${part('people','For',people+' · '+s().groupBy,`<div class="sq-subline">For ${token('people',people)}, ${token('group','broken down by '+(s().groupBy==='all'?'one combined group':s().groupBy))}.</div><p class="sq-muted">${s().groupBy==='manager'||s().groupBy==='organization'?'Manager/organization selection may use current saved membership; assigned coach comes from historical observations.':''}</p>`)}${part('when','When',dates+' · '+q().root.children.length+' population requirements',`<div class="sq-subline">Measure during ${token('dates',dates)}. ${token('membership',s().mode==='changing'?'Check who qualifies each reporting period':'Follow the same qualifying people')}. Qualifying window: ${token('anchor',(s().anchorStart||'choose start')+' → '+(s().anchorEnd||'choose end'))}.</div>${tree(q().root)}${token('coverage','Review event coverage')}<p class="sq-muted">Uploaded fields use their attached source dates. Date filters are optional.</p>`)}${token('name',item.title)} ${token('standard','Create a standard stat')}`;
+      sentence.innerHTML=`<button type="button" data-sq-all>Show all question settings</button>${part('show','Show',(q().view==='movement'?'Movement table':q().view==='table'?'Table':'Line graph')+' · '+(s().measure&&s().measure!=='performance'?measurementNames[s().measure]:metric()?.name||'Choose a statistic'),`<div class="sq-sentence">Show ${token('view',q().view==='movement'?'a movement table':q().view==='table'?'a table':'a line graph')} of ${token('measurement',measurementNames[s().measure||'performance'])}${!s().measure||s().measure==='performance'?' '+token('metric',metric()?.name||'choose a statistic')+' '+token('values','Additional table statistics'):' (population from '+html(labelSource(metric()?.source))+')'} by ${html(labelSource(metric()?.source))} → ${html(datedStatsConfig(metric()?.source).dateField||'Date')}.<div class="sq-muted">People included in this question ${plus(q().root.id)}</div></div><p class="sq-muted">${s().measure&&s().measure!=='performance'?'Event counts include covered zeros; averages divide by eligible representatives.':html(metric()?.formulaLabel||metric()?.field||metric()?.name||'')+' · '+html(metric()?.aggregation==='equal_rep'?'Average of representative values':metric()?.aggregation==='combined_rate'?'Combined rate':metric()?.aggregation||'')}</p>`)}${part('people','For',people+' · '+s().groupBy,`<div class="sq-subline">For ${token('people',people)}, ${token('group','broken down by '+(groupNames[s().groupBy]||s().groupBy))}.</div><p class="sq-muted">${s().groupBy==='manager'||s().groupBy==='organization'?'Manager/organization selection may use current saved membership; assigned coach comes from historical observations.':''}</p>`)}${part('when','When',dates+' · '+q().root.children.length+' population requirements',`<div class="sq-subline">Measure during ${token('dates',dates)}. ${token('membership',s().mode==='changing'?'Check who qualifies each reporting period':'Follow the same qualifying people')}. Qualifying window: ${token('anchor',(s().anchorStart||'choose start')+' → '+(s().anchorEnd||'choose end'))}.</div>${s().groupBy==='coaching_frequency'||(s().measure&&s().measure!=='performance')?token('coaching','Coaching topic, type, and counting window'):''}${tree(q().root)}${token('coverage','Review event coverage')} ${token('mapping','Review event source columns')}<p class="sq-muted">Uploaded fields use their attached source dates. Date filters are optional.</p>`)}${token('name',item.title)} ${token('standard','Create a standard stat')}`;
       sentence.querySelectorAll('[data-sq-section]').forEach(n=>n.addEventListener('toggle',()=>{sectionOpen[n.dataset.sqSection]=n.open;try{localStorage.setItem('allstar.sentence.view.v1',JSON.stringify(sectionOpen));}catch(_){}}));
       sentence.querySelector('[data-sq-all]').onclick=()=>sentence.querySelectorAll('[data-sq-section]').forEach(n=>n.open=true);
     }
     function changed(){revision++;result=null;clearTimeout(timer);draw();editor.hidden=true;status.textContent='Question changed. Previous preview is out of date.';out.classList.add('sq-stale');try{localStorage.setItem(draftKey,JSON.stringify(item));}catch(_){status.textContent+=' Draft could not be stored.';}if(dialog.querySelector('[data-sq-auto]').checked)timer=setTimeout(()=>preview().catch(showError),700);}
-    function showError(e){if(dialog.isConnected)status.textContent=e.message||String(e);}
+    function showError(e){if(dialog.isConnected){status.textContent=e.message||String(e);out.removeAttribute('aria-busy');out.innerHTML='<p>'+html(e.message||String(e))+'</p>';}}
     function form(title,body,apply){
       editor.hidden=false;editor.innerHTML=`<h3>${html(title)}</h3><form class="sq-form">${body}<div><button type="submit">Apply to sentence</button><button type="button" data-sq-dismiss>Cancel</button></div></form>`;
       editor.querySelector('form').onsubmit=async e=>{e.preventDefault();try{await apply(values(editor));changed();}catch(error){showError(error);}};
@@ -123,14 +135,24 @@
       });
     }
     function edit(key){
-      if(key==='view')return form('Choose the result',select('Show','view',[['line','Line graph — reporting dates'],['table','Table — group and reporting date']],q().view),v=>q().view=v.view);
+      if(key==='mapping')return form('Review event source columns',Object.entries(SOURCE_NAMES).map(([source,title])=>{
+        const fields=researchMappedSourceFields(source),options=[['','Auto-detect'],...(catalog()[source]||[]).map(h=>[h,h])];
+        return `<fieldset><legend>${html(title)}</legend>${Object.entries({rep:'Representative',coach:'Coach / Team',date:'Event date',text:'Coaching text / subject'}).map(([key,title])=>select(title,source+'_'+key,options,fields[key])).join('')}</fieldset>`;
+      }).join('')+'<p>Choose actual name, date, and text columns. These mappings are shared with Research. Performance trends use the assigned coach and dates in the weekly source. The main Research editor also provides a 20-row sample for checking the mapped values.</p>',v=>{for(const source of Object.keys(SOURCE_NAMES))saveResearchSourceMapping(source,Object.fromEntries(['rep','coach','date','text'].map(key=>[key,v[source+'_'+key]])));});
+      if(key==='view')return form('Choose the result',select('Show','view',[['line','Line graph — reporting dates'],['table','Table — group and reporting date'],['movement','Movement table — start, end, and change']],q().view),v=>q().view=v.view);
       if(key==='metric'){
         const available=metrics();
         form('Choose a source and value',select('Data source','source',[['weeklyRetail','Retail Weekly Stats'],['weeklyReferral','Referral Weekly Stats']],metric().source)+select('Value','metricId',available.filter(m=>m.source===metric().source).map(m=>[m.id,m.directField?m.field:'Custom metric → '+m.name]),metric().id),v=>{const chosen=available.find(m=>m.id===v.metricId);if(!chosen)throw new Error('Choose a numerical field.');datedStatsSelectMetric(s(),chosen);item.source=chosen.source;item.columns=[{field:'@'+chosen.name,mode:'datedStats'}];});
         editor.querySelector('[data-sq-value="source"]').onchange=e=>{editor.querySelector('[data-sq-value="metricId"]').innerHTML=available.filter(m=>m.source===e.target.value).map(m=>`<option value="${html(m.id)}">${html(m.directField?m.field:'Custom metric → '+m.name)}</option>`).join('');};return;
       }
+      if(key==='measurement')return form('What should be calculated?',select('Measure','measure',Object.entries(measurementNames),s().measure||'performance')+'<p>Coaching averages include representatives with zero matching sessions when coverage is confirmed. The loaded weekly source defines the population.</p>',v=>{s().measure=v.measure;s().activityWindow=s().activityWindow||'trailing_week';});
+      if(key==='values'){
+        const available=metrics().filter(m=>m.source===metric().source&&!!m.directField===!!metric().directField&&m.id!==metric().id);
+        return form('Additional statistics for tables',available.map(m=>`<label><input type="checkbox" data-sq-extra value="${html(m.id)}" ${(s().additionalMetricIds||[]).includes(m.id)?'checked':''}>${html(m.name)}</label>`).join('')+'<p>Choose up to six additional values. Each uses the same people, grouping and reporting dates; missing values and paired-rep counts are shown separately. Line graphs show the first statistic.</p>',()=>{const ids=[...editor.querySelectorAll('[data-sq-extra]:checked')].map(n=>n.value);if(ids.length>6)throw new Error('Choose up to six additional statistics.');s().additionalMetricIds=ids;});
+      }
+      if(key==='coaching')return form('Which documented coaching sessions count?',input('Subject / topic text (optional)','topic',s().topic||'')+select('Specific coaching field (optional)','coachingField',[['','Any coaching type'],...(catalog().documented_coaching||[]).map(h=>[h,h])],s().coachingField||'')+select('Match field','coachingMatch',[['contains','Contains'],['is','Equals exactly']],s().coachingMatch||'contains')+input('Field value (optional)','coachingValue',s().coachingValue||'')+select('Count groups using','frequencyWindow',[['anchor','The entire qualifying window — fixed groups'],['plotted','Each reporting date / period'],['rolling','Rolling complete weeks']],s().frequencyWindow||'anchor')+input('Rolling weeks','rollingWeeks',s().rollingWeeks||4,'number')+`<label><input type="checkbox" data-sq-value="exactBuckets" ${s().exactBuckets!==false?'checked':''}> Separate every exact count: 0, 1, 2, 3…</label>`+select('Activity totals / averages use','activityWindow',[['trailing_week','7 days ending at each reporting date'],['period','The reporting period boundaries']],s().activityWindow||'trailing_week')+'<p>Both topic and field conditions must match the same session. Sessions are deduplicated by ID. The qualifying window determines the fixed coaching-count group; the performance dates determine its trend.</p>',v=>{if(!Number.isInteger(+v.rollingWeeks)||+v.rollingWeeks<1)throw new Error('Rolling weeks must be a positive whole number.');Object.assign(s(),v);s().coachingSource='documented_coaching';});
       if(key==='name')return form('Name this question',input('Title','title',item.title),v=>{if(!v.title.trim())throw new Error('Enter a title.');item.title=v.title;});
-      if(key==='group')return form('What does each line or table group represent?',select('One result per','groupBy',[['all','All included representatives combined'],['representative','Representative'],['coach','Assigned coach'],['manager','Manager'],['organization','Organization']],s().groupBy),v=>s().groupBy=v.groupBy);
+      if(key==='group')return form('What does each line or table group represent?',select('One result per','groupBy',[['all','All included representatives combined'],['representative','Representative'],['coach','Assigned coach'],['manager','Manager'],['organization','Organization'],['coaching_frequency','Number of matching documented coachings']],s().groupBy),v=>{s().groupBy=v.groupBy;if(v.groupBy==='coaching_frequency'){s().frequencyWindow=s().frequencyWindow||'anchor';s().exactBuckets=s().exactBuckets??true;}});
       if(key==='membership')return form('Who qualifies over time?',select('Membership','mode',[['fixed','Follow the same qualifying people'],['changing','Check who qualifies each reporting period']],s().mode),v=>s().mode=v.mode);
       if(key==='dates'||key==='anchor'){
         const a=key==='dates'?'startDate':'anchorStart',b=key==='dates'?'endDate':'anchorEnd';
@@ -160,14 +182,17 @@
     function checked(){
       if(!metric())throw new Error('Choose an available metric.');Q.validate(q().root,catalog());
 
-      item.source=metric().source;item.outputType=q().view;return normalizeResearchItem(copy(item));
+      item.source=metric().source;item.outputType=q().view==='movement'?'table':q().view;return normalizeResearchItem(copy(item));
     }
-    function signature(){return JSON.stringify([item,state.metrics,state.sourceMeta,state.orgs,root.CoachToolsStatsDirectory?.snapshot().revision]);}
+    function signature(){return JSON.stringify([item,state.metrics,state.sourceMeta,state.orgs,Object.keys(SOURCE_NAMES).map(source=>researchMappedSourceFields(source)),root.CoachToolsStatsDirectory?.snapshot().revision]);}
     async function preview(){
-      const next=checked(),key=signature(),current=++running,version=revision;status.textContent='Calculating with your loaded data…';
+      const current=++running,version=revision;status.textContent='Loading Research…';out.setAttribute('aria-busy','true');out.innerHTML=researchLoadingStoredBody('Calculating Research…','Preparing only the selected sources.');
+      await yieldToBrowser();
+      if(current!==running||version!==revision||!dialog.isConnected)return false;
+      const next=checked(),key=signature();
       const calculated=await evaluateDatedStatsResearch(next,{token:{get cancelled(){return current!==running||version!==revision||!dialog.isConnected;}}});
       if(current!==running||version!==revision||!dialog.isConnected||key!==signature()){if(dialog.isConnected)status.textContent='Data or settings changed. Update the preview again.';return false;}
-      result=calculated;resultKey=key;out.innerHTML=renderDatedStatsResult(next,result);out.classList.remove('sq-stale');bindDatedStatsCharts(out);status.textContent=`${result.data.length} calculated points. Evidence examples below use real loaded rows.`;return true;
+      result=calculated;resultKey=key;out.removeAttribute('aria-busy');out.innerHTML=renderDatedStatsResult(next,result);out.classList.remove('sq-stale');bindDatedStatsCharts(out);status.textContent=`${result.data.length} calculated points. Evidence examples below use real loaded rows.`;return true;
     }
     sentence.onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.sqEdit)edit(b.dataset.sqEdit);else if(b.dataset.sqAdd)add(b.dataset.sqAdd,b.dataset.sqSource);else if(b.dataset.sqRemove){remove(q().root,b.dataset.sqRemove);changed();}};
     dialog.querySelector('[data-sq-preview]').onclick=()=>preview().catch(showError);
@@ -175,6 +200,7 @@
     dialog.querySelector('[data-sq-save]').onclick=async()=>{
       if(saving)return;saving=true;const controls=[...dialog.querySelectorAll('button,input,select')].map(n=>[n,n.disabled]);controls.forEach(([n])=>n.disabled=true);
       try{
+        status.textContent='Saving and running Research…';await yieldToBrowser();
         if(!result||resultKey!==signature())if(!await preview())return;
         const next=checked(),previous=state.researchItems;state.researchItems=[...previous.filter(i=>i.id!==next.id),next];
         try{const saved=await saveResearchItems();if(saved===false)throw new Error('Could not save the Research definition.');}catch(e){state.researchItems=previous;throw e;}
