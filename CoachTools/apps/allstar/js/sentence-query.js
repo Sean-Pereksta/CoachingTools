@@ -107,7 +107,7 @@
     }
     if(node.kind==='field')return node.field+' '+labels[node.op]+(['blank','not_blank'].includes(node.op)?'':' “'+node.value+'”');
     if(node.kind==='stat')return (node.mode==='trend'?(node.summary||'change')+' of ':'')+label(node.metricId)+' '+(labels[node.operator]||node.operator)+' '+node.threshold+(node.mode==='qualifying_periods'?' in at least '+(node.requiredPeriods||1)+' reporting periods':'')+(node.startDate?' during '+node.startDate+'–'+node.endDate:' during the qualifying window');
-    return label(node.source)+' has '+countLabels[node.op]+' '+node.value+' matching sessions, where the SAME ROW matches '+describe(node.where,label)+(node.startDate?' during '+node.startDate+'–'+node.endDate:' during the selected qualifying window');
+    return (node.label||label(node.source))+' has '+countLabels[node.op]+' '+node.value+' matching sessions, where the SAME ROW matches '+describe(node.where,label)+(node.startDate?' during '+node.startDate+'–'+node.endDate:' during the selected qualifying window');
   }
   function installResearch(E,adapter){
     const original=E.research;
@@ -121,7 +121,7 @@
       // A plain numerical graph has no event-qualification window to configure.
       if(question.root.kind==='group'&&!question.root.children.length)return original.call(this,observations,metric,settings,events,options);
       for(const o of observations){if(!byRep.has(o.repId))byRep.set(o.repId,[]);byRep.get(o.repId).push(o);}
-      const periods=E.series(observations,metric).map(p=>p.period);
+      const periods=E.researchPeriods?E.researchPeriods(observations,metric,settings):E.series(observations,metric).map(p=>p.period);
       const windows=settings.mode==='changing'?periods:[{start:settings.anchorStart||metric.startDate,end:settings.anchorEnd||metric.endDate}];
       if(windows.some(w=>!w.start||!w.end||w.start>w.end))throw new Error('Choose the qualifying dates for this question.');
       const virtualSource='__allstar_sentence_v1',virtual=[],examples=[],counts={included:0,excluded:0,unknown:0},sampleCounts={included:0,excluded:0,unknown:0};

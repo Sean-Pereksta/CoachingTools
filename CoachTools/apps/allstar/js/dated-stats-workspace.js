@@ -361,7 +361,7 @@ function openDatedStatsResearchEditor(itemId,preferredSource){
   const read=()=>{
     const v=dsValues(wrap),multi={};for(const name of ['orgIds','managerNames','coachNames','selectedRepIds'])multi[name]=[...wrap.querySelectorAll(`[data-ds-multi="${name}"]:checked`)].map(n=>n.value);
     const buckets=v.buckets.split(',').map(n=>Number(n.trim()));if(!buckets.length||buckets[0]!==0||buckets.some((n,i)=>!Number.isInteger(n)||n<0||(i>0&&n<=buckets[i-1])))throw new Error('Buckets must start at 0 and increase, such as 0,1,2,3,4.');
-    const metric=metrics.find(m=>m.id===v.metricId);if(!metric)throw new Error('Choose an available numerical field or custom metric.');return normalizeResearchItem({...item,id:item?.id||settings.draftId||(settings.draftId=id()),title:v.title,source:metric.source,outputType:'line',cardSize:'full',datedStats:datedStatsSelectMetric({version:1,...v,...multi,buckets,eventConditions:conditions,coverage,statConditions,coachingSource:'documented_coaching'},metric),columns:[{field:'@'+metric.name,mode:'datedStats'}],groupField:'Date',secondaryGroupField:'Coach',valueMode:'datedStats'});
+    const metric=metrics.find(m=>m.id===v.metricId);if(!metric)throw new Error('Choose an available numerical field or custom metric.');return normalizeResearchItem({...item,id:item?.id||settings.draftId||(settings.draftId=id()),title:v.title,source:metric.source,outputType:item?.datedStats?.sentenceQuery?item.outputType:'line',cardSize:'full',datedStats:datedStatsSelectMetric({...settings,version:1,...v,...multi,buckets,eventConditions:conditions,coverage,statConditions,coachingSource:'documented_coaching'},metric),columns:[{field:'@'+metric.name,mode:'datedStats'}],groupField:'Date',secondaryGroupField:'Coach',valueMode:'datedStats'});
   };
   const run=async()=>{
     const next=read(),current=++generation,signature=JSON.stringify(next.datedStats);dsMessage(wrap,'Calculating complete reporting periods…');
@@ -386,6 +386,7 @@ async function evaluateDatedStatsResearch(item,progress={}){
   if(cancelled())throw Object.assign(new Error('Research cancelled.'),{name:'AbortError'});
   const E=window.AllStarDatedStats,s=clonePlain(item.datedStats),metric=datedStatsResearchMetric(s);if(!metric)throw new Error('This Research definition references a missing Dated Stats metric.');
   if(metric.output==='summary')throw new Error('This metric returns a trend summary. Choose a single-value or series metric for period-by-period Research; Models can evaluate the summary.');
+  if(s.sentenceQuery?.view==='number')s.resultWindow='range';
   const pack=await datedStatsResearchCategory(metric.source,!!metric.directField,cancelled);
   const dependency=()=>JSON.stringify([datedStatsSourceSignature(metric.source),state.metrics,state.orgs,['documented_coaching','checklist','qa'].map(source=>[state.sourceMeta[source]?.sourceVersion||0,researchSourceMappings()[source]||{}])]),sourceVersion=dependency(),settings={...s},orgs=(state.orgs||[]).filter(o=>s.orgIds?.includes(o.id)),directory=window.CoachToolsStatsDirectory?.grouped()||[];
   const selectedManagers=directory.filter(g=>s.managerNames?.includes(g.name));
@@ -410,7 +411,13 @@ async function evaluateDatedStatsResearch(item,progress={}){
   // Managers only fall back to the saved directory with an explicit current
   // membership label. Never rewrite historical assigned-coach observations.
   if(settings.groupBy==='manager'||metric.directField&&s.managerNames?.length)observations=observations.map(o=>({...o,manager:o.manager||directory.find(g=>g.coaches.some(c=>coachNameKey(c)===coachNameKey(o.coach)))?.name||''}));
-  const eventSources=[...new Set([...(s.eventConditions||[]).map(c=>c.source),...((s.groupBy==='coaching_frequency'||s.mode==='before_after'||['coaching_count','coaching_per_rep','coached_percent'].includes(s.measure))?[s.coachingSource||'documented_coaching']:[])])];
+  if(s.measure==='calculated'){
+    settings.calculation=E.normalizeCalculation(s.calculation);
+    for(const part of [settings.calculation.numerator,...(settings.calculation.denominator.kind==='events'?[settings.calculation.denominator]:[])]){
+      if(part.field&&!getHeaders(part.source).includes(part.field))throw new Error(`The ${part.label} filter column “${part.field}” is missing. Review the counted items.`);
+    }
+  }
+  const eventSources=[...new Set([...(s.eventConditions||[]).map(c=>c.source),...(s.measure==='calculated'?E.calculationSources(s.calculation):[]),...((s.groupBy==='coaching_frequency'||s.mode==='before_after'||['coaching_count','coaching_per_rep','coached_percent'].includes(s.measure))?[s.coachingSource||'documented_coaching']:[])])];
   const events=datedStatsEvents(eventSources);
   if(events.invalidSources.length){settings.coverage={...settings.coverage};for(const source of events.invalidSources)settings.coverage[source]={...(settings.coverage[source]||settings.coverage),complete:false};}
   const runMetric=m=>E.research(observations,{...m,startDate:s.startDate||m.startDate,endDate:s.endDate||m.endDate},settings,events,{yield:yieldToBrowser,cancelled:()=>cancelled()||sourceVersion!==dependency(),progress:(n,total)=>updateProgress(`Research · ${m.name} · ${n} / ${total} periods`,Math.round(n/total*100))});
@@ -428,7 +435,7 @@ async function evaluateDatedStatsResearch(item,progress={}){
   result.calendar=pack.config.calendar;result.sourceSignature=sourceVersion;result.description+=' · '+labelSource(metric.source);result.perf={rowsScanned:observations.length};
   if(metric.directField&&(!s.measure||s.measure==='performance')){
     const grouping={all:'All representatives',coach:'One line per coach',representative:'One line per representative',manager:'One line per manager',organization:'One line per organization',coaching_frequency:'One line per coaching frequency'};
-    result.description=metric.name+' · Average of representative values · '+(grouping[settings.groupBy]||grouping.all);
+    result.description=metric.name+' · Average of representative values · '+(grouping[settings.groupBy]||grouping.all).replace('One line',settings.resultWindow==='range'?'One value':'One line')+(settings.resultWindow==='range'?' · Entire selected date range':'');
     if(!s.eventConditions?.length&&!s.statConditions?.length&&!s.sentenceQuery?.root?.children?.length&&s.groupBy!=='coaching_frequency'&&s.mode!=='before_after')result.warnings=result.warnings.filter(w=>!w.startsWith('Observed performance comparison'));
   }
   if(datedStatsResearchOperations.get(item.id)===operation)datedStatsResearchOperations.delete(item.id);
