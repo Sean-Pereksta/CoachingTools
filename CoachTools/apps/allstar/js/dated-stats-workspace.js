@@ -52,6 +52,15 @@ function datedStatsCategory(source,required=true,sourceDate=false){
   return pack;
 }
 function datedStatsResolveCoach(raw){const value=window.CoachToolsStatsDirectory?.resolve(raw,'coach')||raw,candidates=[...new Set([...controlRosterRows().map(r=>r._team||r.team),...(window.CoachToolsStatsDirectory?.grouped()||[]).flatMap(g=>g.coaches)].filter(Boolean))],resolved=resolveWeeklyCoachIdentity(value,'',candidates);return resolved.method==='unresolved'?{value:String(value||''),method:'historical source label; not in current directory'}:resolved;}
+async function datedStatsResearchCategory(source,sourceDate,cancelled){
+  const signature=datedStatsSourceSignature(source),existing=sourceDate?datedStatsDirectCategories.get(source):state.categorized.stats?.sources?.[source];
+  if(existing&&!existing.pending&&existing.signature===signature)return existing;
+  const data=state.data[source]||{},config=clonePlain(datedStatsConfig(source)),coaches=new Map();
+  if(sourceDate)config.calendar={reviewed:false,frequency:'observation'};
+  const result=await window.AllStarDatedStats.categorizeAsync(data.rows||[],config,{headers:data.headers||[],fileName:data.fileName,resolveIdentity:name=>datedStatsIdentity(name,source),resolveCoach:raw=>{if(!coaches.has(raw))coaches.set(raw,datedStatsResolveCoach(raw));return coaches.get(raw);},yield:yieldToBrowser,cancelled,progress:(n,total)=>updateProgress(`Preparing ${labelSource(source)} · ${n} / ${total} rows`,8)});
+  if(cancelled()||signature!==datedStatsSourceSignature(source))throw Object.assign(new Error('Research source changed; run again.'),{name:'AbortError'});
+  const pack={...result,signature};if(sourceDate)datedStatsDirectCategories.set(source,pack);else{state.categorized.stats=state.categorized.stats||{version:1,sources:{}};state.categorized.stats.sources[source]=pack;}return pack;
+}
 const datedStatsRosterSignatures=new WeakMap();
 function datedStatsRosterSignature(){
   const index=ensureRosterIndex();
@@ -148,20 +157,22 @@ function evaluateDatedStatsMetric(metric,rows,source,warnings=[]){
   return result.value;
 }
 function datedStatsEvents(sources=['documented_coaching','checklist','qa']){
-  const events=[];
+  const events=[],invalidSources=new Set();
   for(const source of sources){
-    const rows=getRowsRaw(source),hs=getHeaders(source),cfg=getSourceSetting(activeModelForImport(),source)?.columns||{};
-    const dateField=cfg.date||cfg.interactionDate||findHeader(hs,['Coaching Date','Date','Incident Date','Interaction Start Time','Created Date','Completed Date']);
-    const idField=findHeader(hs,['Coaching ID','Session ID','Evaluation ID','Event ID','Record ID','ID']);
-    const textFields=hs.filter(h=>/description|topic|comment|focus|item|notes|category|behavior/i.test(h));
+    const rows=getRowsRaw(source),hs=getHeaders(source);
+    const mapped=researchMappedSourceFields(source),dateField=mapped.date;
+    const idField=researchExactHeader(source,['Coaching ID','Session ID','Evaluation ID','Event ID','Record ID','ID']);
+    const textFields=[...new Set([mapped.text,...hs.filter(h=>/description|topic|comment|focus|item|notes|category|behavior|type/i.test(h))].filter(Boolean))];
+    if(!hs.length&&!rows.length)invalidSources.add(source);
     for(const r of rows){
-      const repId=r._repKey||fullNameIdentityKey(r._rep||r[cfg.rep]||r['Associate Name']||r['Associate name']||r['Agent Name']||'');
-      const rawDate=r[dateField]||r._date,date=Number.isFinite(window.AllStarDatedStats.day(rawDate))?rawDate:parseDateOnly(rawDate);
-      if(!repId||!Number.isFinite(window.AllStarDatedStats.day(date)))continue;
-      events.push({source,repId,date:window.AllStarDatedStats.iso(window.AllStarDatedStats.day(date)),id:idField?r[idField]:'',text:textFields.map(h=>r[h]??'').join(' | '),topics:textFields.map(h=>String(r[h]??'')),deliveredBy:r['Coached By']||r['Coaching Delivered By']||''});
+      const repId=researchSourceMappings()[source]?.rep?fullNameIdentityKey(researchRowRepName(r,source)):(r._repKey||fullNameIdentityKey(researchRowRepName(r,source)));
+      const rawDate=dateField?r[dateField]:r._date,date=Number.isFinite(window.AllStarDatedStats.day(rawDate))?rawDate:parseDateOnly(rawDate);
+      if(!repId||!Number.isFinite(window.AllStarDatedStats.day(date))){invalidSources.add(source);continue;}
+      const fields=Object.fromEntries(hs.map(h=>[h,r[h]])),eventId=idField&&String(r[idField]??'').trim()?r[idField]:JSON.stringify(Object.keys(fields).sort().map(h=>[h,fields[h]]));
+      events.push({source,repId,date:window.AllStarDatedStats.iso(window.AllStarDatedStats.day(date)),id:eventId,fields,text:textFields.map(h=>r[h]??'').join(' | '),topics:textFields.map(h=>String(r[h]??'')),deliveredBy:r['Coached By']||r['Coaching Delivered By']||''});
     }
   }
-  return window.AllStarDatedStats.dedupeEvents(events);
+  const distinct=window.AllStarDatedStats.dedupeEvents(events);distinct.invalidSources=[...invalidSources];return distinct;
 }
 function datedStatsCriterionValue(c,entry,opts={}){
   const metric=state.metrics.find(m=>m.id===c.datedStatsMetricId);
@@ -354,6 +365,9 @@ function openDatedStatsResearchEditor(itemId,preferredSource){
   };
   const run=async()=>{
     const next=read(),current=++generation,signature=JSON.stringify(next.datedStats);dsMessage(wrap,'Calculating complete reporting periods…');
+    wrap.querySelector('[data-ds-preview-result]').innerHTML=researchLoadingStoredBody('Calculating Research…','Preparing the selected sources.');
+    await yieldToBrowser();
+    if(current!==generation||!wrap.isConnected)return null;
     const calculated=await evaluateDatedStatsResearch(next,{token:{get cancelled(){return current!==generation||!wrap.isConnected;}}});
     if(current!==generation)return null;result=calculated;resultSignature=signature;wrap.querySelector('[data-ds-preview-result]').innerHTML=renderDatedStatsResult(next,calculated);bindDatedStatsCharts(wrap);dsMessage(wrap,`${calculated.data.length} points calculated. Missing weeks remain gaps.`);return next;
   };
@@ -367,10 +381,13 @@ function openDatedStatsResearchEditor(itemId,preferredSource){
 }
 async function evaluateDatedStatsResearch(item,progress={}){
   const operation={};datedStatsResearchOperations.set(item.id,operation);
+  const cancelled=()=>progress.token?.cancelled||datedStatsResearchOperations.get(item.id)!==operation;
+  await yieldToBrowser();
+  if(cancelled())throw Object.assign(new Error('Research cancelled.'),{name:'AbortError'});
   const E=window.AllStarDatedStats,s=clonePlain(item.datedStats),metric=datedStatsResearchMetric(s);if(!metric)throw new Error('This Research definition references a missing Dated Stats metric.');
   if(metric.output==='summary')throw new Error('This metric returns a trend summary. Choose a single-value or series metric for period-by-period Research; Models can evaluate the summary.');
-  const pack=datedStatsCategory(metric.source,true,!!metric.directField);
-  const dependency=()=>JSON.stringify([datedStatsSourceSignature(metric.source),state.metrics,state.orgs,['documented_coaching','checklist','qa'].map(source=>state.sourceMeta[source]?.sourceVersion||0)]),sourceVersion=dependency(),settings={...s},orgs=(state.orgs||[]).filter(o=>s.orgIds?.includes(o.id)),directory=window.CoachToolsStatsDirectory?.grouped()||[];
+  const pack=await datedStatsResearchCategory(metric.source,!!metric.directField,cancelled);
+  const dependency=()=>JSON.stringify([datedStatsSourceSignature(metric.source),state.metrics,state.orgs,['documented_coaching','checklist','qa'].map(source=>[state.sourceMeta[source]?.sourceVersion||0,researchSourceMappings()[source]||{}])]),sourceVersion=dependency(),settings={...s},orgs=(state.orgs||[]).filter(o=>s.orgIds?.includes(o.id)),directory=window.CoachToolsStatsDirectory?.grouped()||[];
   const selectedManagers=directory.filter(g=>s.managerNames?.includes(g.name));
   const restrictSets=[];
   if(s.orgIds?.length){if(orgs.length!==s.orgIds.length)throw new Error('A selected organization is missing. Review the population selection.');restrictSets.push(new Set(orgs.flatMap(o=>o.coachNames).map(coachNameKey)));}
@@ -393,9 +410,23 @@ async function evaluateDatedStatsResearch(item,progress={}){
   // Managers only fall back to the saved directory with an explicit current
   // membership label. Never rewrite historical assigned-coach observations.
   if(settings.groupBy==='manager'||metric.directField&&s.managerNames?.length)observations=observations.map(o=>({...o,manager:o.manager||directory.find(g=>g.coaches.some(c=>coachNameKey(c)===coachNameKey(o.coach)))?.name||''}));
-  const result=await E.research(observations,{...metric,startDate:s.startDate||metric.startDate,endDate:s.endDate||metric.endDate},settings,datedStatsEvents(),{yield:yieldToBrowser,cancelled:()=>progress.token?.cancelled||datedStatsResearchOperations.get(item.id)!==operation||sourceVersion!==dependency(),progress:(n,total)=>updateProgress(`Dated Stats Research · ${n} / ${total} periods`,Math.round(n/total*100))});
+  const eventSources=[...new Set([...(s.eventConditions||[]).map(c=>c.source),...((s.groupBy==='coaching_frequency'||s.mode==='before_after'||['coaching_count','coaching_per_rep','coached_percent'].includes(s.measure))?[s.coachingSource||'documented_coaching']:[])])];
+  const events=datedStatsEvents(eventSources);
+  if(events.invalidSources.length){settings.coverage={...settings.coverage};for(const source of events.invalidSources)settings.coverage[source]={...(settings.coverage[source]||settings.coverage),complete:false};}
+  const runMetric=m=>E.research(observations,{...m,startDate:s.startDate||m.startDate,endDate:s.endDate||m.endDate},settings,events,{yield:yieldToBrowser,cancelled:()=>cancelled()||sourceVersion!==dependency(),progress:(n,total)=>updateProgress(`Research · ${m.name} · ${n} / ${total} periods`,Math.round(n/total*100))});
+  const result=await runMetric(metric);
+  if(!s.measure||s.measure==='performance'){
+    result.additionalMetrics=[];
+    for(const metricId of [...new Set(s.additionalMetricIds||[])].filter(id=>id!==metric.id).slice(0,6)){
+      const additional=datedStatsAvailableMetrics().find(m=>m.id===metricId);
+      if(!additional||additional.source!==metric.source)throw new Error('An additional statistic is missing or uses a different source. Review the selected values.');
+      // All columns must share the same period boundaries.
+      if(!!additional.directField!==!!metric.directField)throw new Error('Choose additional values with the same date alignment as the first value.');
+      result.additionalMetrics.push({name:additional.name,result:await runMetric(additional)});
+    }
+  }
   result.calendar=pack.config.calendar;result.sourceSignature=sourceVersion;result.description+=' · '+labelSource(metric.source);result.perf={rowsScanned:observations.length};
-  if(metric.directField){
+  if(metric.directField&&(!s.measure||s.measure==='performance')){
     const grouping={all:'All representatives',coach:'One line per coach',representative:'One line per representative',manager:'One line per manager',organization:'One line per organization',coaching_frequency:'One line per coaching frequency'};
     result.description=metric.name+' · Average of representative values · '+(grouping[settings.groupBy]||grouping.all);
     if(!s.eventConditions?.length&&!s.statConditions?.length&&!s.sentenceQuery?.root?.children?.length&&s.groupBy!=='coaching_frequency'&&s.mode!=='before_after')result.warnings=result.warnings.filter(w=>!w.startsWith('Observed performance comparison'));
