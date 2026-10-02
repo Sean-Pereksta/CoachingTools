@@ -160,7 +160,7 @@
   }
   function renderSVG(def,input,options={}){
     const started=now(),width=1000,height=460,left=86,right=30,top=30,bottom=90,plotWidth=width-left-right,plotHeight=height-top-bottom;
-    const hidden=new Set(def.hiddenSeries||[]),allVisible=input.series.filter(s=>!hidden.has(s.id)),visible=allVisible.slice(0,32),numeric=input.numeric;
+    const hidden=new Set(def.hiddenSeries||[]),allVisible=input.series.filter(s=>!hidden.has(s.id)),visible=allVisible,numeric=input.numeric;
     const stacked=def.type==='stacked-bar',bars=['bar','grouped-bar','stacked-bar','histogram','combo'].includes(def.type),colorFor=s=>COLORS[input.series.indexOf(s)%COLORS.length];
     const positive=new Array(input.labels.length).fill(0),negative=new Array(input.labels.length).fill(0),ys=[];
     for(const s of visible)for(const p of s.points)if(p.value!=null){if(stacked&&!s.derived){if(p.value>=0)positive[p.index]+=p.value;else negative[p.index]+=p.value;}else ys.push(p.value);}
@@ -192,7 +192,7 @@
     const summary=!visible.length?'All series are hidden. Restore a series with its legend button.':!visible.some(s=>s.points.some(p=>p.value!=null))?'No numeric values match these chart settings.':'';
     const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" class="asc-svg" role="img" aria-label="${escape(def.title||'Research chart')}"><title>${escape(def.title)}</title><desc>${escape(summary||input.series.length+' series. Use the table or focus a data point to inspect its values.')}</desc><rect width="1000" height="460" fill="#fff"/>${grid}<line x1="${left}" y1="${y(0)}" x2="${width-right}" y2="${y(0)}" stroke="#94a3b8"/>${labels}${marks}${summary?`<text x="500" y="210" text-anchor="middle" fill="#475569" font-size="17">${escape(summary)}</text>`:''}<text x="${left+plotWidth/2}" y="${height-7}" text-anchor="middle" font-size="13" fill="#334155">${escape(def.xLabel)}</text><text transform="translate(16 ${top+plotHeight/2}) rotate(-90)" text-anchor="middle" font-size="13" fill="#334155">${escape(def.yLabel||(input.histogram?'Count of result values':''))}</text></svg>`;
     stats.renders++;adapters.onTiming?.('chartRender',now()-started,'render only');
-    return {svg,clipped,seriesClipped:allVisible.length>32,legend:input.series.map(s=>({id:s.id,name:s.name,color:colorFor(s),hidden:hidden.has(s.id)}))};
+    return {svg,clipped,seriesClipped:false,legend:input.series.map(s=>({id:s.id,name:s.name,color:colorFor(s),hidden:hidden.has(s.id)}))};
   }
   function storage(){return adapters.storage||root.localStorage;}
   function readStore(key,field){

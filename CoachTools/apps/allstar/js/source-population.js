@@ -114,10 +114,10 @@ function researchWeeklyFlow(item,rows,plan){
 }
 function researchWeeklyFlowFinish(item,rows,plan){
   const flow=plan?.populationFlow;if(!flow)return;
-  const reps=new Set(),coaches=new Set(),weeks=new Set();let qualifyingRows=0;
+  const reps=new Set(),coaches=new Set(),weeks=new Set(),matched=new Set(),unmatched=new Set(),repWeeks=new Set();let qualifyingRows=0;
   const conditions=(item.guidedConditions||[]).filter(guidedValidCondition),rowConditions=conditions.length&&conditions.every(c=>!c.expression&&!guidedConditionIsCount(c.operator)&&(!c.source||c.source===item.source));
-  for(const row of rows){const i=weeklySourceRowIdentity(row,item.source);if(i.repKey)reps.add(i.repKey);if(i.coachKey)coaches.add(i.coachKey);const d=parseDateOnly(i.date);if(d)weeks.add(ymd(d));if(rowConditions&&guidedConditionsMatchRows([row],item))qualifyingRows++;}
-  Object.assign(flow,{candidateRows:rows.length,qualifyingRows:rowConditions?qualifyingRows:null,eligibleReps:reps.size,representedCoaches:coaches.size,periods:weeks.size});
+  for(const row of rows){const i=weeklySourceRowIdentity(row,item.source);if(i.repKey){reps.add(i.repKey);(i.rosterMatched?matched:unmatched).add(i.repKey);const date=parseDateOnly(i.date);if(date)repWeeks.add(JSON.stringify([i.repKey,ymd(date)]));}if(i.coachKey)coaches.add(i.coachKey);const d=parseDateOnly(i.date);if(d)weeks.add(ymd(d));if(rowConditions&&guidedConditionsMatchRows([row],item))qualifyingRows++;}
+  Object.assign(flow,{candidateRows:rows.length,qualifyingRows:rowConditions?qualifyingRows:null,eligibleReps:reps.size,matchedRepresentatives:matched.size,unmatchedRepresentatives:unmatched.size,representativeWeeks:repWeeks.size,representedCoaches:coaches.size,periods:weeks.size});
 }
 function researchWeeklyFlowHtml(plan={}){
   const flow=plan.populationFlow;if(!flow)return '';
@@ -139,7 +139,7 @@ function scheduleResearchWeeklyPreview(){
 function weeklyGuidedInterpretation(cfg){
   if(!isDatedStatsSource(cfg.guidedPrimarySource))return [];
   const source=cfg.guidedPrimarySource,data=state.data[source]||{},config=data.config||window.AllStarDatedStats.defaultConfig(source,data.headers||[]),scope=normalizeResearchPopulationScope(state.editingResearchPopulationScope),orgs=scope.includeOrgs.map(findOrg).filter(Boolean),keys=researchPopulationMatchKeys(scope),coverage=readResearchWeeklyCoverageEditor();
-  const line=cfg.guidedDisplay==='line',series=!['none','day','week','month','quarter'].includes(cfg.guidedBreakdown)?cfg.guidedBreakdown:(cfg.guidedBreakdown==='none'?'None':cfg.guidedSubject);
+  const line=cfg.guidedDisplay==='line',series=!['none','day','week','month','quarter'].includes(cfg.guidedBreakdown)?cfg.guidedBreakdown:(cfg.showLinesFor==='teams'?'coach':'representative');
   const possible=keys.includeTeamKeys.size;
   return [['Population',orgs.length?orgs.map(o=>`${o.name} · ${orgCoachSet(o).size} coaches`).join(' | '):guidedPopulationDescription()],['Preview','Click Run preview for a small sample; full results are calculated by Save & Run Research.'],['Eligibility',coverage.enabled?`Representatives appearing in at least ${coverage.minWeeks} weeks within the selected population and date range`:'All eligible representatives with an observation'],...(line?[['Chart interpretation',`Each point = ${cfg.guidedQuestion==='percentage'?'percentage of eligible unique representatives for':'result for'} one ${series==='None'?'group':series} during one imported week · X-axis = ${config.dateField||'Date'} (weekly source dates) · Line = ${series} · ${cfg.guidedSort==='default'?'Natural chronological order':cfg.guidedSort}`],['Expected',`${possible&&['coach','team'].includes(series)?'Up to '+possible+' coach lines':'One line per selected '+series} across imported weeks in the selected date range`]]:[])];
 }
