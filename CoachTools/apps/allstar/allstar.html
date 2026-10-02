@@ -590,6 +590,8 @@
         <button id="addResearchItemBtn" class="green" type="button">Add New Item</button>
         <button id="exportResearchBtn" class="dark" type="button">Export Research TXT</button>
         <button id="renderAllResearchBtn" class="green" type="button">Render All</button>
+        <button id="researchDiagnosticsBtn" class="smallBtn" type="button">Diagnostics</button>
+        <span id="researchCanvasStatus" class="rwCanvasStatus" role="status" aria-live="polite">Ready</span>
         <button id="buildResearchIndexBtn" class="dark" type="button">Prepare Used Sources</button>
         <button id="clearResearchCacheBtn" class="gray" type="button">Clear Cached Results</button>
         <button id="clearResearchRenderedBtn" class="red" type="button">Clear Stored Rendered Results</button>
@@ -599,10 +601,10 @@
         <button id="clearResearchBtn" class="red" type="button">Clear Research</button>
         <span class="hint">Build tables and charts from imported Retail, Referral, QA, Checklist, Documented Coaching, Comp Calls, and model criteria results.</span>
       </div>
-      <details id="researchDiagnosticsDrawer" class="researchDiagnosticsDrawer">
-        <summary>Performance diagnostics</summary>
+      <dialog id="researchDiagnosticsDrawer" class="rwDiagnosticsDialog" aria-labelledby="researchDiagnosticsTitle">
+        <div class="rwPopupHead"><h3 id="researchDiagnosticsTitle">Performance diagnostics</h3><button type="button" data-rw-close-diagnostics>Close</button></div>
         <div id="researchDiagnosticsBody" class="hint">Run or refresh a Research item to see source preparation, cohort filtering, joining, grouping, calculation, sorting, rendering, and persistence timings.</div>
-      </details>
+      </dialog>
       <div id="researchCanvas" class="researchCanvas"></div>
     </div>
   </div>
