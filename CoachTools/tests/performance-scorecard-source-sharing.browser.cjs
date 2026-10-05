@@ -35,17 +35,39 @@ const server=http.createServer((req,res)=>{const file=path.resolve(root,'.'+deco
  assert.match(await page.locator('#psUploadMeta').innerText(),/9\/27\/2026/);
  // Observe the actual capture DOM and still use the real vendored canvas renderer.
  await page.addScriptTag({url:base+'/vendor/html2canvas.min.js'});
- await page.evaluate(()=>{const render=window.html2canvas;window.captures=[];window.html2canvas=async(node,options)=>{window.captures.push({rows:node.querySelectorAll('tbody tr').length,columns:node.querySelectorAll('thead th').length,text:node.innerText,controls:node.querySelectorAll('button,input,select').length,fonts:[...node.querySelectorAll('td *')].map(n=>parseFloat(getComputedStyle(n).fontSize)),backgrounds:[...node.querySelectorAll('td')].map(n=>getComputedStyle(n).backgroundColor)});return render(node,options);};});
+ await page.evaluate(()=>{
+  const render=window.html2canvas;window.captures=[];
+  window.html2canvas=async(node,options)=>{
+   const overlaps=[],edgeViolations=[];
+   for(const cell of node.querySelectorAll('td,th')){
+    const box=cell.getBoundingClientRect(),texts=[],walker=document.createTreeWalker(cell,NodeFilter.SHOW_TEXT);
+    while(walker.nextNode()){
+     const text=walker.currentNode.textContent;if(!text.trim())continue;
+     const range=document.createRange();range.selectNodeContents(walker.currentNode);
+     for(const rect of range.getClientRects()){
+      if(Math.min(rect.left-box.left,box.right-rect.right,rect.top-box.top,box.bottom-rect.bottom)<4) edgeViolations.push(text);
+      for(const other of texts) if(Math.min(rect.right,other.rect.right)-Math.max(rect.left,other.rect.left)>.5&&Math.min(rect.bottom,other.rect.bottom)-Math.max(rect.top,other.rect.top)>.5) overlaps.push([text,other.text]);
+      texts.push({text,rect});
+     }
+    }
+   }
+   window.captures.push({rows:node.querySelectorAll('tbody tr').length,columns:node.querySelectorAll('thead th').length,text:node.innerText,controls:node.querySelectorAll('button,input,select').length,fonts:[...node.querySelectorAll('td *')].map(n=>parseFloat(getComputedStyle(n).fontSize)),backgrounds:[...node.querySelectorAll('td')].map(n=>getComputedStyle(n).backgroundColor),overlaps,edgeViolations});
+   return render(node,options);
+  };
+ });
  await page.click('#psUploadExportMenu');await page.waitForSelector('.scorecardShareDialog img[src]');
  assert.equal(await page.evaluate(()=>captures.at(-1).rows),1);
  assert.equal(await page.evaluate(()=>captures.at(-1).controls),0);
+ assert.deepEqual(await page.evaluate(()=>captures.at(-1).overlaps),[],'worksheet export text does not overlap');
+ assert.deepEqual(await page.evaluate(()=>captures.at(-1).edgeViolations),[],'worksheet values stay clear of dividers');
  await page.evaluate(()=>document.querySelector('.scorecardShareDialog').close());
  await page.click('#psUploadClose');
- // 23 rows / 8 columns, with a horizontal scroll area, hidden column, long names and signed values.
+ // Dense advanced metrics, normal metrics, badges, long names and signed values.
  await page.evaluate(()=>{
+ document.body.dataset.scorecardDensity='condensed';
  const table=document.querySelector('#scorecardWorkspace table');
  table.tHead.innerHTML='<tr><th>Representative</th>'+Array.from({length:7},(_,i)=>`<th style="${i===6?'display:none':''}">Metric ${i+1} long heading</th>`).join('')+'</tr>';
- table.tBodies[0].innerHTML=Array.from({length:23},(_,r)=>'<tr><td><button>'+`Representative ${22-r} Alexandra Long Name`+'</button></td>'+Array.from({length:7},(_,i)=>`<td style="background:${i%2?'rgb(255,220,220)':'rgb(210,250,220)'};${i===6?'display:none':''}"><b>${i===0?'-12.5%':(r+i)+'.0%'}</b><div>Goal 85.0%</div></td>`).join('')+'</tr>').join('');
+ table.tBodies[0].innerHTML=Array.from({length:23},(_,r)=>'<tr><td><button>'+`Representative ${22-r} Alexandra Long Name`+'</button></td>'+Array.from({length:7},(_,i)=>`<td style="background:${i%2?'rgb(255,220,220)':'rgb(210,250,220)'};color:#172033;${i===6?'display:none':''}">${i%2?`<div class="metricMain">${r+i}.0%</div><div class="metricMeta"><span>Goal 85.0%</span><span>·</span><span>+15.0 pp</span></div>`:`<div class="metricInline metricInlineAdvanced"><b>${i===0?'-12.5%':'100.0%'}</b><span>| 1,247 / 1,520</span><span>| <span>Goal 85.0%</span></span><span>| +15.0 pp</span><span>| P100 · #1/125</span><span class="zeroMonitorBadge">! 0 monitors ×3</span></div>`}</td>`).join('')+'</tr>').join('');
  document.getElementById('workspaceMeta').textContent='23 selected representatives · 9/27/2026';
  window.captures=[];
  });
@@ -55,6 +77,8 @@ const server=http.createServer((req,res)=>{const file=path.resolve(root,'.'+deco
  assert.ok(capture.text.includes('-12.5%'));assert.ok(capture.text.includes('9/27/2026'));assert.ok(capture.fonts.every(f=>f>=12));
  assert.ok(capture.backgrounds.includes('rgb(255, 220, 220)'));assert.ok(capture.backgrounds.includes('rgb(210, 250, 220)'));
  assert.equal(await page.evaluate(()=>captures.length),1);
+ assert.deepEqual(capture.overlaps,[],'percentages, goals and compact details never overlap');
+ assert.deepEqual(capture.edgeViolations,[],'text stays at least 4px inside divider boundaries');
  const data=await page.evaluate(async()=>Array.from(new Uint8Array(await(await fetch(document.querySelector('.scorecardShareDialog img').src)).arrayBuffer())));
  assert.deepEqual(data.slice(0,8),[137,80,78,71,13,10,26,10]);
  const image=await page.locator('.scorecardShareDialog img').evaluate(n=>({width:n.naturalWidth,height:n.naturalHeight}));assert.ok(image.width>1000 && image.height>500);
@@ -66,6 +90,16 @@ const server=http.createServer((req,res)=>{const file=path.resolve(root,'.'+deco
  assert.deepEqual(await page.evaluate(()=>copied),data);
  const downloadPromise=page.waitForEvent('download');await page.click('[data-share=png]');const download=await downloadPromise;const saved=await download.path();assert.deepEqual([...fs.readFileSync(saved)],data);
  assert.equal(await page.evaluate(()=>captures.length),1,'copy and save reuse the exact same image');
+ const pdfDownloadPromise=page.waitForEvent('download');await page.click('[data-share=pdf]');const pdfDownload=await pdfDownloadPromise,pdfBytes=fs.readFileSync(await pdfDownload.path());
+ assert.equal(pdfBytes.subarray(0,5).toString(),'%PDF-');
+ assert.equal((pdfBytes.toString('latin1').match(/\/Type \/Page\b/g)||[]).length,6,'PDF includes all row and column sections');
+ const pdfCaptures=await page.evaluate(()=>captures.slice(1));assert.equal(pdfCaptures.length,6);
+ for(const part of pdfCaptures){assert.deepEqual(part.overlaps,[],'PDF text never overlaps');assert.deepEqual(part.edgeViolations,[],'PDF dividers stay outside text');assert.ok(part.rows<=10);}
+ // Export layout is independent of the screen's theme and zoom setting.
+ await page.evaluate(()=>{document.querySelector('.scorecardShareDialog').close();document.body.dataset.theme='frost-glass';document.querySelector('.main').style.zoom='1.25';window.captures=[];});
+ await page.click('#scorecardExportMenu');await page.waitForSelector('.scorecardShareDialog img[src]');
+ assert.deepEqual(await page.evaluate(()=>captures[0].overlaps),[]);assert.deepEqual(await page.evaluate(()=>captures[0].edgeViolations),[]);
+ assert.match(await page.evaluate(()=>captures[0].text),/100\.0%/);
  await page.evaluate(()=>document.querySelector('.scorecardShareDialog').close());
  await page.click('#psUploadModeBtn');
  const details=[['Manager One','Coach A','Alex Reed','Week',2,1,'50%',10,6,'60%',20,19,'95%'],['Manager One','Coach B','Blake Doe','Week',2,1,'50%',10,7,'70%',20,19,'95%']];
@@ -84,6 +118,6 @@ const server=http.createServer((req,res)=>{const file=path.resolve(root,'.'+deco
  await page.setInputFiles('#file-appointments',{name:'opportunities.csv',mimeType:'text/csv',buffer:Buffer.from(C.csv(F.opportunities()))});
  await page.waitForFunction(()=>document.querySelector('#status-appointments').textContent.includes('Header row'));
  assert.deepEqual(errors,[]);
- console.log('PASS browser: source XLSX/UTF-16, period selection, full 23-row/7-column PNG, signed values/colors, clipboard fallback, exact Copy/PNG parity, shared builder worker');
+ console.log('PASS browser: source XLSX/UTF-16, full PNG, signed values/colors, Copy/PNG parity, readable six-page PDF, compact/normal metrics clear of dividers in dark/light themes and zoom, shared builder worker');
  } finally {await browser?.close();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});
