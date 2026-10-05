@@ -48,19 +48,31 @@
     originals.forEach((node, index) => {
       const style = root.getComputedStyle(node), copy = copies[index];
       copy.removeAttribute('id'); copy.removeAttribute('class'); copy.removeAttribute('style');
-      for (const key of ['display','font-family','font-weight','font-style','text-align','vertical-align','border-radius','border-top-width','border-right-width','border-bottom-width','border-left-width','border-top-style','border-right-style','border-bottom-style','border-left-style']) copy.style.setProperty(key, style.getPropertyValue(key));
+      for (const key of ['display','flex-direction','align-items','font-family','font-weight','font-style','text-align','vertical-align','border-radius','border-top-width','border-right-width','border-bottom-width','border-left-width','border-top-style','border-right-style','border-bottom-style','border-left-style']) copy.style.setProperty(key, style.getPropertyValue(key));
       for (const key of ['color','background-color','border-top-color','border-right-color','border-bottom-color','border-left-color']) copy.style.setProperty(key, color(style.getPropertyValue(key)));
       copy.style.fontSize = `${Math.max(12, Math.min(14, parseFloat(style.fontSize) || 12))}px`;
       copy.style.padding = '0'; copy.style.margin = '0'; copy.style.gap = '2px 4px';
-      copy.style.lineHeight = '1.25'; copy.style.whiteSpace = 'normal'; copy.style.overflowWrap = 'break-word';
-      if (node.matches('b,strong,.metricMain,.metricInline,.psUploadMetricMain,.psUploadMetricSub,.repNum')) copy.style.whiteSpace = 'nowrap';
+      copy.style.lineHeight = '1.5'; copy.style.whiteSpace = 'normal'; copy.style.overflowWrap = 'anywhere';
+      if (node.matches('b,strong,.metricMain,.psUploadMetricMain,.repNum')) copy.style.whiteSpace = 'nowrap';
+      if (style.display === 'flex' || style.display === 'inline-flex') copy.style.flexWrap = 'wrap';
       copy.style.position = 'static'; copy.style.maxWidth = '100%'; copy.style.minWidth = '0';
       copy.style.letterSpacing = 'normal'; copy.style.boxShadow = 'none';
+      // Badge outlines from the compact screen can cut through enlarged text.
+      // Keep their text/background colors; only table cells draw export dividers.
+      if (!node.matches('td,th')) copy.style.border = '0';
       if (node.matches('.goalMet,.psGoalMet,.goalMiss,.psGoalMiss')) {
         const goalColor = color(style.getPropertyValue(node.matches('.goalMet,.psGoalMet') ? '--good' : '--bad').trim());
         copy.style.borderLeft = `3px solid ${goalColor}`;
       }
       if (node.matches('button')) { copy.style.border = '0'; copy.style.background = 'transparent'; }
+      // Compact rows contain several values separated by pipes. Larger export text
+      // needs its own lines, not a non-wrapping flex row crossing neighboring cells.
+      if (node.matches('.metricInline')) copy.style.display = 'block';
+      if (node.parentElement?.matches('.metricInline')) {
+        copy.style.display = 'block'; copy.style.marginTop = '2px';
+        if (copy.firstChild?.nodeType === 3) copy.firstChild.textContent = copy.firstChild.textContent.replace(/^\s*\|\s*/, '');
+      }
+      if (node.matches('.metricMain,.psUploadMetricMain,.metricInline > b')) copy.style.fontSize = '14px';
     });
     clone.querySelectorAll('input,select,textarea,.goalEditor,.psUploadGoalEditor,[data-goal-reset],[data-ps-goal-reset]').forEach(node => node.remove());
     // Goal editors carry labels outside the input itself; remove the entire editor.
@@ -103,14 +115,15 @@
       card.style.cssText = `position:fixed;left:-20000px;top:0;width:${width}px;padding:12px;box-sizing:border-box;background:${background};color:${ink};font:14px Arial,sans-serif;zoom:1;`;
       const title = doc.createElement('h2'); title.textContent = 'Performance Scorecard'; title.style.cssText = 'font:700 20px Arial;margin:0 0 5px';
       const subtitle = doc.createElement('p'); subtitle.textContent = context; subtitle.style.cssText = 'margin:0 0 8px;font:12px/1.3 Arial';
-      const exportTable = doc.createElement('table'); exportTable.style.cssText = 'width:100%;min-width:0;table-layout:auto;border-collapse:collapse;font-size:14px';
+      // Give each cell its own border area, outside the padded text content.
+      const exportTable = doc.createElement('table'); exportTable.style.cssText = 'width:100%;min-width:0;table-layout:auto;border-collapse:separate;border-spacing:0;font-size:14px';
       const cols = doc.createElement('colgroup'); widths.forEach(w=>{const col=doc.createElement('col');col.style.width=w+'px';cols.append(col);}); exportTable.append(cols);
       const head = exportTable.createTHead().insertRow();
-      page.columns.forEach(i => {const cell = headCopies[i].cloneNode(true); cell.style.padding = '5px 6px';cell.style.whiteSpace='normal';cell.style.borderBottom='1px solid #a6b4c6'; head.append(cell);});
+      page.columns.forEach(i => {const cell = headCopies[i].cloneNode(true); cell.style.display='table-cell';cell.style.padding = '8px 10px';cell.style.whiteSpace='normal';cell.style.borderBottom='1px solid #a6b4c6'; head.append(cell);});
       const body = exportTable.createTBody();
       for (let r = page.start; r < page.end; r++) {
         const row = body.insertRow();
-        page.columns.forEach(i => {const cell = rowCopies[r][i].cloneNode(true); if(i === representative) {cell.style.maxWidth='260px';cell.querySelectorAll('b,strong,span').forEach(node=>node.style.whiteSpace='normal');} cell.style.padding = '4px 6px';cell.style.borderBottom='1px solid #cbd5e1'; row.append(cell);});
+        page.columns.forEach(i => {const cell = rowCopies[r][i].cloneNode(true); if(i === representative) {cell.style.maxWidth='260px';cell.querySelectorAll('b,strong,span').forEach(node=>node.style.whiteSpace='normal');} cell.style.display='table-cell';cell.style.padding = '8px 10px';cell.style.borderBottom='1px solid #cbd5e1'; row.append(cell);});
       }
       const footer = doc.createElement('p'); footer.textContent = `Representatives ${page.start + 1}–${page.end} of ${rows.length} · Current filters, sort, columns and goals`;
       footer.style.cssText = 'margin:8px 0 0;font:12px Arial';
