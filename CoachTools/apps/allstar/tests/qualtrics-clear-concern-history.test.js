@@ -45,6 +45,6 @@ const transaction=(db,store,action)=>new Promise((resolve,reject)=>{const tx=db.
  assert.deepEqual(roundTrip.names.map(n=>n.count),[3,0]);
  const detail=insights.canonicalConcernNames([{Representative:'John Doe',RunID:'a',RuleID:'1',AppearanceCount:20},{Representative:'John Doe',RunID:'a',RuleID:'2'},{Representative:'John Doe',RunID:'b',RuleID:'1'}]);
  assert.equal(detail.names[0].count,2);
- assert(source.includes('await incrementConcernAppearances(flagged,report)'));
+ assert(!source.includes('await incrementConcernAppearances(flagged,report)'), 'generation does not silently record history');
  db.close();console.log('PASS canonical Concern History: authoritative import, cycles, reload, concurrency, clear, failed writes, legacy counts');
 })().catch(error=>{console.error(error);process.exitCode=1;});

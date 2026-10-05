@@ -81,6 +81,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
 .actionNavigation{position:sticky;top:80px;z-index:3;display:flex;gap:14px;align-items:end;flex-wrap:wrap;background:#fff;padding:14px;border:1px solid #dbe2ea;border-radius:14px}.actionNavigation label{flex:1;min-width:200px}#reportBody>[hidden]{display:none!important}#reportBody>div{scroll-margin-top:180px}
 #reportBody .card{content-visibility:auto;contain-intrinsic-size:auto 400px}
 @media(max-width:900px){.messageWorkspace{grid-template-columns:1fr}.messagePeople{max-height:300px}.rulesLibrary .ruleSetList{height:clamp(420px,60dvh,720px)}#view-rules>.stepBanner{padding-right:16px;padding-top:55px}}
+.emailHistoryCard{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px solid #dbe2ea;border-radius:12px;padding:12px;margin:10px 0;background:#f8fafc}.emailPrimaryActions{margin:12px 0}.emailAdvanced{margin-top:12px}.emailAdvanced>summary,.individualWrapper>summary{cursor:pointer;font-weight:900;padding:8px 0}.historyLoadLabel{position:relative;overflow:hidden;text-transform:none;letter-spacing:0}.historyLoadLabel input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}.historyLoadLabel:focus-within{outline:3px solid #93c5fd;outline-offset:2px}.individualExportPanel{border-color:#93c5fd}.individualExportChoices{display:flex;flex-wrap:wrap;gap:10px 22px;padding:12px 0;border:0;margin:0 0 8px}.individualExportChoices label{display:flex;align-items:center;gap:7px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text)}.individualExportChoices input{width:18px;height:18px;accent-color:#2563eb}.exportStep{font-weight:900}.individualExportPanel .sub{margin-top:4px}
 </style>
 </head>
 <body>
@@ -516,11 +517,16 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
 
   <section class="view" id="view-report">
     <div class="card">
-      <div class="row"><h2>Generated Report</h2><span class="spacer"></span><button class="btn primary" id="generateReportBtn">Generate Report</button><button class="btn" id="saveHistoryBtn">Save Concern History</button><button class="btn concernHistoryStatusBtn" id="concernHistoryStatusBtn" type="button" aria-expanded="false">Concern History: None Loaded</button><button class="btn" id="exportProblemRepsBtn">Export Concern History Excel</button><label class="btn" style="display:inline-flex;text-transform:none;letter-spacing:0;color:#0f172a">Load Concern History Excel<input id="importProblemRepsInput" type="file" accept=".xlsx,.xls,.csv,.txt" class="hidden"></label><button class="btn bad" id="clearConcernHistoryBtn" type="button">Clear Concern History</button><button class="btn blue" id="exportEmailsBtn">Export Coach Email Files</button><button class="btn good" id="exportUrgencyPdfBtn">Export Email PDF</button></div>
-      <div class="sub" style="margin-top:7px">Concern History is matched by representative name. If a name appears twice in the loaded name column, the report and generated emails show 2X; three appearances show 3X.</div>
+      <div class="row"><h2>Qualtrics Email</h2><span class="spacer"></span><span class="pill" id="emailDataStatus">Add data and rules</span><span class="pill" id="emailOutputStatus">Coach + executive email files</span></div>
+      <section class="emailHistoryCard" aria-labelledby="emailHistoryTitle">
+        <div><strong id="emailHistoryTitle">Email History</strong><div id="emailHistoryFile" class="sub">No history loaded</div><div id="emailHistoryCount" class="sub"></div></div>
+        <div class="row"><label class="btn historyLoadLabel"><span id="emailHistoryLoadLabel">Load History</span><input id="importProblemRepsInput" type="file" accept=".xlsx,.xls,.csv,.txt"></label><button class="btn concernHistoryStatusBtn" id="concernHistoryStatusBtn" type="button" aria-controls="concernHistoryViewer" aria-expanded="false" disabled>View</button></div>
+      </section>
+      <div class="sub" id="emailHistoryOutputStatus" role="status">! No history loaded — history frequency was not applied</div>
+      <div class="row emailPrimaryActions"><button class="btn primary" id="generateReportBtn">Generate Email Files</button><button class="btn" id="reviewReportBtn" type="button">Review Email Output</button><span class="sub">Downloads coach and executive emails in a ZIP. Nothing is sent.</span></div>
       <div class="concernHistoryViewer hidden" id="concernHistoryViewer" aria-live="polite"><div class="concernHistoryViewerHead"><div><strong id="concernHistoryViewerTitle">No Concern History loaded</strong><div class="sub" id="concernHistoryViewerMeta">Load a Concern History spreadsheet to confirm the names used by generated emails.</div></div><button class="btn small" id="closeConcernHistoryViewerBtn" type="button">Close</button></div><div class="concernHistoryNameList" id="concernHistoryNameList"></div><div class="concernHistoryViewerFoot"><span class="sub" id="concernHistoryViewerCount"></span><button class="btn small blue hidden" id="expandConcernHistoryBtn" type="button">Show all names</button></div></div>
       <div class="reportAudienceControls"><label>Report for<select id="reportAudienceScope"><option value="all">All organizations and coaches</option><option value="org">One organization</option><option value="coach">One specific coach</option></select></label><label id="reportAudienceSearchField">Search organizations / coaches<input id="reportAudienceSearch" type="search" placeholder="Type to narrow the dropdown..."></label><label id="reportAudienceValueField">Organization / coach<select id="reportAudienceValue"><option value="">Choose a selection</option></select></label><label>Min people per team<input id="minTeamReportReps" type="number" min="1" step="1" value="1"></label></div>
-      <div id="reportAudienceStatus" class="note">All available coaches will be included, then the minimum-people filter will be applied.</div><div class="reportAudienceControls impactSessionControls"><label>Recent coaching lookback days<input id="impactRecentLookbackDays" type="number" min="1" max="365" value="28"></label><label>Trend KPI<select id="impactReportKpiSelect"><option value="">All KPIs</option></select></label><label>Episode window<input value="Fixed 7 calendar days" disabled></label><button class="btn blue" type="button" id="exportImpactCsvBtn">Export Coaching Impact</button></div><details style="margin:10px 0;border:1px solid #dbe2ea;border-radius:12px;background:#f8fafc;padding:9px 11px"><summary style="cursor:pointer;font-weight:1000;color:#334155">Team Urgency Summary settings</summary><div class="reportAudienceControls" style="padding-bottom:0"><label>Green coaching coverage starts at %<input id="urgencyCoverageGreen" type="number" min="0" max="100" step="1" value="70"></label><label>Yellow coaching coverage starts at %<input id="urgencyCoverageYellow" type="number" min="0" max="100" step="1" value="40"></label></div><div class="sub">Coverage at or above the green threshold is strong; coverage at or above the yellow threshold is moderate; lower coverage is red. Missing coaching data is gray.</div></details>
+      <div id="reportAudienceStatus" class="sub">All available coaches will be included, then the minimum-people filter will be applied.</div><details class="emailAdvanced"><summary>Advanced options &amp; history tools</summary><div class="row" style="margin-top:10px"><button class="btn" id="saveHistoryBtn">Record This Report in History</button><button class="btn" id="exportProblemRepsBtn">Download History</button><button class="btn bad" id="clearConcernHistoryBtn" type="button">Clear History</button><button class="btn" id="exportEmailsBtn" disabled>Download Email Files Again</button><button class="btn" id="exportUrgencyPdfBtn" disabled>Export Email PDF</button></div><div class="sub">Record a completed report only when you intend to add it to history. Reviewing and downloading never add counts.</div><div class="reportAudienceControls impactSessionControls"><label>Recent coaching lookback days<input id="impactRecentLookbackDays" type="number" min="1" max="365" value="28"></label><label>Trend KPI<select id="impactReportKpiSelect"><option value="">All KPIs</option></select></label><label>Episode window<input value="Fixed 7 calendar days" disabled></label><button class="btn blue" type="button" id="exportImpactCsvBtn">Export Coaching Impact</button></div><details style="margin:10px 0;border:1px solid #dbe2ea;border-radius:12px;background:#f8fafc;padding:9px 11px"><summary style="cursor:pointer;font-weight:1000;color:#334155">Team Urgency Summary settings</summary><div class="reportAudienceControls" style="padding-bottom:0"><label>Green coaching coverage starts at %<input id="urgencyCoverageGreen" type="number" min="0" max="100" step="1" value="70"></label><label>Yellow coaching coverage starts at %<input id="urgencyCoverageYellow" type="number" min="0" max="100" step="1" value="40"></label></div><div class="sub">Coverage at or above the green threshold is strong; coverage at or above the yellow threshold is moderate; lower coverage is red. Missing coaching data is gray.</div></details>
       <div class="hireDateFilterCard">
         <div class="row"><div><h3>3. Representative hire-date filter</h3><div class="sub">This can run together with the organization/coach and minimum-people filters. Search every imported spreadsheet, then match its representative-name column to its Date of Hire column.</div></div><span class="spacer"></span><label>Hire-date population<select id="hireDateFilterMode"><option value="all">All representatives</option><option value="between">Select hired between</option></select></label></div>
         <div id="hireDateFilterFields" class="reportAudienceControls hireDateFilterFields hidden">
@@ -537,13 +543,14 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
       <div class="row"><h3>Email opening text</h3><span class="spacer"></span><span class="pill" id="emailIntroSavedStatus">No saved opening text</span><button class="btn small primary" id="saveEmailIntroBtn">Save Opening Text</button><button class="btn small blue" id="loadEmailIntroBtn">Load Saved Text</button><button class="btn small" id="clearEmailIntroBtn">Clear Editor</button></div>
       <div class="sub">Type or paste formatted text below. Save Opening Text stores a reusable copy on this device. Load Saved Text restores that saved copy without affecting it while you make temporary edits.</div>
       <div id="emailIntroEditor" class="emailIntroEditor" contenteditable="true" data-placeholder="Paste or type the opening message for the emails here..." style="margin-top:10px"></div>
+      </details>
     </div>
-    <div id="reportBody" style="display:grid;gap:14px"><div class="empty">Add report files and/or select Other Type rules, then click Generate Report.</div></div>
+    <div id="reportBody" style="display:grid;gap:14px"><div class="empty">Add report files or select rules, then choose Generate Email Files or Review Email Output.</div></div>
   </section>
 
   <section class="view" id="view-individual">
     <div class="stepBanner"><strong>Individual Reviews</strong><span class="sub">Upload the report files you want, explicitly choose the rules to run, then select organizations, coaches, or representatives. Nothing runs or sends automatically.</span></div>
-    <div class="card"><div class="individualWorkflow"><span>Select Reports</span><span>Select Rules</span><span>Choose Organization &amp; People</span><span>Load Email Roster</span><span>Review</span><span>Export</span></div></div>
+    <div class="card"><div class="individualWorkflow"><span>1. Select people / rules</span><span>2. Review messages</span><span>3. Choose Negative / Mixed / Positive</span><span>4. Export</span></div></div>
     <div class="card">
       <div class="row"><div><h2 style="margin:0">1. Report Files &amp; Rules</h2><div class="sub">Only checked rules are evaluated. Call Quality, Cash Appointment Rate, and every other saved rule stay off until you select them here.</div></div><span class="spacer"></span><button class="btn" type="button" id="clearIndividualDataSelectionBtn">Clear Selections</button></div>
       <div class="individualSetupGrid">
@@ -571,7 +578,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
         <div id="individualRosterStatus" class="note" style="margin-top:10px">No roster loaded.</div>
         <details style="margin-top:10px"><summary style="cursor:pointer;font-weight:1000">Or paste roster rows</summary><label style="margin-top:8px">Paste Excel cells or CSV rows<textarea id="individualRosterPaste" placeholder="First Name&#9;Last Name&#9;Username&#10;John&#9;Smith&#9;john.smith@example.com"></textarea></label><div class="row" style="margin-top:8px"><span class="sub">Include the First Name, Last Name, and Username header row.</span><span class="spacer"></span><button class="btn blue" type="button" id="loadIndividualRosterPasteBtn">Load Pasted Roster</button></div></details>
       </div>
-      <div class="card">
+      <details class="card individualWrapper"><summary>Message settings</summary>
         <div class="row"><h2>Message Wrapper</h2><span class="spacer"></span><button class="btn primary" type="button" id="saveIndividualTemplateBtn">Save Wrapper</button></div>
         <div class="individualTemplateGrid">
           <label class="wide">Header<textarea id="individualTemplateHeader">Hi (FirstName),</textarea></label>
@@ -584,12 +591,13 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
           <label class="inlineCheck wide"><input id="individualIncludeGeneric" type="checkbox"> Include one generic message for everybody in this review</label>
           <label class="wide">Generic message<textarea id="individualGenericMessage" placeholder="Thanks for everything you have done this week. Please review the feedback below and reach out to your Job Coach with any questions."></textarea></label>
           <label>Generic message placement<select id="individualGenericPlacement"><option value="before">Before individual findings</option><option value="after">After individual findings</option></select></label>
-          <label class="inlineCheck wide"><input id="individualIncludeNeither" type="checkbox"> Create a wrapper-only message when no behavior qualifies</label>
+          <label class="inlineCheck wide"><input id="individualIncludeNeither" type="checkbox"> Preview a wrapper-only message when no behavior qualifies</label>
+          <div class="sub wide">No Finding messages remain available in the review workbook and are excluded from the standard send export.</div>
         </div>
-      </div>
+      </details>
     </div>
     <div class="card">
-      <div class="row"><div><h2 style="margin:0">2. Organization &amp; People</h2><div class="sub">Start with an organization, add or remove coaches, then make any individual overrides. Organization membership shows its coach and representative counts.</div></div><span class="spacer"></span><button class="btn" type="button" id="clearIndividualScopeBtn">Start Empty</button><button class="btn" type="button" id="resetIndividualScopeBtn">Review All Available People</button></div>
+      <div class="row"><div><h2 style="margin:0">Select People</h2><div class="sub">Start with an organization, add or remove coaches, then make any individual overrides. Organization membership shows its coach and representative counts.</div></div><span class="spacer"></span><button class="btn" type="button" id="clearIndividualScopeBtn">Start Empty</button><button class="btn" type="button" id="resetIndividualScopeBtn">Review All Available People</button></div>
       <div class="individualScopeGrid" style="margin-top:12px">
         <section class="individualScopeColumn"><h3>Representatives</h3><label for="individualRepresentativeSearch" style="display:block;font-weight:800;margin:6px 0">Find a representative</label><input id="individualRepresentativeSearch" aria-label="Find a representative" style="border:2px solid #2563eb;background:#eff6ff;color:#0f172a;padding:11px;width:100%;box-sizing:border-box" type="search" placeholder="Search name, coach, team, or organization..."><div class="individualScopeList" id="individualRepresentativeOptions"><div class="empty compact">Open Individual Reviews to build the scope index.</div></div></section>
         <section class="individualScopeColumn"><div class="individualScopeColumnHead"><h3>Organizations</h3><div class="row"><button class="btn" type="button" id="selectAllIndividualOrganizationsBtn">All</button><button class="btn" type="button" id="clearIndividualOrganizationsBtn">Clear</button></div></div><input id="individualOrganizationSearch" type="search" placeholder="Search organizations..."><div class="individualScopeList" id="individualOrganizationOptions"><div class="empty compact">Open Individual Reviews to build the scope index.</div></div></section>
@@ -599,7 +607,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
       <div class="individualScopeSummary" id="individualScopeSummary"><strong>No review scope loaded</strong><span>Open this workspace after data is connected.</span></div>
     </div>
     <div class="card">
-      <div class="row"><div><h2 style="margin:0">3. Run Individual Review</h2><div class="sub">The review uses only the checked rules and checked report files. Unmatched and ambiguous representatives stay visible and are excluded from send-ready exports.</div></div><span class="spacer"></span><label class="pill"><input type="checkbox" id="individualExcludeNumericNames"> Exclude Number-Only Names</label><button class="btn primary" type="button" id="evaluateIndividualsBtn">Select Rules to Review</button><button class="btn blue" type="button" id="exportIndividualReviewBtn">Review / Diagnostic Export</button><button class="btn good" type="button" id="exportFinalEmailBtn">Final Email Export</button><button class="btn good" type="button" id="exportIndividualEmailsBtn">Export Send-Ready Email Files</button></div>
+      <div class="row"><div><h2 style="margin:0">2. Review Messages</h2><div class="sub">The review uses only the checked rules and checked report files. Unmatched and ambiguous representatives stay visible and are excluded from send-ready exports.</div></div><span class="spacer"></span><label class="pill"><input type="checkbox" id="individualExcludeNumericNames"> Exclude Number-Only Names</label><button class="btn primary" type="button" id="evaluateIndividualsBtn">Select Rules to Review</button></div>
       <div class="individualProgressPanel hidden" id="individualProgressPanel" role="status" aria-live="polite">
         <div class="individualProgressCopy"><div><strong id="individualProgressPhase">Preparing review</strong><div class="sub" id="individualProgressDetail"></div></div><span class="pill" id="individualProgressPercent">0%</span></div>
         <div class="individualProgressTrack"><span id="individualProgressBar"></span></div>
@@ -607,9 +615,20 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
       </div>
       <div class="individualSummary" id="individualSummary" style="margin-top:12px"><div class="empty">Load a roster, configure rule outcomes, and evaluate individuals.</div></div>
       <div class="individualReviewToolbar"><label>View<select id="individualViewMode"><option value="cards">Detailed review cards</option><option value="review" selected>Email preview</option><option value="diagnostics">Diagnostics table</option></select></label><label>Priority<select id="individualResultFilter"><option value="all">All</option><option value="attention">Needs Attention</option><option value="mixed">Mixed</option><option value="strength">Doing Well</option><option value="noFinding">No Individual Finding</option><option value="ready">Send Ready</option><option value="emailIssue">Email Issue</option><option value="templateError">Template Error</option><option value="missingMetric">Missing Metric</option></select></label><label>Coach<select id="individualResultCoach"><option value="">All coaches</option></select></label><label>Organization<select id="individualResultOrganization"><option value="">All organizations</option></select></label><label class="search">Find representative<input id="individualResultSearch" type="search" placeholder="Search name, coach, team, organization, concern, or strength"></label><button class="btn" id="expandAllIndividualBtn" type="button">Expand All</button><button class="btn" id="collapseAllIndividualBtn" type="button">Collapse All</button></div>
-      <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:1000">Diagnostics &amp; performance timing</summary><div id="individualPerformanceDiagnostics" class="note" style="margin-top:8px"><div class="sub">Run a review to capture stage timings.</div></div></details>
+      <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:1000">Diagnostics &amp; performance timing</summary><button class="btn small" type="button" id="exportIndividualReviewBtn" disabled>Download Full Review Workbook</button><div id="individualPerformanceDiagnostics" class="note" style="margin-top:8px"><div class="sub">Run a review to capture stage timings.</div></div></details>
     </div>
     <div class="card" id="individualReview"><div class="empty">No individual evaluation has been run.</div></div>
+    <section class="card individualExportPanel" id="individualExportPanel" aria-labelledby="individualExportTitle">
+      <h2 id="individualExportTitle">3. Who should be exported?</h2>
+      <fieldset class="individualExportChoices"><legend class="sub">Choose result types. Counts show send-ready representatives.</legend>
+        <label><input type="checkbox" data-individual-export-category="attention" checked> Negative — Needs Attention <strong data-individual-export-count="attention">(0)</strong></label>
+        <label><input type="checkbox" data-individual-export-category="mixed" checked> Mixed <strong data-individual-export-count="mixed">(0)</strong></label>
+        <label><input type="checkbox" data-individual-export-category="strength" checked> Positive — Doing Well <strong data-individual-export-count="strength">(0)</strong></label>
+      </fieldset>
+      <div role="status" aria-live="polite"><strong id="individualExportCount">0 messages will be exported</strong><div class="sub" id="individualExportNote">Review messages to see who is ready.</div></div>
+      <div class="sub">Review tiles and viewing filters do not change this export selection.</div>
+      <div class="row emailPrimaryActions"><span class="exportStep">4. Export</span><button class="btn primary" type="button" id="exportFinalEmailBtn" disabled>Export 0 Messages</button><span class="sub">Qualtrics XLSX</span><button class="btn" type="button" id="exportIndividualEmailsBtn" disabled>Download 0 EMLs / ZIP</button></div>
+    </section>
   </section>
 
   <section class="view" id="view-orgsummary">
@@ -2942,11 +2961,21 @@ function concernHistoryReportCount(rec,rule){
   return Number(activeConcernHistoryNameSummary().counts.get(QualtricsInsights.normalizeConcernName(rec.repName))||0);
 }
 function concernHistoryLoadedTimeLabel(value){ const date=new Date(value); return value&&!isNaN(date)?date.toLocaleString():''; }
+function emailHistoryStatusText(){
+  const summary=activeConcernHistoryNameSummary();
+  return summary.names.length?`✓ History checked — ${summary.totalAppearances.toLocaleString()} prior entries`:'! No history loaded — history frequency was not applied';
+}
 function renderConcernHistoryStatus(){
   if(!els.concernHistoryStatusBtn) return;
   const summary=activeConcernHistoryNameSummary(), unique=summary.names.length, loaded=!!state.concernHistoryLoad;
-  els.concernHistoryStatusBtn.classList.toggle('loaded',loaded&&unique>0);
-  els.concernHistoryStatusBtn.textContent=loaded&&unique?`Concern History Loaded • ${unique} name${unique===1?'':'s'}`:unique?`Concern History Saved • ${unique} name${unique===1?'':'s'}`:'Concern History: None Loaded';
+  els.concernHistoryStatusBtn.classList.toggle('loaded',unique>0);
+  els.concernHistoryStatusBtn.textContent='View';
+  els.concernHistoryStatusBtn.disabled=!unique;
+  if(els.emailHistoryTitle) els.emailHistoryTitle.textContent=unique?'Email History ✓':'Email History';
+  if(els.emailHistoryFile) els.emailHistoryFile.textContent=unique?summary.fileName:'No history loaded';
+  if(els.emailHistoryCount) els.emailHistoryCount.textContent=unique?`${unique.toLocaleString()} usable names checked • ${summary.totalAppearances.toLocaleString()} prior entries`:'';
+  if(els.emailHistoryLoadLabel) els.emailHistoryLoadLabel.textContent=unique?'Replace':'Load History';
+  if(els.emailHistoryOutputStatus) els.emailHistoryOutputStatus.textContent=emailHistoryStatusText();
   if(!els.concernHistoryViewer) return;
   const shown=state.concernHistoryExpanded?summary.names:summary.names.slice(0,50), timeLabel=concernHistoryLoadedTimeLabel(summary.loadedAt);
   els.concernHistoryViewerTitle.textContent=unique?`${unique.toLocaleString()} names in Concern History`:'No Concern History loaded';
@@ -2954,7 +2983,7 @@ function renderConcernHistoryStatus(){
     ? `${loaded?'Current email source: ':'Stored history: '}${summary.fileName}${summary.sheetName?` • ${summary.sheetName}`:''}${timeLabel?` • loaded ${timeLabel}`:''} • ${summary.totalAppearances.toLocaleString()} name appearance${summary.totalAppearances===1?'':'s'}.`
     : 'Load a Concern History spreadsheet to confirm the names used by generated emails.';
   els.concernHistoryNameList.innerHTML=shown.length?shown.map(item=>`<div class="concernHistoryNameRow"><strong>${esc(item.name)} — ${item.count}X</strong></div>`).join(''):'<div class="empty">No representative names are available.</div>';
-  els.concernHistoryViewerCount.textContent=unique?`Showing ${shown.length.toLocaleString()} of ${unique.toLocaleString()} representatives. X counts generated cycles with a Concern, once per representative per cycle.`:'';
+  els.concernHistoryViewerCount.textContent=unique?`Showing ${shown.length.toLocaleString()} of ${unique.toLocaleString()} representatives. X uses the source name counts; reviews do not add entries.`:'';
   els.expandConcernHistoryBtn.classList.toggle('hidden',unique<=50);
   els.expandConcernHistoryBtn.textContent=state.concernHistoryExpanded?'Show first 50':`Show all ${unique.toLocaleString()} names`;
 }
@@ -3311,7 +3340,7 @@ bind=function(){
       state.rulesetAttachment={...(state.rulesetAttachment||{}),name:file.name,error:String(error.message||error)}; updateRulesetStatus(); toast('Rules import needs review: '+(error.message||error));
     }finally{ event.target.value=''; }
   };
-  els.generateReportBtn.onclick=()=>queueConcernHistory(generateReport).catch(error=>{ setProgress(null); toast(`Report history could not be saved: ${error.message||error}. Use Save Concern History to retry.`); });
+  els.generateReportBtn.onclick=()=>runEmailWorkflow(true); if(els.reviewReportBtn) els.reviewReportBtn.onclick=()=>runEmailWorkflow(false);
   renderCcCoachingPhraseEditor();
 };
 
@@ -3893,6 +3922,7 @@ function moveRollupsBeforeExecutiveSummary(){
   return executive;
 }
 function renderReport(){
+  renderEmailWorkflowStatus();
   renderReportLegacy();
   if(!state.report||!els.reportBody) return;
   const executive=moveRollupsBeforeExecutiveSummary();
@@ -3909,6 +3939,7 @@ function makeEmailHtml(title,rows,isExec=false){
   if(intro&&html.includes(intro)) html=html.replace(intro,'');
   const dateBlock='<div style="color:#64748b;font-weight:700;margin-bottom:10px">Report date: '+esc(state.report?.reportDate||'')+'</div>';
   if(intro&&html.includes(dateBlock)) html=html.replace(dateBlock,dateBlock+intro);
+  html=html.replace(dateBlock,dateBlock+'<div style="color:#64748b;font-size:12px;margin-bottom:10px">'+esc(emailHistoryStatusText())+'</div>');
   const categoryMarker='<h2 style="margin:16px 0 8px">Category Summary</h2>';
   const representativesMarker='<h2 style="margin:16px 0 4px">Representatives for Coaching Follow-Up</h2>';
   const summaryHtml=urgencyExecutiveCenterpieceHtml(rows,true,isExec);
@@ -5422,7 +5453,7 @@ async function generateReport(){
   for(const arr of byCoach.values()) arr.sort((a,b)=>b.concernScore-a.concernScore || ((b.history?.dateCount||0)-(a.history?.dateCount||0)));
   const alarmSortedByCoach = new Map([...byCoach.entries()].sort((a,b)=>compareAlarmStats(summaryStats(a[1],reportDate,teamPopulationByCoach),summaryStats(b[1],reportDate,teamPopulationByCoach)) || String(a[0]).localeCompare(String(b[0]))));
   const report={ runId:uid(), reportDate:ymd(reportDate), generatedAt:new Date().toISOString(), unmatched, flagged, allFlagged:audienceFlagged, byCoach:alarmSortedByCoach, byCoachAll, teamPopulationByCoach, followUpWatchlist:followUpWatchlist.filter(function(item){ return reportAudienceAllowsCoach(item.coach,audience); }), excludedCoaches, minPeople, urgencyCatalog:buildUrgencyCatalog(selectedCoreRules), audience:{...audience,label:reportAudienceLabel(audience)}, audienceExcludedRecords:allFlagged.length-audienceFlagged.length, hireDateFilter:normalizeHireDateSettings(hireCfg), hireDateExcludedRecords:hireDateExcluded.length, hireDateExcludedPeople:new Set(hireDateExcluded.map(r=>r.repKey)).size };
-  state.report=report; await incrementConcernAppearances(flagged,report); refreshReportConcernHistory(false); performanceStageStarted=performance.now(); impactBuildAnalysis(); performanceMark('Coaching impact',performanceStageStarted); setProgress(96,'Rendering report'); await new Promise(resolve=>setTimeout(resolve,0)); performanceStageStarted=performance.now(); renderReport(); performanceMark('Report render',performanceStageStarted); switchTab('report'); setProgress(null);
+  state.report=report; refreshReportConcernHistory(false); performanceStageStarted=performance.now(); impactBuildAnalysis(); performanceMark('Coaching impact',performanceStageStarted); setProgress(96,'Rendering report'); await new Promise(resolve=>setTimeout(resolve,0)); performanceStageStarted=performance.now(); renderReport(); performanceMark('Report render',performanceStageStarted); switchTab('report'); setProgress(null);
   performanceTimings.Total=performance.now()-performanceStarted; state.reportPerformance={timings:performanceTimings,generatedAt:new Date().toISOString()};
   if(new URLSearchParams(location.search).get('debug')==='1'){ const slowStages=Object.entries(performanceTimings).filter(([label,value])=>label!=='Total'&&value>=1000); console.groupCollapsed('Qualtrics Generate Report Performance'); console.table(performanceTimings); if(slowStages.length) console.warn('Unexpectedly expensive Generate Report stage(s)',Object.fromEntries(slowStages)); console.groupEnd(); }
   setStatus(`Generated ${report.audience.label}: ${flagged.length.toLocaleString()} representative-data-source record(s) identified for review.${report.audienceExcludedRecords?` Audience filter excluded ${report.audienceExcludedRecords.toLocaleString()} record(s).`:''}${hireCfg.filterEnabled?` Hire-date filter excluded ${report.hireDateExcludedPeople.toLocaleString()} representative(s).`:''} ${excludedCoaches.length ? excludedCoaches.length+' team(s) hidden by minimum people filter.' : ''}`);
@@ -5588,7 +5619,8 @@ function historyRowsForCurrentReport(){
 }
 async function saveProblemHistory(){
   if(!state.report){ toast('Generate a report first.'); return; }
-  try{ await queueConcernHistory(()=>incrementConcernAppearances(state.report.flagged,state.report)); refreshReportConcernHistory(); toast('Concern History saved. Each generated cycle is counted once.'); }
+  const report=state.report;
+  try{ await queueConcernHistory(()=>incrementConcernAppearances(report.flagged,report)); refreshReportConcernHistory(); toast('Report recorded in Concern History. This report is counted once.'); }
   catch(error){ toast(`Concern History could not be saved: ${error.message||error}. Use Save Concern History to retry.`); }
 }
 function emailRepRowInline(r){
@@ -5698,6 +5730,42 @@ async function exportEmails(){
   }
   const blob=await zip.generateAsync({type:'blob'}); downloadBlob(blob,`coaching_opportunity_emails_${state.report.reportDate}.zip`);
 }
+function renderEmailWorkflowStatus(){
+  const uploads=state.dashboardFiles||[], files=uploads.filter(file=>file.status==='matched'&&file.rows?.length), rules=(state.rules||[]).filter(rule=>isCoreDataRule(rule)&&state.selectedOtherRuleIds?.has(rule.id));
+  const missing=new Set(), hasSource=source=>!!(state.masterRows?.[source]?.length||state[`${source}Rows`]?.length);
+  for(const rule of rules){
+    if(rule.ruleType==='statRule'){ const source=rule.statRule?.metric==='callQuality'?'qa':'weeklyStats'; if(!hasSource(source)) missing.add(source); }
+    if(rule.ruleType==='statCount'){ const source=rule.statCount?.source||'qa'; if(!hasSource(source)) missing.add(source); }
+    if(rule.ruleType==='coachingCorrective'){
+      if(!hasSource('coaching')) missing.add('coaching');
+      if(rule.coachingCorrective?.requireChecklist&&!hasSource('checklist')) missing.add('checklist');
+    }
+  }
+  const ready=!!(files.length||rules.length)&&files.length===uploads.length&&!missing.size;
+  if(els.emailDataStatus){
+    const labels={qa:'QA',weeklyStats:'Weekly Stats',coaching:'Documented Coaching',checklist:'Checklist'};
+    els.emailDataStatus.textContent=ready?`Data Ready — ${files.length} reports / ${rules.length} selected rules`:missing.size?`Data needed: ${[...missing].map(source=>labels[source]||source).join(', ')}`:uploads.length?'Review report files and rule matches':'Add data and rules';
+    els.emailDataStatus.className=`pill ${ready?'good':'warn'}`;
+  }
+  if(els.emailOutputStatus) els.emailOutputStatus.textContent=state.report?`${(state.report.byCoach?.size||0)+1} email files • ${(state.report.flagged||[]).length.toLocaleString()} findings`:'Coach + executive email files';
+  if(els.exportEmailsBtn) els.exportEmailsBtn.disabled=!state.report||!!state.emailWorkflowRunning;
+  if(els.exportUrgencyPdfBtn) els.exportUrgencyPdfBtn.disabled=!state.report||!!state.emailWorkflowRunning;
+  if(els.saveHistoryBtn) els.saveHistoryBtn.disabled=!state.report||!!state.report.historySaved||!!state.emailWorkflowRunning;
+  for(const id of ['generateReportBtn','reviewReportBtn']) if(els[id]) els[id].disabled=!!state.emailWorkflowRunning;
+}
+async function runEmailWorkflow(download=false){
+  if(state.emailWorkflowRunning) return;
+  state.emailWorkflowRunning=true; renderEmailWorkflowStatus();
+  try{
+    await queueConcernHistory(async()=>{
+      const previous=state.report;
+      await generateReport();
+      // Validation may return early. Never download an older report in its place.
+      if(download&&state.report&&state.report!==previous) await exportEmails();
+    });
+  }catch(error){ setProgress(null); toast(`Email output could not be generated: ${error.message||error}`); }
+  finally{ state.emailWorkflowRunning=false; renderEmailWorkflowStatus(); }
+}
 function concernHistoryAppearanceExportRows(){
   rebuildConcernHistoryIndex();
   return (state.history||[]).slice().sort((a,b)=>String(a.reportDate).localeCompare(String(b.reportDate))||String(a.repName).localeCompare(String(b.repName))||String(a.ruleTitle).localeCompare(String(b.ruleTitle))).map(h=>({OccurrenceKey:h.occurrenceKey,RunID:h.runId,ReportDate:h.reportDate,Representative:h.repName,RepKey:h.repKey,Coach:h.coach,Team:h.team,DateOfHire:h.hireDate||'',RuleID:h.ruleId,Rule:h.ruleTitle,Category:h.category,AppearanceCount:Number(h.appearanceCount||0),ConcernStatus:h.concernStatus||'',RelatedCoachingLast21:Number(h.relatedCoachingLast21||0),ReportPriority:Number(h.reportPriority??999999),ReportWeight:Number(h.reportWeight??1),Coached:h.coached?'Yes':'No',ElevatedPriority:h.alarming?'Yes':'No',NeedLevel:h.concern==='High'?'High Priority':h.concern==='Medium'?'Moderate Priority':'Monitor',NeedScore:h.concernScore,BroadMovement:h.broadMovementGroup||'',DetailedStatus:h.detailedImpactStatus||'',CoachingAlignment:h.coachingAlignmentGroup||'',CoachingTopic:h.coachingTopic||'',AssignedStatistic:h.assignedStatistic||'',Direction:h.statisticDirection||'',PreAverage:h.preAverage,PostAverage:h.postAverage,CurrentValue:h.currentValue,RawChange:h.statisticalChange,FavorableChange:h.favorableChange,EpisodeDates:h.episodeDates||'',EpisodeCount:h.episodeCount,MeasurableEpisodes:h.measurableEpisodeCount,CoachingContacts:h.coachingContactCount,LatestCoachingDate:h.latestCoachingDate||'',NeedIdentificationDate:h.needIdentificationDate||'',DaysToCoaching:h.daysToCoaching,Timeliness:h.timelinessCategory||'',ValidPrePeriods:h.validPrePeriods,ValidPostPeriods:h.validPostPeriods,ChecklistFollowThrough:h.checklistFollowThrough,Evidence:h.evidenceStatus||'',SuggestedAction:h.suggestedAction||'',CreatedAt:h.createdAt}));
@@ -5736,7 +5804,7 @@ async function importProblemReps(file){
     const details=(detailSheet?.rows||rows).map(normalizeConcernHistoryRow).filter(Boolean);
     await commitConcernHistory(()=>snapshot,{replaceDetails:true,details});
     refreshReportConcernHistory(); state.concernHistoryExpanded=false;
-    els.concernHistoryViewer?.classList.remove('hidden'); els.concernHistoryStatusBtn?.setAttribute('aria-expanded','true');
+    els.concernHistoryViewer?.classList.add('hidden'); els.concernHistoryStatusBtn?.setAttribute('aria-expanded','false');
     const total=summary.names.reduce((sum,item)=>sum+item.count,0);
     toast(`Concern History loaded: ${summary.names.length} representatives · ${total} historical concern appearances · Source: ${snapshot.fileName}.${summary.skipped?` ${summary.skipped} invalid row(s) skipped.`:''}`);
   }catch(err){ console.error(err); toast(`Concern history could not be loaded: ${err?.message||err}`); }
@@ -5792,7 +5860,7 @@ async function openBlankRuleForm(){
   els.ruleTitle?.focus();
 }
 function flashBtn(btn){ if(!btn) return; btn.classList.remove('flash'); void btn.offsetWidth; btn.classList.add('flash'); setTimeout(()=>btn.classList.remove('flash'),900); }
-function switchTab(tab){ state.activeTab=tab; document.querySelectorAll('.tabBtn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab)); document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${tab}`)); impactRenderAllViews(); if(tab==='individual'){ renderIndividualDataSelection(); renderIndividualScope(); renderIndividualRosterStatus(); renderIndividualSummary(); renderIndividualReview(); } }
+function switchTab(tab){ state.activeTab=tab; document.querySelectorAll('.tabBtn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab)); document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${tab}`)); impactRenderAllViews(); if(tab==='report'){ renderEmailWorkflowStatus(); renderConcernHistoryStatus(); } if(tab==='individual'){ renderIndividualDataSelection(); renderIndividualScope(); renderIndividualRosterStatus(); renderIndividualSummary(); renderIndividualReview(); } }
 function metricSourceValidation(config,label='Stat'){
   if(config?.metric==='cashAppointmentRate'){
     const mode=config.cashSourceMode==='auto'?'consumerRatio':(config.cashSourceMode||'consumerRatio');
@@ -5881,7 +5949,7 @@ function bind(){
   els.dashboardDrop.addEventListener('drop',e=>addDashboardFiles(e.dataTransfer.files));
   els.clearDashboardFilesBtn.onclick=()=>{ for(const f of state.dashboardFiles) delete state.reportSettings.items[reportItemKeyForFile(f)]; state.dashboardFiles=[]; state.individualSelectedReportFileIds.clear(); saveReportSettings(); invalidateIndividualScopeIndex('report files cleared'); renderDashboardFileList(); renderUploadReadiness(); markRulePreviewStale('Report files cleared. Click Refresh Preview after adding new files.'); };
   if(els.reportDate) els.reportDate.addEventListener('change',()=>invalidateIndividualRunCache('report date changed'));
-  els.generateReportBtn.onclick=()=>queueConcernHistory(generateReport).catch(error=>{ setProgress(null); toast(`Report history could not be saved: ${error.message||error}. Use Save Concern History to retry.`); }); els.saveHistoryBtn.onclick=saveProblemHistory; if(els.clearConcernHistoryBtn) els.clearConcernHistoryBtn.onclick=()=>queueConcernHistory(clearConcernHistory); els.exportEmailsBtn.onclick=exportEmails; if(els.exportUrgencyPdfBtn) els.exportUrgencyPdfBtn.onclick=exportUrgencyEmailPdf; els.exportProblemRepsBtn.onclick=exportProblemReps; els.importProblemRepsInput.onchange=e=>{ const file=e.target.files[0]; queueConcernHistory(()=>importProblemReps(file)); }; if(els.urgencyCoverageGreen) els.urgencyCoverageGreen.addEventListener('change',saveUrgencyCoverageControls); if(els.urgencyCoverageYellow) els.urgencyCoverageYellow.addEventListener('change',saveUrgencyCoverageControls);
+  els.generateReportBtn.onclick=()=>runEmailWorkflow(true); if(els.reviewReportBtn) els.reviewReportBtn.onclick=()=>runEmailWorkflow(false); els.saveHistoryBtn.onclick=saveProblemHistory; if(els.clearConcernHistoryBtn) els.clearConcernHistoryBtn.onclick=()=>queueConcernHistory(clearConcernHistory); els.exportEmailsBtn.onclick=exportEmails; if(els.exportUrgencyPdfBtn) els.exportUrgencyPdfBtn.onclick=exportUrgencyEmailPdf; els.exportProblemRepsBtn.onclick=exportProblemReps; els.importProblemRepsInput.onchange=e=>{ const file=e.target.files[0]; queueConcernHistory(()=>importProblemReps(file)); }; if(els.urgencyCoverageGreen) els.urgencyCoverageGreen.addEventListener('change',saveUrgencyCoverageControls); if(els.urgencyCoverageYellow) els.urgencyCoverageYellow.addEventListener('change',saveUrgencyCoverageControls);
   if(els.concernHistoryStatusBtn) els.concernHistoryStatusBtn.onclick=()=>{ const opening=els.concernHistoryViewer.classList.contains('hidden'); els.concernHistoryViewer.classList.toggle('hidden',!opening); els.concernHistoryStatusBtn.setAttribute('aria-expanded',String(opening)); if(opening) renderConcernHistoryStatus(); };
   if(els.closeConcernHistoryViewerBtn) els.closeConcernHistoryViewerBtn.onclick=()=>{ els.concernHistoryViewer.classList.add('hidden'); els.concernHistoryStatusBtn.setAttribute('aria-expanded','false'); };
   if(els.expandConcernHistoryBtn) els.expandConcernHistoryBtn.onclick=()=>{ state.concernHistoryExpanded=!state.concernHistoryExpanded; renderConcernHistoryStatus(); };

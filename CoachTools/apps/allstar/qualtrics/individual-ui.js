@@ -182,6 +182,7 @@ function invalidateIndividualRunCache(reason='inputs changed'){
   state.individualRunCache=null;
   state.individualResultsStale=!!state.individualResults?.length;
   state.individualCacheInvalidationReason=reason;
+  renderIndividualExportSelection();
 }
 function invalidateIndividualScopeIndex(reason='representative membership changed'){
   state.individualDataRevision=(Number(state.individualDataRevision)||0)+1;
@@ -256,7 +257,7 @@ function renderIndividualScopeSummary(){
   if(els.evaluateIndividualsBtn){ els.evaluateIndividualsBtn.textContent=selectedRules.length?`Review ${summary.representatives.toLocaleString()} ${summary.representatives===1?'Person':'People'} with ${selectedRules.length.toLocaleString()} ${selectedRules.length===1?'Rule':'Rules'}`:'Select Rules to Review'; els.evaluateIndividualsBtn.disabled=!summary.representatives||!selectedRules.length||!!state.individualReviewRun; }
   const currentResults=!!state.individualResults?.length&&!state.individualResultsStale;
   if(els.exportIndividualReviewBtn) els.exportIndividualReviewBtn.disabled=!currentResults||!!state.individualReviewRun;
-  if(els.exportIndividualEmailsBtn) els.exportIndividualEmailsBtn.disabled=!currentResults||!!state.individualReviewRun;
+  renderIndividualExportSelection();
 }
 function renderIndividualScope(){ renderIndividualOrganizationOptions(); renderIndividualCoachOptions(); renderIndividualRepresentativeOptions(); renderIndividualScopeSummary(); }
 function resetIndividualScope(){
@@ -431,7 +432,6 @@ async function evaluateIndividualMessages(){
     state.individualTemplate=individualTemplateFromForm(); const reportDate=parseDate(els.reportDate?.value)||new Date(), signature=individualReviewSignature(representatives,selectedRules,selectedReportFiles,state.individualTemplate,reportDate);
     if(state.individualRunCache?.signature===signature){
       state.individualEvaluation=state.individualRunCache.evaluation; state.individualResults=state.individualRunCache.results; state.individualResultsStale=false; state.individualPerformance={timings:{'Scope resolution':timings['Scope resolution'],'Active run cache':0,'Total':performance.now()-totalStarted},cacheHit:true};
-      await queueConcernHistory(()=>incrementConcernAppearances(state.individualResults.filter(result=>result.concerns?.length),run));
       setIndividualReviewProgress(95,'Rendering review',`${state.individualResults.length.toLocaleString()} cached representatives`); renderIndividualSummary(); renderIndividualReview(); renderIndividualPerformance(); setIndividualReviewProgress(100,'Review ready','Reused the completed active review');
       setStatus(`Reviewed ${state.individualResults.length.toLocaleString()} selected representatives from the active cache. Nothing was sent.`); await new Promise(resolve=>setTimeout(resolve,160)); return;
     }
@@ -448,7 +448,6 @@ async function evaluateIndividualMessages(){
     started=performance.now(); state.individualEvaluation=evaluation; state.individualResults=results; state.individualResultsStale=false; state.individualRenderLimit=80; mark('Message model',started);
     setIndividualReviewProgress(95,'Rendering review',`${results.length.toLocaleString()} representative blocks`);
     individualThrowIfCancelled(controller.signal);
-    await queueConcernHistory(()=>incrementConcernAppearances(results.filter(result=>result.concerns?.length),run));
     started=performance.now(); renderIndividualSummary(); renderIndividualReview(); mark('Initial render',started);
     timings.Total=performance.now()-totalStarted; state.individualPerformance={timings,cacheHit:false}; renderIndividualPerformance();
     const slowStages=Object.entries(timings).filter(([label,value])=>label!=='Total'&&value>=1000); if(slowStages.length) console.warn('Individual Review slow stage(s)',Object.fromEntries(slowStages));
@@ -466,6 +465,7 @@ async function evaluateIndividualMessages(){
   }
 }
 function renderIndividualSummary(){
+  renderIndividualExportSelection();
   if(!els.individualSummary) return;
   const summary=state.individualEvaluation?.summary;
   if(!summary){ els.individualSummary.innerHTML='<div class="empty">Load a roster, configure rule outcomes, and evaluate individuals.</div>'; return; }
@@ -521,9 +521,41 @@ function individualEmailWorkspace(results){
   const fields=QualtricsWorkflow.emailFields(selected,state.individualTemplate);
   return `<div class="messageWorkspace"><aside class="messagePeople" aria-label="Representatives">${results.map(result=>`<button type="button" class="messagePerson" data-message-person="${esc(result.repKey)}" aria-pressed="${result===selected}"><strong>${esc(result.fullName)}</strong><small>${esc(result.email||'Missing email')}</small><small>${result.concerns?.length||0} Concern Areas • ${result.strengths?.length||0} Strengths</small><small class="${result.sendReady?'statusReady':'statusBlocked'}">${result.sendReady?'✓ Ready':'! Needs Review'} — ${esc(result.status)}</small></button>`).join('')}</aside><article class="messagePaper"><h2>${esc(selected.fullName)}</h2><div class="sub">${esc(selected.email||'Missing email')}</div>${QualtricsWorkflow.EMAIL_COLUMNS.slice(2).map(column=>`<section><h3>${esc(column)}</h3>${esc(fields[column])||'<span class="muted">No content</span>'}</section>`).join('')}${selected.errors.length?`<div class="note dangerText">${selected.errors.map(esc).join('<br>')}</div>`:''}<details><summary>Supporting rule and roster evidence</summary>${individualDiagnosticHtml(selected)}${individualMatchHtml(selected)}</details></article></div>`;
 }
+function individualExportCategories(){
+  if(!state.individualExportCategories) state.individualExportCategories=new Set(QualtricsIndividualMessages.EXPORT_CATEGORIES);
+  return state.individualExportCategories;
+}
+function individualExportSelection(){
+  return QualtricsIndividualMessages.exportSelection(state.individualResults,individualExportCategories(),{stale:!!state.individualResultsStale,busy:!!state.individualReviewRun});
+}
+function setIndividualExportCategory(category,checked){
+  if(!QualtricsIndividualMessages.EXPORT_CATEGORIES.includes(category)) return;
+  const selected=individualExportCategories();
+  if(checked) selected.add(category); else selected.delete(category);
+  renderIndividualExportSelection();
+}
+function renderIndividualExportSelection(){
+  if(typeof document==='undefined') return;
+  const host=document.getElementById('individualExportPanel'); if(!host) return;
+  const selection=individualExportSelection(), count=selection.ready.length, selected=individualExportCategories();
+  host.querySelectorAll('[data-individual-export-category]').forEach(input=>{
+    input.checked=selected.has(input.dataset.individualExportCategory);
+  });
+  host.querySelectorAll('[data-individual-export-count]').forEach(label=>{
+    label.textContent=`(${selection.counts[label.dataset.individualExportCount].toLocaleString()})`;
+  });
+  document.getElementById('individualExportCount').textContent=`${count.toLocaleString()} ${count===1?'message':'messages'} will be exported`;
+  const note=document.getElementById('individualExportNote');
+  note.textContent=state.individualReviewRun?'Review in progress. Export will be available when it finishes.':state.individualResultsStale?'Selections or inputs changed. Review messages again before exporting.':!state.individualResults?.length?'Review messages to see who is ready.':selection.blocked?`${selection.blocked.toLocaleString()} additional ${selection.blocked===1?'representative is':'representatives are'} blocked and will not be exported.`:!selected.size?'Choose at least one result type.':'Only send-ready representatives in the checked categories are included.';
+  for(const id of ['exportFinalEmailBtn','exportIndividualEmailsBtn']){
+    const button=document.getElementById(id); if(!button) continue;
+    button.disabled=count===0;
+    button.textContent=id==='exportFinalEmailBtn'?`Export ${count.toLocaleString()} ${count===1?'Message':'Messages'}`:`Download ${count.toLocaleString()} ${count===1?'EML':'EMLs'} / ZIP`;
+  }
+}
 function exportFinalIndividualEmails(){
   if(state.individualResultsStale){ toast('Run the Individual Review again before exporting changed selections.'); return; }
-  const rows=(state.individualResults||[]).filter(result=>result.sendReady).map(result=>QualtricsWorkflow.emailFields(result,state.individualTemplate));
+  const rows=individualExportSelection().ready.map(result=>QualtricsWorkflow.emailFields(result,state.individualTemplate));
   if(!rows.length){ toast('No send-ready individual messages are available.'); return; }
   if(!window.XLSX){ toast('Excel export library is unavailable.'); return; }
   const wb=XLSX.utils.book_new(), sheet=XLSX.utils.json_to_sheet(rows,{header:QualtricsWorkflow.EMAIL_COLUMNS.slice()});
@@ -585,10 +617,13 @@ function individualEml(result){
 }
 async function exportIndividualEmails(){
   if(state.individualResultsStale){ toast('Run the Individual Review again before exporting changed selections.'); return; }
-  const ready=(state.individualResults||[]).filter(result=>result.sendReady); if(!ready.length){ toast('No send-ready individual messages are available.'); return; }
+  const ready=individualExportSelection().ready; if(!ready.length){ toast('No send-ready individual messages are available in the checked categories.'); return; }
   if(!window.JSZip){ toast('ZIP export library is unavailable.'); return; }
   const zip=new JSZip(); for(const result of ready) zip.file(`${sanitizeFile(result.fullName)}.eml`,individualEml(result));
-  const blob=await zip.generateAsync({type:'blob'}); downloadBlob(blob,`qualtrics_individual_emails_${ymd(new Date())}.zip`); toast(`Exported ${ready.length} reviewed send-ready email file(s). Nothing was sent.`);
+  const blob=await zip.generateAsync({type:'blob'});
+  const current=individualExportSelection().ready;
+  if(current.length!==ready.length||current.some((result,index)=>result!==ready[index])){ toast('Review or export selections changed. Export again with the current selections.'); return; }
+  downloadBlob(blob,`qualtrics_individual_emails_${ymd(new Date())}.zip`); toast(`Exported ${ready.length} reviewed send-ready email file(s). Nothing was sent.`);
 }
 
 function bindIndividualMessages(){
@@ -612,6 +647,7 @@ function bindIndividualMessages(){
   els.individualReportDrop?.addEventListener('drop',event=>addIndividualReportFiles(event.dataTransfer.files));
   els.loadIndividualRosterPasteBtn.onclick=loadPastedIndividualRoster;
   document.getElementById('exportFinalEmailBtn')?.addEventListener('click',exportFinalIndividualEmails);
+  document.querySelectorAll('[data-individual-export-category]').forEach(input=>input.addEventListener('change',()=>setIndividualExportCategory(input.dataset.individualExportCategory,input.checked)));
   els.saveIndividualTemplateBtn.onclick=saveIndividualMessageSettings; els.evaluateIndividualsBtn.onclick=evaluateIndividualMessages; els.exportIndividualReviewBtn.onclick=exportIndividualReview; els.exportIndividualEmailsBtn.onclick=exportIndividualEmails;
   els.resetIndividualScopeBtn?.addEventListener('click',resetIndividualScope);
   els.clearIndividualScopeBtn?.addEventListener('click',clearIndividualScope);

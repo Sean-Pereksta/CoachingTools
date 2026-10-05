@@ -443,6 +443,20 @@
     if(result?.strength) return 'strength';
     return 'noFinding';
   }
+  const EXPORT_CATEGORIES=Object.freeze(['attention','mixed','strength']);
+  // Review filters never enter this calculation. Both final exports use this snapshot.
+  function exportSelection(results,categories=EXPORT_CATEGORIES,{stale=false,busy=false}={}){
+    const selected=new Set(categories), counts={attention:0,mixed:0,strength:0}, ready=[];
+    let blocked=0;
+    if(stale||busy) return {ready,counts,blocked};
+    for(const result of results||[]){
+      const category=reviewCategory(result);
+      if(!EXPORT_CATEGORIES.includes(category)) continue;
+      if(result.sendReady){ counts[category]++; if(selected.has(category)) ready.push(result); }
+      else if(selected.has(category)) blocked++;
+    }
+    return {ready,counts,blocked};
+  }
   function compareReviewPriority(a,b){
     const order={attention:0,mixed:1,strength:2,noFinding:3}, categoryDiff=order[reviewCategory(a)]-order[reviewCategory(b)]; if(categoryDiff) return categoryDiff;
     const concernScore=item=>Math.max(0,...(item?.concerns||[]).map(candidate=>Number(candidate.score)||0));
@@ -513,7 +527,7 @@
 
   return {
     SCHEMA_VERSION,DEFAULT_TEMPLATE,BUILT_INS,normalizeName,splitName,rosterRows,buildRosterIndex,matchRosterName,
-    buildScopeIndex,resolveScope,reviewCategory,compareReviewPriority,sortReviewResults,
+    buildScopeIndex,resolveScope,reviewCategory,compareReviewPriority,sortReviewResults,EXPORT_CATEGORIES,exportSelection,
     normalizeVariable,normalizeSide,normalizeRuleConfig,normalizeRule,normalizeTemplate,numeric,compareObservation,
     operatorLabel,conditionLabel,formatValue,replaceVariables,evaluateRepresentative,evaluateAll,evaluateAllAsync,summarize,filterResult
   };
