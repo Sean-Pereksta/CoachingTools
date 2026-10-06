@@ -23,6 +23,7 @@
     "js/coaching-diagnostics.js",
     "js/reports.js",
     "js/research.js",
+    "js/population-filters.js",
     "js/organizations-core.js",
     "js/workflow.js",
     "js/list-tester.js",
