@@ -321,32 +321,6 @@
     doc.head.appendChild(script);
   }
 
-  function installMonthWindows() {
-    if (!doc) return;
-    const select = doc.getElementById('windowSel');
-    if (!select || select.dataset.monthWindowsInstalled === 'true') return;
-    const custom = [...select.options].find(option => option.value === 'custom' && !option.dataset.monthWindow);
-    if (!custom) return;
-    const thisMonth = doc.createElement('option');
-    thisMonth.value = 'custom'; thisMonth.textContent = 'This month'; thisMonth.dataset.monthWindow = 'this';
-    const lastMonth = doc.createElement('option');
-    lastMonth.value = 'custom'; lastMonth.textContent = 'Last month'; lastMonth.dataset.monthWindow = 'last';
-    const fourWeek = [...select.options].find(option => option.value === '4');
-    select.insertBefore(thisMonth, fourWeek || custom);
-    select.insertBefore(lastMonth, fourWeek || custom);
-    select.dataset.monthWindowsInstalled = 'true';
-    select.addEventListener('change', () => {
-      const option = select.options[select.selectedIndex];
-      const monthMode = option && option.dataset.monthWindow;
-      if (!monthMode) return;
-      const bounds = monthWindowBounds(monthMode, new Date());
-      const start = doc.getElementById('windowStart');
-      const end = doc.getElementById('windowEnd');
-      if (start) start.value = bounds.start;
-      if (end) end.value = bounds.end;
-    }, true);
-  }
-
   function loadSystemColumnPrefs() {
     if (!doc || !root.localStorage) return { rank: true, status: true };
     try {
@@ -583,7 +557,6 @@
 
   function installRuntimeEnhancements() {
     if (!doc) return;
-    installMonthWindows();
     installSystemColumnControls();
     watchSystemColumnVisibility();
     installWorkbookComparisonUi();
@@ -614,8 +587,8 @@
 
   watchForLazyXlsx();
   if (doc) {
-    if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', () => { installMonthWindows(); installSystemColumnControls(); watchSystemColumnVisibility(); }, { once: true });
-    else { installMonthWindows(); installSystemColumnControls(); watchSystemColumnVisibility(); }
+    if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', () => { installSystemColumnControls(); watchSystemColumnVisibility(); }, { once: true });
+    else { installSystemColumnControls(); watchSystemColumnVisibility(); }
   }
   loadCore();
   if (doc && root.CoachToolsPerformanceScorecardUploadMode) installRuntimeEnhancements();

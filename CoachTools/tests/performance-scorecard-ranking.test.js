@@ -15,7 +15,7 @@ assert.ok(enhanced.includes("function teamCohortFor(){return scopedReps()}"), 'p
 assert.ok(enhanced.includes('if(v.length===1)return 100'), 'single-representative scopes should report the top percentile');
 assert.ok(enhanced.includes('position/(v.length-1)'), 'percentiles should span the full 0–100 range');
 assert.ok(enhanced.includes('scorecardWindowMemo'), 'selected scorecard windows should be memoized during row construction');
-assert.ok(enhanced.includes('latestBusinessWeekMemo'), 'latest business week scans should be memoized per department');
+assert.ok(enhanced.includes('reportingWeeksMemo'), 'available reporting date scans should be memoized per department');
 assert.ok(enhanced.includes('function buildMetricPools(reps)'), 'scope percentile metric pools should be built once per render');
 assert.ok(enhanced.includes('Boolean(pooled)'), 'row percentiles should reuse sorted scope metric pools');
 assert.ok(enhanced.includes("{id:'consumer-rate',higher:true}"), 'Consumer AR should be a default ranking metric');
@@ -43,7 +43,7 @@ assert.ok(enhanced.includes('metricMainBasic'), 'Basic mode should use the large
 assert.ok(enhanced.includes('metricRankInfo(p)'), 'Advanced mode should include ordinal KPI rank information');
 assert.ok(enhanced.includes('metricOrdinal'), 'Advanced mode should render KPI rank in the metric box');
 assert.ok(enhanced.includes('zeroMonitorCount'), 'Call Quality aggregation should retain selected-period zero-monitor counts');
-assert.ok(enhanced.includes('const rows=qaRows(personId),zeroMonitorCount=rows.reduce((count,row)=>Number(row.score)===0?count+1:count,0)'), 'zero-monitor counts should use exact zero scores from the already selected-period QA rows');
+assert.ok(enhanced.includes('const rows=qaRows(personId,spec),zeroMonitorCount=rows.reduce((count,row)=>Number(row.score)===0?count+1:count,0)'), 'zero-monitor counts should use exact zero scores from the already selected-period QA rows');
 assert.ok(enhanced.includes('function zeroMonitorBadge(p)'), 'Advanced display should render the zero-monitor warning');
 assert.ok(enhanced.includes('data-scorecard-density'), 'display state should separate detail from density');
 
