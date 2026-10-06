@@ -87,6 +87,19 @@
     @media (max-width: 1350px) { .metrics { grid-template-columns: repeat(4, 1fr); } .insights { grid-template-columns: repeat(3, 1fr); } }
     @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } .topbar { align-items: flex-start; flex-direction: column; } .controls { justify-content: flex-start; } }
     @media (max-width: 700px) { .shell { width: min(100% - 20px, 1600px); padding-top: 20px; } .metrics { grid-template-columns: repeat(2, 1fr); } .insights { grid-template-columns: 1fr 1fr; } canvas { height: 280px; } #appDailyChart { height: 340px; } }
+    .chart-tooltip { position: fixed; z-index: 20; pointer-events: none; background: #142536; border: 1px solid #52718c; border-radius: 12px; padding: 12px 16px; box-shadow: 0 12px 40px #0009; max-width: min(400px, calc(100vw - 16px)); max-height: 70vh; overflow-y: auto; font-variant-numeric: tabular-nums; }
+    .chart-tooltip strong { display: block; margin-bottom: 6px; }
+    .chart-tooltip div { margin: 3px 0; }
+    .legend-item[aria-pressed="true"] { color: var(--text); border-color: var(--accent); }
+    .legend-item[aria-pressed="false"] { opacity: .55; }
+    .chart-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .table-wrap { max-height: 560px; }
+    #appRows td:first-child, th:first-child { position: sticky; left: 0; background: #101d2a; }
+    #appRows tr.linked td { background: #1a3146; }
+    th button { padding: 3px; border: 0; background: none; font-size: inherit; text-transform: inherit; }
+    .metric strong { font-variant-numeric: tabular-nums; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    #appChart { min-height: 330px; }
   </style>
   <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -126,6 +139,7 @@
       <div><strong>Per-app daily trends are aggregate-only.</strong> Historical lifetime app totals remain intact. The daily app series begins populating once the new aggregate daily-app telemetry is available; older per-app daily history cannot be reconstructed from the existing lifetime counters.</div>
     </div>
 
+    <div class="section-title"><h2>Overall usage</h2><span class="pill">Lifetime</span></div>
     <section class="metrics" aria-label="Usage totals">
       <article class="metric"><small>Unique visitors</small><strong id="uniqueVisitors">—</strong><span>Approximate installations</span></article>
       <article class="metric"><small>Sessions</small><strong id="sessions">—</strong><span>Launcher opens</span></article>
@@ -140,10 +154,11 @@
     <section class="grid">
       <article class="panel wide">
         <div class="panel-head">
-          <div><h2>App usage by day</h2><p>Daily app opens for every application recorded in CoachTools.</p></div>
+          <div><h2>App usage by day</h2><p>Exact recorded opens. Select apps below; unrecorded dates are gaps. Hover for all apps that day; scroll over the chart for longer tooltips.</p></div>
           <strong id="appDailyRange">Collecting</strong>
         </div>
         <canvas id="appDailyChart" aria-label="Daily application usage line graph"></canvas>
+        <div class="chart-controls"><button id="showAllApps">Show all</button><button id="topApps">Top apps</button><button id="resetApps">Reset selection</button></div>
         <div id="appLegend" class="legend" aria-label="Application chart legend"></div>
       </article>
 
@@ -153,7 +168,7 @@
       </article>
 
       <article class="panel">
-        <div class="panel-head"><div><h2>Application usage</h2><p>Lifetime opens by application.</p></div><strong id="appCount"></strong></div>
+        <div class="panel-head"><div><h2>Application usage</h2><p>Lifetime opens by application.</p></div><strong>Lifetime · <span id="appCount"></span></strong></div>
         <canvas id="appChart" aria-label="Application usage bar graph"></canvas>
       </article>
     </section>
@@ -169,7 +184,7 @@
 
     <section class="panel">
       <div class="panel-head">
-        <div><h2>Application diagnostics</h2><p>Lifetime adoption plus recent daily activity. Recent metrics populate from the new aggregate app-by-day counters.</p></div>
+        <div><h2>Application diagnostics</h2><p>Lifetime adoption plus recent daily activity. First five numeric columns: lifetime. Window opens and average: selected window. Trend: latest 7 days vs prior 7.</p></div>
         <strong id="appDiagnosticCount"></strong>
       </div>
       <div class="table-wrap">
@@ -277,9 +292,9 @@
       }
 
       function resizeCanvas(canvas) {
-        const ratioValue = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const ratioValue = Math.max(1, window.devicePixelRatio || 1);
         const rect = canvas.getBoundingClientRect();
-        const width = Math.max(320, Math.floor(rect.width));
+        const width = Math.max(1, rect.width);
         const height = Math.max(220, Math.floor(rect.height));
         if (canvas.width !== Math.floor(width * ratioValue) || canvas.height !== Math.floor(height * ratioValue)) {
           canvas.width = Math.floor(width * ratioValue);
@@ -295,7 +310,9 @@
         ctx.fillStyle = '#91a8bb';
         ctx.font = '13px system-ui';
         ctx.textAlign = 'center';
-        ctx.fillText(text, width / 2, height / 2);
+        const lines = []; let line = '';
+        for (const word of text.split(' ')) { const next = line ? `${line} ${word}` : word; if (line && ctx.measureText(next).width > Math.max(40, width - 30)) { lines.push(line); line = word; } else line = next; }
+        lines.push(line); lines.forEach((value, index) => ctx.fillText(value, width / 2, height / 2 + (index - (lines.length - 1) / 2) * 20));
       }
       function drawGrid(ctx, width, height, pad, maxValue) {
         const graphH = height - pad.top - pad.bottom;
@@ -317,117 +334,192 @@
         return `hsl(${Math.abs(hash) % 360} 72% 64%)`;
       }
 
-      function drawVisitorChart(items) {
-        const canvas = $('visitorChart');
-        if (!items.length) return drawEmpty(canvas, 'No visitor activity in this window.');
-        const { ctx, width, height } = resizeCanvas(canvas);
-        ctx.clearRect(0, 0, width, height);
-        const pad = { left: 42, right: 18, top: 20, bottom: 42 };
-        const graphW = width - pad.left - pad.right;
-        const graphH = height - pad.top - pad.bottom;
-        const max = Math.max(1, ...items.map(item => number(item.uniqueVisitors)));
-        drawGrid(ctx, width, height, pad, max);
-        const points = items.map((item, index) => ({
-          x: pad.left + (items.length === 1 ? graphW / 2 : graphW * index / (items.length - 1)),
-          y: pad.top + graphH - ratio(item.uniqueVisitors, max) * graphH,
-          item
-        }));
-        ctx.strokeStyle = '#72b7ff'; ctx.lineWidth = 2.5; ctx.beginPath();
-        points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
-        ctx.stroke();
-        ctx.fillStyle = '#72b7ff';
-        points.forEach(point => { ctx.beginPath(); ctx.arc(point.x, point.y, 3.2, 0, Math.PI * 2); ctx.fill(); });
-        ctx.fillStyle = '#91a8bb'; ctx.textAlign = 'center';
-        const labelStep = Math.max(1, Math.ceil(items.length / 7));
-        points.forEach((point, index) => {
-          if (index % labelStep && index !== points.length - 1) return;
-          ctx.fillText(dateLabel(point.item.date), point.x, height - 16);
-        });
-      }
+      const charts = new Map();
+      let visibleApps = null;
+      let selectionMode = 'top';
+      let focusedApp = null;
+      let sortColumn = 1;
+      let sortDirection = -1;
+      const tooltip = document.createElement('div');
+      tooltip.className = 'chart-tooltip'; tooltip.hidden = true;
+      document.body.appendChild(tooltip);
 
-      function drawAppChart(items) {
-        const canvas = $('appChart');
-        const top = items.slice(0, 12);
-        if (!top.length) return drawEmpty(canvas, 'No application opens yet.');
-        const { ctx, width, height } = resizeCanvas(canvas);
-        ctx.clearRect(0, 0, width, height);
-        const left = Math.min(175, Math.max(115, width * .35));
-        const right = 55;
-        const topPad = 14;
-        const bottom = 10;
-        const graphW = width - left - right;
-        const rowH = (height - topPad - bottom) / top.length;
-        const max = Math.max(1, ...top.map(item => number(item.opens)));
-        ctx.font = '11px system-ui';
-        top.forEach((item, index) => {
-          const y = topPad + index * rowH;
-          const barH = Math.max(7, rowH * .5);
-          const barY = y + (rowH - barH) / 2;
-          const barW = graphW * ratio(item.opens, max);
-          ctx.fillStyle = colorFor(item.appId); ctx.fillRect(left, barY, barW, barH);
-          ctx.fillStyle = '#edf5fb'; ctx.textAlign = 'right';
-          const label = String(item.name || item.appId || 'App');
-          ctx.fillText(label.length > 23 ? `${label.slice(0, 21)}…` : label, left - 8, barY + barH / 2 + 4);
-          ctx.textAlign = 'left'; ctx.fillStyle = '#91a8bb';
-          ctx.fillText(formatNumber(item.opens), Math.min(width - right + 5, left + barW + 7), barY + barH / 2 + 4);
-        });
+      function cacheChart(canvas, geometry) {
+        const base = document.createElement('canvas');
+        base.width = canvas.width; base.height = canvas.height;
+        base.getContext('2d').drawImage(canvas, 0, 0);
+        charts.set(canvas.id, { ...geometry, base, canvas });
       }
-
-      function drawAppDailyChart(appDaily, apps, days) {
-        const canvas = $('appDailyChart');
-        const legend = $('appLegend');
-        legend.innerHTML = '';
-        const windowItems = filterWindow(appDaily, days);
-        if (!windowItems.length) {
-          $('appDailyRange').textContent = 'Collecting';
-          return drawEmpty(canvas, 'Daily per-app trend data will appear here as new usage is recorded.');
+      function paintHover(chart, index) {
+        const { canvas, base, points = [], bars = [] } = chart;
+        const ctx = canvas.getContext('2d');
+        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(base, 0, 0); ctx.restore();
+        const selected = bars.length ? bars.filter(bar => bar.item.appId === focusedApp || bar.index === index)
+          : points.filter(point => point.index === index || (focusedApp && point.appId === focusedApp));
+        if (selected.length && focusedApp) {
+          ctx.fillStyle = 'rgba(8,17,27,.48)'; ctx.fillRect(0, 0, chart.width, chart.height);
         }
-        const earliestTracked = windowItems.map(item => String(item.date || '')).sort()[0];
-        const start = earliestTracked > dayCutoff(days) ? earliestTracked : dayCutoff(days);
-        const dates = dateSpan(start, todayKey());
+        if (index != null && !bars.length) {
+          const point = points.find(point => point.index === index);
+          if (point) { ctx.strokeStyle = '#91a8bb'; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(point.x, 20); ctx.lineTo(point.x, chart.height - 42); ctx.stroke(); ctx.setLineDash([]); }
+        }
+        for (const point of selected) {
+          ctx.fillStyle = point.color || '#72b7ff';
+          if (bars.length) { ctx.fillRect(point.x, point.y, point.w, point.h); ctx.strokeStyle = '#edf5fb'; ctx.strokeRect(point.x, point.y, point.w, point.h); }
+          else { ctx.beginPath(); ctx.arc(point.x, point.y, point.index === index ? 5 : 2.5, 0, Math.PI * 2); ctx.fill(); }
+        }
+      }
+      function linkApp(appId) {
+        focusedApp = appId;
+        for (const chart of charts.values()) paintHover(chart, null);
+        for (const row of $('appRows').children) row.classList.toggle('linked', !!appId && row.dataset.appId === appId);
+      }
+      function showTooltip(title, entries, event) {
+        tooltip.replaceChildren();
+        const head = document.createElement('strong'); head.textContent = title; tooltip.appendChild(head);
+        for (const entry of entries) { const line = document.createElement('div'); line.textContent = entry.text; line.style.color = entry.color || '#edf5fb'; tooltip.appendChild(line); }
+        tooltip.hidden = false;
+        const bounds = tooltip.getBoundingClientRect();
+        tooltip.style.left = `${Math.max(8, Math.min(event.clientX + 16, innerWidth - bounds.width - 8))}px`;
+        tooltip.style.top = `${Math.max(8, Math.min(event.clientY + 16, innerHeight - bounds.height - 8))}px`;
+      }
+      function dailySeries(appDaily, apps, days) {
+        const windowItems = filterWindow(appDaily, days);
+        const dates = dateSpan(dayCutoff(days), todayKey());
         const appMap = new Map(apps.map(app => [app.appId, app]));
-        for (const item of windowItems) if (!appMap.has(item.appId)) appMap.set(item.appId, { appId: item.appId, name: item.name || item.appId, opens: 0 });
-        const series = Array.from(appMap.values()).map(app => {
-          const byDate = new Map(windowItems.filter(item => item.appId === app.appId).map(item => [item.date, number(item.opens)]));
-          return { app, values: dates.map(date => byDate.get(date) || 0), total: dates.reduce((t, date) => t + (byDate.get(date) || 0), 0) };
-        }).sort((a, b) => b.total - a.total || String(a.app.name).localeCompare(String(b.app.name)));
-
+        const values = new Map();
+        const totals = new Map();
+        for (const item of appDaily) {
+          if (!item.appId || !/^\d{4}-\d{2}-\d{2}$/.test(item.date)) continue;
+          if (!appMap.has(item.appId)) appMap.set(item.appId, { appId: item.appId, name: item.name || item.appId });
+        }
+        for (const item of windowItems) {
+          // Each stored date + app counter is authoritative, never a lifetime-derived estimate.
+          const key = `${item.date}__${item.appId}`;
+          totals.set(item.appId, (totals.get(item.appId) || 0) - (values.get(key) || 0) + number(item.opens));
+          values.set(key, number(item.opens));
+        }
+        const series = Array.from(appMap.values()).map(app => ({ app,
+          values: dates.map(date => values.has(`${date}__${app.appId}`) ? values.get(`${date}__${app.appId}`) : null),
+          total: totals.get(app.appId) || 0
+        })).sort((a, b) => b.total - a.total || String(a.app.name || a.app.appId).localeCompare(String(b.app.name || b.app.appId)));
+        return { dates, series };
+      }
+      function drawLines(canvas, dates, series) {
+        charts.delete(canvas.id);
+        if (!series.some(item => item.values.some(value => value != null))) return drawEmpty(canvas, 'No recorded values in this window. Unrecorded dates are gaps.');
         const { ctx, width, height } = resizeCanvas(canvas);
         ctx.clearRect(0, 0, width, height);
-        const pad = { left: 46, right: 20, top: 22, bottom: 44 };
-        const graphW = width - pad.left - pad.right;
-        const graphH = height - pad.top - pad.bottom;
-        const max = Math.max(1, ...series.flatMap(item => item.values));
+        const pad = { left: 46, right: 30, top: 22, bottom: 44 };
+        const graphW = width - pad.left - pad.right, graphH = height - pad.top - pad.bottom;
+        const max = series.reduce((max, item) => item.values.reduce((valueMax, value) => Math.max(valueMax, value == null ? 0 : value), max), 1);
         drawGrid(ctx, width, height, pad, max);
         const xFor = index => pad.left + (dates.length === 1 ? graphW / 2 : graphW * index / (dates.length - 1));
-        series.forEach(item => {
-          const color = colorFor(item.app.appId);
-          ctx.strokeStyle = color;
-          ctx.lineWidth = item.total ? 2 : 1;
-          ctx.globalAlpha = item.total ? .9 : .22;
-          ctx.beginPath();
+        const points = [];
+        for (const item of series) {
+          ctx.strokeStyle = item.color; ctx.lineWidth = 2; ctx.beginPath();
+          let connected = false;
           item.values.forEach((value, index) => {
-            const x = xFor(index);
-            const y = pad.top + graphH - ratio(value, max) * graphH;
-            index ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+            if (value == null) { connected = false; return; }
+            const point = { x: xFor(index), y: pad.top + graphH - value / max * graphH, value, index, color: item.color, appId: item.appId };
+            points.push(point);
+            if (connected) ctx.lineTo(point.x, point.y); else ctx.moveTo(point.x, point.y);
+            connected = true;
           });
           ctx.stroke();
-          ctx.globalAlpha = 1;
-          const chip = document.createElement('span');
-          chip.className = 'legend-item';
-          const swatch = document.createElement('span');
-          swatch.className = 'legend-swatch'; swatch.style.background = color;
-          const label = document.createElement('span');
-          label.textContent = `${item.app.name || item.app.appId} · ${formatNumber(item.total)}`;
-          chip.append(swatch, label); legend.appendChild(chip);
-        });
+        }
+        for (const point of points) { ctx.fillStyle = point.color; ctx.beginPath(); ctx.arc(point.x, point.y, 2.5, 0, Math.PI * 2); ctx.fill(); }
         ctx.fillStyle = '#91a8bb'; ctx.textAlign = 'center'; ctx.font = '11px system-ui';
-        const labelStep = Math.max(1, Math.ceil(dates.length / 8));
-        dates.forEach((date, index) => {
-          if (index % labelStep && index !== dates.length - 1) return;
-          ctx.fillText(dateLabel(date), xFor(index), height - 16);
+        const step = Math.max(1, Math.ceil(dates.length / Math.max(2, Math.floor(graphW / 90))));
+        dates.forEach((date, index) => { if (!(index % step) || index === dates.length - 1) ctx.fillText(dateLabel(date), xFor(index), height - 16); });
+        cacheChart(canvas, { width, height, points, dates, xFor, series });
+      }
+      function drawVisitorChart(items) {
+        const dates = dateSpan(dayCutoff(selectedDays()), todayKey());
+        const byDate = new Map(items.map(item => [item.date, number(item.uniqueVisitors)]));
+        drawLines($('visitorChart'), dates, [{ color: '#72b7ff', values: dates.map(date => byDate.has(date) ? byDate.get(date) : null) }]);
+      }
+      function drawAppChart(items) {
+        const canvas = $('appChart'); charts.delete(canvas.id);
+        if (!items.length) return drawEmpty(canvas, 'No application opens yet.');
+        canvas.style.height = `${Math.max(330, items.length * 32 + 24)}px`;
+        const { ctx, width, height } = resizeCanvas(canvas);
+        ctx.clearRect(0, 0, width, height);
+        const left = Math.min(175, width * .4), right = 70, rowH = (height - 24) / items.length;
+        const graphW = Math.max(1, width - left - right), max = Math.max(1, ...items.map(item => number(item.opens)));
+        const bars = [];
+        ctx.font = '11px system-ui';
+        items.forEach((item, index) => {
+          const bar = { item, index, x: left, y: 12 + index * rowH + rowH * .25, w: graphW * ratio(item.opens, max), h: rowH * .5, color: colorFor(item.appId) };
+          bars.push(bar); ctx.fillStyle = bar.color; ctx.fillRect(bar.x, bar.y, bar.w, bar.h);
+          ctx.fillStyle = '#edf5fb'; ctx.textAlign = 'right';
+          const name = String(item.name || item.appId); let label = name;
+          while (label.length > 1 && ctx.measureText(label + '…').width > left - 14) label = label.slice(0, -1);
+          ctx.fillText(label === name ? name : label + '…', left - 8, bar.y + bar.h / 2 + 4);
+          ctx.textAlign = 'left'; ctx.fillStyle = '#91a8bb'; ctx.fillText(formatNumber(item.opens), left + bar.w + 8, bar.y + bar.h / 2 + 4);
         });
-        $('appDailyRange').textContent = `${dates.length} tracked days`;
+        cacheChart(canvas, { width, height, bars, rowH });
+      }
+      function drawAppDailyChart(appDaily, apps, days) {
+        const { dates, series } = dailySeries(appDaily, apps, days);
+        if (selectionMode === 'all') visibleApps = new Set(series.map(item => item.app.appId));
+        else if (selectionMode === 'top' || visibleApps === null) visibleApps = new Set(series.filter(item => item.total > 0).slice(0, 5).map(item => item.app.appId));
+        const legend = $('appLegend'); legend.replaceChildren();
+        for (const item of series) {
+          const chip = document.createElement('button'); chip.className = 'legend-item'; chip.type = 'button';
+          chip.setAttribute('aria-pressed', String(visibleApps.has(item.app.appId)));
+          const swatch = document.createElement('span'); swatch.className = 'legend-swatch'; swatch.style.background = colorFor(item.app.appId);
+          chip.appendChild(swatch); chip.appendChild(document.createTextNode(`${item.app.name || item.app.appId} · ${formatNumber(item.total)}`));
+          chip.addEventListener('click', () => { selectionMode = 'custom'; if (visibleApps.has(item.app.appId)) visibleApps.delete(item.app.appId); else visibleApps.add(item.app.appId); drawAppDailyChart(appDaily, apps, days); });
+          chip.addEventListener('pointerenter', () => linkApp(item.app.appId)); chip.addEventListener('pointerleave', () => linkApp(null));
+          chip.addEventListener('focus', () => linkApp(item.app.appId)); chip.addEventListener('blur', () => linkApp(null));
+          legend.appendChild(chip);
+        }
+        drawLines($('appDailyChart'), dates, series.filter(item => visibleApps.has(item.app.appId)).map(item => ({ ...item, appId: item.app.appId, color: colorFor(item.app.appId) })));
+        const chart = charts.get('appDailyChart'); if (chart) chart.tooltipSeries = series.map(item => ({ ...item, appId: item.app.appId, color: colorFor(item.app.appId) }));
+        $('appDailyRange').textContent = `Last ${days} days`;
+      }
+      function sortRows() {
+        const rows = Array.from($('appRows').children);
+        const value = row => { const text = row.children[sortColumn]?.textContent || ''; return sortColumn === 0 ? text : (/^[+\-]?[\d,.]+%?$/.test(text.trim()) ? Number(text.replace(/[%+,]/g, '')) : null); };
+        rows.sort((a, b) => { const x = value(a), y = value(b); if (x == null) return y == null ? 0 : 1; if (y == null) return -1; return sortDirection * (typeof x === 'string' ? x.localeCompare(y) : x - y); });
+        rows.forEach(row => $('appRows').appendChild(row));
+      }
+      function setupInteractions() {
+        ['showAllApps', 'topApps', 'resetApps'].forEach(id => $(id).addEventListener('click', () => {
+          if (!lastPayload) return;
+          selectionMode = id === 'showAllApps' ? 'all' : 'top';
+          visibleApps = id === 'showAllApps' ? new Set(dailySeries(lastPayload.appDaily, lastPayload.apps, selectedDays()).series.map(item => item.app.appId)) : null;
+          linkApp(null); drawAppDailyChart(lastPayload.appDaily, lastPayload.apps, selectedDays());
+        }));
+        const headers = $('appRows').closest('table').querySelectorAll('th');
+        headers.forEach((header, index) => {
+          const button = document.createElement('button'); button.textContent = header.textContent + ' ↕'; header.replaceChildren(button);
+          header.setAttribute('aria-sort', index === sortColumn ? 'descending' : 'none');
+          button.addEventListener('click', () => { sortDirection = sortColumn === index ? -sortDirection : index === 0 ? 1 : -1; sortColumn = index; headers.forEach((h, i) => h.setAttribute('aria-sort', i === index ? sortDirection === 1 ? 'ascending' : 'descending' : 'none')); sortRows(); });
+        });
+        for (const id of ['appDailyChart', 'visitorChart', 'appChart']) {
+          const canvas = $(id); let frame;
+          canvas.addEventListener('pointermove', event => {
+            cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
+              const chart = charts.get(id); if (!chart) { tooltip.hidden = true; return; }
+              const rect = canvas.getBoundingClientRect(), x = (event.clientX - rect.left) * chart.width / rect.width, y = (event.clientY - rect.top) * chart.height / rect.height;
+              if (chart.bars) {
+                const bar = chart.bars.find(item => y >= item.y - chart.rowH * .25 && y <= item.y + item.h + chart.rowH * .25);
+                if (!bar) { tooltip.hidden = true; linkApp(null); return; }
+                linkApp(bar.item.appId); paintHover(chart, bar.index);
+                showTooltip(bar.item.name || bar.item.appId, [{ text: `${formatNumber(bar.item.opens)} lifetime opens` }], event);
+              } else {
+                const index = chart.dates.reduce((best, _, i) => Math.abs(chart.xFor(i) - x) < Math.abs(chart.xFor(best) - x) ? i : best, 0);
+                const entries = (chart.tooltipSeries || chart.series).map(item => ({ ...item, value: item.values[index] })).filter(item => item.value != null && (item.value > 0 || !item.appId || visibleApps.has(item.appId))).sort((a, b) => b.value - a.value);
+                paintHover(chart, index);
+                showTooltip(dateLabel(chart.dates[index], { month: 'long', day: 'numeric', year: 'numeric' }), entries.length ? entries.map(item => ({ text: item.app ? `${item.app.name || item.appId} — ${formatNumber(item.value)} opens` : `${formatNumber(item.value)} visitors`, color: item.color })) : [{ text: 'No recorded daily values. History is not estimated.' }], event);
+              }
+            });
+          });
+          canvas.addEventListener('wheel', event => { if (!tooltip.hidden && tooltip.scrollHeight > tooltip.clientHeight) { event.preventDefault(); tooltip.scrollTop += event.deltaY; } }, { passive: false });
+          canvas.addEventListener('pointerleave', () => { cancelAnimationFrame(frame); tooltip.hidden = true; linkApp(null); });
+        }
       }
 
       function renderInitials(items) {
@@ -472,6 +564,9 @@
           const value = trend(pair.current, pair.prior);
           const hasRecent = allAppDaily.length > 0;
           const row = document.createElement('tr');
+          row.dataset.appId = app.appId;
+          row.addEventListener('pointerenter', () => linkApp(app.appId));
+          row.addEventListener('pointerleave', () => linkApp(null));
           row.innerHTML = `
             <td><div class="app-name">${escapeHtml(app.name || app.appId)}</div><div class="subtle">${escapeHtml(app.appId || '')}</div></td>
             <td class="num">${formatNumber(app.opens)}</td>
@@ -484,6 +579,7 @@
             <td class="num ${hasRecent ? trendClass(value) : ''}">${hasRecent ? trendText(value) : '—'}</td>`;
           body.appendChild(row);
         }
+        sortRows();
       }
 
       function escapeHtml(value) {
@@ -521,6 +617,7 @@
       }
 
       function render(payload) {
+        tooltip.hidden = true;
         const summary = payload.summary || {};
         const days = selectedDays();
         const windowDaily = filterWindow(payload.daily, days);
@@ -538,7 +635,7 @@
         $('appCount').textContent = `${payload.apps.length} apps`;
         $('appDiagnosticCount').textContent = `${payload.apps.length} apps`;
         $('initialCount').textContent = `${payload.initials.length} labels`;
-        $('dailyRange').textContent = windowDaily.length ? `${windowDaily.length} active days` : 'No data';
+        $('dailyRange').textContent = `Last ${days} days`;
         drawVisitorChart(windowDaily);
         drawAppChart(payload.apps);
         drawAppDailyChart(payload.appDaily, payload.apps, days);
@@ -553,12 +650,15 @@
       }
 
       async function fetchAppDaily() {
-        try {
-          const snap = await db.collection('coachtoolsUsageAppDaily').orderBy('date', 'desc').limit(10000).get();
-          return snap.docs.map(doc => doc.data()).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.appId || '').localeCompare(String(b.appId || '')));
-        } catch (_) {
-          return [];
-        }
+        // A bounded date query with no result cap includes every app in all supported windows.
+        const collection = db.collection('coachtoolsUsageAppDaily');
+        const [snap, first] = await Promise.all([
+          collection.where('date', '>=', dayCutoff(90)).where('date', '<=', todayKey()).orderBy('date').get(),
+          collection.orderBy('date').limit(1).get()
+        ]);
+        const records = new Map(snap.docs.map(doc => [doc.id, doc.data()]));
+        for (const doc of first.docs) if (!records.has(doc.id)) records.set(doc.id, doc.data());
+        return Array.from(records.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.appId).localeCompare(String(b.appId)));
       }
 
       async function fetchPayload() {
@@ -591,6 +691,7 @@
           setConnection('good', changed ? 'Updated' : 'No change');
         } catch (error) {
           setConnection('bad', 'Firebase unavailable');
+          $('appDailyRange').textContent = lastPayload ? 'Last successful data · refresh failed' : 'Data unavailable';
           $('lastChecked').textContent = `Last check failed: ${error && error.message ? error.message : error}.`;
         } finally {
           inFlight = false; $('refreshNow').disabled = false;
@@ -614,7 +715,9 @@
           $('refreshMinutes').addEventListener('change', schedule);
           $('rangeDays').addEventListener('change', () => { if (lastPayload) render(lastPayload); });
           $('refreshNow').addEventListener('click', () => checkForChanges(true));
-          window.addEventListener('resize', () => { if (lastPayload) render(lastPayload); });
+          let resizeFrame;
+          new ResizeObserver(() => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(() => { if (lastPayload) render(lastPayload); }); }).observe(document.querySelector('.grid'));
+          setupInteractions();
           schedule(); await checkForChanges(true);
         } catch (error) {
           setConnection('bad', 'Firebase unavailable');
