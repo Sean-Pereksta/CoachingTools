@@ -1403,11 +1403,11 @@ function normalizeResearchLooseSourceReferences(expression){
   if(cache?.has(out)) return cache.get(out);
   const original=out;
   pairs.forEach(({source,sourceAlias,fields})=>{
-    const sourceProbe=new RegExp(`(^|[^!A-Za-z0-9_\\]])${escapeResearchRegex(sourceAlias)}\\s*[.:]`,'i');
+    const sourceProbe=new RegExp(`(^|[^A-Za-z0-9_\\]])${escapeResearchRegex(sourceAlias)}\\s*[.:]`,'i');
     if(!sourceProbe.test(out)) return;
     fields.forEach(({field,aliases})=>aliases.forEach(fieldAlias=>{
-      const rx=new RegExp(`(^|[^!A-Za-z0-9_\\]])${escapeResearchRegex(sourceAlias)}\\s*[.:]\\s*${escapeResearchRegex(fieldAlias)}(?=$|[^A-Za-z0-9_])`,'gi');
-      out=out.replace(rx,(match,prefix)=>`${prefix}![${source}].[${field}]`);
+      const rx=new RegExp(`(^|[^A-Za-z0-9_\\]])${escapeResearchRegex(sourceAlias)}\\s*[.:]\\s*${escapeResearchRegex(fieldAlias)}(?=$|[^A-Za-z0-9_])`,'gi');
+      out=out.replace(rx,(match,prefix)=>`${prefix==='!'?'':prefix}![${source}].[${field}]`);
     }));
   });
   if(cache) boundedMapSet(cache,original,out,300);
@@ -1429,8 +1429,18 @@ function parseResearchSourceFieldRef(raw){
   const text=String(raw||'').trim();
   if(!text.startsWith('!')) return null;
   let m=text.match(/^!\s*\[([^\]]+)\]\s*\.\s*\[([^\]]+)\]\s*$/);
+  // A canonical reference followed by arithmetic is a formula, not one field.
+  // Loose fallback plus fuzzy column resolution used to read the numerator only.
+  if(!m && /^!\s*\[[^\]]+\]\s*\.\s*\[[^\]]+\]/.test(text)) return null;
   let loose=null;
-  if(!m){ loose=splitSourceQualifiedLooseRef(text.replace(/^!\s*/,'')); if(loose) m=[text,loose.rawSource,loose.rawField]; }
+  if(!m){
+    loose=splitSourceQualifiedLooseRef(text.replace(/^!\s*/,''));
+    if(loose){
+      const source=sourceKeyFromExpressionLabel(loose.rawSource);
+      if(/[+*/()]/.test(loose.rawField)&&!(getHeaders(source)||[]).some(header=>norm(header)===norm(loose.rawField)))return null;
+      m=[text,loose.rawSource,loose.rawField];
+    }
+  }
   if(!m) m=text.match(/^!\s*([^:.]+?)\s*[:.]\s*(.+?)\s*$/);
   if(!m) return null;
   const rawSource=stripResearchRefBrackets(m[1]), rawField=stripResearchRefBrackets(m[2]);
