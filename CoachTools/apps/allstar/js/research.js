@@ -483,6 +483,10 @@ function normalizeResearchItem(item={}){
   normalized.groupAggregation=item.groupAggregation==='weighted'?'weighted':'average';
   normalized.zeroDenominator=['zero','blank'].includes(item.zeroDenominator)?item.zeroDenominator:(item.guidedEnabled||isDatedStatsSource(item.source)||researchTypedMeasureDefinition(item.measureId||researchMeasureIdFromRef(item.valueField))?.baseGrain==='representative'?'blank':'zero');
   normalized.populationScope=normalizeResearchPopulationScope(item.populationScope);
+  normalized.populationFilterMode=item.populationFilterMode==='dynamic'?'dynamic':'static';
+  normalized.populationFilterPeriod=['auto','daily','weekly','monthly','period'].includes(item.populationFilterPeriod)?item.populationFilterPeriod:'auto';
+  normalized.populationFilterGrain=['auto','representatives','teams','items'].includes(item.populationFilterGrain)?item.populationFilterGrain:'auto';
+  normalized.populationFilterEntityField=String(item.populationFilterEntityField||'').trim();
   normalized.weeklyCoverage=normalizeResearchCoverage(item.weeklyCoverage);
   normalized.unmatchedBehavior=['exclude','blank'].includes(item.unmatchedBehavior)?item.unmatchedBehavior:'exclude';
   normalized.calculationGroupLimit=Math.max(0,Math.floor(Number(item.calculationGroupLimit)||0));
@@ -746,7 +750,8 @@ function effectiveResearchItem(item={}){
   if(isDatedStatsSource(out.source)&&!out.dateColumn)out.dateColumn=weeklyIdentityContext(out.source).config.dateField||'Date';
   if(out.guidedEnabled&&isDatedStatsSource(out.source)&&out.outputType==='line'&&!out.groupMultiAdd){
     const breakdown=out.guidedBreakdown||'none';
-    out.groupField=out.dateColumn;out.dateGrouping='weekly';out.weeklyTimeAxis=true;out.groupExpression='';
+    const period=out.populationFilterMode==='dynamic'?researchPopulationPeriod(out):'weekly';
+    out.groupField=out.dateColumn;out.dateGrouping=period==='period'?'other':period;out.weeklyTimeAxis=true;out.groupExpression=period==='period'?'"Research Period"':'';
     out.useSecondaryGroup=true;
     out.secondaryGroupField=out.showLinesFor==='teams'?'_team':'_rep';
     if(['organization','column'].includes(breakdown))out.secondaryGroupField=guidedBreakdownField(out.source,breakdown,out.guidedBreakdownColumn);
@@ -987,7 +992,7 @@ function openResearchItemEditor(itemId){ if(state.researchItems.find(i=>i.id===i
   els.researchModelSelect.innerHTML=(state.models||[]).map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join(''); els.researchModelSelect.value=item.modelId||state.models[0]?.id||''; populateResearchCriteria(item.criteriaId);
   els.researchModelResult.value=item.modelResult||'count'; els.researchPopulation.value=item.population||'rows'; els.researchNumeratorExpression.value=item.numeratorExpression||''; els.researchNumeratorCount.value=item.numeratorCount||'rows'; els.researchDenominator.value=item.denominator||'groupRows'; els.researchDenominatorExpression.value=item.denominatorExpression||''; els.researchZeroDenominator.value=item.zeroDenominator||'blank';
   els.researchSort.value=item.sort||'default'; if(els.researchBucketSize) els.researchBucketSize.value=item.bucketSize||''; els.researchAxisMin.value=item.axisMin??''; els.researchAxisMax.value=item.axisMax??''; if(els.researchTableDecimals) els.researchTableDecimals.value=item.decimals??1; if(els.researchTableShowPercent) els.researchTableShowPercent.checked=!!item.showPercent; els.researchDecimals.value=item.decimals??1; els.researchShowValues.checked=item.showValues!==false; if(els.researchShowDateLabels) els.researchShowDateLabels.checked=!!item.showDateLabels; els.researchShowPercent.checked=!!item.showPercent; if(els.researchGraphSort) els.researchGraphSort.value=item.graphSort||'inherit'; if(els.researchTopN) els.researchTopN.value=item.topN||''; if(els.researchShowSummaryLine) els.researchShowSummaryLine.checked=!!item.showSummaryLine; if(els.researchGoalValue) els.researchGoalValue.value=item.goalValue??''; if(els.researchRotateLabels) els.researchRotateLabels.checked=!!item.rotateLabels; if(els.researchWrapLabels) els.researchWrapLabels.checked=item.wrapLabels!==false; if(els.researchShowLegend) els.researchShowLegend.checked=!!item.showLegend; if(els.researchShowGridlines) els.researchShowGridlines.checked=item.showGridlines!==false; if(els.researchSmoothLine) els.researchSmoothLine.checked=!!item.smoothLine; if(els.researchUseDots) els.researchUseDots.checked=item.useDots!==false; if(els.researchBarOrientation) els.researchBarOrientation.value=item.barOrientation||'vertical'; if(els.researchStackedBars) els.researchStackedBars.checked=!!item.stackedBars; if(els.researchGroupedBars) els.researchGroupedBars.checked=item.groupedBars!==false; if(els.researchHideZeroGroups) els.researchHideZeroGroups.checked=!!item.hideZeroGroups; if(els.researchHighlightBest) els.researchHighlightBest.checked=!!item.highlightBest; if(els.researchHighlightWorst) els.researchHighlightWorst.checked=!!item.highlightWorst; els.researchRowLimit.value=item.rowLimit||''; els.researchTotals.checked=!!item.totals; if(els.researchTextWrap) els.researchTextWrap.checked=item.textWrap!==false; if(els.researchRowDensity) els.researchRowDensity.value=item.rowDensity||'comfortable';
-  renderResearchPopulationEditor(); populateResearchTypedMeasurePicker(item); renderResearchFiltersEditor(); renderResearchColumnsEditor(); renderResearchGroupAxisItemsEditor(); renderPercentBuilderEditor(item); fillGuidedResearchForm(item); updateResearchBuilderVisibility(); renderResearchTypedMeasureMeta(); scheduleResearchJoinPreview(); if(els.researchFoundPreview) els.researchFoundPreview.classList.add('hidden'); if(els.researchMeasureSamplePreview) els.researchMeasureSamplePreview.classList.add('hidden'); openModal('researchEditorModal'); attachResearchGearButtons(els.researchEditorModal);
+  renderResearchPopulationEditor(); renderResearchPopulationBehaviorEditor(item); populateResearchTypedMeasurePicker(item); renderResearchFiltersEditor(); renderResearchColumnsEditor(); renderResearchGroupAxisItemsEditor(); renderPercentBuilderEditor(item); fillGuidedResearchForm(item); updateResearchBuilderVisibility(); renderResearchTypedMeasureMeta(); scheduleResearchJoinPreview(); if(els.researchFoundPreview) els.researchFoundPreview.classList.add('hidden'); if(els.researchMeasureSamplePreview) els.researchMeasureSamplePreview.classList.add('hidden'); openModal('researchEditorModal'); attachResearchGearButtons(els.researchEditorModal);
 }
 function populateResearchFieldSelectors(item={}){ const sourceVal=els.researchSource.value; const pbSrc=(state.editingPercentBuilder&&state.editingPercentBuilder.fromMode!=='custom_expression')?state.editingPercentBuilder.qualifierSource:''; const hs=getResearchHeaders(sourceVal), pbHs=pbSrc&&pbSrc!==sourceVal?getResearchHeaders(pbSrc):[]; const all=[]; concreteResearchSources().forEach(src=>getResearchHeaders(src.value).forEach(h=>{ all.push(bracketedHeaderSuggestion(h)); all.push(sourceQualifiedFieldSuggestion(src.value,h)); })); const opts=[...new Set([...pbHs.map(bracketedHeaderSuggestion),...hs.map(bracketedHeaderSuggestion),...all,...RESEARCH_TYPED_MEASURES.map(m=>researchMeasureRef(m.id)),...metricSuggestions(),...orgTokenNames()])].filter(Boolean).map(h=>`<option value="${esc(h)}"></option>`).join(''); const dl=el('researchHeaderSuggestions'); if(dl) dl.innerHTML=opts; els.researchDateColumn.value=sourceVal===DATED_SOURCE ? (item.dateColumn||'Date') : (sourceVal===NONDATED_SOURCE?'':(item.dateColumn||'')); els.researchGroupField.value=item.groupField||''; if(els.researchSecondaryGroupField) els.researchSecondaryGroupField.value=item.secondaryGroupField||''; if(els.researchPanelField) els.researchPanelField.value=item.panelField||''; }
 function populateResearchTypedMeasurePicker(item={}){
@@ -1869,7 +1874,7 @@ function guidedPopulationDescription(){
   if(scope.excludeOrgs.length) parts.push(`${scope.excludeOrgs.length} excluded organization${scope.excludeOrgs.length===1?'':'s'}`);
   if(scope.excludeTeams.length) parts.push(`${scope.excludeTeams.length} excluded team${scope.excludeTeams.length===1?'':'s'}`);
   if(scope.excludeReps.length) parts.push(`${scope.excludeReps.length} excluded representative${scope.excludeReps.length===1?'':'s'}`);
-  if(filters.length) parts.push(`${filters.length} population filter${filters.length===1?'':'s'}`);
+  if(filters.length) parts.push(`${filters.length} population filter${filters.length===1?'':'s'} (${el('researchPopulationFilterMode')?.value==='dynamic'?'dynamic by period':'static'})`);
   return parts.length?`${parts.join(', ')} applied before calculation`:'all eligible people or records in the selected source and date range';
 }
 function guidedDenominatorDescription(cfg){
@@ -1926,6 +1931,7 @@ function updateGuidedResearchUi(){
   const guidedActive=state.editingGuidedResearchActive!==false;
   els.guidedCalculationStatus.className=!guidedActive?'hint':(validation.ok?'hint':'guidedValidation'); els.guidedCalculationStatus.textContent=!guidedActive?'This existing item is using its saved advanced calculation. Change any guided step to adopt the guided workflow without altering it automatically.':(validation.ok?(isPct?'Numerator and denominator are valid. Preview a sample or run the full calculation.':'Ready to preview matching data.'):`Complete before running: ${validation.errors.join(' ')}`);
   if(els.saveResearchItemBtn) els.saveResearchItemBtn.disabled=guidedActive&&!validation.ok; if(els.previewResearchFoundBtn) els.previewResearchFoundBtn.disabled=guidedActive&&!validation.ok;
+  updateResearchPopulationBehaviorUi();
 }
 function researchCalculationPlan(cfg){
   const item={source:cfg.guidedPrimarySource,guidedEnabled:true,groupAggregation:cfg.groupAggregation},rate=cfg.guidedQuestion==='average_total'||cfg.guidedQuestion==='rank'?researchResolvedRate(cfg.guidedMeasureField,item):null;
@@ -1952,7 +1958,7 @@ function applyGuidedResearchTemplate(key){
   renderGuidedResearchConditions(); syncGuidedResearchToAdvanced(); document.querySelectorAll('[data-guided-template]').forEach(b=>b.classList.toggle('active',b.dataset.guidedTemplate===key));
 }
 
-function currentResearchItemFromEditor(){ const valueField=els.researchValueField.value; return normalizeResearchItem({id:els.researchEditId.value||id(),title:els.researchTitleInput.value||'Research Item',outputType:els.researchOutputType.value,mode:els.researchMode.value,filterDuplicateReps:!!els.researchFilterDuplicateReps?.checked,source:els.researchSource.value,groupAggregation:el('researchGroupAggregation')?.value||'average',showLinesFor:el('researchShowLinesFor')?.value||'representatives',analysisGrain:els.researchAnalysisGrain?.value||'auto',crossSourceJoinMode:els.researchCrossSourceJoin?.value||'grain',populationScope:normalizeResearchPopulationScope(state.editingResearchPopulationScope),weeklyCoverage:readResearchWeeklyCoverageEditor(),unmatchedBehavior:els.researchUnmatchedBehavior?.value||'exclude',calculationGroupLimit:+els.researchCalculationGroupLimit?.value||0,reconcile:!!els.researchReconcile?.checked,missingBehavior:els.researchMissingBehavior?.value||'missing',bucketSize:els.researchBucketSize?.value||'',dateColumn:els.researchDateColumn.value,startDate:els.researchStartDate.value,endDate:els.researchEndDate.value,groupField:els.researchGroupField.value,groupMultiAdd:!!els.researchGroupMultiAdd?.checked,groupAxisItems:state.editingResearchGroupAxisItems||[],groupExpression:els.researchGroupExpression.value,useSecondaryGroup:els.researchUseSecondaryGroup?.value==='yes',secondaryGroupField:els.researchSecondaryGroupField?.value||'',panelField:els.researchPanelField?.value||'',valueMode:els.researchValueMode.value,valueField,measureId:researchMeasureIdFromRef(valueField),percentOfField:els.researchPercentOfField?.value||'',withinCompareField:els.researchWithinCompareField?.value||'',withinUseRange:!!els.researchWithinUseRange?.checked,withinDays:els.researchWithinDays?.value||'',withinRangeMin:els.researchWithinRangeMin?.value||'',withinRangeMax:els.researchWithinRangeMax?.value||'',dateGrouping:els.researchDateGrouping.value,modelId:els.researchModelSelect.value,criteriaId:els.researchCriteriaSelect.value,modelResult:els.researchModelResult.value,population:els.researchPopulation.value,numeratorExpression:els.researchNumeratorExpression.value,numeratorCount:els.researchNumeratorCount.value,denominator:els.researchDenominator.value,denominatorExpression:els.researchDenominatorExpression.value,zeroDenominator:els.researchZeroDenominator.value,percentBuilder:readPercentBuilderEditor(),sort:els.researchSort.value,axisMin:els.researchAxisMin.value,axisMax:els.researchAxisMax.value,decimals:+((els.researchOutputType.value==='table'?els.researchTableDecimals?.value:els.researchDecimals?.value)||0)||0,showValues:els.researchShowValues.checked,showDateLabels:!!els.researchShowDateLabels?.checked,showPercent:els.researchOutputType.value==='table'?!!els.researchTableShowPercent?.checked:els.researchShowPercent.checked,graphSort:els.researchGraphSort?.value||'inherit',topN:+(els.researchTopN?.value||0)||0,showSummaryLine:!!els.researchShowSummaryLine?.checked,goalValue:els.researchGoalValue?.value??'',rotateLabels:!!els.researchRotateLabels?.checked,wrapLabels:els.researchWrapLabels?els.researchWrapLabels.checked:true,showLegend:!!els.researchShowLegend?.checked,showGridlines:els.researchShowGridlines?els.researchShowGridlines.checked:true,smoothLine:!!els.researchSmoothLine?.checked,useDots:els.researchUseDots?els.researchUseDots.checked:true,barOrientation:els.researchBarOrientation?.value||'vertical',stackedBars:!!els.researchStackedBars?.checked,groupedBars:els.researchGroupedBars?els.researchGroupedBars.checked:true,hideZeroGroups:!!els.researchHideZeroGroups?.checked,highlightBest:!!els.researchHighlightBest?.checked,highlightWorst:!!els.researchHighlightWorst?.checked,rowLimit:+els.researchRowLimit.value||0,totals:els.researchTotals.checked,textWrap:els.researchTextWrap?els.researchTextWrap.checked:true,rowDensity:els.researchRowDensity?.value||'comfortable',cardSize:(state.researchItems.find(x=>x.id===(els.researchEditId.value||''))?.cardSize)||'medium',collapsed:!!(state.researchItems.find(x=>x.id===(els.researchEditId.value||''))?.collapsed),filters:state.editingResearchFilters||[],columns:state.editingResearchColumns||[],gearFilters:state.editingResearchGear||{},...(state.editingGuidedResearchActive?guidedConfigFromForm():{guidedEnabled:false})}); }
+function currentResearchItemFromEditor(){ const valueField=els.researchValueField.value; return normalizeResearchItem({id:els.researchEditId.value||id(),title:els.researchTitleInput.value||'Research Item',outputType:els.researchOutputType.value,mode:els.researchMode.value,filterDuplicateReps:!!els.researchFilterDuplicateReps?.checked,source:els.researchSource.value,groupAggregation:el('researchGroupAggregation')?.value||'average',showLinesFor:el('researchShowLinesFor')?.value||'representatives',analysisGrain:els.researchAnalysisGrain?.value||'auto',crossSourceJoinMode:els.researchCrossSourceJoin?.value||'grain',populationScope:normalizeResearchPopulationScope(state.editingResearchPopulationScope),...readResearchPopulationBehaviorEditor(),weeklyCoverage:readResearchWeeklyCoverageEditor(),unmatchedBehavior:els.researchUnmatchedBehavior?.value||'exclude',calculationGroupLimit:+els.researchCalculationGroupLimit?.value||0,reconcile:!!els.researchReconcile?.checked,missingBehavior:els.researchMissingBehavior?.value||'missing',bucketSize:els.researchBucketSize?.value||'',dateColumn:els.researchDateColumn.value,startDate:els.researchStartDate.value,endDate:els.researchEndDate.value,groupField:els.researchGroupField.value,groupMultiAdd:!!els.researchGroupMultiAdd?.checked,groupAxisItems:state.editingResearchGroupAxisItems||[],groupExpression:els.researchGroupExpression.value,useSecondaryGroup:els.researchUseSecondaryGroup?.value==='yes',secondaryGroupField:els.researchSecondaryGroupField?.value||'',panelField:els.researchPanelField?.value||'',valueMode:els.researchValueMode.value,valueField,measureId:researchMeasureIdFromRef(valueField),percentOfField:els.researchPercentOfField?.value||'',withinCompareField:els.researchWithinCompareField?.value||'',withinUseRange:!!els.researchWithinUseRange?.checked,withinDays:els.researchWithinDays?.value||'',withinRangeMin:els.researchWithinRangeMin?.value||'',withinRangeMax:els.researchWithinRangeMax?.value||'',dateGrouping:els.researchDateGrouping.value,modelId:els.researchModelSelect.value,criteriaId:els.researchCriteriaSelect.value,modelResult:els.researchModelResult.value,population:els.researchPopulation.value,numeratorExpression:els.researchNumeratorExpression.value,numeratorCount:els.researchNumeratorCount.value,denominator:els.researchDenominator.value,denominatorExpression:els.researchDenominatorExpression.value,zeroDenominator:els.researchZeroDenominator.value,percentBuilder:readPercentBuilderEditor(),sort:els.researchSort.value,axisMin:els.researchAxisMin.value,axisMax:els.researchAxisMax.value,decimals:+((els.researchOutputType.value==='table'?els.researchTableDecimals?.value:els.researchDecimals?.value)||0)||0,showValues:els.researchShowValues.checked,showDateLabels:!!els.researchShowDateLabels?.checked,showPercent:els.researchOutputType.value==='table'?!!els.researchTableShowPercent?.checked:els.researchShowPercent.checked,graphSort:els.researchGraphSort?.value||'inherit',topN:+(els.researchTopN?.value||0)||0,showSummaryLine:!!els.researchShowSummaryLine?.checked,goalValue:els.researchGoalValue?.value??'',rotateLabels:!!els.researchRotateLabels?.checked,wrapLabels:els.researchWrapLabels?els.researchWrapLabels.checked:true,showLegend:!!els.researchShowLegend?.checked,showGridlines:els.researchShowGridlines?els.researchShowGridlines.checked:true,smoothLine:!!els.researchSmoothLine?.checked,useDots:els.researchUseDots?els.researchUseDots.checked:true,barOrientation:els.researchBarOrientation?.value||'vertical',stackedBars:!!els.researchStackedBars?.checked,groupedBars:els.researchGroupedBars?els.researchGroupedBars.checked:true,hideZeroGroups:!!els.researchHideZeroGroups?.checked,highlightBest:!!els.researchHighlightBest?.checked,highlightWorst:!!els.researchHighlightWorst?.checked,rowLimit:+els.researchRowLimit.value||0,totals:els.researchTotals.checked,textWrap:els.researchTextWrap?els.researchTextWrap.checked:true,rowDensity:els.researchRowDensity?.value||'comfortable',cardSize:(state.researchItems.find(x=>x.id===(els.researchEditId.value||''))?.cardSize)||'medium',collapsed:!!(state.researchItems.find(x=>x.id===(els.researchEditId.value||''))?.collapsed),filters:state.editingResearchFilters||[],columns:state.editingResearchColumns||[],gearFilters:state.editingResearchGear||{},...(state.editingGuidedResearchActive?guidedConfigFromForm():{guidedEnabled:false})}); }
 async function saveResearchItemFromEditor(){
   if(state.researchEditorSaving)return;
   state.researchEditorSaving=true;
@@ -2198,9 +2204,9 @@ function queryPlanBadge(plan){ const note=queryPlanNote(plan); return note?`<div
 function isPersonTeamField(field){ const f=normalizeResearchText(field); return /(^| )(rep|representative|associate|agent|person|name|team|coach|job coach|coach assigned)( |$)/.test(f); }
 function researchQueryFilterCacheKey(source,opts={}){
   const item=opts.item||{}, orgSignature=researchHashText(stableSerialize((state.orgs||[]).map(o=>({id:o.id,name:o.name,coachNames:o.coachNames||[]}))));
-  const filterContext={source,dateColumn:opts.dateColumn||'',startDate:opts.startDate||'',endDate:opts.endDate||'',filters:opts.filters||[],populationScope:item.populationScope||{},analysisGrain:item.analysisGrain||'auto',groupField:item.groupField||'',population:item.population||'',crossSourceJoinMode:item.crossSourceJoinMode||'grain',unmatchedBehavior:item.unmatchedBehavior||'',filterDuplicateReps:!!item.filterDuplicateReps};
+  const filterContext={source,populationFilterMode:item.populationFilterMode,populationFilterPeriod:item.populationFilterPeriod,populationFilterGrain:item.populationFilterGrain,populationFilterEntityField:item.populationFilterEntityField,guidedEnabled:item.guidedEnabled,guidedSubject:item.guidedSubject,guidedPercentageUnit:item.guidedPercentageUnit,dateGrouping:item.dateGrouping,guidedTimeGrouping:item.guidedTimeGrouping,dateColumn:opts.dateColumn||'',startDate:opts.startDate||'',endDate:opts.endDate||'',filters:opts.filters||[],populationScope:item.populationScope||{},analysisGrain:item.analysisGrain||'auto',groupField:item.groupField||'',population:item.population||'',crossSourceJoinMode:item.crossSourceJoinMode||'grain',unmatchedBehavior:item.unmatchedBehavior||'',filterDuplicateReps:!!item.filterDuplicateReps};
   filterContext.weeklyCoverage=normalizeResearchCoverage(item.weeklyCoverage);if(isDatedStatsSource(source)){filterContext.weeklyIdentity=weeklyIdentityContext(source).signature;filterContext.weeklyTimeAxis=!!item.weeklyTimeAxis;}
-  return ['researchFilterV3',researchExecutionDataSignature(filterContext),state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0,state.versions?.roster||0,researchDefinitionDependencies(filterContext).signature,orgSignature,stableSerialize(filterContext)].join('\u001f');
+  return ['researchFilterV4',researchExecutionDataSignature(filterContext),state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0,state.versions?.roster||0,researchDefinitionDependencies(filterContext).signature,orgSignature,stableSerialize(filterContext)].join('\u001f');
 }
 function researchFilterCacheRows(cached,idx){
   if(Array.isArray(cached?.positions)&&idx?.rows) return cached.positions.map(i=>idx.rows[i]).filter(Boolean);
@@ -2209,7 +2215,7 @@ function researchFilterCacheRows(cached,idx){
 function buildQueryPlan(source, opts={}){
   const idx=sourceIndex(source), all=getRowsRaw(source), plan={source,usedIndex:!!idx,initialRows:all.length,candidateRows:all.length,finalRows:all.length,steps:[],fallbacks:[],filters:[],indexesUsed:[],rowsScanned:0};
   const filterCacheKey=researchQueryFilterCacheKey(source,opts)+(opts.inspect?'|org:'+opts.inspect.scopeKey:''), cached=state.researchFilterResultCache?.get(filterCacheKey), cachedRows=opts.inspect?null:researchFilterCacheRows(cached,idx);
-  if(cachedRows){ plan.cacheHit=true;plan.populationFlow=cached.plan?.populationFlow?{...cached.plan.populationFlow}:undefined;plan.coverage=cached.plan?.coverage;researchWeeklyFlowFinish({...opts.item,source},cachedRows,plan); plan.candidateRows=cachedRows.length; plan.finalRows=cachedRows.length; plan.indexesUsed.push('versioned filter-position cache'); plan.steps.push({name:'versioned filter cache',before:all.length,candidates:cachedRows.length,after:cachedRows.length,usedIndex:true}); state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(cachedRows,filterCacheKey); return {rows:cachedRows,plan}; }
+  if(cachedRows){ plan.cacheHit=true;plan.populationFlow=cached.plan?.populationFlow?{...cached.plan.populationFlow}:undefined;plan.coverage=cached.plan?.coverage;plan.populationFilters=cached.plan?.populationFilters;researchWeeklyFlowFinish({...opts.item,source},cachedRows,plan); plan.candidateRows=cachedRows.length; plan.finalRows=cachedRows.length; plan.indexesUsed.push('versioned filter-position cache'); plan.steps.push({name:'versioned filter cache',before:all.length,candidates:cachedRows.length,after:cachedRows.length,usedIndex:true}); state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(cachedRows,filterCacheKey); return {rows:cachedRows,plan}; }
   plan.cacheHit=false;
   let rows=all;
   opts.inspect?.stage?.('Imported primary source',rows);
@@ -2235,7 +2241,7 @@ function buildQueryPlan(source, opts={}){
   const applyGroup=(label,predicate,indexRows)=>{ const before=rows.length; const candidates=indexRows?intersectRowsFast(rows,indexRows):rows; rows=candidates.filter(predicate); step(label,before,candidates.length,rows.length,!!indexRows); };
   filters.forEach(f=>{
     const op=f.op||'contains', include=f.include||'include';
-    if(f.expression || include==='includeWithin' || include==='excludeWithin' || parseModelRef(f.field||'') || parseModelRef(f.value||'')){ remaining.push(f); return; }
+    if(researchPopulationFilterApplies(f,{...(opts.item||{}),source}) || !conditionResultIsTrue(f.conditionResult) || f.expression || include==='includeWithin' || include==='excludeWithin' || parseModelRef(f.field||'') || parseModelRef(f.value||'')){ remaining.push(f); return; }
     const field=resolveColumn(source,f.field)||f.field, val=f.value;
     const orgLike=['is in org','is not in org','includes org','excludes org'].includes(op)||String(val||'').trim().startsWith('$');
     if(orgLike && include==='include'){
@@ -2254,6 +2260,7 @@ function buildQueryPlan(source, opts={}){
   const next=[];
   remaining.forEach(f=>{
     const op=f.op||'contains', include=f.include||'include', field=resolveColumn(source,f.field)||f.field;
+    if(researchPopulationFilterApplies(f,{...(opts.item||{}),source}) || !conditionResultIsTrue(f.conditionResult)){next.push(f);return;}
     if(include==='include' && op==='is' && field && idx){ const before=rows.length, ix=indexRowsForExactFieldValue(idx,field,f.value); if(ix){ const cand=intersectRowsFast(rows,ix); rows=cand.filter(r=>compareFilter(researchFieldValue(r,field,source),op,f.value,f.value2)); step('exact column/value filter',before,cand.length,rows.length,true); return; } }
     if(include==='include' && ['greater than','greater/equal','less than','less/equal','between'].includes(op) && field && idx){ const before=rows.length, ix=numericIndexCandidateRows(idx,field,op,f.value,f.value2); if(ix){ const cand=intersectRowsFast(rows,ix); const read=researchNumericReader(field,source); rows=cand.filter(r=>compareFilter(read(r),op,f.value,f.value2)); step('numeric range filter',before,cand.length,rows.length,true); return; } }
     next.push(f);
@@ -2261,6 +2268,7 @@ function buildQueryPlan(source, opts={}){
   const last=[];
   next.forEach(f=>{
     const word=researchFilterWord(f), include=f.include||'include';
+    if(researchPopulationFilterApplies(f,{...(opts.item||{}),source}) || !conditionResultIsTrue(f.conditionResult)){last.push(f);return;}
     if(include==='include' && word && idx){ const indexed=textIndexCandidateRows(idx,source,f.field,word); if(indexed){ const before=rows.length, cand=intersectRowsFast(rows,indexed); rows=cand.filter(r=>compareFilter(researchFieldValue(r,f.field,source),f.op||'contains',f.value,f.value2)); step('column text-token filter',before,cand.length,rows.length,true); return; } }
     last.push(f);
   });
@@ -2286,8 +2294,11 @@ function applyResearchFilters(rows, filters, item, perf){
   const compiled=(filters||[]).map((f,i)=>({f,idx:i,word:researchFilterWord(f),exprFn:f.expression?compileResearchExpression(f.expression,source,`Research filter ${i+1}`):null}));
   compiled.sort((a,b)=>{ const sa=a.word&&idx?.byWord?.has(a.word)?idx.byWord.get(a.word).length:Infinity, sb=b.word&&idx?.byWord?.has(b.word)?idx.byWord.get(b.word).length:Infinity; return sa-sb; });
   compiled.forEach(plan=>{
-    const f=plan.f, before=out.length; let candidates=out; const isTeamFilter=f.type==='team_is'||f.fieldType==='team_is';
-    if(!isTeamFilter && plan.word && idx && f.include!=='exclude' && f.include!=='excludeWithin'){
+    const f=plan.f, before=out.length;
+    const populationItem=(typeof item==='string'?{source}:item)||{source};
+    if(researchPopulationFilterApplies(f,populationItem)){out=applyResearchPopulationFilter(out,f,populationItem,stat);return;}
+    let candidates=out; const isTeamFilter=f.type==='team_is'||f.fieldType==='team_is';
+    if(!isTeamFilter && conditionResultIsTrue(f.conditionResult) && plan.word && idx && f.include!=='exclude' && f.include!=='excludeWithin'){
       const indexed=textIndexCandidateRows(idx,source,f.field,plan.word); if(indexed){ candidates=researchRowsIntersect(out,indexed); stat.indexesUsed.push(`textToken:${f.field}:${plan.word}`); }
     }
     const resolvedTeamFilter=isTeamFilter?resolveTeamFilterSelection(f.teamInput||f.rawTeamInput||f.value||''):null; if(isTeamFilter && resolvedTeamFilter?.warnings?.length && stat.warnings) resolvedTeamFilter.warnings.forEach(w=>stat.warnings.push('Team filter warning: '+w));
@@ -2504,12 +2515,14 @@ function resolveRowsForCohort(sourceKey, cohortContext, options = {}){
 function researchRowsForCohort(targetSource, baseRows, baseSource, item={}){
   targetSource=resolveDynamicResearchSource({...item,source:targetSource}); baseSource=resolveDynamicResearchSource({...item,source:baseSource});
   if(!targetSource || targetSource===baseSource){ const copy=(baseRows||[]).slice(); state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(copy,researchMetricRowSignature(baseRows||[],baseSource)); return copy; }
+  if(item.populationFilterGrain==='items'&&item.populationFilterEntityField)return researchPopulationItemCohortRows(targetSource,baseRows,baseSource,item);
   const resolved=resolveRowsForCohort(targetSource,{rows:baseRows,baseRows,baseSource,source:baseSource,item},{item});
   const opts={start:parseDateOnly(item.startDate),end:parseDateOnly(item.endDate),dateColumn:researchDefaultDateColumn({source:targetSource}),qaDateMode:els.runQADateSelect?.value||'interaction'};
-  const joinedKey=resolved.cohortSignature+'|date:'+stableSerialize({start:item.startDate||'',end:item.endDate||'',date:opts.dateColumn,qaDateMode:opts.qaDateMode,duplicates:!!item.filterDuplicateReps,definition:item.filterDuplicateReps?researchItemCacheKey(item,'duplicateReps'):''});
+  const joinedKey=resolved.cohortSignature+'|date:'+stableSerialize({start:item.startDate||'',end:item.endDate||'',date:opts.dateColumn,qaDateMode:opts.qaDateMode,populationMode:item.populationFilterMode,populationPeriod:researchPopulationPeriod(item),populationGrain:researchPopulationGrain(item,baseRows),populationEntityField:item.populationFilterEntityField,duplicates:!!item.filterDuplicateReps,definition:item.filterDuplicateReps?researchItemCacheKey(item,'duplicateReps'):''});
   state.researchJoinedPopulationCache=state.researchJoinedPopulationCache||new Map();
   const reused=researchTouchCache(state.researchJoinedPopulationCache,joinedKey); if(reused) return reused.rows;
   let filtered=filterRowsForSource(targetSource,resolved.rows,opts);
+  filtered=researchPopulationJoinRows(filtered,targetSource,baseRows,baseSource,item);
   if(item?.filterDuplicateReps){ const dm=buildResearchDuplicateRepMap(researchDuplicateRowsBySource({...item,source:baseSource},baseRows),{...item,source:baseSource},{}); filtered=applyDuplicateRepFilterToRows(filtered,targetSource,dm,{item}); }
   state.researchCohortRowSignatures=state.researchCohortRowSignatures||new WeakMap(); state.researchCohortRowSignatures.set(filtered,joinedKey);
   researchBoundedRowsCacheSet(state.researchJoinedPopulationCache,joinedKey,{rows:filtered,dependencies:{sources:[targetSource,baseSource]}},60);
@@ -2648,9 +2661,9 @@ function guidedConditionsMatchRows(baseRows,item){
 function applyGuidedConditionsToRows(rows,item){
   const conditions=(item.guidedConditions||[]).filter(guidedValidCondition); if(!conditions.length) return rows||[];
   if(item.guidedSubject==='representatives'&&['show','count','compare'].includes(item.guidedQuestion)){
-    const grouped=new Map(); (rows||[]).forEach(r=>{ const key=personKeyFromRow(r,item.source)||normalizeIdentityName(researchRowRepName(r,item.source)); if(!key) return; if(!grouped.has(key)) grouped.set(key,[]); grouped.get(key).push(r); });
+    const grouped=new Map(); (rows||[]).forEach(r=>{ const key=researchPopulationRepresentativePeriodKey(r,item); if(!key) return; if(!grouped.has(key)) grouped.set(key,[]); grouped.get(key).push(r); });
     const qualified=new Set(); grouped.forEach((entityRows,key)=>{ if(guidedConditionsMatchRows(entityRows,item)) qualified.add(key); });
-    return (rows||[]).filter(r=>qualified.has(personKeyFromRow(r,item.source)||normalizeIdentityName(researchRowRepName(r,item.source))));
+    return (rows||[]).filter(r=>qualified.has(researchPopulationRepresentativePeriodKey(r,item)));
   }
   return (rows||[]).filter(r=>guidedConditionsMatchRows([r],item));
 }
@@ -2660,7 +2673,7 @@ async function applyGuidedConditionsToRowsAsync(rows,item,progress={}){
   if(item.guidedSubject==='representatives'&&['show','count','compare'].includes(item.guidedQuestion)){
     const grouped=new Map();
     for(let i=0;i<input.length;i++){
-      const r=input[i], key=personKeyFromRow(r,item.source)||normalizeIdentityName(researchRowRepName(r,item.source));
+      const r=input[i], key=researchPopulationRepresentativePeriodKey(r,item);
       if(key){ if(!grouped.has(key)) grouped.set(key,[]); grouped.get(key).push(r); }
       if((i+1)%Math.max(1000,batch*4)===0){ report(i+1,input.length,'Building the individual population'); await yieldToBrowser(); }
     }
@@ -2672,7 +2685,7 @@ async function applyGuidedConditionsToRowsAsync(rows,item,progress={}){
     }
     const out=[];
     for(let i=0;i<input.length;i++){
-      const r=input[i], key=personKeyFromRow(r,item.source)||normalizeIdentityName(researchRowRepName(r,item.source));
+      const r=input[i], key=researchPopulationRepresentativePeriodKey(r,item);
       if(qualified.has(key)) out.push(r);
       if((i+1)%Math.max(1000,batch*4)===0){ report(i+1,input.length,'Applying qualified individuals'); await yieldToBrowser(); }
     }
@@ -2691,7 +2704,12 @@ function researchItemUsesGuidedPercentage(item){ return item.guidedQuestion==='p
 function applyGuidedQualificationForNonPercent(rows,item){ return (item.guidedConditions||[]).some(guidedValidCondition)&&!researchItemUsesGuidedPercentage(item)?applyGuidedConditionsToRows(rows,item):(rows||[]); }
 async function applyGuidedQualificationForNonPercentAsync(rows,item,progress={}){ return (item.guidedConditions||[]).some(guidedValidCondition)&&!researchItemUsesGuidedPercentage(item)?applyGuidedConditionsToRowsAsync(rows,item,progress):(rows||[]); }
 function guidedEntityEntries(rows,item,unit){
-  if(unit==='unique_reps') return percentBuilderRepEntries(rows,item.source);
+  if(unit==='unique_reps'){
+    if(!researchDynamicPopulationEnabled(item))return percentBuilderRepEntries(rows,item.source);
+    const entries=new Map();
+    for(const row of rows){const key=researchPopulationRepresentativePeriodKey(row,item);if(!key)continue;if(!entries.has(key))entries.set(key,{key,name:researchRowRepName(row,item.source),team:researchRowTeam(row,item.source),rows:[]});entries.get(key).rows.push(row);}
+    return [...entries.values()];
+  }
   const map=new Map(); (rows||[]).forEach(r=>{ const raw=unit==='unique_coaches'?(researchRowCoach(r)||researchRowTeam(r,item.source)):(researchRowTeam(r,item.source)||rowTeam(r)), key=normalizeOrgName(raw); if(!key) return; if(!map.has(key)) map.set(key,{key,name:String(raw),team:String(raw),rows:[]}); map.get(key).rows.push(r); }); return [...map.values()];
 }
 function percentBuilderRepEntries(rows,source){
@@ -2753,7 +2771,8 @@ function percentBuilderRuleMatchesRow(row,source,pb,item,warnings=[]){
 }
 function percentBuilderEntryQualifies(entry,pb,item,warnings=[]){
   const source=pb.fromMode==='custom_expression'?(item.source||pb.qualifierSource):pb.qualifierSource;
-  const rel=pb.fromMode==='custom_expression'?entry.rows:percentBuilderRelatedRows(entry,source,item);
+  const rawRel=pb.fromMode==='custom_expression'?entry.rows:researchDynamicPopulationEnabled(item)?researchRowsForCohort(source,entry.rows,item.source,item):percentBuilderRelatedRows(entry,source,item);
+  const rel=researchPopulationJoinRows(rawRel,source,entry.rows,item.source,item);
   if(pb.fromMode==='custom_expression'){
     const n=evaluateResearchExpressionInContext(pb.expression,rel,{...item,source},warnings);
     return {ok:comparePercentBuilderRuleValue(n,pb.operator,pb.value,pb.value2),count:Number.isFinite(toNum(n))?1:0,rows:rel};
@@ -2848,7 +2867,7 @@ async function preparePercentBuilderCachesForResearchItem(item,outputColumns,war
 function evaluatePercentBuilder(item,rows,col,ctx={}){
   item=effectiveResearchItem(item||{}); const warnings=ctx.warnings||[], pb=normalizePercentBuilder(col?.percentBuilder||item.percentBuilder,item), source=pb.qualifierSource||item.source, guided=(item.guidedConditions||[]).some(guidedValidCondition);
   if(!['unique_reps','unique_teams','unique_coaches'].includes(pb.unit)){
-    const targetSource=pb.unit==='documented_coaching'?'documented_coaching':(pb.unit==='checklist'?'checklist':source), base=percentBuilderScopedRows(targetSource,item), scoped=targetSource===item.source?rows:researchRowsForCohort(targetSource,rows,item.source,item), conditionItem=targetSource===item.source?item:{...item,source:targetSource}, matched=guided?applyGuidedConditionsToRows(scoped,conditionItem):scoped.filter(r=>percentBuilderRuleMatchesRow(r,targetSource,pb,item,warnings));
+    const targetSource=pb.unit==='documented_coaching'?'documented_coaching':(pb.unit==='checklist'?'checklist':source), base=researchPopulationDenominatorRows(rows,item,targetSource), scoped=targetSource===item.source?rows:researchRowsForCohort(targetSource,rows,item.source,item), conditionItem=targetSource===item.source?item:{...item,source:targetSource}, matched=guided?applyGuidedConditionsToRows(scoped,conditionItem):scoped.filter(r=>percentBuilderRuleMatchesRow(r,targetSource,pb,item,warnings));
     if(pb.unit==='numeric_total'){
       const field=item.guidedMeasureField||pb.rules?.[0]?.field||item.valueField, total=rs=>(rs||[]).reduce((sum,r)=>{ const n=evaluateResearchNumericField(r,field,source); return sum+(Number.isFinite(n)?n:0); },0), num=total(matched), den=total(pb.denominator==='all_source_rows'?base:scoped);
       ctx.percentBuilderTrace={numerator:num,denominator:den,unit:pb.unit,qualifierSource:source,denominatorType:pb.denominator}; return den?num/den*100:(pb.zeroDenominator==='blank'?null:0);
@@ -2861,10 +2880,11 @@ function evaluatePercentBuilder(item,rows,col,ctx={}){
   let denomEntries=groupEntries;
   if(pb.denominator==='coach_full_team'&&pb.unit==='unique_reps'){
     const groupTeams=new Set(groupEntries.map(e=>normalizeOrgName(e.team)).filter(Boolean));
-    denomEntries=guidedEntityEntries(percentBuilderScopedRows(item.source,item),item,pb.unit).filter(e=>groupTeams.has(normalizeOrgName(e.team)));
-  }else if(pb.denominator==='all_reps') denomEntries=guidedEntityEntries(percentBuilderScopedRows(item.source,item),item,pb.unit);
+    denomEntries=guidedEntityEntries(researchPopulationDenominatorRows(rows,item),item,pb.unit).filter(e=>groupTeams.has(normalizeOrgName(e.team)));
+  }else if(pb.denominator==='all_reps') denomEntries=guidedEntityEntries(researchPopulationDenominatorRows(rows,item),item,pb.unit);
   let qualified;
   if(guided) qualified=denomEntries.filter(e=>guidedConditionsMatchRows(e.rows,item));
+  else if(researchDynamicPopulationEnabled(item)) qualified=denomEntries.filter(e=>percentBuilderEntryQualifies(e,pb,item,warnings).ok);
   else if(pb.unit==='unique_reps'&&source===item.source&&isDatedStatsSource(source)&&researchGroupDateField(item)&&pb.fromMode!=='custom_expression'){qualified=denomEntries.filter(e=>percentBuilderCountRepMatch(e.rows.filter(r=>percentBuilderRuleMatchesRow(r,source,pb,item,warnings)).length,pb.matchBehavior,pb));}
   else if(pb.unit==='unique_reps'&&pb.fromMode!=='custom_expression'){ const qualifiedSet=percentBuilderQualifiedRepSet(pb,item,source,warnings).qualified; qualified=denomEntries.filter(e=>qualifiedSet.has(e.key)); }
   else qualified=denomEntries.filter(e=>percentBuilderEntryQualifies(e,pb,item,warnings).ok);
@@ -3007,7 +3027,7 @@ function researchAnalysisCacheItem(item,kind){
 function researchItemCacheKey(item,kind){
   const normItem=normalizeResearchItem(item); const src=resolveDynamicResearchSource(normItem); const keyItem=src&&src!==normItem.source?{...normItem,source:src,_dynamicSource:normItem.source}:normItem;
   const orgSignature=researchHashText(stableSerialize((state.orgs||[]).map(o=>({id:o.id||'',name:o.name||'',coachNames:[...(o.coachNames||[])].map(canonicalCoachName).sort()})).sort((a,b)=>String(a.id).localeCompare(String(b.id)))));
-  return ['researchCacheV3',kind,researchExecutionDataSignature(keyItem),stableSerialize(researchAnalysisCacheItem(keyItem,kind)),'aliasesV'+(state.versions?.aliases||0),'teamsV'+(state.versions?.teams||0),'mappingsV'+(state.versions?.mappings||0),'definitions:'+researchDefinitionDependencies(keyItem).signature,'rosterV'+(state.versions?.roster||0),'orgsV'+orgSignature,keyItem.startDate||'',keyItem.endDate||'',keyItem.dateColumn||''].join('\u001f');
+  return ['researchCacheV4',kind,researchExecutionDataSignature(keyItem),stableSerialize(researchAnalysisCacheItem(keyItem,kind)),'aliasesV'+(state.versions?.aliases||0),'teamsV'+(state.versions?.teams||0),'mappingsV'+(state.versions?.mappings||0),'definitions:'+researchDefinitionDependencies(keyItem).signature,'rosterV'+(state.versions?.roster||0),'orgsV'+orgSignature,keyItem.startDate||'',keyItem.endDate||'',keyItem.dateColumn||''].join('\u001f');
 }
 function loadResearchResultCache(){
   try{ state.researchPersistentCache=JSON.parse(localStorage.getItem(RESEARCH_CACHE_KEY)||'{}')||{}; }catch(_){ state.researchPersistentCache={}; }
@@ -3177,6 +3197,8 @@ function researchApplyCalculationScope(groups,item,warnings=[]){
   return scoped;
 }
 function researchApplyUnmatchedGroupBehavior(groups,item,warnings=[]){
+  // No coaching is a valid negative outcome for an eligible person-period.
+  if(researchDynamicPopulationEnabled(item)&&researchItemUsesGuidedPercentage(item)) return groups;
   if(item.unmatchedBehavior!=='exclude') return groups;
   const targets=researchExecutionSources(item).filter(source=>source!==item.source); if(!targets.length) return groups;
   const kept=groups.filter(group=>targets.every(source=>researchRowsForCohort(source,group.rows||[],item.source,item).length>0));
@@ -3184,6 +3206,7 @@ function researchApplyUnmatchedGroupBehavior(groups,item,warnings=[]){
   return kept;
 }
 async function researchApplyUnmatchedGroupBehaviorAsync(groups,item,warnings,token){
+  if(researchDynamicPopulationEnabled(item)&&researchItemUsesGuidedPercentage(item)) return groups;
   if(item.unmatchedBehavior!=='exclude') return groups;
   const targets=researchExecutionSources(item).filter(source=>source!==item.source); if(!targets.length) return groups;
   const kept=[]; let lastYield=performance.now();
@@ -3752,6 +3775,7 @@ function researchSamplePreview(item){
   const filters=(item.filters||[]).filter(filter=>filter.field||filter.column||filter.expression||filter.targetValue);
   for(const filter of filters){
     const field=filter.field||filter.column,op=filter.op||filter.operator||'contains';
+    if(researchPopulationFilterApplies(filter,item)){notes.push('Population calculations and period-based eligibility are checked by Run population preview or Save & Run Research.');continue;}
     if(filter.expression||filter.dynamic||filter.dynamicColumn||filter.include==='includeWithin'||filter.include==='excludeWithin'||!resolve(field)||parseResearchBangField(field)||findMetricByRef(field)||parseModelRef(field)){
       notes.push('Advanced expressions, model/metric filters, and cross-source filters are checked by Save & Run Research.');continue;
     }
@@ -3766,7 +3790,7 @@ function researchSamplePreview(item){
   if(item.weeklyCoverage?.enabled)notes.push('Minimum weekly coverage is checked using the complete selected period when you run Research; this sample does not establish eligibility.');
   if(Object.keys(item.gearFilters||{}).length)notes.push('Advanced field/value selections are checked by Save & Run Research.');
   const columns=[...new Set(['_rep','_team',item.dateColumn,...filters.map(f=>f.field||f.column),...conditions.map(c=>c.field),item.valueField,...(item.columns||[]).map(c=>c.field)].filter(field=>field&&resolve(field)))].slice(0,12);
-  return {source:item.source,importedRows:raw.length,sampledRows:size,matchedRows:rows.length,rows:rows.slice(0,100),populationRows,calculationRows:rows,calculationSafe:safeConditions&&!notes.some(note=>/Advanced|Cross-source/.test(note)),columns,read,notes:[...new Set(notes)]};
+  return {source:item.source,importedRows:raw.length,sampledRows:size,matchedRows:rows.length,rows:rows.slice(0,100),populationRows,calculationRows:rows,calculationSafe:safeConditions&&!notes.some(note=>/Advanced|Cross-source|Population calculations/.test(note)),columns,read,notes:[...new Set(notes)]};
 }
 function researchSampleCalculation(preview,item){
   item=effectiveResearchItem(normalizeResearchItem(item));
@@ -3955,7 +3979,7 @@ function renderResearchResultByDisplay(item,res){
   if(item.datedStats)return renderDatedStatsResult(item,res);
   configureResearchCharts();
   const actions=typeof AllStarCharts!=='undefined'&&Array.isArray(res.data)?AllStarCharts.resultActions(item,res):'';
-  return actions+renderResearchResultContent(item,res)+researchCalculationDiagnosticsHtml(res);
+  return researchPopulationPreviewHtml(res.perf?.queryPlan)+actions+renderResearchResultContent(item,res)+researchCalculationDiagnosticsHtml(res);
 }
 function renderResearchResultContent(item,res){
   if(item.guidedDisplay==='summary_cards') return renderGuidedSummaryCards(item,res);
