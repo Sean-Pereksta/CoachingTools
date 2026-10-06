@@ -131,5 +131,65 @@ async function uiPersistenceAndPreview(){
     console.log('PASS plain-language controls, weekly defaults, compact sample calculations, definition persistence and reusable filter sets');
   }finally{h.close();}
 }
-async function run(){await weeklyAcceptance();await staticAndCompatibility();await grainsDatesAndJoins();await uiPersistenceAndPreview();}
+async function performanceAndCache(){
+  const h=fixture();
+  try{
+    h.run(`
+      const manyStats=[],manyCoachings=[];
+      for(let w=0;w<8;w++)for(let r=0;r<96;r++){
+        const date=new Date(2026,7,2+w*7),dateText=ymd(date),Name='Representative '+r,Sheet='Coach '+Math.floor(r/24);
+        manyStats.push({Date:dateText,Name,Sheet,'Consumer Appointments':String((r+w)%4<2?18:28),'Consumer Opportunities':'42',_sourceKey:'weeklyRetail'});
+        date.setDate(date.getDate()+3);
+        if((r+w)%3===0)manyCoachings.push({'Associate Name':Name,Date:ymd(date),Notes:'Appointment coaching',_rep:Name,_repKey:fullNameIdentityKey(Name),_team:Sheet,_sourceKey:'documented_coaching'});
+      }
+      state.data.weeklyRetail={...state.data.weeklyRetail,rows:manyStats};state.data.documented_coaching={...state.data.documented_coaching,rows:manyCoachings};
+      markDataIndexDirty('population performance',{sources:['weeklyRetail','documented_coaching']});
+      const performanceItem=normalizeResearchItem({...item,id:'population-performance',columns:[],showLinesFor:'teams',guidedEnabled:true,guidedSubject:'representatives',guidedQuestion:'percentage',guidedPercentageUnit:'unique_reps',guidedBreakdown:'coach',guidedDisplay:'line',outputType:'line',valueMode:'percent',guidedConditions:[{source:'documented_coaching',field:'Notes',operator:'is_not_blank'}]});
+      const work={operands:0,joins:0,coachHeaders:0},originalOperand=researchPopulationOperand,originalJoin=researchRowsForCohort,originalHeader=findHeader;
+      researchPopulationOperand=function(...args){work.operands++;return originalOperand(...args);};
+      researchRowsForCohort=function(...args){work.joins++;return originalJoin(...args);};
+      findHeader=function(headers,choices,...args){if(choices?.join('|')==='Sheet|Coach|Job Coach|Team|Coach Name|Coach Assigned')work.coachHeaders++;return originalHeader(headers,choices,...args);};
+    `);
+    const optimized=plain(await h.run('evaluateResearchItemAsync(performanceItem)'));
+    const counts=plain(h.run('work'));
+    assert.ok(counts.operands<=2,'resolve the two ratio operands once, independently of rep/week count');
+    assert.ok(counts.joins<=32,'one exact coaching join per coach/week, rather than one per qualifying rep/week');
+    assert.ok(counts.coachHeaders<=2,'fuzzy coach header lookup scales with row schemas, not row visits');
+    assert.equal(optimized.totalRowCount,384);
+    const expected=[];
+    for(let w=0;w<8;w++)for(let team=0;team<4;team++){
+      let denominator=0,numerator=0;
+      for(let r=team*24;r<(team+1)*24;r++)if((r+w)%4<2){denominator++;if((r+w)%3===0)numerator++;}
+      const date=new Date(2026,7,2+w*7),label=date.toISOString().slice(0,10);
+      expected.push([label,'Coach '+team,numerator/denominator*100,numerator,denominator]);
+    }
+    const summarize=result=>result.data.map(row=>[row.label,row.secondary,row.values[0],row.pointDetails[0].numerator,row.pointDetails[0].denominator]);
+    assert.deepEqual(summarize(optimized),expected);
+    h.run('state.researchResultCache.clear();state.researchPersistentCache={};loadResearchResultCache();');
+    const restored=plain(await h.run('evaluateResearchItemAsync(performanceItem)'));
+    assert.equal(restored.perf.persistent,true,'current cache version survives a cache reload');
+    assert.deepEqual(restored.data,optimized.data,'cached percentages retain the exact numerator/denominator evidence');
+    h.run('clearResearchComputedCaches("individual join comparison");const preparedReader=researchDynamicPercentJoinReader;researchDynamicPercentJoinReader=()=>null;');
+    const individual=plain(await h.run('evaluateResearchItemAsync(performanceItem)'));
+    assert.deepEqual(individual.data,optimized.data,'partitioning the group join preserves individual join results');
+    h.run('researchDynamicPercentJoinReader=preparedReader;');
+    for(const period of ['daily','monthly','period']){
+      h.context.period=period;
+      h.run('clearResearchComputedCaches("period comparison");');
+      const fast=plain(await h.run('evaluateResearchItemAsync({...performanceItem,populationFilterPeriod:period})'));
+      h.run('clearResearchComputedCaches("individual period comparison");researchDynamicPercentJoinReader=()=>null;');
+      const slow=plain(await h.run('evaluateResearchItemAsync({...performanceItem,populationFilterPeriod:period})'));
+      assert.deepEqual(fast.data,slow.data,period+' joins preserve eligibility and evidence');
+      h.run('researchDynamicPercentJoinReader=preparedReader;');
+    }
+    h.run('const liveRow=manyStats[0];weeklySourceRowIdentity(liveRow,"weeklyRetail");liveRow.Sheet="Coach Changed";');
+    assert.equal(h.run('weeklySourceRowIdentity(liveRow,"weeklyRetail").coach'),'Coach Changed','schema reuse never caches a row\'s actual coach');
+    h.run('delete liveRow.Sheet;liveRow["Job Coach"]="Coach Alternate";');
+    assert.equal(h.run('weeklySourceRowIdentity(liveRow,"weeklyRetail").coach'),'Coach Alternate','a changed row schema resolves its own fallback field');
+    h.run('liveRow._teamAssignedManually=true;liveRow._team="Coach Manual";');
+    assert.equal(h.run('weeklySourceRowIdentity(liveRow,"weeklyRetail").coach'),'Coach Manual','manual mappings remain live');
+    console.log('PASS bounded formula/header/join work, independent percentage oracle, individual-join parity at every period, persistent evidence, and live mappings');
+  }finally{h.close();}
+}
+async function run(){await weeklyAcceptance();await staticAndCompatibility();await grainsDatesAndJoins();await uiPersistenceAndPreview();await performanceAndCache();}
 run().catch(error=>{console.error(error);process.exitCode=1;});

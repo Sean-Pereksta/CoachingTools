@@ -2631,12 +2631,12 @@ function guidedConditionValueMatches(left,c={}){
   const n=toNum(left), a=toNum(c.value), b=toNum(c.value2); if(op==='greater_than') return n>a; if(op==='greater_equal') return n>=a; if(op==='less_than') return n<a; if(op==='less_equal') return n<=a; if(op==='between') return Number.isFinite(n)&&Number.isFinite(a)&&Number.isFinite(b)&&n>=Math.min(a,b)&&n<=Math.max(a,b);
   return false;
 }
-function guidedConditionTargetRows(baseRows,item,c){
+function guidedConditionTargetRows(baseRows,item,c,joinRows=null){
   const source=c.source||item.source, rows=baseRows||[]; if(source===item.source) return rows;
-  return researchRowsForCohort(source,rows,item.source,item);
+  return joinRows?joinRows(source,rows):researchRowsForCohort(source,rows,item.source,item);
 }
-function guidedConditionMatchesRows(baseRows,item,c){
-  const source=c.source||item.source, rows=guidedConditionTargetRows(baseRows,item,c), op=c.operator||'contains';
+function guidedConditionMatchesRows(baseRows,item,c,joinRows=null){
+  const source=c.source||item.source, rows=guidedConditionTargetRows(baseRows,item,c,joinRows), op=c.operator||'contains';
   if(c.expression){
     const expressionItem={...item,source}, warnings=researchRuntimeWarnings(item);
     const result=evaluateResearchAggregateExpression(expressionItem,rows,c.field,{warnings});
@@ -2647,9 +2647,9 @@ function guidedConditionMatchesRows(baseRows,item,c){
   const matches=rows.map(r=>guidedConditionValueMatches(researchFieldValue(r,c.field,source),c));
   return op==='not_contains'||op==='not_equals'?matches.every(Boolean):matches.some(Boolean);
 }
-function guidedConditionsMatchRows(baseRows,item){
-  const conditions=(item.guidedConditions||[]).filter(guidedValidCondition); if(!conditions.length) return true; let result=guidedConditionMatchesRows(baseRows,item,conditions[0]);
-  for(let i=1;i<conditions.length;i++){ const hit=guidedConditionMatchesRows(baseRows,item,conditions[i]); result=conditions[i].logic==='or'?(result||hit):(result&&hit); }
+function guidedConditionsMatchRows(baseRows,item,joinRows=null){
+  const conditions=(item.guidedConditions||[]).filter(guidedValidCondition); if(!conditions.length) return true; let result=guidedConditionMatchesRows(baseRows,item,conditions[0],joinRows);
+  for(let i=1;i<conditions.length;i++){ const hit=guidedConditionMatchesRows(baseRows,item,conditions[i],joinRows); result=conditions[i].logic==='or'?(result||hit):(result&&hit); }
   return result;
 }
 function applyGuidedConditionsToRows(rows,item){
@@ -2748,8 +2748,8 @@ function percentBuilderAllRepEntries(source,item={}){
   const cacheKey='allRepEntries|'+percentBuilderSourceSignature(source)+'|'+percentBuilderDateScopeSignature(item,source);
   return percentBuilderCacheGet(cacheKey,()=>percentBuilderRepEntries(percentBuilderScopedRows(source,item),source));
 }
-function percentBuilderRelatedRows(entry,source,item={}){
-  if(researchHasDynamicPopulation(item))return researchRowsForCohort(source,entry.rows,item.source,item);
+function percentBuilderRelatedRows(entry,source,item={},joinRows=null){
+  if(researchHasDynamicPopulation(item))return joinRows?joinRows(source,entry.rows):researchRowsForCohort(source,entry.rows,item.source,item);
   const map=percentBuilderRowsByRep(source,item);
   return (map.get(entry.key)||[]).slice();
 }
@@ -2759,9 +2759,9 @@ function percentBuilderRuleMatchesRow(row,source,pb,item,warnings=[]){
   if(ref?.missingField && warnings) warnings.push(`Percent Builder missing header: ${field}`);
   return comparePercentBuilderRuleValue(researchFieldValue(row,actualField,actualSource),pb.operator||rule.operator, pb.value??rule.value, pb.value2??rule.value2);
 }
-function percentBuilderEntryQualifies(entry,pb,item,warnings=[]){
+function percentBuilderEntryQualifies(entry,pb,item,warnings=[],joinRows=null){
   const source=pb.fromMode==='custom_expression'?(item.source||pb.qualifierSource):pb.qualifierSource;
-  const rel=pb.fromMode==='custom_expression'?entry.rows:percentBuilderRelatedRows(entry,source,item);
+  const rel=pb.fromMode==='custom_expression'?entry.rows:percentBuilderRelatedRows(entry,source,item,joinRows);
   if(pb.fromMode==='custom_expression'){
     const n=evaluateResearchExpressionInContext(pb.expression,rel,{...item,source},warnings);
     return {ok:comparePercentBuilderRuleValue(n,pb.operator,pb.value,pb.value2),count:Number.isFinite(toNum(n))?1:0,rows:rel};
@@ -2866,7 +2866,7 @@ function evaluatePercentBuilder(item,rows,col,ctx={}){
     return den?num/den*100:(pb.zeroDenominator==='blank'?null:0);
   }
   if(researchHasDynamicPopulation(item)){
-    const eligible=researchDynamicPercentPopulation(rows,item,pb),entries=researchDynamicPercentEntries(eligible,item,pb.unit),qualified=entries.filter(e=>guided?guidedConditionsMatchRows(e.rows,item):percentBuilderEntryQualifies(e,pb,item,warnings).ok);
+    const eligible=researchDynamicPercentPopulation(rows,item,pb),entries=researchDynamicPercentEntries(eligible,item,pb.unit),joinRows=researchDynamicPercentJoinReader(eligible,item,pb.unit),qualified=entries.filter(e=>guided?guidedConditionsMatchRows(e.rows,item,joinRows):percentBuilderEntryQualifies(e,pb,item,warnings,joinRows).ok);
     const den=entries.length,num=qualified.length;ctx.percentBuilderTrace={numerator:num,denominator:den,unit:pb.unit,qualifierSource:source,denominatorType:pb.denominator,matchingReps:qualified.slice(0,50).map(e=>(e.name||e.key)+' | '+e.period)};
     return den?num/den*100:(pb.zeroDenominator==='blank'?null:0);
   }
@@ -3092,9 +3092,9 @@ function clearResearchComputedCaches(reason='cache cleared'){
   updateResearchCacheBadge();
 }
 function compactResearchResultForStorage(key,out){
-  if(!String(key).startsWith('researchCacheV3\u001fagg\u001f') || !Array.isArray(out.data)) return null;
+  if(!String(key).startsWith('researchCacheV4\u001fagg\u001f') || !Array.isArray(out.data)) return null;
   if(out.data.length>RESEARCH_PERSIST_MAX_GROUPS) return null;
-  const data=out.data.map(r=>({label:r.label??'',secondary:r.secondary??'',panel:r.panel??'',values:[...(r.values||[])],xValue:r.xValue,box:r.box?{...r.box}:undefined,rows:Number(r.rows||0),dateValue:r.dateValue||0}));
+  const data=out.data.map(r=>({label:r.label??'',secondary:r.secondary??'',panel:r.panel??'',values:[...(r.values||[])],pointDetails:r.pointDetails?clonePlain(r.pointDetails):undefined,xValue:r.xValue,box:r.box?{...r.box}:undefined,rows:Number(r.rows||0),dateValue:r.dateValue||0}));
   return {valueOnly:true,data,dependencies:out.dependencies||null,warnings:out.warnings||[],lineage:out.lineage||null,columns:out.columns||[],hasSecondary:!!out.hasSecondary,totalValues:out.totalValues||[],totalRowCount:out.totalRowCount||0,joinDiagnostics:out.joinDiagnostics||null,reconciliation:out.reconciliation||null,perf:{...(out.perf||{}),cacheUsed:true,persistent:true},savedAt:Date.now()};
 }
 function researchCachedPresentation(item,result){
