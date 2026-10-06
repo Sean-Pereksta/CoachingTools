@@ -99,7 +99,7 @@
     const background = color(base.getPropertyValue('--panel').trim()) || '#ffffff', ink = color(base.color);
     const meta = doc.getElementById(workbook ? 'psUploadMeta' : 'workspaceMeta')?.textContent || '';
     const coach = doc.getElementById(workbook ? 'psUploadCoach' : 'coachSel');
-    const context = [meta, coach?.selectedOptions[0]?.textContent, workbook ? doc.getElementById('psUploadDepartment')?.value : doc.getElementById('departmentSel')?.value, workbook ? doc.getElementById('psUploadSearch')?.value : doc.querySelector('#quickFilters .active')?.textContent].filter(Boolean).join(' · ');
+    const context = [meta, workbook ? '' : doc.getElementById('weekComparison')?.textContent, coach?.selectedOptions[0]?.textContent, workbook ? doc.getElementById('psUploadDepartment')?.value : doc.getElementById('departmentSel')?.value, workbook ? doc.getElementById('psUploadSearch')?.value : doc.querySelector('#quickFilters .active')?.textContent].filter(Boolean).join(' · ');
     // Snapshot once so changing underlying data cannot change later PDF pages.
     const headCopies = headers.map(freeze), rowCopies = rows.map(row => Array.from(row.cells).map(freeze));
     let currentBlob, currentURL, imageWidth, closed = false, busy = false;

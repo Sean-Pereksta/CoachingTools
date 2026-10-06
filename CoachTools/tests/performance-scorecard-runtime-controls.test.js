@@ -33,8 +33,8 @@ assert.deepStrictEqual(
 );
 
 const source = fs.readFileSync(path.join(root, 'shared', 'performance-scorecard-upload-mode.js'), 'utf8');
-assert(source.includes("thisMonth.textContent = 'This month'"), 'main Scorecard Window should expose This month.');
-assert(source.includes("lastMonth.textContent = 'Last month'"), 'main Scorecard Window should expose Last month.');
+assert(!source.includes("installMonthWindows"), "Workbook add-on must not reinstall calendar windows.");
+
 assert(source.includes('scorecardSystemColumnsBox'), 'Rank and Status should have persisted controls in the Columns drawer.');
 assert(source.includes("systemColumnRow('rank', 'Overall Rank'"), 'Overall Rank should be toggleable from Columns.');
 assert(source.includes("systemColumnRow('status', 'Status'"), 'Status should be toggleable from Columns.');

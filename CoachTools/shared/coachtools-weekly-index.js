@@ -1,7 +1,7 @@
 (function attachCoachToolsWeeklyIndex(root) {
   'use strict';
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const DATE_FIELDS = Object.freeze([
     'Date', 'Business Date', 'Reporting Date', 'Report Date', 'Day',
     'Week', 'Week Start', 'Week Starting', 'Week Beginning',
@@ -81,6 +81,10 @@
     sunday.setUTCDate(sunday.getUTCDate() - sunday.getUTCDay());
     return isoDate(sunday);
   }
+  // Reporting dates are calendar-day identifiers, not calendar week starts.
+  function reportingDateKey(value, fallbackParser) {
+    return isoDate(parseBusinessDate(value, fallbackParser));
+  }
   function recordFallbackWeek(record, fallbackParser) {
     const period = record && record.detectedPeriod || {};
     for (const value of [period.start, period.end, period.periodKey, record && record.periodKey, record && record.periodSort]) {
@@ -150,6 +154,8 @@
   }
   function build(options) {
     const opts = options || {};
+    const periodKey = opts.preserveReportingDates ? reportingDateKey : weekStartKey;
+    const reportingDates = new Map();
     if (typeof opts.extract !== 'function' || typeof opts.pick !== 'function' || typeof opts.resolvePerson !== 'function' || typeof opts.metricFromRows !== 'function') {
       throw new Error('CoachToolsWeeklyIndex requires extract, pick, resolvePerson, and metricFromRows callbacks.');
     }
@@ -168,15 +174,23 @@
         seenRecordKeys.add(uniqueRecordKey);
         diagnostics.sourceRecordsScanned += 1;
         diagnostics.datasetIds.add(id);
-        const fallbackWeek = recordFallbackWeek(record, opts.parseDate), groups = new Map();
+        const period = record.detectedPeriod || {};
+        const fallbackWeek = opts.preserveReportingDates
+          ? [period.start, period.end, period.periodKey, record.periodKey, record.periodSort].map(value => periodKey(value, opts.parseDate)).find(Boolean) || ''
+          : recordFallbackWeek(record, opts.parseDate);
+        const groups = new Map();
         for (const pack of opts.extract(record) || []) for (const row of pack.rows || []) {
           diagnostics.rawRowsFound += 1;
-          const rawName = opts.pick(row, repFields), name = clean(rawName);
-          if (!name) { rejectedRow(diagnostics, 'identity-missing', { datasetId: id, source: type, rawName: '' }); continue; }
           const rawDate = opts.pick(row, dateFields), hasRowDate = clean(rawDate) !== '';
           const date = hasRowDate ? parseBusinessDate(rawDate, opts.parseDate) : null;
+          const week = hasRowDate ? (date ? periodKey(date) : '') : fallbackWeek;
+          if (week) {
+            if (!reportingDates.has(type)) reportingDates.set(type, new Set());
+            reportingDates.get(type).add(week);
+          }
+          const rawName = opts.pick(row, repFields), name = clean(rawName);
+          if (!name) { rejectedRow(diagnostics, 'identity-missing', { datasetId: id, source: type, rawName: '' }); continue; }
           if (hasRowDate && !date) { rejectedRow(diagnostics, 'date-invalid', { datasetId: id, source: type, rawName: name, rawDate: clean(rawDate) }); continue; }
-          const week = date ? weekStartKey(date) : fallbackWeek;
           if (!week) { rejectedRow(diagnostics, 'date-missing', { datasetId: id, source: type, rawName: name, rawDate: clean(rawDate) }); continue; }
           const resolved = opts.resolvePerson({ rawName: name, row, pack, record, type, department, date, week });
           const personId = clean(resolved && typeof resolved === 'object' ? resolved.personId : resolved);
@@ -242,12 +256,12 @@
         weeklyMetrics: points.map(plainPoint)
       };
     }
-    return { byPerson, diagnostics, inspect };
+    return { byPerson, reportingDates, diagnostics, inspect };
   }
 
   root.CoachToolsWeeklyIndex = Object.freeze({
     VERSION, DATE_FIELDS, REPRESENTATIVE_FIELDS,
-    parseBusinessDate, weekStartKey, recordFallbackWeek, aggregateMetric, build,
+    parseBusinessDate, reportingDateKey, weekStartKey, recordFallbackWeek, aggregateMetric, build,
     _test: Object.freeze({ candidateWins, isoWeekDate })
   });
 
