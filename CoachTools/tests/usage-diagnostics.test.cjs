@@ -24,7 +24,7 @@ function harness() {
   class FixedDate extends RealDate { constructor(...args) { super(...(args.length ? args : ['2026-10-06T12:00:00'])); } }
   const sandbox = { document, Date: FixedDate, window: { addEventListener() {}, devicePixelRatio: 2 }, innerWidth: 1200, innerHeight: 800, requestAnimationFrame: fn => { fn(); return 1; }, cancelAnimationFrame() {}, console };
   let script = html.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
-  script = script.replace("      if (document.readyState === 'complete') start();", `      globalThis.api = { dailySeries, drawAppDailyChart, drawVisitorChart, drawAppChart, fetchAppDaily, charts, tooltip, setupInteractions, sortRows, renderDiagnostics, setDb: value => db = value, setPayload: value => lastPayload = value };
+  script = script.replace("      if (document.readyState === 'complete') start();", `      globalThis.api = { dailySeries, drawAppDailyChart, drawVisitorChart, drawAppChart, fetchAppDaily, fetchPayload, charts, tooltip, setupInteractions, sortRows, renderDiagnostics, render, setDb: value => db = value, setPayload: value => lastPayload = value };
       if (document.readyState === 'complete') start();`);
   vm.runInNewContext(script, sandbox);
   return { api: sandbox.api, elements, calls, document, headers };
@@ -126,4 +126,46 @@ test('visitor hover preserves exact anonymous visitor-day count', () => {
   document.getElementById('visitorChart').events.pointermove({ clientX: 570, clientY: 100 });
   assert.equal(api.tooltip.children[0].textContent, 'October 6, 2026');
   assert.equal(api.tooltip.children[1].textContent, '42 visitors');
+});
+
+test('app-daily permission denial keeps all core analytics and reports partial availability', async () => {
+  const { api } = harness();
+  let deny = true;
+  api.setDb({ collection(name) {
+    const chain = { where() { return this; }, orderBy() { return this; }, limit() { return this; }, doc() { return this; },
+      async get() {
+        if (name === 'coachtoolsUsageAppDaily' && deny) throw Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
+        if (name === 'coachtoolsUsage') return { exists: true, data: () => ({ appOpenEvents: 1482 }) };
+        const values = name === 'coachtoolsUsageApps' ? apps : name === 'coachtoolsUsageAppDaily' ? records : [];
+        return { docs: values.map((value, index) => ({ id: String(index), data: () => value })) };
+      }
+    }; return chain;
+  } });
+  const partial = await api.fetchPayload();
+  assert.equal(partial.summary.appOpenEvents, 1482);
+  assert.equal(partial.apps.length, apps.length);
+  assert.equal(partial.appDaily.length, 0);
+  assert.equal(partial.appDailyError.code, 'permission-denied');
+  deny = false;
+  const recovered = await api.fetchPayload();
+  assert.equal(recovered.appDailyError, null);
+  assert.equal(recovered.appDaily.length, records.length);
+});
+
+test('core collection failures still propagate rather than rendering invented totals', async () => {
+  const { api } = harness();
+  const chain = { where() { return this; }, orderBy() { return this; }, limit() { return this; }, doc() { return this; }, get() { return Promise.reject(new Error('offline')); } };
+  api.setDb({ collection: () => chain });
+  await assert.rejects(api.fetchPayload(), /offline/);
+});
+
+test('partial availability explicitly labels the graph and preserves displayed lifetime totals', () => {
+  const { api, document } = harness();
+  api.render({ summary: { appOpenEvents: 1482 }, apps: [], initials: [], daily: [], appDaily: [], appDailyError: { code: 'permission-denied', message: 'Missing or insufficient permissions.' } });
+  assert.equal(document.getElementById('appOpenEvents').textContent, '1,482');
+  assert.match(document.getElementById('appDailyNotice').textContent, /blocked by Firebase permissions/);
+  assert.match(document.getElementById('appDailyRange').textContent, /unavailable/);
+  assert.equal(api.charts.has('appDailyChart'), false);
+  api.render({ summary: { appOpenEvents: 1482 }, apps: [], initials: [], daily: [], appDaily: [], appDailyError: null });
+  assert.match(document.getElementById('appDailyNotice').textContent, /No daily app history is recorded yet/);
 });

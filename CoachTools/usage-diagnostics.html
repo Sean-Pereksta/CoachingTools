@@ -489,6 +489,7 @@
         ['showAllApps', 'topApps', 'resetApps'].forEach(id => $(id).addEventListener('click', () => {
           if (!lastPayload) return;
           selectionMode = id === 'showAllApps' ? 'all' : 'top';
+          if (lastPayload.appDailyError) return;
           visibleApps = id === 'showAllApps' ? new Set(dailySeries(lastPayload.appDaily, lastPayload.apps, selectedDays()).series.map(item => item.app.appId)) : null;
           linkApp(null); drawAppDailyChart(lastPayload.appDaily, lastPayload.apps, selectedDays());
         }));
@@ -562,7 +563,7 @@
           const allAppDaily = payload.appDaily.filter(item => item.appId === app.appId);
           const pair = calendarPair(allAppDaily, 'opens', 7);
           const value = trend(pair.current, pair.prior);
-          const hasRecent = allAppDaily.length > 0;
+          const hasRecent = !payload.appDailyError && allAppDaily.length > 0;
           const row = document.createElement('tr');
           row.dataset.appId = app.appId;
           row.addEventListener('pointerenter', () => linkApp(app.appId));
@@ -574,7 +575,7 @@
             <td class="num">${visitors ? percent(ratio(app.uniqueVisitors, visitors)) : '—'}</td>
             <td class="num">${totalOpens ? percent(ratio(app.opens, totalOpens)) : '—'}</td>
             <td class="num">${number(app.uniqueVisitors) ? ratio(app.opens, app.uniqueVisitors).toFixed(1) : '—'}</td>
-            <td class="num">${hasRecent ? formatNumber(recent) : 'Collecting'}</td>
+            <td class="num">${payload.appDailyError ? 'Unavailable' : hasRecent ? formatNumber(recent) : 'Collecting'}</td>
             <td class="num">${hasRecent && trackedDays ? perDay.toFixed(1) : '—'}</td>
             <td class="num ${hasRecent ? trendClass(value) : ''}">${hasRecent ? trendText(value) : '—'}</td>`;
           body.appendChild(row);
@@ -638,14 +639,25 @@
         $('dailyRange').textContent = `Last ${days} days`;
         drawVisitorChart(windowDaily);
         drawAppChart(payload.apps);
-        drawAppDailyChart(payload.appDaily, payload.apps, days);
+        if (payload.appDailyError) {
+          charts.delete('appDailyChart'); $('appLegend').replaceChildren();
+          drawEmpty($('appDailyChart'), 'Daily app data unavailable. Other diagnostics remain available.');
+          $('appDailyRange').textContent = `Last ${days} days · unavailable`;
+        } else drawAppDailyChart(payload.appDaily, payload.apps, days);
         renderDiagnostics(payload, windowDaily);
         renderAppRows(payload, windowAppDaily, days);
         renderInitials(payload.initials);
 
-        if (payload.appDaily.length) {
+        if (payload.appDailyError) {
+          const permission = payload.appDailyError.code === 'permission-denied';
+          $('appDailyNotice').textContent = permission
+            ? 'Daily app history access is blocked by Firebase permissions. Publish the existing coachtoolsUsageAppDaily rule from CoachTools/firestore-usage-analytics.rules. Lifetime totals and the other diagnostics remain available. No daily values are estimated.'
+            : `Daily app history could not load: ${payload.appDailyError.message}. Other diagnostics remain available. Use Check now to retry.`;
+        } else if (payload.appDaily.length) {
           const firstDate = payload.appDaily.map(item => item.date).sort()[0];
           $('appDailyNotice').innerHTML = `<span>ℹ</span><div><strong>Daily app tracking active.</strong> Aggregate per-app history currently begins ${escapeHtml(dateLabel(firstDate, { month: 'long', day: 'numeric', year: 'numeric' }))}. Earlier lifetime totals are preserved but cannot be split accurately by day.</div>`;
+        } else {
+          $('appDailyNotice').textContent = 'No daily app history is recorded yet. Lifetime totals remain intact; earlier daily usage cannot be reconstructed.';
         }
       }
 
@@ -662,18 +674,21 @@
       }
 
       async function fetchPayload() {
-        const [summarySnap, dailySnap, appsSnap, initialsSnap, appDaily] = await Promise.all([
+        const [summarySnap, dailySnap, appsSnap, initialsSnap, appDailyResult] = await Promise.all([
           db.collection('coachtoolsUsage').doc('summary').get(),
           db.collection('coachtoolsUsageDaily').orderBy('date', 'desc').limit(180).get(),
           db.collection('coachtoolsUsageApps').get(),
           db.collection('coachtoolsUsageInitials').get(),
-          fetchAppDaily()
+          fetchAppDaily().then(data => ({ data, error: null })).catch(error => ({ data: [], error: {
+            code: String(error && error.code || 'unknown').replace(/^firestore\//, ''),
+            message: String(error && error.message || 'Request failed')
+          } }))
         ]);
         const summary = summarySnap.exists ? summarySnap.data() : {};
         const daily = dailySnap.docs.map(doc => doc.data()).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
         const apps = appsSnap.docs.map(doc => doc.data()).sort((a, b) => number(b.opens) - number(a.opens));
         const initials = initialsSnap.docs.map(doc => doc.data()).sort((a, b) => number(b.distinctApps) - number(a.distinctApps) || number(b.appOpenEvents) - number(a.appOpenEvents) || String(a.label || '').localeCompare(String(b.label || '')));
-        return { summary, daily, apps, initials, appDaily };
+        return { summary, daily, apps, initials, appDaily: appDailyResult.data, appDailyError: appDailyResult.error };
       }
 
       async function checkForChanges(force) {
@@ -688,9 +703,9 @@
             $('lastChanged').textContent = `Last change: ${timestampText()}.`;
           }
           $('lastChecked').textContent = `Last checked: ${timestampText()}.`;
-          setConnection('good', changed ? 'Updated' : 'No change');
+          setConnection(payload.appDailyError ? '' : 'good', payload.appDailyError ? 'Daily app data unavailable' : changed ? 'Updated' : 'No change');
         } catch (error) {
-          setConnection('bad', 'Firebase unavailable');
+          setConnection('bad', 'Analytics refresh failed');
           $('appDailyRange').textContent = lastPayload ? 'Last successful data · refresh failed' : 'Data unavailable';
           $('lastChecked').textContent = `Last check failed: ${error && error.message ? error.message : error}.`;
         } finally {
@@ -720,7 +735,7 @@
           setupInteractions();
           schedule(); await checkForChanges(true);
         } catch (error) {
-          setConnection('bad', 'Firebase unavailable');
+          setConnection('bad', 'Diagnostics could not start');
           $('lastChecked').textContent = `Could not start diagnostics: ${error && error.message ? error.message : error}.`;
         }
       }
