@@ -9,6 +9,12 @@ const enhanced = fs.readFileSync(path.join(root, 'apps', 'performance-scorecard-
 const extraCss = fs.readFileSync(path.join(root, 'shared', 'performance-scorecard-extras.css'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'apps.json'), 'utf8'));
 const generator = fs.readFileSync(path.join(root, 'build', 'generate-app-manifest.js'), 'utf8');
+const canonicalRanking = fs.readFileSync(path.join(root, 'build', 'performance-scorecard-ranking-patch.txt'), 'utf8').trim();
+for (const file of ['performance-scorecard.html', 'performance-scorecard-enhanced.html']) {
+  const page = fs.readFileSync(path.join(root, 'apps', file), 'utf8');
+  const block = page.slice(page.indexOf("const RANK_PREF_KEY='"), page.indexOf("window.addEventListener('error'"));
+  assert.strictEqual(block.trim(), canonicalRanking, `${file} must keep its ranking implementation in sync with the build template`);
+}
 
 assert.match(enhanced, /coachtools-hidden[^>]+true/i, 'enhanced scorecard should stay hidden from app discovery');
 assert.ok(enhanced.includes("function teamCohortFor(){return scopedReps()}"), 'percentiles should use the exact selected representative scope');
@@ -26,7 +32,7 @@ assert.ok(!enhanced.includes('values.filter(v=>higher?v>value:v<value).length'),
 assert.ok(enhanced.includes('details.reduce((sum,d)=>sum+d.rank,0)'), 'rank score should sum metric rank positions');
 assert.ok(enhanced.includes('Lowest is best'), 'ranking rules should support lower-is-better measures');
 assert.ok(enhanced.includes('rankClearBtn'), 'ranking rules should be clearable');
-assert.ok(enhanced.includes('rankAddMetric'), 'ranking rules should allow additional scorecard columns');
+assert.ok(enhanced.includes('data-rank-include'), 'ranking rules should offer a checklist of scorecard columns');
 assert.ok(enhanced.includes('Correctives'), 'custom corrective counts should be documented as a lower-is-better ranking use case');
 
 assert.ok(enhanced.includes('data-normal-rank-sort'), 'normal scorecard should expose the Overall Rank column');

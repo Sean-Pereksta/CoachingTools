@@ -1,6 +1,17 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const html=fs.readFileSync(path.join(__dirname,'../apps/performance-scorecard.html'),'utf8');
+const {parseHTML}=require('linkedom');
+function assertDefaultControls(markup,modeId,thresholdId){
+ const {document}=parseHTML(markup),mode=document.getElementById(modeId),threshold=document.getElementById(thresholdId);
+ assert.equal(mode.querySelector('option[selected]').value,'missing','Default completeness mode hides missing columns');
+ assert.equal(threshold.getAttribute('value'),'2','Default threshold hides two or more missing columns');
+}
+for(const name of ['performance-scorecard.html','performance-scorecard-enhanced.html'])assertDefaultControls(fs.readFileSync(path.join(__dirname,'../apps',name),'utf8'),'completenessMode','completenessThreshold');
+const overlay=fs.readFileSync(path.join(__dirname,'../shared/performance-scorecard-upload-mode-core.js'),'utf8');
+const overlayContext=vm.createContext({sourceMarkup:()=>''});
+vm.runInContext(overlay.slice(overlay.indexOf('  function overlayMarkup()'),overlay.indexOf('  function initializeUi()')),overlayContext);
+assertDefaultControls(vm.runInContext('overlayMarkup()',overlayContext),'psCompletenessMode','psCompletenessThreshold');
 const ctx=vm.createContext({window:{}});
 vm.runInContext(html.slice(html.indexOf('function hasCompletenessValue'),html.indexOf('function completenessValue')),ctx);
 const {filter,hasValue}=ctx.window.CoachToolsCompleteness;
