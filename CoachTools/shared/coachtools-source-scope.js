@@ -145,7 +145,6 @@
     const route = routedSelection(authoritativeScope, type);
     if (!route.explicit) return { scope: authoritativeScope, route };
     if (!route.names.length) {
-      if (['weeklyRetail','weeklyReferral'].includes(type)) return {scope:{mode:'all',label:'All people'},route};
       const label = base.SOURCES && base.SOURCES[type] && base.SOURCES[type].label || type;
       const error = new Error(`No coach value was selected for ${label}. Coach names selected in other files will not be substituted for this source.`);
       error.name = 'CoachToolsSourceScopeError';
@@ -248,6 +247,7 @@
   }
 
   async function prepareOverrideEntry(entry, options, error) {
+    if (['COACHTOOLS_SCOPE_REVIEW', 'COACHTOOLS_SOURCE_SCOPE_EMPTY'].includes(error && error.code)) throw error;
     const type = entry.classification.id;
     const weekly = ['weeklyRetail', 'weeklyReferral'].includes(type);
     if (!weekly && !(root.confirm && root.confirm(`Could not upload ${entry.file.name}: ${error.message || error}\n\nReplace the old ${base.SOURCES[type].label} data with this file? This deletes only that source's old stored data. Other sources are unchanged.`))) throw error;
@@ -274,26 +274,18 @@
   async function saveCleanEntry(entry, options) {
     const type = entry.classification.id;
     const requestedScope = await resolveScopeSnapshot(options.scope || { mode: 'all', label: 'All people' });
-    // Read the complete workbook: discovery is only a preview, and filtering it
-    // before a scope fallback would permanently discard incoming rows.
-    const parsed = entry.rawWorkbook ? await base.parseFile(entry.file) : entry.parsed;
-    let routed;
-    try { routed = sourceFilterScope(requestedScope, type); }
-    catch (_) { routed = { scope: { mode: 'all', label: 'All people' }, route: routedSelection(requestedScope, type) }; }
-    const cleanOptions = { ...options, authoritativeCleanUpload: true, allowZeroRows: true };
-    let prepared = base.prepareScopedDataset(parsed, type, routed.scope, cleanOptions);
-    if (!prepared.valid || (requestedScope.mode !== 'all' && routed.scope.mode === 'all')) {
-      const reason = prepared.reason || 'No people were selected for this source.';
-      prepared = base.prepareScopedDataset(parsed, type, { mode: 'all', label: 'All people' }, cleanOptions);
-      prepared.diagnostics.warnings.push(reason + ' Clean Upload accepted all rows because the people filter could not be applied.');
-      prepared.diagnostics.peopleFilterFallback = true;
-    } else {
-      bindPreparedToAuthoritativeScope(prepared, requestedScope, type, routed.route);
-    }
+    const routed = sourceFilterScope(requestedScope, type);
+    const cleanOptions = { ...options, authoritativeCleanUpload: true, allowZeroRows: false };
+    const parsed = entry.rawWorkbook
+      ? await base.materializeDiscoveredEntry(entry, routed.scope, cleanOptions)
+      : entry.parsed;
+    const prepared = base.prepareScopedDataset(parsed, type, routed.scope, cleanOptions);
+    if (!prepared.valid) throw scopeValidationError(prepared.reason, prepared.diagnostics);
+    bindPreparedToAuthoritativeScope(prepared, requestedScope, type, routed.route);
     prepared.diagnostics.uploadPeopleSelection = {
       mode: requestedScope.mode === 'all' ? 'all' : 'selected',
       names: requestedScope.mode === 'all' ? [] : (routed.route.explicit ? routed.route.names : [...(requestedScope.coaches || []), ...(requestedScope.representatives || [])]),
-      includesAllRows: Boolean(prepared.diagnostics.peopleFilterFallback)
+      includesAllRows: false
     };
     entry.parsed = prepared.dataset;
     entry.rawWorkbook = null;

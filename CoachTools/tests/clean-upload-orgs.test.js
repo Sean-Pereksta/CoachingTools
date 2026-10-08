@@ -79,6 +79,7 @@ async function chooser(){
   h.get('smartImportSelectedBtn').click();await running;
   assert.equal(h.saves.length,1);assert.equal(h.saves[0].entry.file,h.files[0]);
   assert.deepEqual(plain(h.saves[0].options.scope.coaches).sort(),['Alice Coach','Other Coach']);
+  assert.deepEqual(plain(h.saves[0].options.scope.sourceSelections),{weeklyRetail:['Alice Coach','Other Coach'],weeklyReferral:[],qa:[],documentedCoaching:[],checklist:[]},'The actual chooser must pass per-source selections directly to the importer.');
   console.log('PASS actual Clean Upload chooser: picker, immediate org-list refresh, preserved selections/baseline/files, normal Add Org Coaches flow and recoverable JSON/storage failures');
 }
 (async()=>{await parity();await chooser();})().catch(error=>{console.error(error);process.exitCode=1;});

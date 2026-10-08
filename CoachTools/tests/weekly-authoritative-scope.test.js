@@ -8,10 +8,10 @@ for(const type of ['weeklyRetail','weeklyReferral']){
  const rows=type==='weeklyRetail'?[['Sheet','Representative','Cash Opps'],['Angela Johnson','Jane Doe',12]]:[['Representative','Coach','Scheduled'],['Jane Doe','Angela Johnson',0]];
  for(const scope of [{mode:'coach',coaches:['Angie Johnson'],coachKeys:['angie johnson'],label:'Angie Johnson'},{mode:'coach',coaches:[],coachKeys:[]}]){
   const result=api.prepareScopedDataset(parsed(rows),type,scope);
-  assert(result.valid);assert.equal(result.dataset.workbook.data.Data.aoa.length,2);assert(result.diagnostics.warnings.length);
+  assert.equal(result.valid,false);assert.equal(result.needsReview,true);assert.equal(result.dataset,null);assert(result.diagnostics.warnings.length);
  }
  assert.throws(()=>api.prepareScopedDataset(parsed([['Unrelated'],['Bad file']]),type,{mode:'all'}),/Missing|column|header/i);
 }
 const correct=api.prepareScopedDataset(parsed([['Sheet','Representative'],['Angela Johnson','Jane Doe'],['Different Coach','Other Rep']]),'weeklyRetail',{mode:'coach',coaches:['Angela Johnson'],coachKeys:['angela johnson']});
 assert.equal(correct.dataset.workbook.data.Data.aoa.length,2,'An available weekly source selection is respected');
-console.log('PASS authoritative weekly scope fallback and corrupt-header protection');
+console.log('PASS weekly scope mismatch retains existing data and corrupt-header protection');

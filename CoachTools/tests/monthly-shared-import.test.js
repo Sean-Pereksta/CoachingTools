@@ -3,6 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const idb=require('fake-indexeddb'),{parseHTML}=require('linkedom');
 const {document}=parseHTML('<html><body><button data-action="clean-upload-data">Clean</button><button data-action="update-data">Update</button><input id="quickDataInput"></body></html>');
 const values=new Map(),context=vm.createContext({...idb,document,console,setTimeout,clearTimeout,queueMicrotask,structuredClone,TextDecoder,TextEncoder,XLSX:require('../vendor/xlsx.full.min.js'),location:{protocol:'file:'},localStorage:{getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)},addEventListener(){},removeEventListener(){},dispatchEvent(){},CustomEvent:function(type,init){this.type=type;this.detail=init?.detail;},confirm(){return true;}});context.window=context;context.parent=context;
+context.CoachToolsStatsSettingsReady=Promise.resolve();
 for(const name of ['storage','sync','monthly','monthly-review','import','source-scope','remembered-scope'])vm.runInContext(fs.readFileSync(path.join(__dirname,`../shared/coachtools-${name}.js`),'utf8'),context);
 const M=context.CoachToolsMonthly,api=context.CoachToolsImport,data=context.CoachToolsData;
 const plain=x=>JSON.parse(JSON.stringify(x));

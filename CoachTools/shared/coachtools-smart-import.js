@@ -543,11 +543,11 @@
     }
     const selectedValues = Array.from(new Set(Object.values(choice.selections || {}).flat().map(display).filter(Boolean)));
     let scope = importer.resolveScopeSnapshot
-      ? await importer.resolveScopeSnapshot({ mode: 'team', label: 'Selected coaches', coaches: selectedValues })
-      : { mode: 'team', label: 'Selected coaches', coaches: selectedValues };
+      ? await importer.resolveScopeSnapshot({ mode: 'team', label: 'Selected coaches', coaches: selectedValues, sourceSelections: choice.selections })
+      : { mode: 'team', label: 'Selected coaches', coaches: selectedValues, sourceSelections: choice.selections };
     if (scope && scope.coachPersonIds && scope.coachPersonIds.length === 1) {
       scope = importer.resolveScopeSnapshot
-        ? await importer.resolveScopeSnapshot({ mode: 'coach', personId: scope.coachPersonIds[0], label: scope.coaches[0] || 'Selected coach', coaches: scope.coaches })
+        ? await importer.resolveScopeSnapshot({ ...scope, mode: 'coach', personId: scope.coachPersonIds[0], label: scope.coaches[0] || 'Selected coach' })
         : scope;
     } else if (scope) {
       scope.label = scope.coaches && scope.coaches.length ? `${scope.coaches.length} selected coaches` : 'Selected coaches';
