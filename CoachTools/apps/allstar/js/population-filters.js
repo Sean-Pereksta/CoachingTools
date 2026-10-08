@@ -28,6 +28,18 @@ function researchPopulationGrain(item={},rows=[]){
   return grain==='rows'?'items':grain;
 }
 function researchPopulationWeekStart(item={}){return customSource(item.source)?.columns?.weekStart||'sunday';}
+function researchPopulationPeriodReader(source,item={},period=researchPopulationPeriod(item)){
+  if(period==='period')return ()=>'Research Period';
+  const weekly=isDatedStatsSource(source),field=weekly?(weeklyIdentityContext(source).config.dateField||'Date'):(source===item.source?(item.dateColumn||researchDefaultDateColumn({source})):researchDefaultDateColumn({source})),weekStart=researchPopulationWeekStart(item),dates=new Map();
+  return row=>{
+    // The weekly identity's date is this raw field. Resolving the person and
+    // coach again just to read it adds work without changing the period.
+    const raw=weekly?(row?.[field]??row?._date):(field?researchFieldValue(row,field,source):row?._date);
+    if(raw instanceof Date)return researchBucketDate(raw,period,weekStart);
+    if(!dates.has(raw))dates.set(raw,researchBucketDate(raw,period,weekStart));
+    return dates.get(raw);
+  };
+}
 function researchPopulationRowPeriod(row,source,item={},period=researchPopulationPeriod(item)){
   if(period==='period')return 'Research Period';
   const field=source===item.source?(item.dateColumn||researchDefaultDateColumn({source})):researchDefaultDateColumn({source});
@@ -135,8 +147,9 @@ function researchPopulationRatio(left,right,context,group){
   return {value:pairs?numerator/denominator:null,numerator,denominator,rate:true,usable:pairs>0,reason,missingNumerator,missingDenominator,zeroDenominator};
 }
 function researchPopulationCalculation(field,context,group){
-  const item=context.item,raw=normalizeResearchLooseSourceReferences(String(field||'')),ratio=raw.match(/^(.+?)\s*\/\s*(.+)$/);
-  const left=ratio&&researchPopulationOperand(ratio[1],item),right=ratio&&researchPopulationOperand(ratio[2],item);
+  const item=context.item,prepared=context.preparedCalculation;
+  const raw=prepared?.raw??normalizeResearchLooseSourceReferences(String(field||'')),ratio=prepared?null:raw.match(/^(.+?)\s*\/\s*(.+)$/);
+  const left=prepared?prepared.left:ratio&&researchPopulationOperand(ratio[1],item),right=prepared?prepared.right:ratio&&researchPopulationOperand(ratio[2],item);
   if(left&&right)return researchPopulationRatio(left,right,context,group);
   const sourceFields=new Map(),add=ref=>{if(!ref)return;if(!sourceFields.has(ref.source))sourceFields.set(ref.source,new Set());sourceFields.get(ref.source).add(ref.field);};
   splitCrossExpressionRefs(raw).forEach(ref=>{if(!ref.missingSource&&!ref.missingField)add({source:ref.source,field:ref.field});});
@@ -172,7 +185,7 @@ function researchPopulationCalculation(field,context,group){
 function researchPopulationCondition(filter,context,group){
   const item=context.item,field=filter.field||'';
   let result;
-  if(researchPopulationIsCalculation(field,item))result=researchPopulationCalculation(field,context,group);
+  if(context.isCalculation??researchPopulationIsCalculation(field,item))result=researchPopulationCalculation(field,context,group);
   else if(filter.type==='team_is'||filter.fieldType==='team_is'||filter.expression){
     const rows=applyResearchFilters(group.rows,[{...filter,include:'include',conditionResult:'true'}],{...group.item,_populationFilterEvaluating:true});
     result={value:rows.length>0,matched:rows.length>0,usable:group.rows.length>0};
@@ -201,15 +214,21 @@ function researchApplyEntityPopulationFilters(input,filters,item,plan={},options
   let rows=input||[];
   plan.populationFilters=plan.populationFilters||[];
   filters.forEach((filter,index)=>{
-    const grain=researchPopulationGrain(item,rows),dynamic=item.populationFilterMode==='dynamic',period=dynamic?researchPopulationPeriod(item):'',groups=new Map(),entities=new Set();
+    const grain=researchPopulationGrain(item,rows),dynamic=item.populationFilterMode==='dynamic',period=dynamic?researchPopulationPeriod(item):'',groups=new Map(),entities=new Set(),rowKeys=[],periodFor=dynamic?researchPopulationPeriodReader(item.source,item,period):()=>'';
     let missingPeriod=0;
     rows.forEach((row,i)=>{
-      const entity=researchPopulationEntity(row,item.source,item,grain,i),bucket=dynamic?researchPopulationRowPeriod(row,item.source,item):'';
+      const entity=researchPopulationEntity(row,item.source,item,grain,i),bucket=periodFor(row);
+      if(dynamic&&!bucket)rowKeys[i]=null;
       if(!entity.key)return;entities.add(entity.key);if(dynamic&&!bucket){missingPeriod++;return;}
       const key=researchPopulationTuple(entity.key,bucket);
+      rowKeys[i]=key;
       if(!groups.has(key))groups.set(key,{key,entity:entity.key,name:entity.name,period:bucket,rows:[],item:researchPopulationGroupItem(item,bucket)});groups.get(key).rows.push(row);
     });
-    const context={item,grain,dynamic,sources:new Map(),sample:!!options.sample},accepted=new Set(),qualified=new Set(),samples=[],sampleKinds=new Set();
+    const context={item,grain,dynamic,sources:new Map(),sample:!!options.sample,isCalculation:researchPopulationIsCalculation(filter.field,item)},accepted=new Set(),qualified=new Set(),samples=[],sampleKinds=new Set();
+    if(context.isCalculation){
+      const raw=normalizeResearchLooseSourceReferences(String(filter.field||'')),ratio=raw.match(/^(.+?)\s*\/\s*(.+)$/);
+      context.preparedCalculation={raw,left:ratio&&researchPopulationOperand(ratio[1],item),right:ratio&&researchPopulationOperand(ratio[2],item)};
+    }
     const diag={filter:(item.filters||[]).indexOf(filter)+1||index+1,field:filter.field||filter.expression||filter.teamInput,mode:dynamic?'dynamic':'static',period:period||'Research Period',grain,startingEntities:entities.size,checked:groups.size,usable:0,matching:0,retained:0,excluded:0,notEvaluated:0,missingDenominator:0,zeroDenominator:0,missingNumerator:0,missingPeriod,samples};
     groups.forEach(group=>{
       const result=researchPopulationCondition(filter,context,group),exclude=filter.include==='exclude',keep=exclude?!result.matched:result.matched;
@@ -228,7 +247,7 @@ function researchApplyEntityPopulationFilters(input,filters,item,plan={},options
       }
     });
     diag.uniqueQualifyingEntities=qualified.size;
-    rows=rows.filter((row,i)=>{const entity=researchPopulationEntity(row,item.source,item,grain,i),bucket=dynamic?researchPopulationRowPeriod(row,item.source,item):'';if(dynamic&&!bucket)return filter.include==='exclude';return accepted.has(researchPopulationTuple(entity.key,bucket));});
+    rows=rows.filter((row,i)=>rowKeys[i]===null?filter.include==='exclude':accepted.has(rowKeys[i]));
     plan.populationFilters.push(diag);
   });
   return rows;
@@ -246,12 +265,12 @@ function researchPopulationGroupItem(item,period){
 // A cohort may contain Alice in week 1 and Bob in week 2. Checking a set of
 // people and a separate set of dates would admit Alice/week 2 and Bob/week 1.
 function researchPopulationPeriodKeys(rows,source,item,grain=researchPopulationGrain(item,rows)){
-  const keys=new Set();(rows||[]).forEach((row,i)=>{const e=researchPopulationEntity(row,source,item,grain,i),p=researchPopulationRowPeriod(row,source,item);if(e.key&&p)keys.add(researchPopulationTuple(e.key,p));});return keys;
+  const keys=new Set(),periodFor=researchPopulationPeriodReader(source,item);(rows||[]).forEach((row,i)=>{const e=researchPopulationEntity(row,source,item,grain,i),p=periodFor(row);if(e.key&&p)keys.add(researchPopulationTuple(e.key,p));});return keys;
 }
 function researchRestrictPopulationPeriods(target,source,base,baseSource,item){
   if(!researchHasDynamicPopulation(item))return target;
-  const grain=researchPopulationGrain(item,base),keys=researchPopulationPeriodKeys(base,baseSource,item,grain);
-  return target.filter((row,i)=>{const e=researchPopulationEntity(row,source,item,grain,i),p=researchPopulationRowPeriod(row,source,item);return p&&keys.has(researchPopulationTuple(e.key,p));});
+  const grain=researchPopulationGrain(item,base),keys=researchPopulationPeriodKeys(base,baseSource,item,grain),periodFor=researchPopulationPeriodReader(source,item);
+  return target.filter((row,i)=>{const e=researchPopulationEntity(row,source,item,grain,i),p=periodFor(row);return p&&keys.has(researchPopulationTuple(e.key,p));});
 }
 function researchPopulationJoinedRows(target,source,base,baseSource,item){
   if(item.populationFilterEntityField&&researchPopulationGrain(item,base)==='items'){
@@ -262,8 +281,33 @@ function researchPopulationJoinedRows(target,source,base,baseSource,item){
   return researchRestrictPopulationPeriods(target,source,base,baseSource,item);
 }
 function researchDynamicPercentEntries(rows,item,unit){
-  const periodRows=new Map();(rows||[]).forEach(row=>{const period=researchPopulationRowPeriod(row,item.source,item);if(period){if(!periodRows.has(period))periodRows.set(period,[]);periodRows.get(period).push(row);}});
+  const periodRows=new Map(),periodFor=researchPopulationPeriodReader(item.source,item);(rows||[]).forEach(row=>{const period=periodFor(row);if(period){if(!periodRows.has(period))periodRows.set(period,[]);periodRows.get(period).push(row);}});
   return [...periodRows].flatMap(([period,rs])=>guidedEntityEntries(rs,item,unit).map(entry=>({...entry,period})));
+}
+function researchDynamicPercentJoinReader(eligible,item,unit){
+  // For strict rep joins, the group-wide join is the union of the individual
+  // joins. Partition it once by the exact rep/period tuple. Other join modes and
+  // duplicate-rep rules retain their individual-cohort behavior.
+  if(unit!=='unique_reps'||item.filterDuplicateReps||researchPopulationGrain(item,eligible)!=='representatives'||researchEffectiveJoinMode(item,eligible)!=='strict_rep')return null;
+  const sources=new Map(),basePeriod=researchPopulationPeriodReader(item.source,item);
+  return (source,baseRows)=>{
+    source=resolveDynamicResearchSource({...item,source});
+    if(source===item.source)return baseRows;
+    if(!sources.has(source)){
+      const joined=researchRowsForCohort(source,eligible,item.source,item),periodFor=researchPopulationPeriodReader(source,item),byTuple=new Map();
+      joined.forEach(row=>{
+        const entity=getRepIdentity(row,source).normalizedName,period=periodFor(row);
+        if(!entity||!period)return;
+        const key=researchPopulationTuple(entity,period);if(!byTuple.has(key))byTuple.set(key,[]);byTuple.get(key).push(row);
+      });
+      sources.set(source,{joined,byTuple,periodFor});
+    }
+    const keys=new Set();baseRows.forEach(row=>{const entity=getRepIdentity(row,item.source).normalizedName,period=basePeriod(row);if(entity&&period)keys.add(researchPopulationTuple(entity,period));});
+    const data=sources.get(source);
+    if(keys.size===1)return data.byTuple.get(keys.values().next().value)||[];
+    // Preserve source order if a caller supplies more than one tuple.
+    return data.joined.filter(row=>keys.has(researchPopulationTuple(getRepIdentity(row,source).normalizedName,data.periodFor(row))));
+  };
 }
 function researchDynamicPercentPopulation(rows,item,pb){
   if(!['coach_full_team','all_reps'].includes(pb.denominator))return rows;

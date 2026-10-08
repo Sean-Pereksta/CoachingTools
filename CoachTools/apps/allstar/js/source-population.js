@@ -22,7 +22,7 @@ function weeklyIdentityContext(source){
   const config=data.config||window.AllStarDatedStats.defaultConfig(source,data.headers||[]);
   const area=source==='weeklyReferral'?'referral':'retail';
   const candidates=[...new Set([...roster.rows.filter(r=>r.sourceArea===area).map(r=>r._team||r.team),...(state.teams||[]),...(state.orgs||[]).flatMap(o=>o.coachNames||[]),...(directory?.grouped()||[]).flatMap(g=>g.coaches)].filter(Boolean))];
-  const context={data,roster,signature,config,configRef:data.config,area,candidates,coaches:new Map(),people:new Map()};
+  const context={data,roster,signature,config,configRef:data.config,area,candidates,coaches:new Map(),people:new Map(),rowCoachFields:new Map()};
   weeklyIdentityContexts.set(source,context);return context;
 }
 function weeklyCoachIdentity(value,context){
@@ -49,7 +49,14 @@ function weeklySourceRowIdentity(row,source){
   const coachField=config.coachField||findHeader(getHeaders(source),['Sheet','Coach','Job Coach','Team','Coach Name','Coach Assigned'])||'';
   const rawCoach=row?.[coachField]||'';
   const direct=weeklyCoachIdentity(rawCoach,context);
-  const alternate=findHeader(Object.keys(row||{}),['Sheet','Coach','Job Coach','Team','Coach Name','Coach Assigned']);
+  const rowHeaders=Object.keys(row||{}),headerKey=JSON.stringify(rowHeaders);
+  if(!context.rowCoachFields.has(headerKey)){
+    // Uploaded rows normally share one schema. Reuse only the header choice;
+    // every row's actual coach, mapping, and date are still read live.
+    if(context.rowCoachFields.size>=64)context.rowCoachFields.delete(context.rowCoachFields.keys().next().value);
+    context.rowCoachFields.set(headerKey,findHeader(rowHeaders,['Sheet','Coach','Job Coach','Team','Coach Name','Coach Assigned']));
+  }
+  const alternate=context.rowCoachFields.get(headerKey);
   const fallback=weeklyCoachIdentity(row?._team&&row._team!==NA_TEAM?row._team:(alternate?row[alternate]:''),context);
   const mapped=repKey?(state.repTeams?.get(repKey)||''):'';
   const skip=rowSkipsTeamBuild(row,source);
