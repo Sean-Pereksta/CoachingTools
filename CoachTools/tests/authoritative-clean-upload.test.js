@@ -8,7 +8,7 @@ const { parseHTML } = require('linkedom');
 const { document } = parseHTML('<html><head></head><body><button data-action="clean-upload-data">Clean</button><button data-action="update-data">Update</button><input id="quickDataInput"></body></html>');
 const values = new Map();
 const context = vm.createContext({ ...idb, document, console, setTimeout, clearTimeout, queueMicrotask, structuredClone,
-  XLSX: require('../vendor/xlsx.full.min.js'), location: { protocol: 'file:' },
+  XLSX: require('../vendor/xlsx.full.min.js'), location: { protocol: 'file:' }, CoachToolsStatsSettingsReady: Promise.resolve(),
   localStorage: { getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) },
   addEventListener() {}, removeEventListener() {}, dispatchEvent() {}, CustomEvent: function(type, init) { this.type = type; this.detail = init?.detail; },
   confirm() { throw Error('Clean Upload must not ask for an override confirmation'); }
@@ -74,13 +74,11 @@ async function clean(files, scope = all) {
   await api.saveRecognizedEntry(manual.recognized[0], { scope: all });
   assert.equal((await data.getCurrent('monthlyRetail')).workbook.data.Data.aoa[1][0], 'New monthly');
 
-  // Failing a people filter cannot veto placement, and coverage is honest.
-  await clean([file('QA.xlsx', [['Unknown'], ['Value']])], { mode: 'coach', coaches: ['<John Smith>'], label: '<John Smith>' });
-  status = (await data.getStatus()).find(s => s.id === 'qa');
-  people = data.renderPeopleSelection(status);
-  assert.equal(people.querySelector('li').textContent, '<John Smith>');
-  assert.equal(people.querySelector('John'), null);
-  assert.match(people.textContent, /All rows included/);
+  // Failed selected-coach filtering must retain the dock and baseline.
+  const baselineBeforeFailure = plain(context.CoachToolsCleanUploadBaseline.getBaseline());
+  await assert.rejects(() => clean([file('QA.xlsx', [['Unknown'], ['Value']])], { mode: 'coach', coaches: ['<John Smith>'], label: '<John Smith>' }), error => error.code === 'COACHTOOLS_SCOPE_REVIEW');
+  assert.equal(await data.getCurrent('qa'), null);
+  assert.deepEqual(plain(context.CoachToolsCleanUploadBaseline.getBaseline()), baselineBeforeFailure);
 
   // Update uses its original processing path with each established dock's scope.
   const updates = [

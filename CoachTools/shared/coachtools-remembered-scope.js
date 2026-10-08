@@ -268,14 +268,29 @@
     const selected = baseline && Array.isArray(baseline.datasetTypes) && baseline.datasetTypes.length
       ? new Set(baseline.datasetTypes)
       : null;
+    const sourceScopes = { ...(baseline && baseline.sourceScopes || {}) };
+    // Older Clean Uploads recorded All after a failed people filter. Recover the
+    // requested source names from pointer metadata without reading stored rows.
+    const statuses = root.CoachToolsData && typeof root.CoachToolsData.getStatus === 'function'
+      ? await root.CoachToolsData.getStatus() : [];
+    for (const status of statuses) {
+      const diagnostics = status.scopeMatchDiagnostics;
+      const selection = diagnostics && diagnostics.uploadPeopleSelection;
+      if (!selection || selection.mode !== 'selected' || !(selection.includesAllRows || diagnostics.peopleFilterFallback)) continue;
+      const names = Array.isArray(selection.names) ? selection.names : [];
+      sourceScopes[status.id] = {
+        mode: 'team', label: 'Selected coaches', coaches: names,
+        sourceSelections: { [status.id]: names }
+      };
+    }
     const resolution = root.CoachToolsData && typeof root.CoachToolsData.resolveUpdateScope === 'function'
       ? await root.CoachToolsData.resolveUpdateScope(selected ? Array.from(selected) : undefined)
       : { needsReview: false, scope: reusableScope(baseline && baseline.scope) || reusableScope(currentScope()), source: baseline ? 'clean-baseline' : 'global-scope' };
-    if (resolution.needsReview && recognized.every(entry => baseline?.sourceScopes?.[entry.classification.id])) {
+    if (resolution.needsReview && recognized.every(entry => sourceScopes[entry.classification.id])) {
       resolution.needsReview = false;
-      resolution.scope = clone(baseline.scope);
+      resolution.scope = clone(baseline?.scope || Object.values(sourceScopes)[0]);
     }
-    updateSession = { baseline: baseline || null, resolution, remaining: recognized.length, plannedAt: new Date().toISOString() };
+    updateSession = { baseline: baseline || null, sourceScopes, resolution, remaining: recognized.length, plannedAt: new Date().toISOString() };
 
     for (const entry of recognized) {
       const type = entry && entry.classification && entry.classification.id;
@@ -293,7 +308,7 @@
       if (entry._coachtoolsBaselineSkip) continue;
       const type = entry.classification.id;
       try {
-        const prepared = await prepareUpdateDataset(entry, { scope: baseline?.sourceScopes?.[type] || resolution.scope });
+        const prepared = await prepareUpdateDataset(entry, { scope: sourceScopes[type] || resolution.scope });
         const metadata = updateMetadata(entry, prepared);
         const inspection = root.CoachToolsData && typeof root.CoachToolsData.inspectDataset === 'function'
           ? await root.CoachToolsData.inspectDataset(type, prepared.dataset, metadata)
@@ -442,7 +457,7 @@
         nextOptions.scope = baselineScope || cleanScope || reusableScope(currentScope());
       }
 
-      if (session && savedBaseline?.sourceScopes?.[entry?.classification?.id]) nextOptions.scope = clone(savedBaseline.sourceScopes[entry.classification.id]);
+      if (session && session.sourceScopes?.[entry?.classification?.id]) nextOptions.scope = clone(session.sourceScopes[entry.classification.id]);
       let result = null;
       try {
         if (cleanSession) {
@@ -450,7 +465,7 @@
           if (!nextOptions.scope) nextOptions.scope = { mode: 'all', label: 'All people' };
           nextOptions.scope = await adoptCleanScope(nextOptions.scope);
         }
-        if (session && session.resolution && session.resolution.needsReview && !savedBaseline?.sourceScopes?.[entry?.classification?.id] && !['weeklyRetail','weeklyReferral'].includes(entry?.classification?.id)) throw new Error(session.resolution.reason || 'Update needs scope review.');
+        if (session && session.resolution && session.resolution.needsReview && !session.sourceScopes?.[entry?.classification?.id]) throw new Error(session.resolution.reason || 'Update needs scope review.');
         if (entry && entry._coachtoolsBaselineSkip) {
           result = { status: 'duplicate', comparisonStatus: 'skipped', skippedByCleanUploadBaseline: true };
           return result;
@@ -461,6 +476,14 @@
           // instead of JSON-cloning the entire parsed workbook first.
           await nextPaint();
           result = await saveUpdateEntryResponsive(entry, nextOptions);
+          if (savedBaseline && entry._coachtoolsUpdatePlan?.selected && result?.dataset && ['new', 'updated', 'imported', 'replacement'].includes(result.status)) {
+            const preparedScope = entry._coachtoolsUpdatePlan.prepared.scopeSnapshot;
+            const latest = readBaseline();
+            if (latest) {
+              latest.sourceScopes = { ...(latest.sourceScopes || {}), [entry.classification.id]: clone(preparedScope) };
+              writeBaseline(latest);
+            }
+          }
           return result;
         }
         result = await originalSaveRecognizedEntry(entry, nextOptions);

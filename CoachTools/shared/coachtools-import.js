@@ -321,9 +321,9 @@
 
   // Preserve a spreadsheet's declared scale when serializing weekly cells.
   // Explicit percent text keeps raw precision and survives shared-store reloads.
-  function preserveWeeklyPercentages(aoa, sheet) {
+  function preserveWeeklyPercentages(aoa, sheet, sourceRows) {
     for (let r=0;r<aoa.length;r++) for (let c=0;c<(aoa[r]?.length||0);c++) {
-      const cell=sheet?.[root.XLSX.utils.encode_cell({r,c})];
+      const cell=sheet?.[root.XLSX.utils.encode_cell({r:sourceRows ? sourceRows[r] : r,c})];
       if (typeof cell?.v==='number' && cell.z && /%/.test(cell.z.replace(/"[^"]*"|\\./g,''))) aoa[r][c]=String(Number((cell.v*100).toPrecision(15)))+'%';
     }
   }
@@ -436,14 +436,17 @@
 
   async function materializeDiscoveredEntry(entry, scope, options) {
     await statsSettingsReady;
-    if(['weeklyRetail','weeklyReferral'].includes(entry.classification?.id) && root.CoachToolsStatsDirectory?.snapshot().aliases.some(a=>a.enabled!==false)) return parseFile(entry.file,{source:entry.classification.id});
     if (!entry || !entry.rawWorkbook) return entry && entry.parsed;
     const source = entry.classification && entry.classification.id;
     if (!source) throw new Error('The file has not been safely classified.');
-    const snapshot = normalizeScopeSnapshot(scope || { mode: 'all', label: 'All people' }, options);
-    const narrow = !['weeklyRetail','weeklyReferral'].includes(source) && isNarrowScope(snapshot), selectedNames = new Set(scopeNames(snapshot));
+    const directory = ['weeklyRetail','weeklyReferral'].includes(source) ? root.CoachToolsStatsDirectory : null;
+    const snapshot = normalizeScopeSnapshot(directory ? directory.mapScope(scope, source) : scope || { mode: 'all', label: 'All people' }, options);
+    const narrow = isNarrowScope(snapshot), selectedNames = new Set(scopeNames(snapshot));
     const corrections = new Map((options && options.nameCorrections || []).map(item => [normalizeName(item && item.from), display(item && item.to)]).filter(item => item[0] && item[1]));
-    const corrected = value => corrections.get(normalizeName(value)) || value;
+    const corrected = value => {
+      const replacement = corrections.get(normalizeName(value)) || value;
+      return directory ? directory.resolve(replacement, 'coach') : replacement;
+    };
     const workbook = entry.rawWorkbook, sheets = workbook.SheetNames || [];
     const data = {};
     let totalRows = 0;
@@ -451,6 +454,7 @@
     for (let index = 0; index < sheets.length; index += 1) {
       const sheetName = sheets[index], sheet = workbook.Sheets[sheetName], range = decodedSheetRange(sheet);
       let aoa = [];
+      let sourceRows = null;
       const preview = entry.parsed && entry.parsed.workbook && entry.parsed.workbook.data[sheetName] && entry.parsed.workbook.data[sheetName].aoa || [];
       // Preserve the worksheet's used width after selection. The bounded
       // discovery preview may not contain values from a later metric column.
@@ -462,10 +466,17 @@
       } else {
         const header = findOwnershipHeader(preview, source);
         if (header) {
-          for (let rowIndex = 0; rowIndex <= header.headerRow; rowIndex += 1) aoa.push(rowFromSheet(sheet, rowIndex, lastColumn));
+          sourceRows = [];
+          for (let rowIndex = 0; rowIndex <= header.headerRow; rowIndex += 1) {
+            aoa.push(rowFromSheet(sheet, rowIndex, lastColumn));
+            sourceRows.push(rowIndex);
+          }
           for (let rowIndex = header.headerRow + 1; rowIndex <= range.e.r; rowIndex += 1) {
             const owner = cellValue(sheet, rowIndex, header.colIndex);
-            if (selectedNames.has(normalizeName(corrected(owner)))) aoa.push(rowFromSheet(sheet, rowIndex, lastColumn));
+            if (selectedNames.has(normalizeName(corrected(owner)))) {
+              aoa.push(rowFromSheet(sheet, rowIndex, lastColumn));
+              sourceRows.push(rowIndex);
+            }
             if (rowIndex > header.headerRow && rowIndex % 2000 === 0) await new Promise(resolve => root.setTimeout(resolve, 0));
           }
           trimAOAInPlace(aoa);
@@ -475,7 +486,7 @@
           aoa = preview.map(row => Array.isArray(row) ? row.slice() : []);
         }
       }
-      if (['weeklyRetail','weeklyReferral'].includes(source)) preserveWeeklyPercentages(aoa, sheet);
+      if (['weeklyRetail','weeklyReferral'].includes(source)) preserveWeeklyPercentages(aoa, sheet, sourceRows);
       data[sheetName] = { aoa };
       totalRows += aoa.length;
       if (onProgress) onProgress({ phase: 'materializing-scope', fileName: entry.file && entry.file.name || '', sheetName, current: index + 1, total: sheets.length });
@@ -841,18 +852,11 @@
       }
       return result;
     };
-    // Keep weekly rows available for authoritative replacement when scope fails.
     const weekly = ['weeklyRetail','weeklyReferral'].includes(source);
     if (weekly && !options?.authoritativeCleanUpload) {
       const validation = validateClassification(source, parsed);
       if (!validation.valid) throw new Error(validation.reason);
     }
-    const acceptWeeklyFallback = reason => {
-      const result = prepareScopedDataset(parsed, source, {mode:'all',label:'All people'}, options);
-      result.diagnostics.warnings.push(reason + ' The full validated weekly file was accepted.');
-      result.dataset.meta.scopeFallback = true;
-      return finish(result);
-    };
     const scopeSnapshot = normalizeScopeSnapshot(scope || { mode: 'all', label: 'All people' }, options);
     const narrow = isNarrowScope(scopeSnapshot);
     const selectedNames = new Set(scopeNames(scopeSnapshot));
@@ -884,7 +888,6 @@
     fingerprint.update(`source:${source}`).update(`scope:${scopeSnapshot.scopeHash}`);
 
     if (narrow && !selectedNames.size) {
-      if (weekly && !options?.authoritativeCleanUpload) return acceptWeeklyFallback('The selected weekly scope did not match the incoming file.');
       const diagnostics = { headerFound: false, ownershipColumn: '', matchedCoachKeys: [], unmatchedCoachKeys: [], sheetsChecked: [], warnings: ['The selected scope did not resolve to a canonical coach identity.'] };
       return finish({ valid: false, needsReview: true, reason: 'Update needs review — the selected scope could not be safely restored.', dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows: 0, sourceRows: 0, scopedFingerprint: '', diagnostics });
     }
@@ -965,12 +968,10 @@
       outOfScopeRows: narrow ? Math.max(0, sourceRows - matchedRows) : 0
     };
     if (narrow && !headerFound) {
-      if (weekly && !options?.authoritativeCleanUpload) return acceptWeeklyFallback('The selected weekly scope did not match the incoming file.');
       diagnostics.warnings.push(`Required scope column not found. Expected ${source === 'qa' ? 'Team' : (OWNERSHIP_HEADERS[source] || []).join(', ')}.`);
       return finish({ valid: false, needsReview: true, reason: `Scoped import failed validation: required ${source === 'qa' ? 'Team' : 'ownership'} column not found. Accepted headers: ${(OWNERSHIP_HEADERS[source] || []).join(', ')}. No replacement was performed.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics });
     }
     if (narrow && matchedRows === 0 && !(options && options.allowZeroRows)) {
-      if (weekly && !options?.authoritativeCleanUpload) return acceptWeeklyFallback('The selected weekly scope did not match the incoming file.');
       diagnostics.warnings.push('The scoped source contained zero matching rows. The existing dataset must be retained until the scope is reviewed.');
       return finish({ valid: false, needsReview: true, reason: `Update needs review — no rows matched ${scopeSnapshot.label || 'the selected scope'}.`, dataset: null, scopeSnapshot, scopeHash: scopeSnapshot.scopeHash, matchedRows, sourceRows, scopedFingerprint: '', diagnostics });
     }
@@ -1125,6 +1126,7 @@
   }
 
   async function prepareOverrideEntry(entry, options, error) {
+    if (['COACHTOOLS_SCOPE_REVIEW', 'COACHTOOLS_SOURCE_SCOPE_EMPTY'].includes(error && error.code)) throw error;
     const type=entry.classification.id, weekly=['weeklyRetail','weeklyReferral'].includes(type);
     if (!weekly && !(root.confirm && root.confirm(`Could not upload ${entry.file.name}: ${error.message || error}\n\nReplace the old ${SOURCES[type].label} data with this file? This deletes only that source's old stored data. Other sources are unchanged.`))) throw error;
     const parsed=await parseFile(entry.file);

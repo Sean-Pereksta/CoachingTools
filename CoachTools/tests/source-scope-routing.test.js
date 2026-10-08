@@ -191,11 +191,11 @@ function entry(type) {
   assert.deepStrictEqual(preparedCalls[2].scope.coaches, ['Angela Johnson'], 'Update Data must replay the source-specific Clean Upload selection from the baseline.');
   assert.deepStrictEqual(Array.from(updatePrepared.dataset.meta.sourceScopeSelection), ['Angela Johnson']);
 
-  const emptySelection=await importer.prepareRecognizedEntry(entry('weeklyRetail'),{
+  const beforeEmpty = preparedCalls.length;
+  await assert.rejects(()=>importer.prepareRecognizedEntry(entry('weeklyRetail'),{
     scope:{...canonicalPass,sourceSelections:{weeklyRetail:[],checklist:['Angie Johnson']}}
-  });
-  assert.equal(preparedCalls.at(-1).scope.mode,'all','Empty weekly selection accepts all rows without borrowing another source coach.');
-  assert(emptySelection.dataset);
+  }),error=>error.code==='COACHTOOLS_SOURCE_SCOPE_EMPTY');
+  assert.equal(preparedCalls.length,beforeEmpty,'An empty weekly selection must not load all rows or borrow another source coach.');
 
   stored = null;
   await importer.saveRecognizedEntry(entry('weeklyRetail'), { scope: canonicalPass });

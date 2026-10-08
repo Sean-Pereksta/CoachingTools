@@ -18,7 +18,7 @@ Without a previous weekly file, Add creates Date, Sheet, Name, Manager, standard
 
 When a previous weekly file is supplied, Add preserves historical cells and header order and appends the sorted new batch. Manager is filled when the existing weekly template already includes a Manager column; a new column is not injected into an old template. The saved manager directory is independent of that CSV column. Modify still requires the weekly file being changed and at least one source report. A wiper-only Modify leaves coach and manager history untouched. Modify matches date and normalized name, then uses coach to resolve repeated names; ambiguous records are held for review rather than using the first row. Explicit zero values remain zero and missing statistics remain blank. Existing Finalize Modify export gating is unchanged.
 
-The separate All-Star monthly import calculations and other dataset-specific ownership spellings are not rewritten by weekly name rules. Existing Clean Upload fallback and per-source routing remain authoritative.
+The separate All-Star monthly import calculations and other dataset-specific ownership spellings are not rewritten by weekly name rules. Clean Upload and Update Data preserve each source's selected coaches; weekly name rules apply before filtering. A failed filter retains existing data for review instead of including everyone.
 
 ## Persistence and privacy
 
