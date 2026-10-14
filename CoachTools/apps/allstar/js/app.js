@@ -4,6 +4,9 @@
 'use strict';
 
 function wire(){
+  initResearchGroups();
+  if(el('manageResearchGroupsBtn')) el('manageResearchGroupsBtn').onclick=openResearchGroupBuilder;
+  [[els.researchIncludeGroupAdd,'includeResearchGroups',els.researchIncludeGroupInput],[els.researchExcludeGroupAdd,'excludeResearchGroups',els.researchExcludeGroupInput]].forEach(([button,type,input])=>{ if(button) button.onclick=()=>addResearchPopulationSelection(type,input); if(input) input.addEventListener('keydown',event=>{ if(event.key==='Enter'){ event.preventDefault(); addResearchPopulationSelection(type,input); } }); });
   if(el('addMissingDefaultModelsBtn')) el('addMissingDefaultModelsBtn').onclick=addMissingDefaultModels;
   const previewSearch=el('columnPreviewSearch'); if(previewSearch) previewSearch.oninput=renderColumnPreviewValues;
   ['columnPreviewCloseBtn','columnPreviewDoneBtn'].forEach(pid=>{ const b=el(pid); if(b) b.onclick=closeColumnPreview; });
@@ -33,7 +36,7 @@ function wire(){
   ['troubleNameMode','troubleFullNameColumn','troubleFirstNameColumn','troubleLastNameColumn','troubleConvertLastFirst','troubleTeamColumn','troubleSkipTeamBuild','troubleDateColumn'].forEach(id=>{ if(els[id]) els[id].onchange=renderTroubleshootHeaderPreview; });
   if(els.troubleUseDateColumn) els.troubleUseDateColumn.onchange=()=>{ if(els.troubleDateColumn) els.troubleDateColumn.disabled=!els.troubleUseDateColumn.checked; };
   els.categoriesDrop.onchange=()=>{ if(els.categoriesDrop.value==='models'){ renderModelList(); openModal('modelsModal'); } if(els.categoriesDrop.value==='massHeaders') openMassHeaderCheck(); if(els.categoriesDrop.value==='metrics') openMetricsPage(); els.categoriesDrop.value=''; };
-  els.importDrop.onchange=()=>{ if(els.importDrop.value==='data') openModal('importModal'); if(els.importDrop.value==='roster') openRosterReassignment(); if(els.importDrop.value==='teams') openTeamsImported(); if(els.importDrop.value==='orgs') openOrgBuilder(); els.importDrop.value=''; };
+  els.importDrop.onchange=()=>{ if(els.importDrop.value==='data') openModal('importModal'); if(els.importDrop.value==='roster') openRosterReassignment(); if(els.importDrop.value==='teams') openTeamsImported(); if(els.importDrop.value==='orgs') openOrgBuilder(); if(els.importDrop.value==='researchGroups') openResearchGroupBuilder(); els.importDrop.value=''; };
   if(els.qualtricsEmailBtn) els.qualtricsEmailBtn.onclick=openQualtricsEmailWorkspace;
   if(els.refreshQualtricsDataBtn) els.refreshQualtricsDataBtn.onclick=()=>sendQualtricsCoreFiles(true);
   if(els.clearQualtricsDataBtn) els.clearQualtricsDataBtn.onclick=clearQualtricsEmailData;
@@ -351,7 +354,7 @@ async function runAllStarStartupPipeline(){
     setAllStarStartupPhase(job,0,20,'Loading settings…');
     await measureAllStarStartupStep('settings',async()=>{
       if(!state.startup.initialized){
-        loadModels(); loadRepAliases(); loadResearchItems({definitionsOnly:true}); loadPdfOptions(); loadOrgs(); wire(); initDatedStatsWorkspace();
+        loadModels(); loadRepAliases(); loadResearchGroups(); loadResearchItems({definitionsOnly:true}); loadPdfOptions(); loadOrgs(); wire(); initDatedStatsWorkspace();
         configureResearchCharts();
         window.AllStarModelWorkspace?.init();
         window.AllStarWorkspaceNavigation?.init();

@@ -15,12 +15,15 @@ const sources=[
 let statisticalReads=0;
 const unscannable=new Proxy([],{get(target,key){statisticalReads++;throw new Error('Navigation must not read statistical rows: '+String(key));}});
 const app={models:[{id:'appointments',name:'Appointment Rate',criteria:[{id:'cash',name:'Cash appointments'}]}],researchItems:[{id:'trend',title:'12 Week Trend',outputType:'line'}],metrics:[{id:'cashRate',name:'Cash Appointment Rate',field:'Consumer Appointments / Consumer Opportunities'}],orgs:[{id:'north',name:'North',coachNames:['Coach A']}],teams:['Coach A'],data:{retail:{controlRoster:[{_rep:'Catherine Mock',_team:'Coach A'},{_rep:'Catherine Mock',_team:'Coach B'}],sv2:unscannable}},categorized:{stale:true,warnings:['Review date column']},identityConflicts:[{name:'conflict'}]};
+app.researchGroups=[{id:'followup',name:'Follow-up work group',repNames:['Catherine Mock']}];
 const catalog=navigation.buildCatalog(app,sources,[{id:'report1',modelName:'August report'}],[{id:'chart1',title:'Cash trend'}]);
 assert.equal(statisticalReads,0,'Search uses metadata and roster indexes, never statistical rows');
 assert.equal(navigation.searchCatalog(catalog,'run appointment rate')[0].id,'run:appointments');
 assert.equal(navigation.searchCatalog(catalog,'consumer opportunities')[0].id,'column:retail_sv2:Consumer Opportunities');
 assert.equal(navigation.searchCatalog(catalog,'find catherine mock').length,2,'Same-name representatives on different teams stay separate');
 assert.equal(navigation.searchCatalog(catalog,'open research')[0].id,'action:research');
+assert.equal(navigation.searchCatalog(catalog,'open research groups')[0].id,'action:research-groups');
+assert.equal(navigation.searchCatalog(catalog,'follow-up work group')[0].id,'research-group:followup');
 assert.equal(navigation.searchCatalog(catalog,'cash trend')[0].id,'chart:chart1');
 assert.equal(navigation.searchCatalog(catalog,'august report')[0].id,'report:report1');
 assert.equal(navigation.searchCatalog(catalog,'',{favorites:['research:trend']})[0].id,'research:trend');
@@ -57,6 +60,7 @@ async function integration(){
     renderModelList:()=>calls.push(['renderModels']),
     openEditModel:id=>{calls.push(['editModel',id]);app.editOriginalId=id;document.getElementById('editModelModal').classList.add('open');},
     openResearchItemEditor:id=>calls.push(['research',id]),
+    openResearchGroupBuilder:()=>calls.push(['research-groups']),renderResearchGroupBuilder:()=>calls.push(['render-research-group',app.activeResearchGroupId]),
     openTeamsImported:()=>calls.push(['teams']),loadTeamDetails:team=>calls.push(['team',team]),
     openSavedReport:id=>calls.push(['report',id]),
     listSavedReports:async()=>[{id:'report1',modelName:'August report',report:{huge:'Excluded from navigation metadata'}}]
@@ -67,8 +71,11 @@ async function integration(){
   legacy.dispatchEvent(new window.Event('change'));
   assert.ok(calls.some(x=>x[0]==='legacy'),'Existing handlers survive the navigation upgrade');
   assert.ok(document.getElementById('asLegacyTools').contains(legacy),'All legacy entries remain reachable');
-  assert.equal(document.querySelectorAll('[data-as-section]').length,9);
+  assert.equal(document.querySelectorAll('[data-as-section]').length,10);
   assert.equal(document.getElementById('workArea').hidden,true);
+  await api.execute('research-group:followup');
+  assert.ok(calls.some(x=>x[0]==='research-groups'));
+  assert.ok(calls.some(x=>x[0]==='render-research-group'&&x[1]==='followup'));
 
   await api.execute('model:appointments');
   assert.ok(calls.some(x=>x[0]==='editModel'&&x[1]==='appointments'));

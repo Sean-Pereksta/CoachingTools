@@ -516,6 +516,11 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
   </section>
 
   <section class="view" id="view-report">
+    <div class="card coachingNeedsExportCard">
+      <div class="row"><div><h2 style="margin:0">Representatives Needing Coaching</h2><div class="sub">Export one row per representative using the current email report scope, rules, and report date. Includes every qualifying topic and the last coaching dates.</div></div><span class="spacer"></span><button class="btn blue" id="exportEmailCoachingNeedsBtn" type="button">Export All Representatives Needing Coaching</button></div>
+      <div class="sub">High: no concern topics coached recently. Medium: some topics still need coaching. Low — follow-up: all topics coached recently, with a repeated or elevated concern. Each topic uses its rule's lookback, listed in the CSV.</div>
+      <div class="sub" id="emailCoachingNeedsStatus" role="status" aria-live="polite">Builds a fresh list from the loaded data. Includes small teams hidden by the minimum-people display setting. No email roster is required.</div>
+    </div>
     <div class="card">
       <div class="row"><h2>Qualtrics Email</h2><span class="spacer"></span><span class="pill" id="emailDataStatus">Add data and rules</span><span class="pill" id="emailOutputStatus">Coach + executive email files</span></div>
       <section class="emailHistoryCard" aria-labelledby="emailHistoryTitle">
@@ -550,6 +555,11 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
 
   <section class="view" id="view-individual">
     <div class="stepBanner"><strong>Individual Reviews</strong><span class="sub">Upload the report files you want, explicitly choose the rules to run, then select organizations, coaches, or representatives. Nothing runs or sends automatically.</span></div>
+    <div class="card coachingNeedsExportCard">
+      <div class="row"><div><h2 style="margin:0">Representatives Needing Coaching</h2><div class="sub">Export every selected representative with a qualifying Concern that still needs coaching or follow-up. Includes all concern topics, even when message limits show fewer.</div></div><span class="spacer"></span><button class="btn blue" id="exportIndividualCoachingNeedsBtn" type="button">Export All Representatives Needing Coaching</button></div>
+      <div class="sub">High: no concern topics coached recently. Medium: some topics still need coaching. Low — follow-up: all topics coached recently, with a repeated or elevated concern. Each topic uses its rule's lookback, listed in the CSV.</div>
+      <div class="sub" id="individualCoachingNeedsStatus" role="status" aria-live="polite">Uses the selected people, rules, files, and report date. No email roster or message review is required; result display filters do not limit the list.</div>
+    </div>
     <div class="card"><div class="individualWorkflow"><span>1. Select people / rules</span><span>2. Review messages</span><span>3. Choose Negative / Mixed / Positive</span><span>4. Export</span></div></div>
     <div class="card">
       <div class="row"><div><h2 style="margin:0">1. Report Files &amp; Rules</h2><div class="sub">Only checked rules are evaluated. Call Quality, Cash Appointment Rate, and every other saved rule stay off until you select them here.</div></div><span class="spacer"></span><button class="btn" type="button" id="clearIndividualDataSelectionBtn">Clear Selections</button></div>
@@ -5751,10 +5761,10 @@ function renderEmailWorkflowStatus(){
   if(els.exportEmailsBtn) els.exportEmailsBtn.disabled=!state.report||!!state.emailWorkflowRunning;
   if(els.exportUrgencyPdfBtn) els.exportUrgencyPdfBtn.disabled=!state.report||!!state.emailWorkflowRunning;
   if(els.saveHistoryBtn) els.saveHistoryBtn.disabled=!state.report||!!state.report.historySaved||!!state.emailWorkflowRunning;
-  for(const id of ['generateReportBtn','reviewReportBtn']) if(els[id]) els[id].disabled=!!state.emailWorkflowRunning;
+  for(const id of ['generateReportBtn','reviewReportBtn','exportEmailCoachingNeedsBtn']) if(els[id]) els[id].disabled=!!state.emailWorkflowRunning||!!state.individualReviewRun||!!state.individualCoachingExportRun;
 }
 async function runEmailWorkflow(download=false){
-  if(state.emailWorkflowRunning) return;
+  if(state.emailWorkflowRunning||state.individualReviewRun||state.individualCoachingExportRun) return;
   state.emailWorkflowRunning=true; renderEmailWorkflowStatus();
   try{
     await queueConcernHistory(async()=>{

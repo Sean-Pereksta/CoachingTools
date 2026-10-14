@@ -38,6 +38,7 @@ const RESEARCH_CANVAS_MARK_LIMIT = 5000;
 const RESEARCH_SOURCE_INDEX_SCHEMA_VERSION = 4;
 const RESEARCH_PERSIST_MAX_GROUPS = 3000;
 const ORG_BUILDER_KEY = 'allStarOrgBuilder.v1';
+const RESEARCH_GROUPS_KEY = 'allStarResearchGroups.v1';
 const REP_ALIAS_KEY = 'allStarRepAliases.v1';
 const RUN_SETTINGS_KEY = 'allStarRunSettings.v2';
 const state = {
@@ -85,6 +86,8 @@ const state = {
   teams: [],
   selectedTeams: new Set(),
   orgs: [],
+  researchGroups: [],
+  activeResearchGroupId: '',
   activeOrgId: '',
   orgCoachSearch: '',
   orgSearch: '',
@@ -141,7 +144,7 @@ const state = {
   researchEntityTable: {signature:'',byRepKey:new Map(),byEntityId:new Map(),teamsById:new Map(),teamIdByKey:new Map(),nextRepId:1,nextTeamId:1},
   researchPerformanceRuns: [],
   researchCanvasCharts: new Map(),
-  editingResearchPopulationScope: {includeTeams:[],includeReps:[],excludeTeams:[],excludeReps:[]},
+  editingResearchPopulationScope: {includeTeams:[],includeReps:[],includeResearchGroups:[],excludeTeams:[],excludeReps:[],excludeResearchGroups:[]},
   researchWarmToken: null,
   researchCacheStats: {hits:0,writes:0,warmed:0},
   researchTraceStore: new Map(),
@@ -208,6 +211,9 @@ Object.assign(els,{
   researchExcludeTeamInput:el('researchExcludeTeamInput'), researchAddExcludeTeamBtn:el('researchAddExcludeTeamBtn'), researchExcludeTeamChips:el('researchExcludeTeamChips'),
   researchExcludeRepInput:el('researchExcludeRepInput'), researchAddExcludeRepBtn:el('researchAddExcludeRepBtn'), researchExcludeRepChips:el('researchExcludeRepChips'),
   researchPopulationOrgSuggestions:el('researchPopulationOrgSuggestions'), researchPopulationTeamSuggestions:el('researchPopulationTeamSuggestions'), researchPopulationRepSuggestions:el('researchPopulationRepSuggestions'),
+  researchPopulationGroupSuggestions:el('researchPopulationGroupSuggestions'),
+  researchIncludeGroupInput:el('researchIncludeGroupInput'), researchIncludeGroupAdd:el('researchIncludeGroupAdd'), researchIncludeGroupChips:el('researchIncludeGroupChips'),
+  researchExcludeGroupInput:el('researchExcludeGroupInput'), researchExcludeGroupAdd:el('researchExcludeGroupAdd'), researchExcludeGroupChips:el('researchExcludeGroupChips'),
   researchUnmatchedBehavior:el('researchUnmatchedBehavior'), researchCalculationGroupLimit:el('researchCalculationGroupLimit'), researchReconcile:el('researchReconcile'), researchJoinPreview:el('researchJoinPreview'),
   researchTypedMeasure:el('researchTypedMeasure'), researchMissingBehavior:el('researchMissingBehavior'), researchUseTypedMeasureBtn:el('researchUseTypedMeasureBtn'), researchAddTypedMeasureColumnBtn:el('researchAddTypedMeasureColumnBtn'), researchTypedMeasureMeta:el('researchTypedMeasureMeta'), researchPreviewMeasureSamplesBtn:el('researchPreviewMeasureSamplesBtn'), researchMeasureSamplePreview:el('researchMeasureSamplePreview'),
   researchPanelField:el('researchPanelField')

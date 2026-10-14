@@ -1,0 +1,47 @@
+/* Representative research group builder and reviewed paste matching. */
+#researchGroupBuilderModal .modal{width:min(1380px,96vw);height:min(94vh,1100px);display:flex;flex-direction:column;overflow:hidden}
+#researchGroupBuilderModal .modalBody{overflow:auto;min-height:0;background:#f6f7f9;align-content:start}
+#researchGroupBuilderModal .researchGroupIntro{margin:0 0 14px;line-height:1.6}
+#researchGroupBuilderModal .researchGroupWorkspace{display:grid;grid-template-columns:minmax(220px,270px) minmax(0,1fr);gap:16px;align-items:start}
+#researchGroupBuilderModal .panel{background:white;border:1px solid #dce1e7;border-radius:12px;padding:14px;gap:10px;min-width:0}
+#researchGroupBuilderModal .panelTitle{border-bottom:1px solid #e3e7ed;margin:0;padding-bottom:10px;color:#253043}
+#researchGroupBuilderModal .researchGroupSidebar{position:sticky;top:0;align-content:start}
+#researchGroupBuilderModal .researchGroupMain{display:grid;gap:14px;min-width:0}
+#researchGroupBuilderModal .researchGroupContext{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end}
+#researchGroupBuilderModal .researchGroupContext .hint,#researchGroupBuilderModal #researchGroupCount{grid-column:1/-1}
+#researchGroupBuilderModal .researchGroupMembers{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+#researchGroupBuilderModal .teamManagerList{max-height:39vh;margin:0}
+#researchGroupBuilderModal .teamRepList{max-height:40vh;margin:0;min-width:0}
+#researchGroupBuilderModal .researchGroupCard{display:grid;text-align:left;padding:12px;gap:5px;margin:4px 0;border-radius:8px;overflow-wrap:anywhere;width:100%}
+#researchGroupBuilderModal .researchGroupCard.active{background:#fff5f5;border-color:#dc8f8f;box-shadow:inset 3px 0 #b91c1c}
+#researchGroupBuilderModal .researchGroupRep{padding:10px;gap:10px;border-radius:7px}
+#researchGroupBuilderModal .researchGroupRep span,#researchGroupBuilderModal .researchGroupMember span{display:grid;gap:5px;min-width:0;overflow-wrap:anywhere}
+#researchGroupBuilderModal small{display:block;font-size:12px;font-weight:400;line-height:1.5}
+#researchGroupBuilderModal .researchGroupRep small,#researchGroupBuilderModal .researchGroupMember small{color:#536174}
+#researchGroupBuilderModal .researchGroupMember{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px;border-bottom:1px solid #e3e7ed}
+#researchGroupBuilderModal .researchGroupPager{display:flex;align-items:center;justify-content:space-between;gap:7px;font-size:12px;color:#536174;flex-wrap:wrap}
+#researchGroupBuilderModal .researchGroupPager span{text-align:center;flex:1;min-width:80px}
+#researchGroupBuilderModal .researchGroupTransfer,#researchGroupBuilderModal .researchGroupDanger{border-top:1px solid #e3e7ed;padding-top:12px;margin-top:6px;justify-content:space-between}
+#researchGroupBuilderModal .researchGroupImportLabel{position:relative;display:block;border:1px solid #cbd5e1;background:#f8fafc;padding:8px;border-radius:7px;font-weight:700;cursor:pointer;overflow:hidden}
+#researchGroupBuilderModal .researchGroupImportLabel input{position:absolute;inset:0;opacity:0;cursor:pointer}
+#researchGroupBuilderModal .researchGroupPastePanel textarea{width:100%;min-height:100px;resize:vertical}
+#researchGroupBuilderModal .researchGroupProgress{display:grid;gap:8px;color:#43526a;font-size:13px}
+#researchGroupBuilderModal progress{width:100%;height:18px;accent-color:#b91c1c}
+#researchGroupBuilderModal .researchGroupReviewTable{overflow:auto;max-height:50vh;border:1px solid #e3e7ed;border-radius:7px}
+#researchGroupBuilderModal .researchGroupReviewTable table{width:100%;border-collapse:collapse;min-width:620px}
+#researchGroupBuilderModal .researchGroupReviewTable th{position:sticky;top:0;background:#eef1f5;color:#263549;z-index:1;text-align:left}
+#researchGroupBuilderModal .researchGroupReviewTable td,#researchGroupBuilderModal .researchGroupReviewTable th{padding:10px;border-bottom:1px solid #e3e7ed;vertical-align:top;overflow-wrap:anywhere}
+#researchGroupBuilderModal .researchGroupReviewTable td:first-child{width:28%}
+#researchGroupBuilderModal .researchGroupReviewTable td:nth-child(2){width:50%}
+#researchGroupBuilderModal .researchGroupReviewTable input:not([type=checkbox]){width:100%;min-width:180px;margin-bottom:5px}
+#researchGroupBuilderModal .researchGroupApproval{display:flex;align-items:center;gap:6px;margin-bottom:9px}
+#researchGroupBuilderModal .researchGroupApproval input{width:auto}
+#researchGroupBuilderModal .researchGroupMatchStatus{margin-top:6px;color:#536174}
+#researchGroupBuilderModal .researchGroupMatchStatus.exact{color:#166534}
+#researchGroupBuilderModal .researchGroupMatchStatus.ambiguous,#researchGroupBuilderModal .researchGroupMatchStatus.unmatched{color:#92400e}
+#researchGroupBuilderModal #researchGroupActiveName{color:#e2e8f0;max-width:75vw;overflow-wrap:anywhere}
+#researchGroupBuilderModal .hint{line-height:1.55;margin:0}
+#researchGroupBuilderModal .hidden{display:none!important}
+#researchGroupBuilderModal button:focus-visible,#researchGroupBuilderModal input:focus-visible,#researchGroupBuilderModal textarea:focus-visible,#researchGroupBuilderModal .researchGroupImportLabel:focus-within{outline:2px solid #b91c1c;outline-offset:2px}
+@media(max-width:1050px){#researchGroupBuilderModal .researchGroupMembers{grid-template-columns:1fr}#researchGroupBuilderModal .researchGroupContext{grid-template-columns:1fr}}
+@media(max-width:720px){#researchGroupBuilderModal .researchGroupWorkspace{grid-template-columns:1fr}#researchGroupBuilderModal .researchGroupSidebar{position:static}#researchGroupBuilderModal .teamManagerList{max-height:24vh}#researchGroupBuilderModal .modalBody{padding:10px}}
