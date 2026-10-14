@@ -22,6 +22,14 @@ Take dist/All-Star-Portable.html when you want one file for another computer. It
 QUALTRICS SOURCE
 qualtrics/generator.html is the only maintained Qualtrics source. generator-source.js is generated from it and is loaded only when the Qualtrics workspace opens. This carrier avoids fetch() restrictions and preserves the original srcdoc storage origin for existing saved rules/settings when running from file://. If the carrier is unavailable, the app falls back to opening generator.html directly.
 
+REPRESENTATIVE RESEARCH GROUPS
+- Open Research Groups beside Organizations. Create and name a group, then search representatives or paste names separated by commas, new lines, or Excel cell separators.
+- Match Pasted Names shows progress and can be cancelled. Review exact matches, approve suggested names individually, correct a match, or skip unknown names. Add approved representatives loads only the reviewed membership. Large lists are paginated.
+- In Research, open Population and add a group under Include Research Groups or Exclude Research Groups. Included coaches/organizations and included representatives/groups must both match. Exclusions always apply. A group does not change coach assignments: group the output by Coach / Team to chart just those representatives under their coaches.
+- Groups save on this device. Export Groups saves a transferable JSON file; Research configuration and normalized data package exports also preserve groups. A missing or empty included group returns no people rather than widening to everyone.
+- Export Representatives Needing Coaching appears at the top of both Qualtrics generators. It evaluates the current selected scope, rules and report date, and exports one CSV row per representative with priority, outstanding topics, coaching dates and the rule's recency window. Missing email addresses and message display limits do not remove representatives from the list.
+- High priority means no current concern topics have recent related coaching; Medium means some still need coaching; Low means follow-up for an existing elevated/repeated concern despite recent related coaching. Ordinary concerns with all topics recently coached are left out.
+
 WORKFLOW MODERNIZATION
 - Normal startup restores settings, normalized source rows, categorized rows, and workbook metadata only. It does not fetch saved worksheet AOAs, reapply aliases across every row, rebuild categorized databases, warm Research, or populate hidden modal UI.
 - The compact team index is reused only when its source/roster/alias signature still matches. A missing or stale index is rebuilt when a team-dependent screen is actually opened, then saved for the next session.

@@ -179,6 +179,7 @@ function individualAddRepresentative(map,rawName,repK,extra={}){
   map.set(ident.key,current);
 }
 function invalidateIndividualRunCache(reason='inputs changed'){
+  state.individualCoachingExportRun?.controller.abort();
   state.individualRunCache=null;
   state.individualResultsStale=!!state.individualResults?.length;
   state.individualCacheInvalidationReason=reason;
@@ -254,7 +255,8 @@ function renderIndividualScopeSummary(){
   if(!els.individualScopeSummary) return;
   const summary=individualScopeSummary(), selection=individualScopeSelection(), selectedRules=individualSelectedRules(), isAll=selection.allByDefault&&!selection.organizationIds.size&&!selection.coachKeys.size&&!selection.includeRepKeys.size&&!selection.excludeRepKeys.size;
   els.individualScopeSummary.innerHTML=`<strong>${summary.representatives.toLocaleString()} representatives selected</strong><span>${summary.organizations.toLocaleString()} organizations • ${summary.coaches.toLocaleString()} coaches${isAll?' • All available people':!summary.representatives?' • Empty scope':''}</span>`;
-  if(els.evaluateIndividualsBtn){ els.evaluateIndividualsBtn.textContent=selectedRules.length?`Review ${summary.representatives.toLocaleString()} ${summary.representatives===1?'Person':'People'} with ${selectedRules.length.toLocaleString()} ${selectedRules.length===1?'Rule':'Rules'}`:'Select Rules to Review'; els.evaluateIndividualsBtn.disabled=!summary.representatives||!selectedRules.length||!!state.individualReviewRun; }
+  if(els.evaluateIndividualsBtn){ els.evaluateIndividualsBtn.textContent=selectedRules.length?`Review ${summary.representatives.toLocaleString()} ${summary.representatives===1?'Person':'People'} with ${selectedRules.length.toLocaleString()} ${selectedRules.length===1?'Rule':'Rules'}`:'Select Rules to Review'; els.evaluateIndividualsBtn.disabled=!summary.representatives||!selectedRules.length||!!state.individualReviewRun||!!state.individualCoachingExportRun; }
+  if(els.exportIndividualCoachingNeedsBtn) els.exportIndividualCoachingNeedsBtn.disabled=!summary.representatives||!selectedRules.length||!!state.individualReviewRun||!!state.individualCoachingExportRun||!!state.emailWorkflowRunning;
   const currentResults=!!state.individualResults?.length&&!state.individualResultsStale;
   if(els.exportIndividualReviewBtn) els.exportIndividualReviewBtn.disabled=!currentResults||!!state.individualReviewRun;
   renderIndividualExportSelection();
@@ -422,7 +424,7 @@ async function evaluateIndividualMessages(){
   if(!state.individualRosterRows?.length){ toast('Load the representative email roster first.'); return; }
   const selectedRules=individualSelectedRules(), selectedReportFiles=individualSelectedReportFiles();
   if(!selectedRules.length){ toast('Select at least one rule to run in Report Files & Rules.'); return; }
-  if(state.individualReviewRun) return;
+  if(state.individualReviewRun||state.individualCoachingExportRun||state.emailWorkflowRunning) return;
   const controller=new AbortController(), run={id:uid(),controller}; state.individualReviewRun=run; renderIndividualScopeSummary();
   const timings={}, totalStarted=performance.now(), mark=(label,started)=>{ timings[label]=performance.now()-started; };
   try{
@@ -626,6 +628,87 @@ async function exportIndividualEmails(){
   downloadBlob(blob,`qualtrics_individual_emails_${ymd(new Date())}.zip`); toast(`Exported ${ready.length} reviewed send-ready email file(s). Nothing was sent.`);
 }
 
+function coachingNeedsRecord(record,rule,reportDate,coached=null){
+  const lookbackWeeks=Number(rule?.coachLookbackWeeks)||Number(els.globalCoachLookback?.value)||2;
+  const match=coached||coachMatch(record,rule,reportDate,lookbackWeeks);
+  const latest=rows=>[...(rows||[])].filter(row=>row.date&&row.date<=reportDate).sort((a,b)=>b.date-a.date)[0]?.date||null;
+  return {repKey:record.repKey,repName:record.repName||record.fullName,coach:record.coach||'',team:record.team||'',organizationNames:record.organizationNames||[],topicId:rule.id,topic:rule.title||record.ruleTitle,lookbackDays:lookbackWeeks*7,recent:!!match.isCoached,latestTopicCoaching:latest(match.matched)||match.latestMatch?.date||match.latest?.date,latestAnyCoaching:latest(match.all),followUp:!!record.alarm||Number(record.history?.dateCount)>=2||Number(record.concernHistory?.appearanceCount)>=2||['candidate','repeat','critical'].includes(record.correctiveContext?.state)};
+}
+function downloadCoachingNeeds(records,reportDate,source,status){
+  const rows=QualtricsWorkflow.coachingNeedsRows(records,reportDate);
+  const message=rows.length?`Exported ${rows.length.toLocaleString()} representative(s), ordered by coaching priority.`:'No representatives need coaching or follow-up under the selected rules and scope.';
+  if(status) status.textContent=message;
+  if(!rows.length){ toast(message); return; }
+  downloadBlob(new Blob([QualtricsWorkflow.coachingNeedsCsv(rows)],{type:'text/csv;charset=utf-8'}),`qualtrics_${source}_coaching_needs_${ymd(reportDate)}.csv`);
+  toast(message);
+}
+async function exportIndividualCoachingNeeds(){
+  if(state.individualCoachingExportRun||state.individualReviewRun||state.emailWorkflowRunning) return;
+  const rules=individualSelectedRules(), files=individualSelectedReportFiles(), representatives=individualResolvedScope();
+  if(!rules.length){ toast('Select at least one rule to identify coaching needs.'); return; }
+  if(!representatives.length){ toast('Select at least one representative to identify coaching needs.'); return; }
+  const controller=new AbortController(), run={id:uid(),controller}, reportDate=parseDate(els.reportDate?.value)||new Date();
+  // This is a fresh, read-only evaluation. Email readiness, message caps and review filters never remove people.
+  const template={...QualtricsIndividualMessages.DEFAULT_TEMPLATE,maxConcerns:0,maxStrengths:0};
+  const signature=individualReviewSignature(representatives,rules,files,template,reportDate);
+  state.individualCoachingExportRun=run; renderIndividualScopeSummary();
+  if(els.individualCoachingNeedsStatus) els.individualCoachingNeedsStatus.textContent='Finding coaching needs across all selected people and concern topics…';
+  try{
+    setIndividualReviewProgress(3,'Building coaching needs list','Preparing the selected representatives and rules'); await individualYieldToBrowser();
+    const context=await buildIndividualRunContext(individualScopeIndex(),rules,files,controller.signal,fraction=>setIndividualReviewProgress(5+fraction*20,'Finding coaching needs','Indexing the selected report files'));
+    const resolver=createIndividualResolver(reportDate,context);
+    const evaluation=await QualtricsIndividualMessages.evaluateAllAsync({representatives,rules,rosterRows:[],resolver,template,signal:controller.signal,chunkSize:20,sliceMs:12,yieldToBrowser:individualYieldToBrowser,onProgress:progress=>setIndividualReviewProgress(25+progress.fraction*50,'Checking all concern topics',`${progress.completed.toLocaleString()} / ${progress.total.toLocaleString()} representatives`)});
+    const records=[];
+    for(let i=0;i<evaluation.results.length;i++){
+      individualThrowIfCancelled(controller.signal);
+      const result=evaluation.results[i];
+      for(const candidate of result.concerns||[]){
+        const record={...result,ruleId:candidate.rule.id,ruleTitle:candidate.rule.title,repName:result.fullName};
+        record.concernHistory=concernHistoryForRecord(record,candidate.rule,reportDate);
+        records.push(coachingNeedsRecord(record,candidate.rule,reportDate));
+      }
+      if(i%25===0){ setIndividualReviewProgress(75+20*(i+1)/evaluation.results.length,'Checking topic coaching dates',`${i+1} / ${evaluation.results.length} representatives`); await individualYieldToBrowser(); }
+    }
+    individualThrowIfCancelled(controller.signal);
+    const currentDate=parseDate(els.reportDate?.value)||new Date();
+    if(signature!==individualReviewSignature(individualResolvedScope(),individualSelectedRules(),individualSelectedReportFiles(),template,currentDate)) throw Object.assign(new Error('Coaching export inputs changed.'),{name:'AbortError'});
+    downloadCoachingNeeds(records,reportDate,'individual',els.individualCoachingNeedsStatus);
+  }catch(error){
+    const message=error?.name==='AbortError'?'Coaching export cancelled or inputs changed. Export again with the current selections.':`Coaching list could not be exported: ${error.message||error}`;
+    if(els.individualCoachingNeedsStatus) els.individualCoachingNeedsStatus.textContent=message;
+    toast(message);
+  }finally{
+    if(state.individualCoachingExportRun?.id===run.id) state.individualCoachingExportRun=null;
+    setIndividualReviewProgress(null); renderIndividualScopeSummary();
+  }
+}
+function emailCoachingNeedsSignature(){
+  return JSON.stringify({revision:state.individualDataRevision,rules:QualtricsWorkflow.fingerprint(state.rules||[]),files:(state.dashboardFiles||[]).map(file=>file.id),otherRules:[...(state.selectedOtherRuleIds||[])].sort(),audience:currentReportAudience(),hireDate:state.hireDateSettings,date:els.reportDate?.value||'',lookback:els.globalCoachLookback?.value||''});
+}
+async function exportEmailCoachingNeeds(){
+  if(state.emailWorkflowRunning||state.individualReviewRun||state.individualCoachingExportRun) return;
+  const signature=emailCoachingNeedsSignature();
+  state.emailWorkflowRunning=true; renderEmailWorkflowStatus(); renderIndividualScopeSummary();
+  if(els.emailCoachingNeedsStatus) els.emailCoachingNeedsStatus.textContent='Building the current report and checking coaching dates for every qualifying representative…';
+  try{
+    await queueConcernHistory(async()=>{
+      const previous=state.report; await generateReport();
+      // Validation may return early. Never export a previous report under new selections.
+      if(!state.report||state.report===previous){ if(els.emailCoachingNeedsStatus) els.emailCoachingNeedsStatus.textContent='Resolve the report setup message, then export again.'; return; }
+      if(signature!==emailCoachingNeedsSignature()){ if(els.emailCoachingNeedsStatus) els.emailCoachingNeedsStatus.textContent='Report inputs changed. Export again with the current selections.'; return; }
+      const reportDate=parseDate(state.report.reportDate), rules=new Map((state.rules||[]).map(rule=>[rule.id,rule]));
+      const records=[];
+      // The minimum team size controls email display only; the list includes every need in the audience/hire-date scope.
+      for(const record of state.report.allFlagged||state.report.flagged||[]){ const rule=rules.get(record.ruleId); if(rule) records.push(coachingNeedsRecord(record,rule,reportDate,record.coached)); }
+      downloadCoachingNeeds(records,reportDate,'email',els.emailCoachingNeedsStatus);
+    });
+  }catch(error){
+    const message=`Coaching list could not be exported: ${error.message||error}`;
+    if(els.emailCoachingNeedsStatus) els.emailCoachingNeedsStatus.textContent=message;
+    toast(message); setProgress(null);
+  }finally{ state.emailWorkflowRunning=false; renderEmailWorkflowStatus(); renderIndividualScopeSummary(); }
+}
+
 function bindIndividualMessages(){
   if(!els.individualConcernEnabled) return;
   for(const side of ['concern','strength']){
@@ -647,6 +730,8 @@ function bindIndividualMessages(){
   els.individualReportDrop?.addEventListener('drop',event=>addIndividualReportFiles(event.dataTransfer.files));
   els.loadIndividualRosterPasteBtn.onclick=loadPastedIndividualRoster;
   document.getElementById('exportFinalEmailBtn')?.addEventListener('click',exportFinalIndividualEmails);
+  els.exportIndividualCoachingNeedsBtn?.addEventListener('click',exportIndividualCoachingNeeds);
+  els.exportEmailCoachingNeedsBtn?.addEventListener('click',exportEmailCoachingNeeds);
   document.querySelectorAll('[data-individual-export-category]').forEach(input=>input.addEventListener('change',()=>setIndividualExportCategory(input.dataset.individualExportCategory,input.checked)));
   els.saveIndividualTemplateBtn.onclick=saveIndividualMessageSettings; els.evaluateIndividualsBtn.onclick=evaluateIndividualMessages; els.exportIndividualReviewBtn.onclick=exportIndividualReview; els.exportIndividualEmailsBtn.onclick=exportIndividualEmails;
   els.resetIndividualScopeBtn?.addEventListener('click',resetIndividualScope);
@@ -663,7 +748,7 @@ function bindIndividualMessages(){
   els.individualCoachSearch?.addEventListener('input',renderIndividualCoachOptions);
   document.getElementById('individualExcludeNumericNames')?.addEventListener('change',()=>{ state.individualReviewRun?.controller.abort(); invalidateIndividualRunCache('numeric-name exclusion changed'); renderIndividualRepresentativeOptions(); renderIndividualScopeSummary(); });
   els.individualRepresentativeSearch?.addEventListener('input',renderIndividualRepresentativeOptions);
-  els.cancelIndividualReviewBtn?.addEventListener('click',()=>state.individualReviewRun?.controller?.abort());
+  els.cancelIndividualReviewBtn?.addEventListener('click',()=>{ state.individualReviewRun?.controller?.abort(); state.individualCoachingExportRun?.controller.abort(); });
   els.expandAllIndividualBtn?.addEventListener('click',()=>{ state.individualCardsExpanded=true; els.individualReview?.querySelectorAll('.individualReviewCard').forEach(card=>card.open=true); });
   els.collapseAllIndividualBtn?.addEventListener('click',()=>{ state.individualCardsExpanded=false; els.individualReview?.querySelectorAll('.individualReviewCard').forEach(card=>card.open=false); });
   for(const id of ['individualIncludeGeneric','individualGenericPlacement','individualIncludeNeither']) els[id]?.addEventListener('change',()=>{ updateIndividualGenericVisibility(); invalidateIndividualRunCache('message options changed'); });

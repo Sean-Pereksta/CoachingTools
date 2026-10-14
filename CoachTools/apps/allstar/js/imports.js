@@ -1491,7 +1491,7 @@ function buildAllStarJsonPackage(){
   const customSources=(state.customSources||[]).map(c=>({id:c.id||id(),sourceKey:c.sourceKey,name:c.name||c.sourceKey,displayName:c.displayName||c.name||c.sourceKey,sourceType:'custom',framework:c.framework||'generic_table',fileName:c.fileName||'',sheetName:c.sheetName||'',headers:c.headers||[],rows:c.rows||[],headerRow:Number(c.headerRow||1),startCol:Number(c.startCol||1),manualHeaders:c.manualHeaders||[],columns:c.columns||{},aggregation:c.aggregation||{}}));
   const categorized={stats:state.categorized.stats||{version:1,sources:{}},nondated:{headers:state.categorized.nondated.headers||[],rows:state.categorized.nondated.rows||[],builtAt:state.categorized.nondated.builtAt||'',sourceStats:state.categorized.nondated.sourceStats||[]},dated:{headers:state.categorized.dated.headers||[],rows:state.categorized.dated.rows||[],builtAt:state.categorized.dated.builtAt||'',sourceStats:state.categorized.dated.sourceStats||[]},warnings:state.categorized.warnings||[],stale:categorizationIsStale(),staleReason:state.categorized.staleReason||'',changedSources:state.categorized.changedSources||[],sourceSignatures:state.categorized.sourceSignatures||{},fragments:state.categorized.fragments||{}};
   const totalRows=Object.values(sources).reduce((n,s)=>n+(s.rows||[]).length,0)+customSources.reduce((n,s)=>n+(s.rows||[]).length,0)+(categorized.nondated.rows||[]).length+(categorized.dated.rows||[]).length;
-  return {packageType:ALL_STAR_JSON_PACKAGE_TYPE,schemaVersion:ALL_STAR_JSON_PACKAGE_SCHEMA,createdAt:new Date().toISOString(),appVersion:'all-star-modular',sources,rosters:{retail:state.data.retail.controlRoster||[],referral:state.data.referral.controlRoster||[]},teamTotals:{retail:jsonSafeTeamTotals('retail_team_totals'),referral:jsonSafeTeamTotals('referral_team_totals')},categorized,customSources,sourceMeta:state.sourceMeta||{},categorizedFragments:state.categorizedFragments||{},organizations:state.orgs||[],sourceSettings:{activeModelId:activeModelForImport()?.id||'',byModel:Object.fromEntries((state.models||[]).map(m=>[m.id,m.sourceSettings||{}]))},sourceFiles:{retail:state.data.retail.fileName||'',referral:state.data.referral.fileName||''},statistics:{totalRows,sourceCount:Object.keys(sources).length+customSources.length}};
+  return {packageType:ALL_STAR_JSON_PACKAGE_TYPE,schemaVersion:ALL_STAR_JSON_PACKAGE_SCHEMA,createdAt:new Date().toISOString(),appVersion:'all-star-modular',sources,rosters:{retail:state.data.retail.controlRoster||[],referral:state.data.referral.controlRoster||[]},teamTotals:{retail:jsonSafeTeamTotals('retail_team_totals'),referral:jsonSafeTeamTotals('referral_team_totals')},categorized,customSources,sourceMeta:state.sourceMeta||{},categorizedFragments:state.categorizedFragments||{},organizations:state.orgs||[],researchGroups:state.researchGroups||[],sourceSettings:{activeModelId:activeModelForImport()?.id||'',byModel:Object.fromEntries((state.models||[]).map(m=>[m.id,m.sourceSettings||{}]))},sourceFiles:{retail:state.data.retail.fileName||'',referral:state.data.referral.fileName||''},statistics:{totalRows,sourceCount:Object.keys(sources).length+customSources.length}};
 }
 async function rebuildSourceFromPackage(source, sheetName, model){
   const book=bookForSource(source), aoa=(book.aoaBySheet||{})[sheetName] || [];
@@ -1548,12 +1548,16 @@ function stageAllStarJsonPackage(pkg,fileName){
   const customSources=pkg.customSources.map((c,i)=>{ if(!c?.sourceKey || !Array.isArray(c.headers)||!Array.isArray(c.rows)) throw new Error(`Missing source data: custom source ${i+1}.`); return {...c,id:c.id||id(),sourceType:'custom',aoa:[],aoaBySheet:{},sheetNames:c.sheetName?[c.sheetName]:[]}; });
   const sourceMeta={...(pkg.sourceMeta||{})}; Object.entries(pkg.sources).forEach(([source,record])=>{sourceMeta[source]={...(sourceMeta[source]||{}),sourceVersion:Number(record.sourceVersion||sourceMeta[source]?.sourceVersion||1),originalHeaders:record.headers||[],normalizedHeaders:record.headers||[],rowCount:(record.rows||[]).length,hydratedFromJson:true};});
   if(pkg.organizations!==undefined&&!Array.isArray(pkg.organizations)) throw new Error('Invalid All-Star package: organizations must be an array.');
+  if(pkg.researchGroups!==undefined&&!Array.isArray(pkg.researchGroups)) throw new Error('Invalid All-Star package: researchGroups must be an array.');
+  if(pkg.researchGroups?.some(group=>!group||typeof group!=='object'||typeof group.name!=='string'||(group.id!==undefined&&typeof group.id!=='string')||!Array.isArray(group.repNames)||group.repNames.some(name=>typeof name!=='string'))) throw new Error('Invalid All-Star package: researchGroups must contain named groups with representative name lists.');
+  const researchGroups=(pkg.researchGroups===undefined?state.researchGroups:pkg.researchGroups).map(normalizeResearchGroup);
   const orgs=(pkg.organizations||[]).map(normalizeOrg), models=clonePlain(state.models||[]), byModel=pkg.sourceSettings?.byModel||{}; models.forEach(m=>{if(byModel[m.id])m.sourceSettings=clonePlain(byModel[m.id]);});
-  return {nextData,categorized,customSources,sourceMeta,categorizedFragments:pkg.categorizedFragments||{},orgs,models:models.map(normalizeModelForStorage),books:emptyJsonPackageBooks(fileName,pkg.sources,customSources),statistics:pkg.statistics||{}};
+  return {nextData,categorized,customSources,sourceMeta,categorizedFragments:pkg.categorizedFragments||{},orgs,researchGroups,models:models.map(normalizeModelForStorage),books:emptyJsonPackageBooks(fileName,pkg.sources,customSources),statistics:pkg.statistics||{}};
 }
 function commitStagedJsonPackage(staged){
   const previous={...state,versions:{...(state.versions||{})}}, priorResearchCache=(()=>{try{return localStorage.getItem(RESEARCH_CACHE_KEY);}catch(_){return null;}})();
   try{
+    state.researchGroups=staged.researchGroups||state.researchGroups;
     // Packages hydrate normalized source rows only. Preserve the user's last
     // successful manual categorization and mark it stale like any other import.
     state.data=staged.nextData; state.customSources=staged.customSources; state.sourceMeta=staged.sourceMeta; state.categorized={...previous.categorized,changedSources:[...(previous.categorized?.changedSources||[])],fragments:{...(previous.categorized?.fragments||{})}}; state.categorizedFragments={...(previous.categorizedFragments||previous.categorized?.fragments||{})}; state.categorized.fragments=state.categorizedFragments; state.books=staged.books; state.orgs=staged.orgs; state.models=staged.models;
@@ -1572,12 +1576,15 @@ async function loadJsonPackageFile(file){
   updateProgress('Validating normalized package...',18,{force:true}); await yieldToBrowser();
   const staged=stageAllStarJsonPackage(parsed,file.name); updateProgress('Hydrating normalized application state...',42,{force:true}); await yieldToBrowser();
   commitStagedJsonPackage(staged);
+  let groupSaveWarning='';
+  try{saveResearchGroups();}catch(error){groupSaveWarning='The package loaded, but Research Groups could not be saved on this device. Use Export Groups to keep a copy.';console.warn(groupSaveWarning,error);}
   try{localStorage.setItem(MODEL_KEY,JSON.stringify(state.models));localStorage.setItem(ORG_BUILDER_KEY,JSON.stringify(state.orgs));}catch(_){}
   markRetailPersistenceDirty('JSON package hydration'); markReferralPersistenceDirty('JSON package hydration'); [...JSON_PACKAGE_SOURCE_KEYS.filter(s=>!s.startsWith('retail')&&!s.startsWith('referral')),'weeklyRetail','weeklyReferral'].forEach(s=>markSourceCacheDirty(s,'JSON package hydration')); staged.customSources.forEach(c=>markSourceCacheDirty(c.sourceKey,'JSON package hydration')); ['categorized','customSources','sourceMeta','sourceSettings','orgs'].forEach(k=>markImportCacheDirty('misc',k,'JSON package hydration'));
   renderCustomSourcesList(); renderCategorizedSummary(); restoreImportFileLabels(); renderModelList(); populateRunModels(); renderOrgBuilder(); renderTeamTotalsImportControls(); setStatus(); renderEditModelSafe(); renderTeamSelect(); updateResearchCacheBadge();
   if(els.packagedFileName) els.packagedFileName.textContent=`${file.name} · normalized JSON hydrated directly`;
   updateProgress('Saving hydrated package locally...',88,{force:true}); const saved=await flushImportCacheSave('JSON package hydration complete'); if(!saved){ const message=state.importCache.lastError||'The JSON package loaded, but its local IndexedDB save failed.'; console.warn(message); alert(message); }
   updateProgress(`JSON package ready${staged.statistics.totalRows?` · ${Number(staged.statistics.totalRows).toLocaleString()} rows`:''}.`,100,{force:true});
+  if(groupSaveWarning)alert(groupSaveWarning);
 }
 async function loadPackagedFile(file){
   const timing=importTiming('package load hydration');
@@ -1605,6 +1612,7 @@ async function loadPackagedFile(file){
       Object.assign(c,{...def,id:c.id||def.id||id(),sourceType:'custom',name:def.name||c.name,displayName:def.displayName||def.name||c.displayName||c.name,headerRow:1,startCol:1,manualHeaders:[]});
     });
     if(Array.isArray(packageMeta.orgs)){ const prev=state.orgs||[]; packageMeta.orgs.map(normalizeOrg).forEach(o=>{ const i=prev.findIndex(x=>x.id===o.id); if(i>=0) prev[i]=o; else prev.push(o); }); state.orgs=prev; saveOrgs(); }
+    if(Array.isArray(packageMeta.researchGroups)){ const prev=state.researchGroups||[]; packageMeta.researchGroups.map(normalizeResearchGroup).forEach(group=>{ const i=prev.findIndex(x=>x.id===group.id); if(i>=0) prev[i]=group; else prev.push(group); }); state.researchGroups=prev; saveResearchGroups(); }
     const assigned={};
     Object.entries(packageMeta.sourceSheetMap||{}).forEach(([src,sn])=>{ const resolved=resolveSheet(sn); if(resolved) assigned[src]=resolved; });
     names.forEach(sn=>{ if(sn===metaSheet) return; const src=packageSheetToSource(sn); if(src&&!assigned[src]) assigned[src]=sn; });

@@ -10,7 +10,7 @@
 })(typeof window!=='undefined'?window:globalThis,function(root){
   'use strict';
   const PREF_KEY='allStarWorkspaceNavigation.v1';
-  const SECTIONS=['Home','Data','Models','Research','Reports','Organizations','Messages','History','Settings'];
+  const SECTIONS=['Home','Data','Models','Research','Reports','Organizations','Research Groups','Messages','History','Settings'];
   const normalize=value=>String(value??'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
   const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const number=value=>Number(value||0).toLocaleString();
@@ -62,6 +62,7 @@
       ['report-new','Create Report','Reports','Choose model and reporting population'],
       ['report-saved','Open Saved Reports','History','Open, compare and re-export saved snapshots'],
       ['organizations','Open Organizations','Organizations','Create organizations from coaches and teams'],
+      ['research-groups','Open Research Groups','Research Groups','Create representative work groups; search or paste names and approve matches'],
       ['teams','Find Teams and Representatives','Organizations','Inspect the imported roster and identity matches'],
       ['messages','Open Messages / Qualtrics','Messages','Rules, mass messages and individual reviews'],
       ['history','Open History','History','Recently opened work and saved report snapshots'],
@@ -84,6 +85,7 @@
       for(const column of source.headers||[]) add({id:'column:'+source.id+':'+column,action:'column',entityId:source.id,column,label:column,category:'Columns',description:source.label,keywords:source.id});
     }
     for(const org of asArray(app.orgs)) add({id:'org:'+org.id,action:'organization',entityId:org.id,label:org.name||'Organization',category:'Organizations',description:`${asArray(org.coachNames).length} coaches`});
+    for(const group of asArray(app.researchGroups)) add({id:'research-group:'+group.id,action:'research-group',entityId:group.id,label:group.name||'Research Group',category:'Research Groups',description:`${asArray(group.repNames).length} representatives`,keywords:'work group scope'});
     const teams=new Set(asArray(app.teams).map(x=>typeof x==='string'?x:x.name||x.team).filter(Boolean));
     const roster=[...asArray(app.data?.retail?.controlRoster),...asArray(app.data?.referral?.controlRoster)];
     if(!app.dataIndex?.dirty) roster.push(...asArray(app.dataIndex?.reps));
@@ -298,6 +300,8 @@
           case 'report': await call('openSavedReport',command.entityId); setSection('Reports'); break;
           case 'organizations': call('openOrgBuilder'); break;
           case 'organization': call('openOrgBuilder'); app.activeOrgId=command.entityId; call('renderOrgBuilder'); break;
+          case 'research-groups': call('openResearchGroupBuilder'); break;
+          case 'research-group': call('openResearchGroupBuilder'); app.activeResearchGroupId=command.entityId; call('renderResearchGroupBuilder'); break;
           case 'teams': call('openTeamsImported'); break;
           case 'team':
             if(byId('teamRepSearch')) byId('teamRepSearch').value='';
@@ -356,7 +360,7 @@
       if(target.hasAttribute('data-as-open-palette')) return openPalette();
       if(target.hasAttribute('data-as-option')) return execute(results[Number(target.dataset.asOption)]);
       if(target.hasAttribute('data-as-section')){
-        const section=target.dataset.asSection, action={Home:'home',Data:'data',Models:'models',Research:'research',Reports:'reports',Organizations:'organizations',Messages:'messages',History:'history',Settings:'settings'}[section];
+        const section=target.dataset.asSection, action={Home:'home',Data:'data',Models:'models',Research:'research',Reports:'reports',Organizations:'organizations','Research Groups':'research-groups',Messages:'messages',History:'history',Settings:'settings'}[section];
         return execute('action:'+action);
       }
       return execute(target.dataset.asCommand);
@@ -364,7 +368,7 @@
     function bind(target,name,handler){ target?.addEventListener(name,handler); cleanups.push(()=>target?.removeEventListener(name,handler)); }
     function observeLegacyActions(){
       if(!root.MutationObserver) return;
-      const sections={importModal:'Data',troubleshootModal:'Data',modelsModal:'Models',editModelModal:'Models',massHeaderModal:'Data',runModal:'Reports',researchModal:'Research',researchEditorModal:'Research',metricsModal:'Research',metricEditorModal:'Research',orgBuilderModal:'Organizations',teamsModal:'Organizations',qualtricsEmailModal:'Messages',recentRunsModal:'History',pdfOptionsModal:'Reports'};
+      const sections={importModal:'Data',troubleshootModal:'Data',modelsModal:'Models',editModelModal:'Models',massHeaderModal:'Data',runModal:'Reports',researchModal:'Research',researchEditorModal:'Research',metricsModal:'Research',metricEditorModal:'Research',orgBuilderModal:'Organizations',researchGroupBuilderModal:'Research Groups',teamsModal:'Organizations',qualtricsEmailModal:'Messages',recentRunsModal:'History',pdfOptionsModal:'Reports'};
       Object.entries(sections).forEach(([id,section])=>{
         const node=byId(id); if(!node) return;
         const observer=new root.MutationObserver(()=>{

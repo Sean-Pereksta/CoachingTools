@@ -38,12 +38,13 @@
 <link rel="stylesheet" href="css/workspace-navigation.css">
 <link rel="stylesheet" href="css/workspace-polish.css">
 <link rel="stylesheet" href="css/organizations.css">
+<link rel="stylesheet" href="css/research-groups.css">
 </head>
 <body>
 <div id="monthlyCompleteness" class="hint" role="status" hidden></div>
 <div class="toolbar">
   <select id="categoriesDrop" class="toolbarSelect toolbarControlSecondary"><option value="">Categories</option><option value="models">Create/Modify</option><option value="massHeaders">Mass Header Check</option><option value="metrics">Metrics</option></select>
-  <select id="importDrop" class="toolbarSelect toolbarControlSecondary"><option value="">Import</option><option value="data">Import Data</option><option value="roster">Roster Reassignment</option><option value="teams">Teams Imported</option><option value="orgs">Org Builder</option></select>
+  <select id="importDrop" class="toolbarSelect toolbarControlSecondary"><option value="">Import</option><option value="data">Import Data</option><option value="roster">Roster Reassignment</option><option value="teams">Teams Imported</option><option value="orgs">Org Builder</option><option value="researchGroups">Research Groups</option></select>
   <button id="runBtn" class="toolbarBtn toolbarBtnPrimary">Run</button>
   <select id="researchBtn" class="toolbarSelect"><option value="">Research</option><option value="listTester">List Tester</option><option value="open">Open Research</option><option value="clear">Clear Research</option></select>
   <select id="pdfDrop" class="toolbarSelect"><option value="">PDF</option><option value="export">Export</option><option value="options">Options</option></select>
@@ -275,6 +276,50 @@
       <section class="panel"><div class="panelTitle">Organization health</div><div class="hint">Select a card to inspect the affected coaches or organizations. Overlap may be intentional.</div><div id="orgHealthPanel" class="checkResultList"></div><div id="orgHealthDetails" tabindex="-1"></div></section>
     </div>
     <div class="modalFoot"><button id="orgSaveFootBtn" class="green" type="button">Save Org</button><button class="dark" data-close="orgBuilderModal">Done</button></div>
+  </div>
+</div>
+
+<div id="researchGroupBuilderModal" class="modalBackdrop">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="researchGroupModalTitle">
+    <div class="modalHead"><div id="researchGroupModalTitle" class="modalTitle">Research Groups<small id="researchGroupActiveName"></small></div><button class="dark" data-close="researchGroupBuilderModal" type="button">Close</button></div>
+    <div class="modalBody">
+      <p class="hint researchGroupIntro">Save a work group of representatives to include or exclude in Research. Combine it with coach or organization scope to research only representatives who belong to both. Their coaches remain available in tables and charts.</p>
+      <div class="researchGroupWorkspace">
+        <aside class="panel researchGroupSidebar" aria-label="Saved research groups">
+          <div class="panelTitle">Research groups</div>
+          <label for="researchGroupSearchInput">Search groups</label><input id="researchGroupSearchInput" placeholder="Find a research group…">
+          <button id="createResearchGroupBtn" class="green" type="button">Create Research Group</button>
+          <div id="researchGroupList" class="teamManagerList"></div><div id="researchGroupListPager" class="researchGroupPager"></div>
+          <div class="row researchGroupTransfer"><button id="exportResearchGroupsBtn" class="dark" type="button">Export Groups</button><label class="researchGroupImportLabel">Import Groups<input id="importResearchGroupsFile" type="file" accept=".json,application/json" aria-label="Import Research Groups JSON"></label></div>
+        </aside>
+        <div class="researchGroupMain">
+          <section class="panel researchGroupContext">
+            <div class="field"><label for="researchGroupNameInput">Research group name</label><input id="researchGroupNameInput" placeholder="Name this group"></div>
+            <div class="row"><button id="saveResearchGroupBtn" class="green" type="button">Save Name</button><button id="duplicateResearchGroupBtn" class="dark" type="button">Duplicate Group</button></div>
+            <div id="researchGroupCount" class="badge">0 representatives selected</div><div id="researchGroupStatus" class="hint" role="status" aria-live="polite"></div>
+          </section>
+          <section class="panel researchGroupPastePanel" aria-label="Paste representative names">
+            <div class="panelTitle">Paste a representative list</div>
+            <label for="researchGroupPasteInput">Names separated by commas or line breaks</label><textarea id="researchGroupPasteInput" rows="5" placeholder="Alice Able, Bob Baker&#10;Cara Clark"></textarea>
+            <p class="hint">Paste a column from Excel, or a comma-separated list. Duplicate names are combined. Exact matches are selected automatically for review; similar names require approval before they are added.</p>
+            <div class="row"><button id="researchGroupMatchBtn" class="green" type="button">Match Pasted Names</button><button id="researchGroupCancelMatchBtn" class="gray hidden" type="button">Cancel Matching</button></div>
+            <div id="researchGroupProgress" class="researchGroupProgress hidden"><label id="researchGroupProgressLabel" for="researchGroupProgressBar">Preparing names…</label><progress id="researchGroupProgressBar" max="100" value="0" aria-describedby="researchGroupProgressLabel"></progress></div>
+          </section>
+          <section id="researchGroupReviewPanel" class="panel hidden" aria-label="Review pasted name matches">
+            <div class="panelTitle">Review and approve matches</div><p id="researchGroupReviewSummary" class="hint"></p>
+            <p class="hint">Check each suggested name against your pasted name. Change the match to an imported representative, approve it, or skip it. Unapproved names are left out.</p>
+            <datalist id="researchGroupRepSuggestions"></datalist>
+            <div class="researchGroupReviewTable"><table><thead><tr><th scope="col">Pasted name</th><th scope="col">Imported representative</th><th scope="col">Decision</th></tr></thead><tbody id="researchGroupReviewRows"></tbody></table></div>
+            <div id="researchGroupReviewPager" class="researchGroupPager"></div><button id="researchGroupApplyMatchesBtn" class="green" type="button" disabled>Add approved representatives</button>
+          </section>
+          <div class="researchGroupMembers">
+            <section class="panel"><div class="panelTitle">Search representatives</div><label for="researchGroupRepSearchInput">Search by representative or coach</label><input id="researchGroupRepSearchInput" placeholder="Find representatives…"><p class="hint">Check names to add them. Membership changes save immediately.</p><div id="researchGroupRepList" class="teamRepList"></div><div id="researchGroupRepPager" class="researchGroupPager"></div></section>
+            <section class="panel"><div class="panelTitle">Selected representatives</div><label for="researchGroupSelectedSearchInput">Search selected membership</label><input id="researchGroupSelectedSearchInput" placeholder="Find a selected representative…"><div id="researchGroupSelectedList" class="teamRepList"></div><div id="researchGroupSelectedPager" class="researchGroupPager"></div><div class="row researchGroupDanger"><button id="clearResearchGroupBtn" class="gray" type="button">Clear Membership</button><button id="deleteResearchGroupBtn" class="red" type="button">Delete Group</button></div></section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modalFoot"><button class="dark" data-close="researchGroupBuilderModal" type="button">Done</button></div>
   </div>
 </div>
 
@@ -687,16 +732,19 @@
         <button class="guidedTemplateCard" type="button" data-guided-template="analyze_records"><strong>Analyze Records</strong><span>Count or calculate the percentage of coaching, checklist, QA, call, or custom records.</span></button>
       </div></div>
       <div id="researchPopulationScopeSection" class="researchSection guidedStep" data-guided-step="population"><div class="guidedStepTitle"><span class="guidedStepNumber">1</span>Choose the population</div>
-        <div class="hint">These selections are applied before grouping, joining, or calculating. Leave every picker empty to include the full imported population.</div>
+        <div class="hint">Choose coaches or organizations and representatives or Research Groups together to use only people in both scopes. Group by coach to compare the selected representatives under their existing coaches. Leave every picker empty for the full imported population. Exclusions always apply.</div>
+        <button id="manageResearchGroupsBtn" type="button" class="smallBtn">Manage Research Groups</button>
         <div class="researchScopeGrid">
           <div class="researchScopePicker"><strong>Include organizations</strong><div class="row"><input id="researchIncludeOrgInput" data-header-list="researchPopulationOrgSuggestions" placeholder="$RetailOrg or another saved org"><button id="researchAddIncludeOrgBtn" class="smallBtn" type="button">Add</button></div><div id="researchIncludeOrgChips" class="researchScopeChips"></div></div>
           <div class="researchScopePicker"><strong>Include Coach / Team</strong><div class="row"><input id="researchIncludeTeamInput" data-header-list="researchPopulationTeamSuggestions" placeholder="Search a team or coach"><button id="researchAddIncludeTeamBtn" class="smallBtn" type="button">Add</button></div><div id="researchIncludeTeamChips" class="researchScopeChips"></div></div>
           <div class="researchScopePicker"><strong>Include representatives</strong><div class="row"><input id="researchIncludeRepInput" data-header-list="researchPopulationRepSuggestions" placeholder="Search a representative"><button id="researchAddIncludeRepBtn" class="smallBtn" type="button">Add</button></div><div id="researchIncludeRepChips" class="researchScopeChips"></div></div>
+          <div class="researchScopePicker"><strong>Include Research Groups</strong><div class="row"><input id="researchIncludeGroupInput" data-header-list="researchPopulationGroupSuggestions" placeholder="Search a saved representative group"><button id="researchIncludeGroupAdd" class="smallBtn" type="button">Add</button></div><div id="researchIncludeGroupChips" class="researchScopeChips"></div></div>
           <div class="researchScopePicker"><strong>Exclude organizations</strong><div class="row"><input id="researchExcludeOrgInput" data-header-list="researchPopulationOrgSuggestions" placeholder="$RetailOrg or another saved org"><button id="researchAddExcludeOrgBtn" class="smallBtn" type="button">Exclude</button></div><div id="researchExcludeOrgChips" class="researchScopeChips"></div></div>
           <div class="researchScopePicker"><strong>Exclude Coach / Team</strong><div class="row"><input id="researchExcludeTeamInput" data-header-list="researchPopulationTeamSuggestions" placeholder="Search a team or coach"><button id="researchAddExcludeTeamBtn" class="smallBtn" type="button">Exclude</button></div><div id="researchExcludeTeamChips" class="researchScopeChips"></div></div>
           <div class="researchScopePicker"><strong>Exclude representatives</strong><div class="row"><input id="researchExcludeRepInput" data-header-list="researchPopulationRepSuggestions" placeholder="Search a representative"><button id="researchAddExcludeRepBtn" class="smallBtn" type="button">Exclude</button></div><div id="researchExcludeRepChips" class="researchScopeChips"></div></div>
+          <div class="researchScopePicker"><strong>Exclude Research Groups</strong><div class="row"><input id="researchExcludeGroupInput" data-header-list="researchPopulationGroupSuggestions" placeholder="Search a saved representative group"><button id="researchExcludeGroupAdd" class="smallBtn" type="button">Exclude</button></div><div id="researchExcludeGroupChips" class="researchScopeChips"></div></div>
         </div>
-        <datalist id="researchPopulationOrgSuggestions"></datalist><datalist id="researchPopulationTeamSuggestions"></datalist><datalist id="researchPopulationRepSuggestions"></datalist>
+        <datalist id="researchPopulationOrgSuggestions"></datalist><datalist id="researchPopulationTeamSuggestions"></datalist><datalist id="researchPopulationRepSuggestions"></datalist><datalist id="researchPopulationGroupSuggestions"></datalist>
         <div class="researchStepGrid">
           <div class="field"><label>Unmatched entities</label><select id="researchUnmatchedBehavior"><option value="exclude">Exclude from cross-source results</option><option value="blank">Keep and display blanks</option></select></div>
           <div class="field"><label>Calculation scope cap (optional)</label><input id="researchCalculationGroupLimit" type="number" min="0" placeholder="No calculation cap"><span class="hint">Keeps the largest groups before metric calculation. This is separate from the display limit.</span></div>
@@ -838,6 +886,7 @@
 <script src="js/organization-readiness.js"></script>
 <script src="js/workflow.js"></script>
 <script src="js/list-tester.js"></script>
+<script src="js/research-groups.js"></script>
 <script src="js/qualtrics-bridge.js"></script>
 <script src="js/research-charts.js"></script>
 <script src="js/research-workspace.js"></script>

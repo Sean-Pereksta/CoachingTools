@@ -558,6 +558,7 @@ function fmt(v, type){
 }
 function openModal(id){el(id).classList.add('open');}
 function closeModal(id){
+  if(id==='researchGroupBuilderModal'&&typeof cancelResearchGroupMatching==='function')cancelResearchGroupMatching();
   if(id==='researchModal'){ if(state.researchRenderToken) state.researchRenderToken.cancelled=true; cancelResearchRenderAll(); }
   el(id).classList.remove('open');
 }
