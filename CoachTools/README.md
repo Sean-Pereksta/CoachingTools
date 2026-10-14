@@ -15,6 +15,10 @@ The local launcher serves only the CoachTools folder on `http://127.0.0.1`. Its 
 
 ## Direct `index.html` workflow
 
+On Windows, double-click **OPEN COACHTOOLS.bat** to open the desktop in Edge or Chrome. If both browsers are installed, choose one when prompted. The launcher creates a **CoachTools** desktop shortcut with a red, white, and black galaxy icon; after that, open the shortcut to return directly to `index.html` in your chosen browser. Node.js is not required for this launcher.
+
+Extract the entire CoachTools folder before running the launcher, and keep its files together. If you move the folder or want to change browsers, run **OPEN COACHTOOLS.bat** again to create the shortcut for that location. Existing unrelated shortcuts are preserved.
+
 Double-clicking `index.html` remains supported. Applications, the retained-window desktop, shared browser storage, and manual Weekly Data imports continue to work.
 
 Browsers do not allow a local HTML file to enumerate a neighboring folder, so automatic `storage/` scanning is skipped in direct-file mode. Use **Weekly Data / Update Data** for manual imports, or start CoachTools with the included launcher when automatic scanning is wanted.
