@@ -1,0 +1,6 @@
+CoachTools galaxy shortcut icon
+
+Generated with the built-in image generation tool. The PNG is the original generated artwork; the ICO contains Windows icon sizes 16, 24, 32, 48, 64, 128, and 256 pixels.
+
+Final generation prompt:
+Use case: logo-brand. Asset type: Windows desktop shortcut icon. Primary request: a galaxy icon in red, white, and black. Create one polished square app icon: a bold luminous spiral galaxy with two sweeping crimson-red arms and brilliant white starlight around a compact white core, against a deep black square background. Composition centered, generous clean dark margin, clear silhouette legible at 32 pixels; rich but restrained cosmic texture and only a few larger white stars. Use only red, white, black and their shaded blends. No text, lettering, logos, watermark, UI, frames, or mockup.
