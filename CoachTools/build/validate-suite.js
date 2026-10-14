@@ -47,6 +47,10 @@ function localApplicationSources(entryPath, seen = new Set()) {
 }
 
 const required = [
+  'OPEN COACHTOOLS.bat',
+  'build/open-coachtools.ps1',
+  'icons/coachtools-galaxy.png',
+  'icons/coachtools-galaxy.ico',
   'index.html',
   'apps.json',
   'apps-manifest.js',
