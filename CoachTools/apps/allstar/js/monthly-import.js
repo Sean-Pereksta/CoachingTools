@@ -1,26 +1,26 @@
 /* Adapter into the existing All-Star sources, rosters and verified import transaction. */
 'use strict';
 function monthlyAreaData(bundle,area,current={},selection=null){
-  const M=window.CoachToolsMonthly,out=M.compile(bundle,selection?{selection}:{});
+  const M=window.CoachToolsMonthly,out=M.compile(bundle,selection?{selection}:{}),fileName=M.bundleName(bundle);
   if(!out.canApply)throw new Error('Monthly bundle needs review before it can replace committed data.');
   const rows=out.reps.filter(r=>r.area===area&&(!selection||selection.some(([name,coach])=>M.key(name)===M.key(r.name)&&M.key(coach)===M.key(r.coach))));
   const identity=r=>({_monthly:true,_rosterId:`monthly|${area}|${r.id}`,_rep:r.name,_repKey:fullNameIdentityKey(r.name),_rawRep:r.name,_rawRepKey:fullNameIdentityKey(r.name),_team:r.coach,_sourceArea:area,_date:'',_monthlyPeriod:out.period?.id||'',_monthlyUndated:out.undated,_manager:r.manager||'Unassigned Manager',_ranked:r.ranked!==false,_fieldStates:Object.fromEntries(Object.entries(r.fields||{}).map(([k,c])=>[k,c.status])),_fieldMeta:Object.fromEntries(Object.entries(out.fieldMetadata||{}).map(([k,m])=>[k,{...m,storageUnit:m.kind==='percentage'?'percentage-points':'number'}])),_importedAt:bundle.importedAt||''});
   const sv2=rows.map(r=>({...M.stats(r,out.consumerAsCash),...identity(r),_sourceKey:`${area}_sv2`,_sourceRow:r.sourceRow,_monthlyStatus:Object.fromEntries(M.SEGMENTS.map(s=>[s,r.segments[s].status]))}));
   const wiper=rows.map(r=>({...M.wipers(r),...identity(r),_sourceKey:`${area}_wiper`,_monthlyStatus:r.wiper.status,_contributions:r.wiper.contributions}));
-  const controlRoster=rows.filter(r=>r.ranked!==false).map(r=>({...identity(r),rosterId:`monthly|${area}|${r.id}`,source:area,sourceArea:area,team:r.coach,representative:r.name,displayName:r.name,originalName:r.name,fullNameKey:fullNameIdentityKey(r.name),_isControlRoster:true,_sourceKey:`${area}_control_roster`,workbook:bundle.opportunity.name,sheetName:'Monthly Opportunity',rowNumber:r.sourceRow,controlRosterSchemaVersion:CONTROL_ROSTER_SCHEMA_VERSION}));
+  const controlRoster=rows.filter(r=>r.ranked!==false).map(r=>({...identity(r),rosterId:`monthly|${area}|${r.id}`,source:area,sourceArea:area,team:r.coach,representative:r.name,displayName:r.name,originalName:r.name,fullNameKey:fullNameIdentityKey(r.name),_isControlRoster:true,_sourceKey:`${area}_control_roster`,workbook:r.hasOpportunity===false?r.wiper.contributions[0]?.file||fileName:fileName,sheetName:r.hasOpportunity===false?'Monthly Wipers':'Monthly Opportunity',rowNumber:r.sourceRow,controlRosterSchemaVersion:CONTROL_ROSTER_SCHEMA_VERSION}));
   const teamRows=out.teams.filter(t=>t.area===area).map(t=>({...M.stats(t,out.consumerAsCash),...M.wipers(t),'Full Team Name':t.coach,_team:t.coach,_teamKey:coachNameKey(t.coach),_sourceKey:`${area}_team_totals`,_monthly:true,_monthlyUndated:out.undated,_importedAt:bundle.importedAt||'',_monthlyPartial:out.partial,_summarySheet:t.totalSource||'Calculated total',_totalSource:t.totalSource||'Calculated total',_calculatedSegments:t.calculatedSegments,_monthlyStatus:{...Object.fromEntries(M.SEGMENTS.map(s=>[s,t.segments[s].status])),wiper:t.wiper.status}}));
   const headers=rs=>[...new Set(rs.flatMap(r=>Object.keys(r)))].filter(k=>!k.startsWith('_'));
   const sv2Headers=headers(sv2),wiperHeaders=headers(wiper),aoa=(hs,rs)=>[hs,...rs.map(r=>hs.map(h=>r[h]))];
   const history={...(current.monthlyHistory||{})};
-  if(current.monthlyBundle){const previous=M.compile(current.monthlyBundle).period,changed=current.monthlyBundle.opportunity?.canonical!==bundle.opportunity?.canonical;if((previous&&previous.id!==out.period?.id)||(!previous&&changed)){const key=previous?.id||`loaded-${current.monthlyBundle.importedAt||'unknown'}-${current.monthlyBundle.opportunity.id}`;history[key]=M.clone(current.monthlyBundle);}}
-  return {...current,fileName:bundle.opportunity.name,monthlyBundle:M.clone(bundle),monthlySelection:selection,monthlyHistory:history,monthlySummary:{period:out.period,undated:out.undated,importedAt:bundle.importedAt||'',partial:out.partial,issues:out.issues.length,files:bundle.wipers.map(f=>({id:f.id,name:f.name,importedAt:f.importedAt||'',assignments:f.assignments,replaces:f.replaces})),repCount:rows.length,teamCount:teamRows.length,managerCount:out.managers?.length||0,unclassifiedCount:out.reps.filter(r=>r.area==='unclassified').length},sv2,wiper,sv2Aoa:aoa(sv2Headers,sv2),wiperAoa:aoa(wiperHeaders,wiper),controlRoster,headers:{...(current.headers||{}),sv2:sv2Headers,wiper:wiperHeaders},...(area==='referral'&&current.itac?.length?{independentSourceStatus:{...(current.independentSourceStatus||{}),itac:'Preserved separately; coverage has not been confirmed for this Opportunity snapshot.'}}:{}),teamTotals:{...emptyTeamTotalsDataset(area),fileName:'Monthly team totals with source provenance',headers:headers(teamRows),rows:teamRows,_sourceKey:`${area}_team_totals`,diagnostics:{controlTeamsInspected:teamRows.length,teamsWithNoExtractedRow:[]}}};
+  if(current.monthlyBundle){const previous=M.compile(current.monthlyBundle).period,changed=current.monthlyBundle.opportunity?.canonical!==bundle.opportunity?.canonical;if((previous&&previous.id!==out.period?.id)||(!previous&&changed)){const key=previous?.id||`loaded-${current.monthlyBundle.importedAt||'unknown'}-${current.monthlyBundle.opportunity?.id||'wipers'}`;history[key]=M.clone(current.monthlyBundle);}}
+  return {...current,fileName,monthlyBundle:M.clone(bundle),monthlySelection:selection,monthlyHistory:history,monthlySummary:{period:out.period,undated:out.undated,importedAt:bundle.importedAt||'',partial:out.partial,wipersOnly:!!out.wipersOnly,issues:out.issues.length,files:bundle.wipers.map(f=>({id:f.id,name:f.name,importedAt:f.importedAt||'',assignments:f.assignments,replaces:f.replaces})),repCount:rows.length,teamCount:teamRows.length,managerCount:out.managers?.length||0,unclassifiedCount:out.reps.filter(r=>r.area==='unclassified').length},sv2,wiper,sv2Aoa:aoa(sv2Headers,sv2),wiperAoa:aoa(wiperHeaders,wiper),controlRoster,headers:{...(current.headers||{}),sv2:sv2Headers,wiper:wiperHeaders},...(area==='referral'&&current.itac?.length?{independentSourceStatus:{...(current.independentSourceStatus||{}),itac:'Preserved separately; coverage has not been confirmed for this Opportunity snapshot.'}}:{}),teamTotals:{...emptyTeamTotalsDataset(area),fileName:'Monthly team totals with source provenance',headers:headers(teamRows),rows:teamRows,_sourceKey:`${area}_team_totals`,diagnostics:{controlTeamsInspected:teamRows.length,teamsWithNoExtractedRow:[]}}};
 }
 function restoreMonthlyBundles(data){
   if(!window.CoachToolsMonthly)return;
   for(const area of ['retail','referral'])if(data[area]?.monthlyBundle)data[area]=monthlyAreaData(data[area].monthlyBundle,area,data[area],data[area].monthlySelection||null);
 }
 function monthlyBundleAreas(bundle,out=window.CoachToolsMonthly.compile(bundle)){
-  return bundle.uploadArea?[bundle.uploadArea]:(out.managers||bundle.scope==='mixed')?['retail','referral']:[...new Set(out.reps.map(r=>r.area))];
+  return window.CoachToolsMonthly.referralWipersOnly(bundle)?['referral']:bundle.uploadArea?[bundle.uploadArea]:(out.managers||bundle.scope==='mixed')?['retail','referral']:[...new Set(out.reps.map(r=>r.area))];
 }
 function monthlyUploadBundle(area,bundle){
   const M=window.CoachToolsMonthly;
@@ -54,12 +54,12 @@ function applyMonthlyBundleInStage(bundle,onlyArea,selection=null,options={}){
   return true;
 }
 async function commitMonthlyBundle(bundle,options={}){
-  if(!bundle?.opportunity)throw new Error('Choose an Opportunity file before saving monthly data.');
+  if(!bundle?.opportunity&&!window.CoachToolsMonthly.referralWipersOnly(bundle))throw new Error('Choose an Opportunity file, or choose Referral to save Wiper files on their own.');
   if(options.throwOnFailure&&(state.activeImportJob||state.centralSyncStageActive||state.importCacheLoading||state.startup?.running))throw new Error('All-Star is still loading or saving data. Your files are retained; try Save monthly data again when it finishes.');
   const areas=monthlyBundleAreas(bundle);
   const source=areas.length===2?'monthly':areas[0];
   let failure;
-  const ok=await runAllStarImport(source,{name:bundle.opportunity.name,size:0},{...options,label:'Monthly export bundle',onError:error=>{failure=error;options.onError?.(error);}},async()=>applyMonthlyBundleInStage(bundle));
+  const ok=await runAllStarImport(source,{name:window.CoachToolsMonthly.bundleName(bundle),size:0},{...options,label:'Monthly export bundle',onError:error=>{failure=error;options.onError?.(error);}},async()=>applyMonthlyBundleInStage(bundle));
   if(ok)renderMonthlyImportSummary();
   else if(options.throwOnFailure)throw failure||new Error('Monthly data was not saved. Your selected files are retained; please retry.');
   return ok;
@@ -86,7 +86,7 @@ async function openMonthlyImport(area='mixed',readOnly=false,period=''){
 function renderMonthlyImportSummary(){
   const node=el('monthlyImportSummary');if(!node)return;
   const lines=[];
-  for(const area of ['retail','referral']){const d=state.data[area],s=d.monthlySummary;if(!d.monthlyBundle||!s)continue;lines.push(`${area==='retail'?'Monthly Retail':'Monthly Referral'}: ${monthlyImportLabel(s)} · ${s.repCount} reps / ${s.teamCount} teams · ${s.managerCount||0} manager groups · ${s.files.length} Wiper files · ${s.partial?'PARTIAL — review missing data':'loaded records complete'}`);}
+  for(const area of ['retail','referral']){const d=state.data[area],s=d.monthlySummary;if(!d.monthlyBundle||!s)continue;lines.push(`${area==='retail'?'Monthly Retail':'Monthly Referral'}: ${monthlyImportLabel(s)} · ${s.repCount} reps / ${s.teamCount} teams · ${s.managerCount||0} manager groups · ${s.files.length} Wiper files${s.wipersOnly?' · Wipers only; Opportunity optional':''} · ${s.partial?'PARTIAL — review missing data':'loaded records complete'}`);}
   if(state.data.referral.independentSourceStatus?.itac)lines.push('ITAC: '+state.data.referral.independentSourceStatus.itac);
   node.textContent=lines.join(' | ')||'Upload Opportunity and Wiper exports here. Existing monthly Excel workbooks remain available under individual uploads.';
   const banner=el('monthlyCompleteness');if(banner){banner.hidden=!lines.length;banner.textContent=lines.join(' | ');}
@@ -135,7 +135,7 @@ function monthlySourceRows(source){
     for(const r of out.reps){
       if(r.area!==area&&r.area!=='unclassified')continue;
       if(selection&&!selection.some(([name,coach])=>M.key(name)===M.key(r.name)&&M.key(coach)===M.key(r.coach)))continue;
-      const identity=(bundle.uploadArea||'mixed')+'|'+bundle.opportunity.id+'|'+r.id;if(seen.has(identity))continue;seen.add(identity);
+      const identity=(bundle.uploadArea||'mixed')+'|'+(bundle.opportunity?.id||'wipers')+'|'+r.id;if(seen.has(identity))continue;seen.add(identity);
       const common={_monthly:true,_rep:r.name,_repKey:fullNameIdentityKey(r.name),_team:r.coach,_manager:r.manager||'Unassigned Manager',_ranked:r.ranked!==false,_rosterId:`monthly|${r.area}|${r.id}`,_sourceArea:r.area,'Area':r.area,'Opportunity Coverage':(out.sourcePeriods||[]).join(' · '),'Loaded':bundle.importedAt||'',_fieldStates:Object.fromEntries(Object.entries(r.fields||{}).map(([k,c])=>[k,c.status])),_fieldMeta:Object.fromEntries(Object.entries(out.fieldMetadata||{}).map(([k,m])=>[k,{...m,storageUnit:m.kind==='percentage'?'percentage-points':'number'}]))};
       if(r.hasOpportunity!==false)cache.monthly_opportunity.push({...M.stats(r,true),...common,_sourceKey:'monthly_opportunity'});
       cache.monthly_wiper.push({...M.wipers(r),...common,'Wiper Coverage':[...new Set(r.wiper.contributions.map(c=>c.reportLabel||c.reportDate))].join(' · '),_sourceKey:'monthly_wiper'});
@@ -150,7 +150,7 @@ function openMonthlyManagerReport(){
   const previous=document.activeElement,overlay=document.createElement('div');overlay.className='modalBackdrop open';overlay.id='monthlyManagerReport';
   overlay.innerHTML='<section class="modal" role="dialog" aria-modal="true" aria-label="Monthly manager report"><div class="modalHead"><div class="modalTitle">Monthly managers, coaches and representatives</div><button data-monthly-close>Close</button></div><div class="modalBody"><div class="row"><label>Snapshot <select data-monthly-snapshot></select></label><label>Manager <select data-monthly-manager></select></label><label>Area <select data-monthly-area><option value="all">All Teams</option><option value="retail">Retail</option><option value="referral">Referral</option></select></label><label>Coach <select data-monthly-coach></select></label></div><div data-monthly-report></div></div></section>';
   document.body.append(overlay);const get=s=>overlay.querySelector(s),snapshot=get('[data-monthly-snapshot]'),manager=get('[data-monthly-manager]'),area=get('[data-monthly-area]'),coach=get('[data-monthly-coach]');
-  snapshot.innerHTML=bundles.map((x,i)=>`<option value="${i}">${esc(x.bundle.opportunity.name)} · ${esc(x.bundle.importedAt||x.area)}</option>`).join('');
+  snapshot.innerHTML=bundles.map((x,i)=>`<option value="${i}">${esc(M.bundleName(x.bundle))} · ${esc(x.bundle.importedAt||x.area)}</option>`).join('');
   const close=()=>{overlay.remove();previous?.focus?.();};get('[data-monthly-close]').onclick=close;
   overlay.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();close();}if(e.key==='Tab'){const nodes=[...overlay.querySelectorAll('button,select')],first=nodes[0],last=nodes.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}};
   let compiled=null;

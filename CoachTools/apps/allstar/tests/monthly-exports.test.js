@@ -151,6 +151,45 @@ async function categoryIsolationTest(){
   console.log('PASS separate Retail/Referral intake drafts, identical-label uploads, category-only updates/history, overlap validation, combined sources, reload and central sync');
  }finally{h.stop();reload?.stop();central?.stop();}
 }
+async function referralWipersOnlyTest(){
+ const fixture=require('./fixtures/monthly-hierarchy.js'),header=fixture.wiper[0];
+ const first=M.source([header,['9/6/2026','Referral Coach A','Shared Rep',2,10],['9/6/2026','Referral Coach A','Other Rep',3,10],['9/6/2026','Referral Coach B','Shared Rep',1,5]],'referral-week-one.csv');
+ const second=M.source([header,['9/13/2026','Referral Coach A','Shared Rep',4,10],['9/13/2026','Referral Coach A','Other Rep',0,0],['9/13/2026','Referral Coach B','Shared Rep',1,5]],'referral-week-two.csv');
+ const fresh=()=>M.forArea(M.create('referral'),'referral'),b=M.add(M.add(fresh(),first).bundle,second).bundle,out=M.compile(b);
+ assert.equal(b.opportunity,null);assert.equal(out.canApply,true);assert.equal(out.wipersOnly,true);assert.equal(out.partial,false,'optional Opportunity data must not mark valid Wiper-only data incomplete');assert.equal(out.reps.length,3);assert.equal(out.teams.length,2);assert.equal(out.overall.wiper.accepted,11);assert.equal(out.overall.wiper.offered,40);assert.ok(out.reps.every(r=>r.area==='referral'&&!r.hasOpportunity&&M.SEGMENTS.every(s=>r.segments[s].opportunities===null&&r.segments[s].appointments===null)));
+ assert.equal(M.toDataset(b,'referral').meta.monthlyWipersOnly,true);assert.equal(M.compile(fresh()).canApply,false);
+ for(const row of [['9/6/2026','','Rep',1,2],['9/6/2026','Coach','',1,2],['9/6/2026','Coach','Rep',3,2]]){const invalid=M.compile(M.add(fresh(),M.source([header,row],'unusable.csv')).bundle);assert.equal(invalid.canApply,false);assert.ok(invalid.issues.some(i=>i.code==='wiper-roster-required'));}
+ assert.equal(M.compile(M.add(fresh(),wiper('9/6/2026',[['Rep',1,2]])).bundle).canApply,false,'names without coaches cannot establish a Wiper-only roster');
+ for(const area of ['retail','mixed']){const other=M.clone(b);other.scope=area;if(area==='retail')other.uploadArea=area;else delete other.uploadArea;assert.equal(M.compile(other).canApply,false,'Opportunity remains required outside Referral');}
+ const conflict=M.source([header,['9/6/2026','Referral Coach A','Shared Rep',9,10]],'correction.csv'),blocked=M.add(b,conflict).bundle;
+ assert.equal(M.compile(blocked).canApply,false);blocked.wipers.at(-1).replaces=first.id;assert.equal(M.compile(blocked).canApply,true);
+ const h=harness();let reload,central;
+ try{
+  h.context.baseline=fullBundle();assert.equal(await h.run('commitMonthlyBundle(baseline)'),true);const retailBefore=h.run('JSON.stringify(state.data.retail)');
+  h.run('window.XLSX=XLSX;');h.context.Event=Event;for(const name of ['groupCollapsed','groupEnd','time','timeEnd','table'])h.context.console[name]=()=>{};
+  vm.runInContext(fs.readFileSync(path.join(root,'../../shared/coachtools-monthly-review.js'),'utf8'),h.context);
+  const doc=h.context.document,file=src=>{const bytes=Buffer.from(src.aoa.map(r=>r.join('\t')).join('\r\n'));return {name:src.name,arrayBuffer:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length)};};
+  const upload=async sources=>{const picker=doc.getElementById('monthlyFiles');Object.defineProperty(picker,'files',{value:sources.map(file)});await picker.onchange();};
+  h.context.incomingWipers=[first,second];
+  let staged=h.run('window.CoachToolsMonthlyReview.review({bundle:window.CoachToolsMonthly.create("mixed"),sources:incomingWipers})');assert.equal(doc.getElementById('monthlyApply').disabled,true);
+  const category=doc.getElementById('monthlyUploadArea');category.value='referral';category.onchange();assert.equal(doc.getElementById('monthlyApply').disabled,false,'incoming Wipers can be routed to Referral without adding an Opportunity');
+  await doc.getElementById('monthlyApply').onclick();assert.equal((await staged).opportunity,null);
+  let pending=h.run('openMonthlyImport("referral")');await upload([second,first]);assert.equal(doc.getElementById('monthlyApply').disabled,false);assert.match(doc.getElementById('monthlyImportReview').textContent,/Opportunity optional/);assert.match(doc.getElementById('monthlyRepPreview').textContent,/Shared Rep/);assert.match(doc.getElementById('monthlyRepPreview').textContent,/N\/A/);
+  await doc.getElementById('monthlyApply').onclick();const saved=await pending;assert.equal(saved.opportunity,null);assert.equal(h.run('JSON.stringify(state.data.retail)'),retailBefore);assert.equal(h.run('state.data.referral.controlRoster.length'),3);assert.equal(h.run('state.data.referral.controlRoster.every(r=>r.sheetName==="Monthly Wipers")'),true);assert.equal(h.run('state.data.referral.monthlySummary.wipersOnly'),true);assert.equal(h.run('state.data.referral.monthlySummary.partial'),false);
+  assert.equal(h.run('monthlySourceRows("monthly_opportunity").filter(r=>r._sourceArea==="referral").length'),0);assert.equal(h.run('monthlySourceRows("monthly_wiper").filter(r=>r._sourceArea==="referral").length'),3);
+  h.run('openMonthlyManagerReport()');assert.match(doc.getElementById('monthlyManagerReport').textContent,/referral-week-one.csv/);doc.querySelector('[data-monthly-close]').click();
+  h.run('state.models=[normalizeModelForStorage({id:"wipers-only-referral",name:"Wipers only Referral",criteria:[{...emptyCriterion(),id:"accepted",name:"Wipers accepted",source:"referral_wiper",column:"Accepted",aggregate:"sum",weight:"1"}]})];');
+  const report=await h.run('buildRun({settings:{modelId:"wipers-only-referral",selectedTeams:["Referral Coach A","Referral Coach B"],view:"both",runMode:"single"},rethrow:true})');
+  assert.equal(report.repPack.rows.length,3);assert.equal(report.teamPack.rows.length,2);assert.deepEqual(Array.from(report.teamPack.rows,r=>r.values.accepted).sort((a,b)=>a-b),[2,9]);assert.deepEqual(Array.from(report.repPack.rows,r=>r.values.accepted).sort((a,b)=>a-b),[2,3,6]);
+  reload=harness(h.db,h.storage);await reload.run('loadImportedDataFromIndexedDB({deferRender:true})');assert.equal(reload.run('state.data.referral.monthlyBundle.opportunity'),null);assert.equal(reload.run('state.data.referral.controlRoster.length'),3);assert.equal(reload.run('state.data.referral.wiper.reduce((n,r)=>n+r.Accepted,0)'),11);
+  pending=h.run('openMonthlyImport("referral")');await upload([{...second,name:'renamed.csv'}]);assert.equal(doc.getElementById('monthlyApply').disabled,false);await doc.getElementById('monthlyApply').onclick();await pending;assert.equal(h.run('state.data.referral.monthlyBundle.wipers.length'),2);assert.equal(h.run('state.data.referral.wiper.reduce((n,r)=>n+r.Accepted,0)'),11);
+  central=harness();central.context.dataset=M.toDataset(saved,'referral');central.run('window.CoachToolsData={ready:async()=>{},getDatasetVersion:type=>type==="monthlyReferral"?{id:"wipers-only",version:1,classificationMethod:"reviewed-monthly-bundle",importedAt:"2099-01-01T00:00:00Z"}:null,getCurrent:async()=>({originalFileName:"referral-wipers.csv",data:dataset})};');
+  assert.equal((await central.run('syncAllStarFromCoachToolsData({render:false})')).changed,true);assert.equal(central.run('state.data.referral.wiper.reduce((n,r)=>n+r.Accepted,0)'),11);assert.equal(central.run('state.data.referral.controlRoster.length'),3);assert.equal(central.run('state.data.retail.sv2.length'),0);
+  const op=M.source([...fixture.header,fixture.row('','Referral Coach A','Shared Rep',[80,10,10]),fixture.row('','Referral Coach A','Other Rep',[80,10,10]),fixture.row('','Referral Coach B','Shared Rep',[80,10,10])],'optional-opportunity.csv');h.context.withOp=M.add(saved,op).bundle;
+  assert.equal(await h.run('commitMonthlyBundle(withOp)'),true);assert.equal(h.run('state.data.referral.wiper.reduce((n,r)=>n+r.Accepted,0)'),11);assert.equal(h.run('Object.values(state.data.referral.monthlyHistory)[0].opportunity'),null);assert.equal(h.run('JSON.stringify(state.data.retail)'),retailBefore);
+  console.log('PASS Referral Wipers-only picker/save, source-owned roster, unavailable Opportunity fields, reports, duplicate/correction checks, reload, central sync and optional Opportunity history');
+ }finally{h.stop();reload?.stop();central?.stop();}
+}
 async function optionalManagerIntakeTest(){
  const fixture=require('./fixtures/monthly-hierarchy.js'),h=harness();
  try{
@@ -273,4 +312,5 @@ async function optionalManagerIntakeTest(){
  for(const x of [h,reload,retained,mixed,central])x.stop();
  await categoryIsolationTest();
  await optionalManagerIntakeTest();
+ await referralWipersOnlyTest();
 })().catch(e=>{console.error(e);process.exitCode=1;});

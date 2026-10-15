@@ -103,6 +103,8 @@
     if(!['retail','referral'].includes(area))throw new Error('Choose Monthly Retail or Monthly Referral.');
     return {...clone(bundle),uploadArea:area,scope:area};
   }
+  function referralWipersOnly(b){return !b?.opportunity&&(b?.uploadArea||b?.scope)==='referral';}
+  function bundleName(b){return b.opportunity?.name||(b.wipers||[]).filter(f=>!f.excluded&&!b.wipers.some(n=>!n.excluded&&n.replaces===f.id)).map(f=>f.name).join(', ')||'Monthly Wipers';}
   // Existing saved bundles retain their original calculations until edited.
   function asUndated(bundle){return {...clone(bundle),dateMode:'undated',consumerAsCash:true};}
   function coachAssignments(b){
@@ -218,13 +220,13 @@
   // The same compiler serves individual uploads, Clean Upload and Update Data.
   // Older exports without source-owned hierarchy keep their explicit legacy allocations.
   function compile(b,filter={}){
-    const modern=b.opportunity?.mapping?.manager!=null||(b.opportunity?.rows||[]).some(r=>r.kind&&r.kind!=='detail')||(b.wipers||[]).some(f=>f.hasCoach);
+    const wipersOnly=referralWipersOnly(b),modern=wipersOnly||b.opportunity?.mapping?.manager!=null||(b.opportunity?.rows||[]).some(r=>r.kind&&r.kind!=='detail')||(b.wipers||[]).some(f=>f.hasCoach);
     if(!modern)return compileLegacy(b);
     if(b.version!==VERSION)throw new Error('Unsupported monthly bundle version.');
     const uploadArea=['retail','referral'].includes(b.uploadArea)?b.uploadArea:'';
     const issues=[],issue=(code,message,extra={},severity='warning')=>issues.push({code,message,severity,...extra});
     const op=b.opportunity, opRows=op?.rows||[], details=opRows.filter(r=>!r.kind||r.kind==='detail');
-    if(!op)issue('opportunity-required','Upload one Opportunity file to establish the hierarchy.',{},'blocker');
+    if(!op&&!wipersOnly)issue('opportunity-required','Upload one Opportunity file, or choose Referral to save Wiper files using their names and coaches.',{},'blocker');
     if(op?.mappingRequired)issue('mapping-required','Review the Opportunity column mapping.',{},'blocker');
     const fieldMetadata=Object.fromEntries((op?.fields||[]).map(f=>[f.name,{...f}]));
     const segmentsFor=r=>Object.fromEntries(SEGMENTS.map(s=>{
@@ -306,7 +308,7 @@
         if(allocation?.repId){const chosen=reps.find(p=>p.id===allocation.repId);if(!chosen||!display(allocation.reason)||(f.hasCoach&&key(chosen.coach)!==key(coach))){issue('allocation-invalid','An alias must preserve the Wiper source coach. Choose a matching representative under that coach.',info,'blocker');continue;}target=chosen;identity=key(target.coach)+'|'+key(target.name);}
         if(!target){
           const unmatched=!!name;name=name||'Unattributed Representative';identity=key(coach)+'|'+(unmatched?key(name):'__unattributed');target=repMap.get(identity);
-          if(!target){target={id:'wiper|'+identity,name,coach,manager:managerFor(coach),managerProvenance:managerFor(coach)?'Derived from Opportunity coach mapping':'Unresolved',sourceRow:r.row,hasOpportunity:false,ranked:unmatched,segments:segmentsFor(null),fields:{},wiper:{contributions:[]}};reps.push(target);repMap.set(identity,target);issue(unmatched?'wiper-only-rep':'unattributed-wiper',unmatched?'Wiper activity retained under its source coach; Opportunity data unavailable.':'Activity retained as Unattributed Representative; excluded from representative ranking.',info);}
+          if(!target){target={id:'wiper|'+identity,name,coach,manager:managerFor(coach),managerProvenance:managerFor(coach)?'Derived from Opportunity coach mapping':'Unresolved',sourceRow:r.row,hasOpportunity:false,ranked:unmatched,segments:segmentsFor(null),fields:{},wiper:{contributions:[]}};reps.push(target);repMap.set(identity,target);if(!wipersOnly||!unmatched)issue(unmatched?'wiper-only-rep':'unattributed-wiper',unmatched?'Wiper activity retained under its source coach; Opportunity data unavailable.':'Activity retained as Unattributed Representative; excluded from representative ranking.',info);}
         }
         coaches.set(key(coach),coach);
         if(r.accepted.status!=='valid'||r.offered.status!=='valid'||r.accepted.value>r.offered.value){target.wiper.invalid=true;issue('invalid-wiper','Invalid or unavailable Wiper counts; not converted to zero.',info);continue;}
@@ -319,7 +321,7 @@
           else issue('duplicate-contribution','Identical overlapping Wiper activity counted once.',info);
           continue;
         }
-        seenWiper.set(bucket,signature);target.wiper.contributions.push({fileId:f.id,file:f.name,row:r.row,reportDate,reportLabel:r.reportLabel,bucket,coach,accepted:r.accepted.value,offered:r.offered.value,allocation:allocation||null});matched++;
+        seenWiper.set(bucket,signature);target.wiper.contributions.push({fileId:f.id,file:f.name,row:r.row,reportDate,reportLabel:r.reportLabel,bucket,coach,sourceCoach:r.coach,accepted:r.accepted.value,offered:r.offered.value,allocation:allocation||null});matched++;
       }
     }
     for(const rep of reps){
@@ -359,7 +361,9 @@
     }
     const overall=sourceTotals(selectedReps.filter(r=>r.hasOpportunity),Object.keys(filter).length?null:exported('grand',()=>true),'Grand total');overall.wiper=sumWipers(selectedReps);if(Object.keys(filter).length)overall.totalSource='Filtered total';
     const sourcePeriods=[...new Set(details.map(r=>r.periodLabel))];
-    return {period:null,undated:true,sourcePeriods,coachAssignments,reps:selectedReps,teams:selectedTeams,managers,overall,fieldMetadata,issues,coverage,coverageComplete:null,partial:issues.length>0||teams.some(t=>t.wiper.status!=='complete')||selectedReps.some(r=>SEGMENTS.some(s=>r.segments[s].status!=='complete'))||selectedTeams.some(t=>SEGMENTS.some(s=>t.segments[s].status!=='complete')),matched,consumerAsCash:true,canApply:!!details.length&&!issues.some(i=>i.severity==='blocker')};
+    const usableWiperRoster=reps.some(r=>r.ranked&&r.wiper.contributions.some(c=>c.sourceCoach));
+    if(wipersOnly&&!usableWiperRoster)issue('wiper-roster-required','Referral Wiper files need representative names, coaches, and valid accepted/offered counts.',{},'blocker');
+    return {period:null,undated:true,sourcePeriods,coachAssignments,reps:selectedReps,teams:selectedTeams,managers,overall,fieldMetadata,issues,coverage,coverageComplete:null,wipersOnly,partial:issues.length>0||teams.some(t=>t.wiper.status!=='complete')||(!wipersOnly&&(selectedReps.some(r=>SEGMENTS.some(s=>r.segments[s].status!=='complete'))||selectedTeams.some(t=>SEGMENTS.some(s=>t.segments[s].status!=='complete')))),matched,consumerAsCash:true,canApply:(wipersOnly?usableWiperRoster:!!details.length)&&!issues.some(i=>i.severity==='blocker')};
   }
 
   const title=s=>s[0].toUpperCase()+s.slice(1);
@@ -373,17 +377,17 @@
   }
   function wipers(rep){return {Representative:rep.name||'',Coach:rep.coach,Manager:rep.manager||'Unassigned Manager','Manager Source':rep.managerProvenance||'Derived from Opportunity coach mapping',Accepted:rep.wiper.accepted,Offered:rep.wiper.offered,Declined:rep.wiper.offered===null?null:rep.wiper.offered-rep.wiper.accepted,'Wiper Rate':rep.wiper.rate===null?null:rep.wiper.rate*100,'Wiper Status':rep.wiper.status==='missing'?'No Wiper Data':rep.wiper.status};}
   function toDataset(b,area){
-    const out=compile(b);if(!out.canApply)throw new Error('Choose an Opportunity file and resolve the highlighted import issues.');
+    const out=compile(b);if(!out.canApply)throw new Error('Choose monthly files and resolve the highlighted import issues.');
     const reps=out.reps.filter(r=>r.area===area),sv2=reps.map(r=>stats(r,out.consumerAsCash)),wiper=reps.map(wipers);
     const aoa=rows=>{const headers=[...new Set(rows.flatMap(r=>Object.keys(r)))];return [headers,...rows.map(r=>headers.map(h=>r[h]))];};
-    return {meta:{fileName:b.opportunity.name,totalRows:reps.length,sheetsCount:2,monthlyBundle:clone(b),monthlyArea:area,monthlyPeriod:out.period,monthlyUndated:out.undated,importedAt:b.importedAt||'',monthlyPartial:out.partial},workbook:{sheets:['Monthly Opportunity','Monthly Wipers'],data:{'Monthly Opportunity':{aoa:aoa(sv2)},'Monthly Wipers':{aoa:aoa(wiper)}}}};
+    return {meta:{fileName:bundleName(b),totalRows:reps.length,sheetsCount:2,monthlyBundle:clone(b),monthlyArea:area,monthlyPeriod:out.period,monthlyUndated:out.undated,importedAt:b.importedAt||'',monthlyPartial:out.partial,monthlyWipersOnly:!!out.wipersOnly},workbook:{sheets:['Monthly Opportunity','Monthly Wipers'],data:{'Monthly Opportunity':{aoa:aoa(sv2)},'Monthly Wipers':{aoa:aoa(wiper)}}}};
   }
   function changes(previous,next,previousRoster=[]){
-    const after=compile(next).reps,areas=new Set(after.map(r=>r.area)),before=(previous?.opportunity?compile(previous).reps:previousRoster).filter(r=>areas.has(r.area)),rows=[];
+    const after=compile(next).reps,areas=new Set(after.map(r=>r.area)),before=(previous?.opportunity||previous?.wipers?.length?compile(previous).reps:previousRoster).filter(r=>areas.has(r.area)),rows=[];
     for(const r of after){const same=before.find(p=>key(p.name)===key(r.name)&&key(p.coach)===key(r.coach)&&p.area===r.area);if(same)continue;const matches=before.filter(p=>key(p.name)===key(r.name)),newMatches=after.filter(p=>key(p.name)===key(r.name));rows.push({name:r.name,from:matches.length===1&&newMatches.length===1?matches[0].coach:'Not on this team',to:r.coach,type:matches.length===1&&newMatches.length===1?'Coach/area change':'Addition'});}
     for(const r of before)if(!after.some(p=>key(p.name)===key(r.name)&&key(p.coach)===key(r.coach)&&p.area===r.area))rows.push({name:r.name,from:r.coach,to:'Removed from this team',type:'Removal'});
     return rows;
   }
-  const api={VERSION,SEGMENTS,clone,key,display,date,fiscal,fingerprint,decode,delimited,detect,opportunityMapping,cell,numericCell,source,create,forArea,asUndated,coachAssignments,add,compile,stats,wipers,toDataset,changes};
+  const api={VERSION,SEGMENTS,clone,key,display,date,fiscal,fingerprint,decode,delimited,detect,opportunityMapping,cell,numericCell,source,create,forArea,referralWipersOnly,bundleName,asUndated,coachAssignments,add,compile,stats,wipers,toDataset,changes};
   root.CoachToolsMonthly=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

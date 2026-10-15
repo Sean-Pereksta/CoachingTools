@@ -1,7 +1,12 @@
 # All-Star monthly Opportunity, Wiper and Metrics workflow
 
 Use Upload Retail monthly exports or Upload Referral monthly exports, then select
-one Opportunity export and one or more Wiper exports for that category. The
+one Opportunity export and one or more Wiper exports for Retail. Referral can
+save Wiper exports alone: representative names and coaches in those files build
+its roster, with no Opportunity or Manager data required. Appointments and
+opportunities remain unavailable (N/A), while Wiper counts and rates work in
+representative, coach and manager-group reports. Valid Wiper-only Referral data
+does not become partial just because optional Opportunity data is absent. The
 Category selector beside Add Opportunity / Wiper files keeps separate file lists
 and unsaved drafts for Retail and Referral. Save applies only the selected category.
 The same representative, coach or report label can appear in both categories;
@@ -95,6 +100,9 @@ Metrics and Research expose Monthly Opportunity — All Areas and Monthly Wipers
 All Areas, including unresolved records. Imported Manager and Area fields support
 filtering/grouping. Mixed bundles stored in both monthly areas are deduplicated;
 independent Retail and Referral records remain separate even with identical sources.
+Wiper-only Referral records appear in Monthly Wipers — All Areas; they do not
+create Opportunity records in Monthly Opportunity — All Areas. Later Wiper files
+remain additive, and adding an optional Opportunity file keeps existing Wipers.
 Additional segment-qualified fields become available automatically. Previously
 loaded independent ITAC data remains stored separately, with a visible warning
 that its coverage has not been confirmed for the new Opportunity snapshot; it is
@@ -141,5 +149,8 @@ protect earlier layouts and Clean Upload / Update Data behavior, independent
 category drafts and incoming file selection, same-label cross-category uploads,
 category-only saves/history, central synchronization and reload isolation, Referral
 fallback for missing/zero counts, and coach-only saves and report runs without a
-manager. Uploaded
+manager. Wiper-only Referral tests cover file intake, names/coach roster creation,
+missing Opportunity fields, representative/team report runs, duplicate/correction
+checks, verified save, reload, shared intake and scope selection, central updates,
+and optional Opportunity history. Uploaded
 employee exports must never be committed as fixtures.
