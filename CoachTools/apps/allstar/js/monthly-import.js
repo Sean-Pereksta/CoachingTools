@@ -19,15 +19,28 @@ function restoreMonthlyBundles(data){
   if(!window.CoachToolsMonthly)return;
   for(const area of ['retail','referral'])if(data[area]?.monthlyBundle)data[area]=monthlyAreaData(data[area].monthlyBundle,area,data[area],data[area].monthlySelection||null);
 }
+function monthlyBundleAreas(bundle,out=window.CoachToolsMonthly.compile(bundle)){
+  return bundle.uploadArea?[bundle.uploadArea]:(out.managers||bundle.scope==='mixed')?['retail','referral']:[...new Set(out.reps.map(r=>r.area))];
+}
+function monthlyUploadBundle(area,bundle){
+  const M=window.CoachToolsMonthly;
+  const compatible=bundle&&(bundle.uploadArea===area||(!bundle.uploadArea&&bundle.scope===area));
+  return M.forArea(compatible?bundle:M.create(area),area);
+}
+function monthlySavedBundles(){
+  return ['retail','referral'].filter(area=>state.data[area]?.monthlyBundle).map(area=>({area,bundle:state.data[area].monthlyBundle}));
+}
 function applyMonthlyBundleInStage(bundle,onlyArea,selection=null,options={}){
   bundle={...bundle,importedAt:bundle.importedAt||new Date().toISOString()};
   const M=window.CoachToolsMonthly,out=M.compile(bundle);
   if(!out.canApply)throw new Error('Resolve monthly import issues before applying.');
-  const areas=onlyArea?[onlyArea]:(out.managers||bundle.scope==='mixed')?['retail','referral']:[...new Set(out.reps.map(r=>r.area))];
-  // A contribution belongs to only one area, even across separate monthly uploads.
-  if(areas.length===1&&!options.coordinated){
+  if(bundle.uploadArea&&onlyArea&&bundle.uploadArea!==onlyArea)throw new Error('This monthly upload belongs to '+bundle.uploadArea+'.');
+  const areas=onlyArea?[onlyArea]:monthlyBundleAreas(bundle,out);
+  // Legacy shared bundles retain their cross-area contribution check. Explicit
+  // Retail and Referral uploads own independent files, even for the same labels.
+  if(areas.length===1&&!bundle.uploadArea&&!options.coordinated){
     const other=areas[0]==='retail'?'referral':'retail',otherBundle=state.data[other]?.monthlyBundle;
-    if(otherBundle){const otherOut=M.compile(otherBundle);if(out.undated||otherOut.undated||otherOut.period?.id===out.period?.id){const used=new Set(otherOut.reps.filter(r=>r.area===other).flatMap(r=>r.wiper.contributions.map(c=>`${c.fileId}:${c.row}`)));if(out.reps.filter(r=>r.area===areas[0]).some(r=>r.wiper.contributions.some(c=>used.has(`${c.fileId}:${c.row}`))))throw new Error('Some wiper contributions are already assigned to the other monthly area. Use one mixed-area bundle and review the coach mapping.');}}
+    if(otherBundle&&!otherBundle.uploadArea){const otherOut=M.compile(otherBundle);if(out.undated||otherOut.undated||otherOut.period?.id===out.period?.id){const used=new Set(otherOut.reps.filter(r=>r.area===other).flatMap(r=>r.wiper.contributions.map(c=>`${c.fileId}:${c.row}`)));if(out.reps.filter(r=>r.area===areas[0]).some(r=>r.wiper.contributions.some(c=>used.has(`${c.fileId}:${c.row}`))))throw new Error('Some wiper contributions are already assigned to the other monthly area. Use one mixed-area bundle and review the coach mapping.');}}
   }
   for(const area of areas){
     state.data[area]=monthlyAreaData(bundle,area,state.data[area],selection);
@@ -43,7 +56,7 @@ function applyMonthlyBundleInStage(bundle,onlyArea,selection=null,options={}){
 async function commitMonthlyBundle(bundle,options={}){
   if(!bundle?.opportunity)throw new Error('Choose an Opportunity file before saving monthly data.');
   if(options.throwOnFailure&&(state.activeImportJob||state.centralSyncStageActive||state.importCacheLoading||state.startup?.running))throw new Error('All-Star is still loading or saving data. Your files are retained; try Save monthly data again when it finishes.');
-  const compiled=window.CoachToolsMonthly.compile(bundle),areas=(compiled.managers||bundle.scope==='mixed')?['retail','referral']:[...new Set(compiled.reps.map(r=>r.area))];
+  const areas=monthlyBundleAreas(bundle);
   const source=areas.length===2?'monthly':areas[0];
   let failure;
   const ok=await runAllStarImport(source,{name:bundle.opportunity.name,size:0},{...options,label:'Monthly export bundle',onError:error=>{failure=error;options.onError?.(error);}},async()=>applyMonthlyBundleInStage(bundle));
@@ -61,18 +74,19 @@ async function monthlyFileRoute(area,file,options={}){
   const src=window.CoachToolsMonthly.source(sheetAoa(wb,sn),file.name);
   const current=state.data[area]?.monthlyBundle;
   hideProgress();
-  const bundle=await window.CoachToolsMonthlyReview.review({bundle:current||window.CoachToolsMonthly.create(area),sources:[src],previousRoster:monthlyExistingRoster(),onApply:b=>commitMonthlyBundle(b,{...options,silent:true,throwOnFailure:true})});
+  const bundle=await window.CoachToolsMonthlyReview.review({bundle:monthlyUploadBundle(area,current),sources:[src],existingBundles:monthlySavedBundles(),previousRoster:monthlyExistingRoster(),onApply:b=>commitMonthlyBundle(b,{...options,silent:true,throwOnFailure:true})});
   return {handled:true,result:!!bundle};
 }
 async function openMonthlyImport(area='mixed',readOnly=false,period=''){
   let existing=period?state.data[area]?.monthlyHistory?.[period]:state.data[area]?.monthlyBundle;
-  if(area==='mixed')existing=['retail','referral'].map(a=>state.data[a]?.monthlyBundle).find(b=>b?.scope==='mixed')||null;
-  return window.CoachToolsMonthlyReview.review({bundle:existing||window.CoachToolsMonthly.create(area),readOnly,previousRoster:monthlyExistingRoster(),onApply:b=>commitMonthlyBundle(b,{silent:true,throwOnFailure:true})});
+  if(area==='mixed')existing=['retail','referral'].map(a=>state.data[a]?.monthlyBundle).find(b=>b?.scope==='mixed'&&!b.uploadArea)||null;
+  const bundle=!readOnly&&area!=='mixed'?monthlyUploadBundle(area,existing):existing||window.CoachToolsMonthly.create(area);
+  return window.CoachToolsMonthlyReview.review({bundle,readOnly,existingBundles:monthlySavedBundles(),previousRoster:monthlyExistingRoster(),onApply:b=>commitMonthlyBundle(b,{silent:true,throwOnFailure:true})});
 }
 function renderMonthlyImportSummary(){
   const node=el('monthlyImportSummary');if(!node)return;
   const lines=[];
-  for(const area of ['retail','referral']){const d=state.data[area],s=d.monthlySummary;if(!d.monthlyBundle||!s)continue;lines.push(`${area==='retail'?'Monthly Retail':'Monthly Referral'}: ${monthlyImportLabel(s)} · ${s.repCount} reps / ${s.teamCount} teams · ${s.managerCount||0} manager groups · ${s.unclassifiedCount||0} unclassified records · ${s.files.length} Wiper files · ${s.partial?'PARTIAL — review missing data':'loaded records complete'}`);}
+  for(const area of ['retail','referral']){const d=state.data[area],s=d.monthlySummary;if(!d.monthlyBundle||!s)continue;lines.push(`${area==='retail'?'Monthly Retail':'Monthly Referral'}: ${monthlyImportLabel(s)} · ${s.repCount} reps / ${s.teamCount} teams · ${s.managerCount||0} manager groups · ${s.files.length} Wiper files · ${s.partial?'PARTIAL — review missing data':'loaded records complete'}`);}
   if(state.data.referral.independentSourceStatus?.itac)lines.push('ITAC: '+state.data.referral.independentSourceStatus.itac);
   node.textContent=lines.join(' | ')||'Upload Opportunity and Wiper exports here. Existing monthly Excel workbooks remain available under individual uploads.';
   const banner=el('monthlyCompleteness');if(banner){banner.hidden=!lines.length;banner.textContent=lines.join(' | ');}
@@ -121,7 +135,7 @@ function monthlySourceRows(source){
     for(const r of out.reps){
       if(r.area!==area&&r.area!=='unclassified')continue;
       if(selection&&!selection.some(([name,coach])=>M.key(name)===M.key(r.name)&&M.key(coach)===M.key(r.coach)))continue;
-      const identity=bundle.opportunity.id+'|'+r.id;if(seen.has(identity))continue;seen.add(identity);
+      const identity=(bundle.uploadArea||'mixed')+'|'+bundle.opportunity.id+'|'+r.id;if(seen.has(identity))continue;seen.add(identity);
       const common={_monthly:true,_rep:r.name,_repKey:fullNameIdentityKey(r.name),_team:r.coach,_manager:r.manager||'Unassigned Manager',_ranked:r.ranked!==false,_rosterId:`monthly|${r.area}|${r.id}`,_sourceArea:r.area,'Area':r.area,'Opportunity Coverage':(out.sourcePeriods||[]).join(' · '),'Loaded':bundle.importedAt||'',_fieldStates:Object.fromEntries(Object.entries(r.fields||{}).map(([k,c])=>[k,c.status])),_fieldMeta:Object.fromEntries(Object.entries(out.fieldMetadata||{}).map(([k,m])=>[k,{...m,storageUnit:m.kind==='percentage'?'percentage-points':'number'}]))};
       if(r.hasOpportunity!==false)cache.monthly_opportunity.push({...M.stats(r,true),...common,_sourceKey:'monthly_opportunity'});
       cache.monthly_wiper.push({...M.wipers(r),...common,'Wiper Coverage':[...new Set(r.wiper.contributions.map(c=>c.reportLabel||c.reportDate))].join(' · '),_sourceKey:'monthly_wiper'});
@@ -134,7 +148,7 @@ function openMonthlyManagerReport(){
   for(const area of ['retail','referral']){const b=state.data[area]?.monthlyBundle;if(b&&!bundles.some(x=>JSON.stringify(x.bundle)===JSON.stringify(b)))bundles.push({area,bundle:b});}
   if(!bundles.length)return alert('Upload monthly exports first.');
   const previous=document.activeElement,overlay=document.createElement('div');overlay.className='modalBackdrop open';overlay.id='monthlyManagerReport';
-  overlay.innerHTML='<section class="modal" role="dialog" aria-modal="true" aria-label="Monthly manager report"><div class="modalHead"><div class="modalTitle">Monthly managers, coaches and representatives</div><button data-monthly-close>Close</button></div><div class="modalBody"><div class="row"><label>Snapshot <select data-monthly-snapshot></select></label><label>Manager <select data-monthly-manager></select></label><label>Area <select data-monthly-area><option value="all">All Teams</option><option value="retail">Retail</option><option value="referral">Referral</option><option value="unclassified">Unclassified / Needs Review</option></select></label><label>Coach <select data-monthly-coach></select></label></div><div data-monthly-report></div></div></section>';
+  overlay.innerHTML='<section class="modal" role="dialog" aria-modal="true" aria-label="Monthly manager report"><div class="modalHead"><div class="modalTitle">Monthly managers, coaches and representatives</div><button data-monthly-close>Close</button></div><div class="modalBody"><div class="row"><label>Snapshot <select data-monthly-snapshot></select></label><label>Manager <select data-monthly-manager></select></label><label>Area <select data-monthly-area><option value="all">All Teams</option><option value="retail">Retail</option><option value="referral">Referral</option></select></label><label>Coach <select data-monthly-coach></select></label></div><div data-monthly-report></div></div></section>';
   document.body.append(overlay);const get=s=>overlay.querySelector(s),snapshot=get('[data-monthly-snapshot]'),manager=get('[data-monthly-manager]'),area=get('[data-monthly-area]'),coach=get('[data-monthly-coach]');
   snapshot.innerHTML=bundles.map((x,i)=>`<option value="${i}">${esc(x.bundle.opportunity.name)} · ${esc(x.bundle.importedAt||x.area)}</option>`).join('');
   const close=()=>{overlay.remove();previous?.focus?.();};get('[data-monthly-close]').onclick=close;

@@ -159,9 +159,9 @@
 
       <section class="panel importSection">
         <div class="panelTitle">Monthly Retail / Monthly Referral exports</div>
-        <div class="row"><button type="button" id="monthlyMixedBtn" class="green">Upload monthly exports</button><button type="button" id="monthlyManagersBtn">Manager report</button></div>
-        <p class="hint">Select one Opportunity file and all Wiper files together. Preview combined representative and team totals, then save.</p>
-        <details><summary>Upload to a specific area</summary><div class="row"><button type="button" id="monthlyRetailBtn">Monthly Retail only</button><button type="button" id="monthlyReferralBtn">Monthly Referral only</button></div></details>
+        <div class="row"><button type="button" id="monthlyRetailBtn" class="green">Upload Retail monthly exports</button><button type="button" id="monthlyReferralBtn" class="green">Upload Referral monthly exports</button><button type="button" id="monthlyManagersBtn">Manager report</button></div>
+        <p class="hint">Retail and Referral have separate Opportunity and Wiper file lists. Choose one Opportunity file and its Wiper files for each category. Overlapping report labels across categories are allowed.</p>
+        <details><summary>Combined exports with automatic team assignments</summary><button type="button" id="monthlyMixedBtn">Upload combined monthly exports</button></details>
         <p id="monthlyImportSummary" role="status"></p>
         <div class="row"><button type="button" id="monthlyRetailSettingsBtn">Retail Data Settings</button><button type="button" id="monthlyReferralSettingsBtn">Referral Data Settings</button></div>
         <details><summary>Previous monthly imports</summary><div id="monthlyHistory"></div></details>

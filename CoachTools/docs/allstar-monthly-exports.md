@@ -1,7 +1,20 @@
 # All-Star monthly Opportunity, Wiper and Metrics workflow
 
-Select one Opportunity export and one or more Wiper exports together in Upload
-monthly exports, Clean Upload or Update Data. All routes use the shared parser,
+Use Upload Retail monthly exports or Upload Referral monthly exports, then select
+one Opportunity export and one or more Wiper exports for that category. The
+Category selector beside Add Opportunity / Wiper files keeps separate file lists
+and unsaved drafts for Retail and Referral. Save applies only the selected category.
+The same representative, coach or report label can appear in both categories;
+duplicate detection and conflicting-overlap checks run within each category.
+Explicit categories retain all imported teams in the chosen category, including
+Wiper-only activity, regardless of Consumer opportunity share.
+
+Clean Upload and Update Data also expose the Category selector. Combined exports
+with automatic team assignments remain available from the combined upload option.
+An earlier combined bundle stays available in that mode and in Data Settings;
+starting a separate category uses a fresh file list unless it already has its own
+saved category bundle. Existing committed data is kept until the new save succeeds.
+All routes use the shared parser,
 review and compiler. Review representatives, coaches, manager mappings, totals,
 coverage labels and exceptions, then save once. Cancel or a failed verified save
 leaves the previous committed data intact. Legacy monthly workbooks and older
@@ -26,10 +39,12 @@ Retail/Referral views sum the selected coaches' count totals. Missing exported
 subtotals use calculated counts. Reviews and reports distinguish Exported total,
 Calculated total and Filtered total. Summary rows never become representatives.
 
-Coach area uses Consumer opportunities divided by Commercial + Consumer +
+For combined uploads with automatic team assignments, coach area uses Consumer opportunities divided by Commercial + Consumer +
 Insurance opportunities. Exactly 15% and higher is Retail. Below 15% is Referral.
-Classification uses the unrounded aggregate ratio; missing or zero denominators
-remain Unclassified / Needs Review. A manager may oversee coaches in both areas.
+Classification uses the unrounded aggregate ratio. Every team that does not meet
+the Retail rule is Referral, including missing or zero denominators and Wiper-only
+teams without Opportunity data. Missing counts remain unavailable in calculations;
+the Referral fallback does not turn them into zeros. A manager may oversee coaches in both areas.
 Cash Opportunity Share and Cash Appointment Rate are separate measures.
 
 ## Wiper assignment and reconciliation
@@ -52,9 +67,14 @@ the review. Wiper subtotal and grand-total records reconcile detail; they are
 never added to it.
 
 Coach → Manager mapping comes from Opportunity. Missing or conflicting mappings
-place Wiper counts in Unassigned Manager. Mapped manager counts plus unassigned
+place Wiper counts in Unassigned Manager. Manager assignment is optional: a coach
+is sufficient to assign activity, save monthly data and run coach/representative
+reports. Missing managers never block save or report runs. Mapped manager counts plus unassigned
 counts equal overall included Wiper counts. Missing representative coverage is
 shown at manager level. All Wiper rates use summed accepted / offered counts.
+Repeated Opportunity detail with identical counts is counted once even when only
+its optional manager differs. Conflicting managers remain a warning; conflicting
+performance counts still require correction.
 
 Identical file content is ignored even after renaming. Identical overlapping
 named contributions are counted once. Conflicting overlaps block save until the
@@ -73,7 +93,8 @@ coverage. Separate snapshots remain selectable rather than silently combined.
 
 Metrics and Research expose Monthly Opportunity — All Areas and Monthly Wipers —
 All Areas, including unresolved records. Imported Manager and Area fields support
-filtering/grouping. Mixed bundles stored in both monthly areas are deduplicated.
+filtering/grouping. Mixed bundles stored in both monthly areas are deduplicated;
+independent Retail and Referral records remain separate even with identical sources.
 Additional segment-qualified fields become available automatically. Previously
 loaded independent ITAC data remains stored separately, with a visible warning
 that its coverage has not been confirmed for the new Opportunity snapshot; it is
@@ -116,5 +137,9 @@ exact 15%, multi-date and transferred Wipers, unmatched/unattributed counts,
 manager reconciliation, corrected snapshots, overlap blocking, filtered totals,
 Metrics component exclusions/units/representative weighting, editor behavior,
 persistence and failed-save rollback. Existing monthly and shared-import tests
-protect earlier layouts and Clean Upload / Update Data behavior. Uploaded
+protect earlier layouts and Clean Upload / Update Data behavior, independent
+category drafts and incoming file selection, same-label cross-category uploads,
+category-only saves/history, central synchronization and reload isolation, Referral
+fallback for missing/zero counts, and coach-only saves and report runs without a
+manager. Uploaded
 employee exports must never be committed as fixtures.

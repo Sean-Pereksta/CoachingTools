@@ -31,7 +31,7 @@ async function undatedReviewTest(bundle,sources=[]){
  const {window}=parseHTML('<html><body></body></html>'),document=window.document;
  // LinkeDOM lacks the browser select.value setter used by the real dialog.
  const proto=Object.getPrototypeOf(document.createElement('select')),get=Object.getOwnPropertyDescriptor(proto,'value').get;
- Object.defineProperty(proto,'value',{configurable:true,get,set(v){for(const o of this.querySelectorAll('option'))o.selected=o.value===v;}});
+ Object.defineProperty(proto,'value',{configurable:true,get,set(v){for(const o of this.querySelectorAll('option'))o.removeAttribute('selected');for(const o of this.querySelectorAll('option'))if(o.value===v)o.setAttribute('selected','');}});
  const context=vm.createContext({window:{document,CoachToolsMonthly:M},console});
  vm.runInContext(fs.readFileSync(path.join(root,'../../shared/coachtools-monthly-review.js'),'utf8'),context);
  const pending=context.window.CoachToolsMonthlyReview.review({bundle,sources});
@@ -89,6 +89,86 @@ async function monthlyUploadFlowTest(){
   console.log('PASS real multi-file picker → combined preview → save/retry/reload, no approval checkboxes, stable Save click and detached controls');
  }finally{h.stop();}
 }
+async function categoryIsolationTest(){
+ const fixture=require('./fixtures/monthly-hierarchy.js');
+ const op=M.source([...fixture.header,fixture.row('Manager A','Shared Coach','Shared Rep',[90,5,5]),fixture.row('Manager A','High Coach','High Rep',[40,20,40])],'opportunity.csv');
+ const w=M.source([['REPORT DATE','EMPLOYEE_IMMEDIATE_SUPERVISOR_NAME','EMPLOYEE_FULL_NAME','COUNT_WIPERS_ACCEPTED','COUNT_WIPERS_OFFERED'],['9/6/2026','Shared Coach','Shared Rep',2,10],['9/6/2026','High Coach','High Rep',3,10],['9/6/2026','Extra Coach','Wiper Only',1,4]],'wiper.csv');
+ const mixed=M.add(M.add(M.create('mixed'),op).bundle,w).bundle,original=JSON.stringify(mixed);
+ assert.ok(M.compile(mixed).reps.some(r=>r.area==='retail'));assert.ok(M.compile(mixed).reps.some(r=>r.area==='referral'));
+ assert.equal(M.compile(mixed).reps.find(r=>r.name==='Wiper Only').area,'referral','Wiper-only teams without Opportunity counts use the Referral fallback');assert.ok(M.compile(mixed).reps.every(r=>['retail','referral'].includes(r.area)));
+ for(const [segment,value] of [['consumer',''],['consumer','*'],['consumer','N/A'],['consumer','-1'],['commercial','']]){
+  const missing=M.clone(mixed);missing.opportunity.rows.find(r=>r.name==='High Rep').segments[segment].opportunities=M.cell(value);const out=M.compile(missing),assignment=out.coachAssignments.find(c=>c.coach==='High Coach');
+  assert.equal(assignment.share,null);assert.equal(assignment.automatic,'referral');assert.equal(out.reps.find(r=>r.name==='High Rep').area,'referral');assert.equal(out.canApply,true);assert.equal(out.issues.some(i=>i.code==='area-required'),false);
+ }
+ const zeroModern=M.clone(mixed);for(const s of M.SEGMENTS)zeroModern.opportunity.rows.find(r=>r.name==='High Rep').segments[s].opportunities=M.cell(0);const zeroModernOut=M.compile(zeroModern);assert.equal(zeroModernOut.coachAssignments.find(c=>c.coach==='High Coach').share,null);assert.equal(zeroModernOut.reps.find(r=>r.name==='High Rep').area,'referral');assert.ok(zeroModernOut.reps.every(r=>['retail','referral'].includes(r.area)));
+ for(const area of ['retail','referral']){
+  const scoped=M.forArea(mixed,area),out=M.compile(scoped);
+  assert.equal(scoped.uploadArea,area);assert.equal(scoped.scope,area);assert.equal(out.canApply,true);
+  assert.equal(out.reps.length,3);assert.ok(out.reps.every(r=>r.area===area),'the upload category owns Opportunity and Wiper-only rows');assert.ok(out.teams.every(t=>t.area===area));
+  assert.equal(M.toDataset(scoped,area).meta.totalRows,3);assert.equal(M.toDataset(scoped,area==='retail'?'referral':'retail').meta.totalRows,0);
+  assert.ok(M.compile(M.forArea(fullBundle(),area)).reps.every(r=>r.area===area),'explicit category also governs legacy exports');
+ }
+ assert.equal(JSON.stringify(mixed),original,'category selection must clone the source bundle');
+ const h=harness();h.run('window.XLSX=XLSX;');
+ vm.runInContext(fs.readFileSync(path.join(root,'../../shared/coachtools-monthly-review.js'),'utf8'),h.context);
+ const doc=h.context.document,file=src=>{const bytes=Buffer.from(src.aoa.map(r=>r.join('\t')).join('\r\n'),'utf8');return {name:src.name,arrayBuffer:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length)};};
+ const upload=async sources=>{const picker=doc.getElementById('monthlyFiles');Object.defineProperty(picker,'files',{value:sources.map(file)});await picker.onchange();};
+ const switchArea=area=>{const picker=doc.getElementById('monthlyUploadArea');assert.ok(picker,'the intake must expose Retail and Referral upload categories');picker.value=area;picker.onchange();assert.equal(doc.getElementById('monthlyUploadArea').value,area);};
+ let reload,central;
+ try{
+  let pending=h.run('openMonthlyImport("retail")');
+  assert.equal(doc.getElementById('monthlyUploadArea').value,'retail');assert.match(doc.getElementById('monthlyImportReview').textContent,/Add Retail Opportunity \/ Wiper files/);
+  await upload([w,op]);assert.equal(doc.getElementById('monthlyApply').disabled,false);assert.match(doc.getElementById('monthlyRepPreview').textContent,/Wiper Only/);
+  switchArea('referral');assert.equal(doc.getElementById('monthlyApply').disabled,true,'switching to a fresh category must not reuse Retail files');
+  await upload([op,w]);assert.equal(doc.getElementById('monthlyApply').disabled,false);assert.match(doc.getElementById('monthlyApply').textContent,/Referral/);
+  switchArea('retail');assert.equal(doc.getElementById('monthlyApply').disabled,false,'switching back restores the independent Retail draft');
+  await doc.getElementById('monthlyApply').onclick();const retailSaved=await pending;
+  assert.equal(retailSaved.uploadArea,'retail');assert.equal(h.run('state.data.retail.sv2.length'),3);assert.equal(h.run('state.data.referral.sv2.length'),0);
+  const retailBefore=h.run('JSON.stringify(state.data.retail)'),retailMeta=h.run('JSON.stringify(state.sourceMeta.retail_wiper)');
+  pending=h.run('openMonthlyImport("referral")');await upload([op,w]);assert.equal(doc.getElementById('monthlyApply').disabled,false,'the same Wiper file and labels are valid in Referral');
+  await doc.getElementById('monthlyApply').onclick();const referralSaved=await pending;
+  assert.equal(referralSaved.uploadArea,'referral');assert.equal(h.run('JSON.stringify(state.data.retail)'),retailBefore);assert.equal(h.run('JSON.stringify(state.sourceMeta.retail_wiper)'),retailMeta);
+  assert.equal(h.run('state.data.referral.sv2.length'),3);assert.equal(h.run('state.data.referral.wiper.reduce((n,r)=>n+r.Accepted,0)'),6);
+  assert.equal(h.run('state.importJobHistory.length'),2);assert.equal(h.run('monthlySourceRows("monthly_opportunity").length'),4,'identical Opportunity rows in separate categories must remain separate');assert.equal(h.run('monthlySourceRows("monthly_wiper").length'),6,'identical Wiper rows in separate categories must remain separate');
+  assert.match(doc.getElementById('monthlyImportSummary').textContent,/Monthly Retail.*Monthly Referral/);
+  const referralBefore=h.run('JSON.stringify(state.data.referral)');
+  const updated=M.clone(retailSaved);updated.opportunity=M.source([...fixture.header,fixture.row('Manager A','Shared Coach','Shared Rep',[80,10,10]),fixture.row('Manager A','High Coach','High Rep',[40,20,40])],'opportunity.csv');updated.importedAt='2099-02-01T00:00:00.000Z';h.context.updated=updated;
+  assert.equal(await h.run('commitMonthlyBundle(updated)'),true,JSON.stringify(h.errors));assert.equal(h.run('JSON.stringify(state.data.referral)'),referralBefore);
+  assert.equal(h.run('state.data.retail.sv2.find(r=>r.Representative==="Shared Rep")["Consumer Opportunities"]'),10);assert.equal(h.run('Object.keys(state.data.retail.monthlyHistory).length'),1);assert.equal(h.run('Object.values(state.data.retail.monthlyHistory)[0].uploadArea'),'retail');assert.equal(h.run('Object.keys(state.data.referral.monthlyHistory).length'),0);
+  const correction=M.source([w.aoa[0],['9/6/2026','Shared Coach','Shared Rep',9,10]],'correction.csv');h.context.overlap=M.add(updated,correction).bundle;
+  assert.equal(M.compile(h.context.overlap).canApply,false,'conflicting overlaps within Retail still require correction');const retailStable=h.run('JSON.stringify(state.data.retail)');assert.equal(await h.run('commitMonthlyBundle(overlap,{silent:true})'),false);assert.equal(h.run('JSON.stringify(state.data.retail)'),retailStable);assert.equal(h.run('JSON.stringify(state.data.referral)'),referralBefore);
+  reload=harness(h.db,h.storage);await reload.run('loadImportedDataFromIndexedDB({deferRender:true})');assert.equal(reload.run('JSON.stringify(state.data.retail.monthlyBundle)'),JSON.stringify(updated));assert.equal(reload.run('state.data.referral.monthlyBundle.uploadArea'),'referral');assert.equal(reload.run('state.data.referral.wiper.reduce((n,r)=>n+r.Accepted,0)'),6);assert.equal(reload.run('monthlySourceRows("monthly_wiper").length'),6);
+  central=harness();central.context.retailDataset=M.toDataset(retailSaved,'retail');central.context.referralDataset=M.toDataset(referralSaved,'referral');
+  central.run('let categoryVersions={monthlyRetail:1,monthlyReferral:1};window.CoachToolsData={ready:async()=>{},getDatasetVersion:type=>categoryVersions[type]?{id:type,version:categoryVersions[type],classificationMethod:"reviewed-monthly-bundle",importedAt:"2099-01-01T00:00:00Z"}:null,getCurrent:async type=>({originalFileName:"opportunity.csv",data:type==="monthlyRetail"?retailDataset:referralDataset})};');
+  assert.equal((await central.run('syncAllStarFromCoachToolsData({render:false})')).changed,true,JSON.stringify(central.errors));assert.equal(central.run('state.data.retail.sv2.length'),3);assert.equal(central.run('state.data.referral.sv2.length'),3);
+  const centralReferral=central.run('JSON.stringify(state.data.referral)');central.context.retailDataset=M.toDataset(updated,'retail');central.run('categoryVersions.monthlyRetail=2;window.CoachToolsData.getDatasetVersion=type=>categoryVersions[type]?{id:type,version:categoryVersions[type],classificationMethod:"reviewed-monthly-bundle",importedAt:type==="monthlyRetail"?"2099-02-01T00:00:00Z":"2099-01-01T00:00:00Z"}:null;');
+  assert.equal((await central.run('syncAllStarFromCoachToolsData({render:false})')).changed,true,JSON.stringify(central.errors));assert.equal(central.run('JSON.stringify(state.data.referral)'),centralReferral);assert.equal(central.run('state.data.retail.sv2.find(r=>r.Representative==="Shared Rep")["Consumer Opportunities"]'),10);
+  h.context.legacyMixed=mixed;h.context.incoming=[op,correction];
+  pending=h.run('window.CoachToolsMonthlyReview.review({bundle:legacyMixed,sources:incoming})');assert.equal(doc.getElementById('monthlyUploadArea').value,'mixed');assert.equal(doc.getElementById('monthlyApply').disabled,true,'an incoming correction conflicts with the old combined Wiper export');
+  switchArea('referral');assert.equal(doc.getElementById('monthlyApply').disabled,false,'switching an initial upload to a fresh category must retain its Opportunity and Wiper files');
+  switchArea('mixed');assert.equal(doc.getElementById('monthlyApply').disabled,true,'the old combined draft keeps its conflict');switchArea('referral');
+  await doc.getElementById('monthlyApply').onclick();const incomingSaved=await pending;assert.equal(incomingSaved.uploadArea,'referral');assert.equal(incomingSaved.wipers.length,1);assert.equal(incomingSaved.wipers[0].id,correction.id);assert.equal(M.compile(incomingSaved).reps.find(r=>r.name==='Shared Rep').wiper.accepted,9);
+  console.log('PASS separate Retail/Referral intake drafts, identical-label uploads, category-only updates/history, overlap validation, combined sources, reload and central sync');
+ }finally{h.stop();reload?.stop();central?.stop();}
+}
+async function optionalManagerIntakeTest(){
+ const fixture=require('./fixtures/monthly-hierarchy.js'),h=harness();
+ try{
+  h.run('window.XLSX=XLSX;');h.context.Event=Event;for(const name of ['groupCollapsed','groupEnd','time','timeEnd','table'])h.context.console[name]=()=>{};
+  vm.runInContext(fs.readFileSync(path.join(root,'../../shared/coachtools-monthly-review.js'),'utf8'),h.context);
+  const op=M.source([...fixture.header,fixture.row('','Coach No Manager','First Rep',[80,10,10]),fixture.row('','Coach No Manager','Second Rep',[60,10,30])],'opportunity-no-manager.csv');
+  const w=M.source([['REPORT DATE','EMPLOYEE_IMMEDIATE_SUPERVISOR_NAME','EMPLOYEE_FULL_NAME','COUNT_WIPERS_ACCEPTED','COUNT_WIPERS_OFFERED'],['9/6/2026','Coach No Manager','First Rep',2,10],['9/6/2026','Coach No Manager','Second Rep',3,10]],'wiper-no-manager.csv');
+  const pending=h.run('openMonthlyImport("referral")'),doc=h.context.document,picker=doc.getElementById('monthlyFiles');
+  Object.defineProperty(picker,'files',{value:[op,w].map(src=>{const bytes=Buffer.from(src.aoa.map(r=>r.join('\t')).join('\r\n'),'utf8');return {name:src.name,arrayBuffer:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length)};})});await picker.onchange();
+  assert.equal(doc.getElementById('monthlyApply').disabled,false,'a Coach and Representative are sufficient to save without a Manager');assert.match(doc.getElementById('monthlyRepPreview').textContent,/Unassigned Manager/);
+  await doc.getElementById('monthlyApply').onclick();const saved=await pending;assert.equal(M.compile(saved).issues.some(i=>i.severity==='blocker'),false);
+  assert.equal(h.run('state.data.referral.sv2.length'),2);assert.equal(h.run('state.data.referral.controlRoster.length'),2);assert.equal(h.run('state.data.referral.teamTotals.rows[0]["Consumer Opportunities"]'),20);assert.equal(h.run('state.data.referral.teamTotals.rows[0].Accepted'),5);
+  h.run('state.models=[normalizeModelForStorage({id:"coach-without-manager",name:"Coach without Manager",criteria:[{...emptyCriterion(),id:"wiper-count",name:"Wipers accepted",source:"referral_wiper",column:"Accepted",aggregate:"sum",weight:"1"}]})];');
+  const report=await h.run('buildRun({settings:{modelId:"coach-without-manager",selectedTeams:["Coach No Manager"],view:"both",runMode:"single"},rethrow:true})');
+  assert.ok(report,'the report must run using the Coach without a Manager');assert.equal(report.repPack.rows.length,2);assert.equal(report.teamPack.rows.length,1);assert.equal(report.teamPack.rows[0].values['wiper-count'],5);assert.deepEqual(Array.from(report.repPack.rows,r=>r.values['wiper-count']).sort((a,b)=>a-b),[2,3]);assert.match(doc.getElementById('workArea').textContent,/Coach No Manager/);
+  console.log('PASS Coach-only monthly intake saves and runs both representatives and team totals without a Manager');
+ }finally{h.stop();}
+}
 (async()=>{
  const undated=undatedBundle(),newOut=M.compile(undated);
  assert.equal(newOut.period,null);assert.equal(newOut.coverageComplete,null);assert.equal(newOut.canApply,true,JSON.stringify(newOut.issues));
@@ -96,8 +176,8 @@ async function monthlyUploadFlowTest(){
  assert.equal(newOut.reps.filter(r=>r.coach.toLowerCase().includes('weighted')).every(r=>r.area==='referral'),true);
  assert.ok(newOut.reps.every(r=>r.wiper.accepted===1));assert.ok(newOut.reps.every(r=>r.wiper.contributions.every(c=>!c.start&&!c.end)));
  const manual=M.clone(undated);manual.coachAreas['edge coach']='retail';assert.equal(M.compile(manual).reps[1].area,'retail');
- for(const value of ['', '*', 'N/A', '-1']){const unknown=M.clone(undated);unknown.opportunity.rows[0].segments.consumer.opportunities=M.cell(value);assert.ok(M.compile(unknown).issues.some(i=>i.code==='area-required'));unknown.coachAreas['high coach']='retail';unknown.partialAcknowledged=true;assert.equal(M.compile(unknown).canApply,true);}
- const zeroCalls=M.clone(undated);for(const s of M.SEGMENTS)zeroCalls.opportunity.rows[0].segments[s].opportunities=M.cell(0);assert.equal(M.compile(zeroCalls).coachAssignments[0].share,null);assert.ok(M.compile(zeroCalls).issues.some(i=>i.code==='area-required'));
+ for(const value of ['', '*', 'N/A', '-1']){const unknown=M.clone(undated);unknown.opportunity.rows[0].segments.consumer.opportunities=M.cell(value);const out=M.compile(unknown);assert.equal(out.coachAssignments[0].share,null);assert.equal(out.coachAssignments[0].automatic,'referral');assert.equal(out.reps[0].area,'referral');assert.equal(out.issues.some(i=>i.code==='area-required'),false);assert.equal(out.canApply,true);unknown.coachAreas['high coach']='retail';assert.equal(M.compile(unknown).reps[0].area,'retail');}
+ const zeroCalls=M.clone(undated);for(const s of M.SEGMENTS)zeroCalls.opportunity.rows[0].segments[s].opportunities=M.cell(0);assert.equal(M.compile(zeroCalls).coachAssignments[0].share,null);assert.equal(M.compile(zeroCalls).reps[0].area,'referral');assert.equal(M.compile(zeroCalls).issues.some(i=>i.code==='area-required'),false);assert.equal(M.compile(zeroCalls).canApply,true);
  const noDates=M.asUndated(fullBundle());for(const f of noDates.wipers)f.assignments={};assert.equal(M.compile(noDates).canApply,true);assert.equal(M.compile(noDates).reps[0].wiper.accepted,20);
  const plus=M.add(undated,M.source([['EMPLOYEE_FULL_NAME','WIPERS_ACCEPTED','WIPERS_OFFERED'],['High Rep',2,6]],'extra.csv')).bundle;assert.equal(M.compile(plus).reps[0].wiper.accepted,3);
  assert.equal(M.add(plus,{...M.clone(plus.wipers[1]),name:'renamed.csv'}).duplicate,true);
@@ -191,4 +271,6 @@ async function monthlyUploadFlowTest(){
  low.stop();
  console.log('PASS sub-one-percent rates, new shared monthly updates, transfers and half-saved shared bundle rollback');
  for(const x of [h,reload,retained,mixed,central])x.stop();
+ await categoryIsolationTest();
+ await optionalManagerIntakeTest();
 })().catch(e=>{console.error(e);process.exitCode=1;});
