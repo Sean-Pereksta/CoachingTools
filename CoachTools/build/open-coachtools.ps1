@@ -1,28 +1,34 @@
 #Requires -Version 5.1
 <#
-Opens the local CoachTools index and creates a desktop shortcut to the same
-browser and file. No server, Node.js, administrator rights, or browser settings
-changes are required. Keep the extracted CoachTools folder in its final location.
+Creates a galaxy-icon CoachTools shortcut beside the launcher and index.html.
+The shortcut opens the local index in the selected browser and can be moved to
+any folder. No server, Node.js, administrator rights, or browser settings changes
+are required. Keep the extracted CoachTools folder in its final location.
 
 Examples:
   .\OPEN COACHTOOLS.bat
   .\OPEN COACHTOOLS.bat -Browser Chrome
-  powershell -File build\open-coachtools.ps1 -Browser Edge -NoLaunch -DesktopPath C:\Temp\TestDesktop
+  .\OPEN COACHTOOLS.bat -Browser Edge -LaunchNow
+  powershell -File build\open-coachtools.ps1 -Browser Edge -NoLaunch -ShortcutFolder C:\Temp\TestShortcuts
 
-NoLaunch, NoShortcut, and DesktopPath support isolated verification. Dot-source
-this file to test its functions without creating a shortcut or opening a browser.
+Browser opening requires LaunchNow. NoLaunch overrides it. NoLaunch, NoShortcut,
+and ShortcutFolder support isolated verification; DesktopPath remains an alias.
+Dot-source this file to test functions without creating a shortcut or launching.
 #>
 [CmdletBinding()]
 param(
     [ValidateSet('Auto', 'Edge', 'Chrome')]
     [string]$Browser = 'Auto',
+    [switch]$LaunchNow,
     [switch]$NoLaunch,
     [switch]$NoShortcut,
-    [string]$DesktopPath
+    [Alias('DesktopPath')]
+    [string]$ShortcutFolder
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'coachtools-launcher-ui.ps1')
 
 function Get-CoachToolsRegistryBrowserPath {
     param([Parameter(Mandatory = $true)][string]$Executable)
@@ -79,7 +85,7 @@ function Get-CoachToolsBrowserPath {
 }
 
 function Get-CoachToolsBrowsers {
-    foreach ($name in @('Edge', 'Chrome')) {
+    foreach ($name in @('Chrome', 'Edge')) {
         $browserPath = Get-CoachToolsBrowserPath -Name $name
         if ($browserPath) { [pscustomobject]@{ Name = $name; Path = $browserPath } }
     }
@@ -91,9 +97,6 @@ function Select-CoachToolsBrowser {
         [ValidateSet('Auto', 'Edge', 'Chrome')][string]$PreferredBrowser = 'Auto'
     )
 
-    if ($InstalledBrowsers.Count -eq 0) {
-        throw 'Microsoft Edge or Google Chrome was not found. Install either browser, then run OPEN COACHTOOLS.bat again.'
-    }
     if ($PreferredBrowser -ne 'Auto') {
         $selected = @($InstalledBrowsers | Where-Object { $_.Name -eq $PreferredBrowser })
         if ($selected.Count -eq 0) {
@@ -101,18 +104,31 @@ function Select-CoachToolsBrowser {
         }
         return $selected[0]
     }
-    if ($InstalledBrowsers.Count -eq 1) { return $InstalledBrowsers[0] }
-
-    Write-Host ''
-    Write-Host 'Choose the browser for CoachTools and its desktop shortcut:'
-    for ($i = 0; $i -lt $InstalledBrowsers.Count; $i++) {
-        Write-Host ("  {0}. {1}" -f ($i + 1), $InstalledBrowsers[$i].Name)
+    Show-CoachToolsBrowserMenu -InstalledBrowsers $InstalledBrowsers
+    if ($InstalledBrowsers.Count -eq 0) {
+        throw 'Microsoft Edge or Google Chrome was not found. Install either browser, then run OPEN COACHTOOLS.bat again.'
     }
     do {
-        $answer = Read-Host 'Enter 1 or 2 (Enter selects 1)'
-        if ([string]::IsNullOrWhiteSpace($answer)) { return $InstalledBrowsers[0] }
-        if ($answer -eq '1' -or $answer -eq '2') { return $InstalledBrowsers[[int]$answer - 1] }
-        Write-Host 'Please enter 1 or 2.'
+        $answer = [string](Read-Host 'Your choice (1 / Chrome, 2 / Edge)')
+        $name = switch ($answer.Trim().ToLowerInvariant()) {
+            '1' { 'Chrome' }
+            'c' { 'Chrome' }
+            'chrome' { 'Chrome' }
+            '2' { 'Edge' }
+            'e' { 'Edge' }
+            'edge' { 'Edge' }
+            default { $null }
+        }
+        if ($null -eq $name) {
+            Write-Host 'Please type 1 for Chrome or 2 for Edge, then press Enter.' -ForegroundColor Yellow
+            continue
+        }
+        $selected = @($InstalledBrowsers | Where-Object { $_.Name -eq $name })
+        if ($selected.Count -eq 0) {
+            Write-Host ("{0} is not installed. Please choose an available browser." -f $name) -ForegroundColor Yellow
+            continue
+        }
+        return $selected[0]
     } while ($true)
 }
 
@@ -146,23 +162,24 @@ function New-CoachToolsShortcut {
         throw "The CoachTools galaxy icon was not found at '$IconPath'. Extract the entire CoachTools ZIP and try again."
     }
     if ([string]::IsNullOrWhiteSpace($Destination)) {
-        throw 'Windows did not provide a Desktop folder. Use -DesktopPath with the folder where you want the CoachTools shortcut.'
+        throw 'Choose a shortcut folder with -ShortcutFolder, or run OPEN COACHTOOLS.bat from the extracted CoachTools folder.'
     }
-    $desktopFolder = [IO.Path]::GetFullPath($Destination)
-    if (-not (Test-Path -LiteralPath $desktopFolder -PathType Container)) {
-        $null = New-Item -ItemType Directory -Path $desktopFolder -Force
+    $shortcutFolder = [IO.Path]::GetFullPath($Destination)
+    if (-not (Test-Path -LiteralPath $shortcutFolder -PathType Container)) {
+        $null = New-Item -ItemType Directory -Path $shortcutFolder -Force
     }
 
     $shell = New-Object -ComObject WScript.Shell
     $shortcut = $null
-    $marker = 'CoachTools desktop launcher'
+    $marker = 'CoachTools browser shortcut'
+    $ownedDescriptions = @($marker, 'CoachTools desktop launcher')
     try {
         # Update only our shortcut for this suite. Preserve an unrelated link or
         # a second CoachTools installation by choosing the next available name.
         $sequence = 1
         do {
             $name = if ($sequence -eq 1) { 'CoachTools.lnk' } else { "CoachTools ($sequence).lnk" }
-            $shortcutPath = Join-Path $desktopFolder $name
+            $shortcutPath = Join-Path $shortcutFolder $name
             $canUse = -not (Test-Path -LiteralPath $shortcutPath)
             if ($canUse) {
                 $shortcut = $shell.CreateShortcut($shortcutPath)
@@ -170,7 +187,7 @@ function New-CoachToolsShortcut {
             else {
                 try {
                     $shortcut = $shell.CreateShortcut($shortcutPath)
-                    $canUse = $shortcut.Description -eq $marker -and
+                    $canUse = $ownedDescriptions -contains $shortcut.Description -and
                         ([string]$shortcut.WorkingDirectory).TrimEnd('\') -ieq $LaunchTarget.SuitePath.TrimEnd('\')
                 }
                 catch {
@@ -194,7 +211,7 @@ function New-CoachToolsShortcut {
         $shortcut.WindowStyle = 1
         $shortcut.Save()
         if (-not (Test-Path -LiteralPath $shortcutPath -PathType Leaf)) {
-            throw "Windows did not save the desktop shortcut at '$shortcutPath'."
+            throw "Windows did not save the CoachTools shortcut at '$shortcutPath'."
         }
         return $shortcutPath
     }
@@ -208,27 +225,29 @@ function Invoke-CoachToolsLauncher {
     param(
         [Parameter(Mandatory = $true)][string]$SuitePath,
         [ValidateSet('Auto', 'Edge', 'Chrome')][string]$PreferredBrowser = 'Auto',
+        [switch]$LaunchNow,
         [switch]$SkipLaunch,
         [switch]$SkipShortcut,
         [string]$ShortcutFolder
     )
 
+    if ($PreferredBrowser -eq 'Auto') { Show-CoachToolsWelcome }
     $target = Get-CoachToolsLaunchTarget -SuitePath $SuitePath
     $selected = Select-CoachToolsBrowser -InstalledBrowsers @(Get-CoachToolsBrowsers) -PreferredBrowser $PreferredBrowser
     $shortcutPath = $null
     if (-not $SkipShortcut) {
         if ([string]::IsNullOrWhiteSpace($ShortcutFolder)) {
-            $ShortcutFolder = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+            $ShortcutFolder = $target.SuitePath
         }
         $iconPath = Join-Path $target.SuitePath 'icons\coachtools-galaxy.ico'
         $shortcutPath = New-CoachToolsShortcut -SelectedBrowser $selected -LaunchTarget $target -IconPath $iconPath -Destination $ShortcutFolder
-        Write-Host "Desktop shortcut ready: $shortcutPath"
+        Show-CoachToolsShortcutReady -ShortcutPath $shortcutPath -Browser $selected.Name
     }
-    if (-not $SkipLaunch) {
+    $shouldLaunch = $LaunchNow -and -not $SkipLaunch
+    if ($shouldLaunch) {
         Start-Process -FilePath $selected.Path -ArgumentList $target.Arguments -WorkingDirectory $target.SuitePath -ErrorAction Stop
         Write-Host ("CoachTools opened in {0}." -f $selected.Name)
     }
-    Write-Host 'Keep this CoachTools folder in place. If you move it, run OPEN COACHTOOLS.bat again to create a shortcut for the new location.'
 
     [pscustomobject]@{
         Browser = $selected.Name
@@ -236,18 +255,21 @@ function Invoke-CoachToolsLauncher {
         IndexPath = $target.IndexPath
         Arguments = $target.Arguments
         ShortcutPath = $shortcutPath
-        Launched = -not $SkipLaunch
+        Launched = $shouldLaunch
     }
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
     try {
         $suitePath = Split-Path -Parent $PSScriptRoot
-        $null = Invoke-CoachToolsLauncher -SuitePath $suitePath -PreferredBrowser $Browser -SkipLaunch:$NoLaunch -SkipShortcut:$NoShortcut -ShortcutFolder $DesktopPath
+        $null = Invoke-CoachToolsLauncher -SuitePath $suitePath -PreferredBrowser $Browser -LaunchNow:$LaunchNow -SkipLaunch:$NoLaunch -SkipShortcut:$NoShortcut -ShortcutFolder $ShortcutFolder
+        if ($Browser -eq 'Auto' -and -not $NoLaunch -and -not $NoShortcut) {
+            $null = Read-Host 'Press Enter to close'
+        }
     }
     catch {
         Write-Host ''
-        Write-Host 'CoachTools could not finish opening.' -ForegroundColor Red
+        Write-Host 'CoachTools could not finish setup.' -ForegroundColor Red
         Write-Host $_.Exception.Message -ForegroundColor Red
         exit 1
     }
