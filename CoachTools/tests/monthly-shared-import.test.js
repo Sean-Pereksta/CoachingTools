@@ -10,7 +10,7 @@ const plain=x=>JSON.parse(JSON.stringify(x));
 const op=[['','','',...Array(9).fill('OPPORTUNITY_LATEST_SEGMENT')],['','','',...['COMMERCIAL','CONSUMER','INSURANCE'].flatMap(s=>[s,s,s])],['','','',...Array.from({length:3},()=>['Opportunities','Appointments','Appt Rate']).flat()],['Coach A','Rep A','',10,8,'80.0%',10,8,'80.0%',10,8,'80.0%']];
 const wipe=[['REPORT DATE','EMPLOYEE_FULL_NAME','WIPERS_ACCEPTED','WIPERS_OFFERED'],['9/27/2026','Rep A',4,10]];
 function csv(name,rows){const bytes=Buffer.concat([Buffer.from([255,254]),Buffer.from(rows.map(r=>r.join('\t')).join('\r\n'),'utf16le')]);return {name,size:bytes.length,lastModified:1,arrayBuffer:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length)};}
-let reviews=0;context.CoachToolsMonthlyReview.review=async options=>{reviews++;let b=M.asUndated(options.bundle);for(const source of options.sources)b=M.add(b,source).bundle;b.scope='mixed';b.partialAcknowledged=true;b.consumerAsCash=true;b.importedAt=new Date().toISOString();return b;};
+let reviews=0,lastReviewOptions;context.CoachToolsMonthlyReview.review=async options=>{reviews++;lastReviewOptions=options;let b=M.asUndated(options.bundle);for(const source of options.sources)b=M.add(b,source).bundle;if(!b.uploadArea)b.scope='mixed';b.partialAcknowledged=true;b.consumerAsCash=true;b.importedAt=new Date().toISOString();return b;};
 (async()=>{
  await data.ready();
  await data.importDataset('qa',{meta:{fileName:'qa'},workbook:{sheets:['QA'],data:{QA:{aoa:[['Team','Agent Name','Score %'],['Coach A','Rep A',90]]}}}},{originalFileName:'qa',rowCount:1});
@@ -40,7 +40,33 @@ let reviews=0;context.CoachToolsMonthlyReview.review=async options=>{reviews++;l
  const modern=await api.analyzeFiles([csv('new-op.csv',hierarchy.opportunity),csv('new-wiper.csv',hierarchy.wiper)]);assert.equal(modern.errors.length,0);assert.equal(modern.recognized.length,2);
  for(const entry of modern.recognized){const staged=await api.prepareRecognizedEntry(entry,{scope:{mode:'all',label:'All people'}});assert.equal(staged.dataset.meta.monthlySelection,null);await api.saveRecognizedEntry(entry,{scope:{mode:'all',label:'All people'}});}
  const modernSaved=await data.getCurrent('monthlyRetail',{includeRecord:true}),modernOut=M.compile(modernSaved.data.meta.monthlyBundle);assert.equal(modernOut.overall.wiper.accepted,20);assert.equal(modernOut.teams.find(t=>t.coach==='Coach A').segments.consumer.opportunities,15);assert.equal(modernOut.managers.reduce((n,m)=>n+(m.wiper.accepted||0),0),20);
+ const modernReferral=await data.getCurrent('monthlyReferral',{includeRecord:true}),referralRows=modernReferral.data.workbook.data['Monthly Wipers'].aoa,referralHeaders=referralRows[0];
+ assert.equal(modernOut.teams.find(t=>t.coach==='Unknown Coach').area,'referral');assert.equal(modernOut.reps.find(r=>r.name==='Unknown Rep').area,'referral');assert.ok(modernOut.reps.every(r=>['retail','referral'].includes(r.area)));
+ assert.ok(referralRows.slice(1).some(r=>r[referralHeaders.indexOf('Representative')]==='Unknown Rep'&&r[referralHeaders.indexOf('Accepted')]===5),'automatic shared imports retain Wiper-only teams in Referral');
  assert.ok(await data.getCurrent('qa'));
+ // Separate categories may use the same reporting date, coach and representative.
+ // Old mixed bundles must not seed a category-specific upload with the other files.
+ const retailBefore=JSON.stringify(modernSaved.data),referralWiper=[hierarchy.wiper[0],['9/6/2026','Coach A','Rep One',9,10]];
+ const referral=await api.analyzeFiles([csv('referral-op.csv',hierarchy.opportunity),csv('referral-wiper.csv',referralWiper)],{monthlyArea:'referral'});
+ assert.equal(referral.errors.length,0);assert.equal(referral.recognized.length,1);assert.equal(referral.recognized[0].classification.id,'monthlyReferral');assert.equal(lastReviewOptions.uploadArea,'referral');
+ const referralBundle=referral.recognized[0].parsed.meta.monthlyBundle;
+ assert.equal(referralBundle.uploadArea,'referral');assert.equal(referralBundle.scope,'referral');assert.equal(referralBundle.wipers.length,1);assert.equal(M.compile(referralBundle).canApply,true);assert.equal(M.compile(referralBundle).overall.wiper.accepted,9);assert.ok(M.compile(referralBundle).reps.every(r=>r.area==='referral'));
+ await api.saveRecognizedEntry(referral.recognized[0],{scope:{mode:'all',label:'All people'}});
+ assert.equal(JSON.stringify((await data.getCurrent('monthlyRetail',{includeRecord:true})).data),retailBefore);
+ const referralAdd=await api.analyzeFiles([csv('referral-extra.csv',[hierarchy.wiper[0],['9/13/2026','Coach A','Rep One',3,10]])],{monthlyArea:'referral'});
+ assert.equal(referralAdd.recognized.length,1);assert.equal(referralAdd.recognized[0].classification.id,'monthlyReferral');assert.equal(referralAdd.recognized[0].parsed.meta.monthlyBundle.wipers.length,2);assert.equal(M.compile(referralAdd.recognized[0].parsed.meta.monthlyBundle).overall.wiper.accepted,12);
+ await api.saveRecognizedEntry(referralAdd.recognized[0],{scope:{mode:'all',label:'All people'}});
+ const referralDuplicate=await api.analyzeFiles([csv('renamed-referral.csv',referralWiper)],{monthlyArea:'referral'});
+ assert.equal(referralDuplicate.recognized[0].parsed.meta.monthlyBundle.wipers.length,2);
+ const referralConflict=await api.analyzeFiles([csv('conflicting-referral.csv',[hierarchy.wiper[0],['9/6/2026','Coach A','Rep One',7,10]])],{monthlyArea:'referral'});
+ assert.equal(referralConflict.recognized.length,0);assert.equal(referralConflict.errors.length,1);assert.match(referralConflict.errors[0].error.message,/resolve.*issues/,'conflicts within Referral still require review');
+ assert.equal(JSON.stringify((await data.getCurrent('monthlyRetail',{includeRecord:true})).data),retailBefore);
+ const referralBefore=JSON.stringify((await data.getCurrent('monthlyReferral',{includeRecord:true})).data);
+ const retail=await api.analyzeFiles([csv('retail-op.csv',hierarchy.opportunity),csv('retail-wiper.csv',[hierarchy.wiper[0],['9/6/2026','Coach A','Rep One',2,10]])],{monthlyArea:'retail'});
+ assert.equal(retail.recognized.length,1);assert.equal(retail.recognized[0].classification.id,'monthlyRetail');assert.equal(retail.recognized[0].parsed.meta.monthlyBundle.wipers.length,1);assert.equal(M.compile(retail.recognized[0].parsed.meta.monthlyBundle).canApply,true);
+ await api.saveRecognizedEntry(retail.recognized[0],{scope:{mode:'all',label:'All people'}});
+ assert.equal(JSON.stringify((await data.getCurrent('monthlyReferral',{includeRecord:true})).data),referralBefore);
+ console.log('PASS independent Retail / Referral shared imports, safe legacy mixed migration, additive category updates and within-category overlap protection');
  console.log('PASS manager exports through shared Clean Upload / Update Data, full-scope subtotal authority and unresolved Wiper retention');
  console.log('PASS real shared Clean Upload, UTF-16 intake, staged monthly review, additive updates, duplicate prevention, scope preservation, QA retention');
 })().catch(e=>{console.error(e);process.exitCode=1;});

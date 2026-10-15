@@ -1030,18 +1030,19 @@
         const record=local?null:await root.CoachToolsData?.getCurrent?.(area==='retail'?'monthlyRetail':'monthlyReferral',{includeRecord:true});
         const bundle=local||record?.data?.meta?.monthlyBundle;if(bundle)existing.push({area,bundle});
       }
+      const requested=['retail','referral'].includes(options.monthlyArea)?options.monthlyArea:'';
       let initial;
-      if(existing.length===1)initial=existing[0].bundle;
+      if(requested){
+        const saved=existing.find(e=>e.area===requested)?.bundle;
+        // A legacy mixed source may contain the other category's overlapping files.
+        const safe=saved&&(saved.uploadArea===requested||(!saved.uploadArea&&saved.scope===requested));
+        initial=M.forArea(safe?saved:M.create(requested),requested);
+      }else if(existing.length===1)initial=existing[0].bundle;
       else if(existing.length===2&&JSON.stringify(existing[0].bundle)===JSON.stringify(existing[1].bundle))initial=existing[0].bundle;
-      else if(existing.length===2){
-        // Choose explicitly when adding files to separate active monthly bundles.
-        const requested=options.monthlyArea;
-        if(requested)initial=existing.find(e=>e.area===requested)?.bundle;
-      }
-      initial=initial||M.create(options.monthlyArea||'mixed');
-      const bundle=await root.CoachToolsMonthlyReview.review({bundle:initial,sources,existingBundles:existing,previousRoster:root.CoachToolsMonthlyExistingRoster?.()||[]});
+      initial=initial||M.create('mixed');
+      const bundle=await root.CoachToolsMonthlyReview.review({bundle:initial,sources,existingBundles:existing,uploadArea:requested||undefined,previousRoster:root.CoachToolsMonthlyExistingRoster?.()||[]});
       if(!bundle)return analysis;
-      const out=M.compile(bundle),areas=bundle.scope==='mixed'?['retail','referral']:[bundle.scope];
+      const out=M.compile(bundle),areas=['retail','referral'].includes(bundle.uploadArea)?[bundle.uploadArea]:bundle.scope==='mixed'?['retail','referral']:[bundle.scope];
       for(const area of areas){
         const parsed=M.toDataset(bundle,area),id=area==='retail'?'monthlyRetail':'monthlyReferral';
         if(!parsed.meta.totalRows&&!out.reps.some(r=>r.area==='unclassified'))continue;

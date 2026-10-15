@@ -25,6 +25,22 @@
     const ordered=sources=>[...sources].sort((a,c)=>(a.kind==='opportunity'?0:1)-(c.kind==='opportunity'?0:1));
     const addSources=(bundle,sources)=>{let next=M.clone(bundle),duplicates=0;for(const src of ordered(sources)){const added=M.add(next,src);next=added.bundle;if(added.duplicate)duplicates++;}notice=duplicates?`${duplicates} duplicate file(s) ignored; totals are unchanged.`:'';return next;};
     const initialSources=options.sources||[];b=addSources(b,initialSources);
+    const category=()=>b.uploadArea||b.scope||'mixed';
+    const categoryLabel=()=>b.uploadArea==='retail'?'Retail':b.uploadArea==='referral'?'Referral':'';
+    const drafts=new Map([[category(),M.clone(b)]]),priors=new Map([[category(),M.clone(prior)]]);
+    const chooseCategory=area=>{
+      drafts.set(category(),M.clone(b));priors.set(category(),M.clone(prior));
+      if(drafts.has(area)){b=M.clone(drafts.get(area));prior=M.clone(priors.get(area));}
+      else{
+        const saved=(options.existingBundles||[]).find(e=>area==='mixed'?e.bundle.scope==='mixed'&&!e.bundle.uploadArea:e.area===area&&(e.bundle.uploadArea===area||(!e.bundle.uploadArea&&e.bundle.scope===area)))?.bundle;
+        prior=M.clone(saved||M.create(area));
+        b=area==='mixed'?M.asUndated(prior):M.forArea(M.asUndated(prior),area);
+        // Clean Upload already read these files before opening the category picker.
+        // Keep that incoming selection when the user chooses its destination.
+        b=addSources(b,initialSources);
+      }
+      managerFilter='';areaFilter='all';coachFilter='';query='';notice='';
+    };
     const overlay=element('div');overlay.id='monthlyImportReview';overlay.style.cssText='position:fixed;inset:0;background:#0009;z-index:100000;display:flex;align-items:center;justify-content:center;padding:12px';
     const dialog=element('section');dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label','Monthly import review');dialog.style.cssText='background:white;color:#18202b;width:min(1200px,96vw);max-height:94vh;overflow:auto;padding:20px;border-radius:12px;box-shadow:0 12px 60px #0008';overlay.append(dialog);
     const body=element('div');dialog.append(body);
@@ -49,10 +65,13 @@
       const render=()=>{
         if(closed)return;
         const scroll=dialog.scrollTop,out=M.compile(b);body.replaceChildren();
-        body.append(element('h2',options.readOnly?'Monthly Data Settings':'Upload monthly exports'));
-        body.append(element('p','Choose one Opportunity file and all of its Wiper files. Teams are identified automatically, and Wiper counts are added to the same data preview. Original Opportunity period and Wiper report labels remain separate for coverage review.'));
+        const label=categoryLabel();
+        body.append(element('h2',options.readOnly?'Monthly Data Settings':label?`Upload ${label} monthly exports`:'Upload monthly exports'));
+        body.append(element('p',label?`Choose one ${label} Opportunity file and its Wiper files. These files are saved only in ${label}; Retail and Referral keep separate file lists and overlap checks.`:'Choose one Opportunity file and all of its Wiper files. Teams are identified automatically, and Wiper counts are added to the same data preview. Original Opportunity period and Wiper report labels remain separate for coverage review.'));
         const status=element('p',notice);status.setAttribute('role','status');status.setAttribute('aria-live','polite');body.append(status);
         if(!options.readOnly){
+          const areaSelect=select([['retail','Retail'],['referral','Referral'],['mixed','All areas — automatic team assignments']],category(),v=>change(()=>chooseCategory(v)));areaSelect.id='monthlyUploadArea';
+          body.append(field('Category',areaSelect));
           const upload=input('file','',()=>{});upload.id='monthlyFiles';upload.accept='.csv,.tsv,.xlsx,.xls';upload.multiple=true;upload.dataset.coachtoolsAutoImport='false';
           upload.onchange=async()=>{
             if(busy)return;const files=Array.from(upload.files||[]);if(!files.length)return;
@@ -60,19 +79,19 @@
             try{const sources=[];for(const file of files)sources.push(await read(file));if(sources.filter(s=>s.kind==='opportunity').length>1)throw new Error('Choose one Opportunity file per upload, plus any number of Wiper files.');b=addSources(b,sources);}
             catch(error){notice=error?.message||String(error);}finally{busy=false;render();}
           };
-          body.append(field('Add Opportunity / Wiper files',upload));
-          if((options.existingBundles||[]).length>1)body.append(field('Add to saved data',select([['','New upload'],...options.existingBundles.map(e=>[e.area,`${e.area}: ${e.bundle.opportunity?.name||''}`])],'',v=>{if(!v)return;change(()=>{prior=M.clone(options.existingBundles.find(e=>e.area===v).bundle);b=addSources(M.asUndated(prior),initialSources);});})));
+          body.append(field(label?`Add ${label} Opportunity / Wiper files`:'Add Opportunity / Wiper files',upload));
         }
         const files=element('div');
         files.append(table(['File','Type','Rows','Loaded',''],[...(b.opportunity?[b.opportunity]:[]),...b.wipers].map(f=>[f.name,f.kind==='opportunity'?'Opportunity / team roster':b.wipers.some(n=>!n.excluded&&n.replaces===f.id)?'Wipers — replaced':'Wipers',f.rows.length,loaded(f.importedAt),options.readOnly?'':button('Remove',()=>change(()=>{if(f.kind==='opportunity'){b.opportunity=null;b.allocations={};}else{b.wipers=b.wipers.filter(x=>x.id!==f.id);for(const x of b.wipers)if(x.replaces===f.id)delete x.replaces;}}))])));
         if(b.opportunity||b.wipers.length)body.append(files);
         body.append(element('p',`${out.reps.length} representatives · ${out.teams.length} teams · ${out.managers?.length||0} manager groups · ${out.matched} matched Wiper rows · ${b.wipers.filter(f=>!f.excluded&&!b.wipers.some(n=>!n.excluded&&n.replaces===f.id)).length} Wiper files combined`));
-        body.append(element('p','Cash = Consumer opportunities ÷ (Consumer + Insurance + Commercial opportunities). 15% or higher → Retail; below 15% → Referral. Missing or zero opportunity totals → Unclassified / Needs Review. Consumer fields also supply Cash statistics.'));
+        body.append(element('p',label?`All teams in this upload belong to ${label}. Consumer fields supply Cash statistics.`:'Cash = Consumer opportunities ÷ (Consumer + Insurance + Commercial opportunities). 15% or higher → Retail; every other team → Referral, including missing or zero opportunity totals and Wiper-only teams. Consumer fields also supply Cash statistics.'));
+        body.append(element('p','A coach is enough to assign monthly activity. Manager assignment is optional and does not block saving or running reports.'));
         if(out.reps.length){
           const search=input('search',query,v=>{query=v;render();});search.id='monthlyPreviewSearch';search.placeholder='Representative or coach';body.append(field('Filter preview',search));
           const includes=value=>M.key(value).includes(M.key(query));
           if(out.managers){
-            body.append(field('Manager',select([['','All managers'],...out.managers.map(m=>[m.manager,m.manager])],managerFilter,v=>change(()=>{managerFilter=v;coachFilter='';}))),field('Area',select([['all','All Teams'],['retail','Retail'],['referral','Referral'],['unclassified','Unclassified / Needs Review']],areaFilter,v=>change(()=>{areaFilter=v;coachFilter='';}))),field('Coach',select([['','All coaches'],...out.teams.filter(t=>(!managerFilter||(t.manager||'Unassigned Manager')===managerFilter)&&(areaFilter==='all'||t.area===areaFilter)).map(t=>[t.coach,t.coach])],coachFilter,v=>change(()=>coachFilter=v))));
+            body.append(field('Manager',select([['','All managers'],...out.managers.map(m=>[m.manager,m.manager])],managerFilter,v=>change(()=>{managerFilter=v;coachFilter='';}))),field('Area',select([['all','All Teams'],['retail','Retail'],['referral','Referral']],areaFilter,v=>change(()=>{areaFilter=v;coachFilter='';}))),field('Coach',select([['','All coaches'],...out.teams.filter(t=>(!managerFilter||(t.manager||'Unassigned Manager')===managerFilter)&&(areaFilter==='all'||t.area===areaFilter)).map(t=>[t.coach,t.coach])],coachFilter,v=>change(()=>coachFilter=v))));
             const scoped=M.compile(b,{manager:managerFilter,area:areaFilter,coach:coachFilter});
             body.append(element('h3','Manager totals'),table(['Manager','Coaches','Representatives','Total source','Consumer share',...M.SEGMENTS.map(s=>s+' apps / opps'),'Wipers accepted / offered','Missing Wiper reps'],scoped.managers.map(m=>[m.manager,m.coachCount,m.repCount,m.totalSource,percent(m.share),...M.SEGMENTS.map(s=>ratio(m.segments[s])),ratio(m.wiper),m.wiper.missingRepresentatives])));
             body.append(details('Source coverage',table(['Source','Original coverage label','Included'],[...out.sourcePeriods.map(p=>['Opportunity',p,'Yes']),...out.coverage.map(c=>[c.source,c.reportLabel||c.reportDate,c.included?'Yes':'No'])])));
@@ -80,17 +99,16 @@
           const scopeMatch=r=>(!managerFilter||(r.manager||'Unassigned Manager')===managerFilter)&&(areaFilter==='all'||r.area===areaFilter)&&(!coachFilter||r.coach===coachFilter);
           const teams=out.teams.filter(t=>includes(t.coach)&&scopeMatch(t)), reps=out.reps.filter(r=>includes(r.name+' '+r.coach)&&scopeMatch(r));
           body.append(element('h3','Team totals preview'));
-          const teamTable=table(['Coach','Manager','Total source','Area','Reps','Cash share','Commercial apps / opps','Consumer (Cash) apps / opps','Insurance apps / opps','Wipers accepted','Wipers offered','Wiper rate'],teams.map(t=>[t.coach,t.manager||'Unassigned Manager',t.totalSource||'Calculated total',t.area||'Unclassified / Needs Review',t.repCount,percent(out.coachAssignments.find(c=>c.key===M.key(t.coach))?.share),...M.SEGMENTS.map(s=>ratio(t.segments[s])),t.wiper.accepted,t.wiper.offered,percent(t.wiper.rate)]));teamTable.id='monthlyTeamPreview';body.append(teamTable);
+          const teamTable=table(['Coach','Manager','Total source','Area','Reps','Cash share','Commercial apps / opps','Consumer (Cash) apps / opps','Insurance apps / opps','Wipers accepted','Wipers offered','Wiper rate'],teams.map(t=>[t.coach,t.manager||'Unassigned Manager',t.totalSource||'Calculated total',t.area||'referral',t.repCount,percent(out.coachAssignments.find(c=>c.key===M.key(t.coach))?.share),...M.SEGMENTS.map(s=>ratio(t.segments[s])),t.wiper.accepted,t.wiper.offered,percent(t.wiper.rate)]));teamTable.id='monthlyTeamPreview';body.append(teamTable);
           body.append(element('h3','Combined representative preview'));
-          const repTable=table(['Representative','Coach','Manager','Area','Commercial apps / opps','Consumer (Cash) apps / opps','Insurance apps / opps','Wipers accepted','Wipers offered','Wiper rate'],reps.slice(0,150).map(r=>[r.name,r.coach,r.manager||'Unassigned Manager',r.area||'Unclassified / Needs Review',...M.SEGMENTS.map(s=>ratio(r.segments[s])),r.wiper.accepted,r.wiper.offered,percent(r.wiper.rate)]));repTable.id='monthlyRepPreview';body.append(repTable);
+          const repTable=table(['Representative','Coach','Manager','Area','Commercial apps / opps','Consumer (Cash) apps / opps','Insurance apps / opps','Wipers accepted','Wipers offered','Wiper rate'],reps.slice(0,150).map(r=>[r.name,r.coach,r.manager||'Unassigned Manager',r.area||'referral',...M.SEGMENTS.map(s=>ratio(r.segments[s])),r.wiper.accepted,r.wiper.offered,percent(r.wiper.rate)]));repTable.id='monthlyRepPreview';body.append(repTable);
           if(reps.length>150)body.append(element('p',`Showing 150 of ${reps.length} representatives. Filter by name or coach to find others.`));
         }
         if(out.partial)body.append(element('p','Some records have missing data or could not be matched. Available valid counts are included; missing values remain N/A.'+(out.canApply?' You can save now and add or correct files later.':'')));
         const blockers=out.issues.filter(i=>i.severity==='blocker');
         if(blockers.length){const box=element('div');box.setAttribute('role','alert');box.append(element('strong','Before saving:'),...blockers.slice(0,10).map(i=>element('p',i.message)));body.append(box);}
-        if(apply){apply.textContent=busy?'Working…':'Save monthly data';apply.disabled=busy||!out.canApply;}cancel.disabled=busy;
+        if(apply){apply.textContent=busy?'Working…':label?`Save ${label} monthly data`:'Save monthly data';apply.disabled=busy||!out.canApply;}cancel.disabled=busy;
         const adjustments=element('div');
-        if(!options.readOnly&&!out.managers)adjustments.append(field('Monthly area',select([['mixed','Mixed — auto-assign coaches'],['retail','Monthly Retail'],['referral','Monthly Referral']],b.scope,v=>change(()=>b.scope=v))));
         if(b.scope==='mixed')adjustments.append(table(['Coach','Cash / all opportunities','Cash share','Area'],out.coachAssignments.map(c=>[c.coach,c.complete?`${c.cash} / ${c.total}`:'Incomplete counts',percent(c.share),options.readOnly?c.area||'Unassigned':select([['',c.automatic?`Automatic — ${c.automatic==='retail'?'Monthly Retail':'Monthly Referral'}`:'Choose area'],['retail','Monthly Retail (manual)'],['referral','Monthly Referral (manual)']],c.override,v=>change(()=>{if(v)b.coachAreas[c.key]=v;else delete b.coachAreas[c.key];}))])));
         if(!options.readOnly)adjustments.append(field('Fully blank segment groups',select([['missing','Missing / unknown'],['no-activity','No activity in this export']],b.blankSegments,v=>change(()=>b.blankSegments=v))));
         for(const f of b.wipers){
@@ -123,7 +141,7 @@
           if(issues.length>200)diagnostic.append(element('p',`Showing 200 of ${issues.length} issues. Filter the preview to narrow the list.`));
           body.append(details(`Missing or unmatched data (${out.issues.length})`,diagnostic,blockers.some(i=>i.contributionId)));
         }
-        const lineage=element('div');lineage.append(element('p','Wiper counts stay with the coach supplied by Wiper. Manager mapping comes from Opportunity. Unmatched and unattributed activity is retained. Rates use these summed counts.'));
+        const lineage=element('div');lineage.append(element('p','Wiper counts stay with the coach supplied by Wiper. Manager mapping comes from Opportunity when available; a manager is optional. Unmatched and unattributed activity is retained. Rates use these summed counts.'));
         lineage.append(table(['Representative','Coach','File','Row','Accepted','Offered'],out.reps.filter(r=>M.key(r.name+' '+r.coach).includes(M.key(query))).slice(0,150).flatMap(r=>r.wiper.contributions.map(c=>[r.name,r.coach,c.file,c.row,c.accepted,c.offered]))));
         body.append(details('Contributing Wiper rows',lineage));
         body.append(details('Roster changes',table(['Change','Representative','From','To'],M.changes(prior,b,options.previousRoster||[]).map(c=>[c.type,c.name,c.from,c.to]))));
