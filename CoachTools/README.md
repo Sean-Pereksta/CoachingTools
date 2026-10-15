@@ -15,9 +15,9 @@ The local launcher serves only the CoachTools folder on `http://127.0.0.1`. Its 
 
 ## Direct `index.html` workflow
 
-On Windows, double-click **OPEN COACHTOOLS.bat** to open the desktop in Edge or Chrome. If both browsers are installed, choose one when prompted. The launcher creates a **CoachTools** desktop shortcut with a red, white, and black galaxy icon; after that, open the shortcut to return directly to `index.html` in your chosen browser. Node.js is not required for this launcher.
+On Windows, double-click **OPEN COACHTOOLS.bat** to set up your shortcut. The galaxy-themed setup asks you to choose your preferred browser and press Enter: type **1** or **Chrome**, or **2** or **Edge**. It creates **CoachTools.lnk** in the same folder as the launcher and `index.html`, using the red, white, and black galaxy icon. Setup creates the shortcut without opening the browser. Press Enter to close the setup window.
 
-Extract the entire CoachTools folder before running the launcher, and keep its files together. If you move the folder or want to change browsers, run **OPEN COACHTOOLS.bat** again to create the shortcut for that location. Existing unrelated shortcuts are preserved.
+Move **CoachTools.lnk** to your Desktop or any other folder, then double-click it to open the Index in the browser you chose. The shortcut retains the exact browser, Index location, and galaxy icon after it is moved. Keep the extracted CoachTools folder and its files in place. To change browsers or move the full CoachTools folder, run **OPEN COACHTOOLS.bat** again. Extract the entire ZIP before setup; Node.js is not required. Existing unrelated shortcuts are preserved.
 
 Double-clicking `index.html` remains supported. Applications, the retained-window desktop, shared browser storage, and manual Weekly Data imports continue to work.
 

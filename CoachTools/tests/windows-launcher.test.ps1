@@ -44,6 +44,16 @@ $savedProgramFilesX86 = ${env:ProgramFiles(x86)}
 $savedLocalAppData = $env:LOCALAPPDATA
 $shell = $null
 $link = $null
+$script:answers = @()
+$script:promptCount = 0
+function Read-Host {
+    param([string]$Prompt)
+    if ($script:answers.Count -eq 0) { throw 'The launcher requested unexpected interactive input.' }
+    $script:promptCount++
+    $answer = $script:answers[0]
+    $script:answers = @($script:answers | Select-Object -Skip 1)
+    return $answer
+}
 
 try {
     $target = Get-CoachToolsLaunchTarget -SuitePath $suite
@@ -54,16 +64,27 @@ try {
     Assert-Launcher ($roundTripPath -eq $target.IndexPath) 'Apostrophes, Unicode, and special characters survive URI round trip.'
     Assert-LauncherThrows { Get-CoachToolsLaunchTarget -SuitePath (Join-Path $testRoot 'missing') } 'Extract the entire CoachTools ZIP' 'Missing index provides extraction instructions.'
 
-    Assert-Launcher ((Select-CoachToolsBrowser -InstalledBrowsers @($edge) -PreferredBrowser Auto).Name -eq 'Edge') 'Single installed browser needs no prompt.'
+    $script:answers = @('1', '2')
+    Assert-Launcher ((Select-CoachToolsBrowser -InstalledBrowsers @($edge) -PreferredBrowser Auto).Name -eq 'Edge' -and $script:promptCount -eq 2) 'Single-browser setup still asks and rejects unavailable Chrome without changing Edge option 2.'
     Assert-Launcher ((Select-CoachToolsBrowser -InstalledBrowsers @($edge, $chrome) -PreferredBrowser Chrome).Path -eq $fakeChrome) 'Explicit Chrome selection works with both installed.'
     Assert-LauncherThrows { Select-CoachToolsBrowser -InstalledBrowsers @() } 'Install either browser' 'No browser provides a usable error.'
     Assert-LauncherThrows { Select-CoachToolsBrowser -InstalledBrowsers @($edge) -PreferredBrowser Chrome } 'Chrome was not found' 'An unavailable explicit choice is rejected.'
-    $script:answers = @('bad', '2')
-    function Read-Host { param([string]$Prompt); $answer = $script:answers[0]; $script:answers = @($script:answers | Select-Object -Skip 1); return $answer }
+    $script:answers = @('bad', '', '1')
+    $promptsBefore = $script:promptCount
     Assert-Launcher ((Select-CoachToolsBrowser -InstalledBrowsers @($edge, $chrome)).Name -eq 'Chrome') 'Browser menu retries invalid input and selects Chrome.'
-    $script:answers = @('')
-    Assert-Launcher ((Select-CoachToolsBrowser -InstalledBrowsers @($edge, $chrome)).Name -eq 'Edge') 'Enter selects the first browser.'
-    Remove-Item Function:\Read-Host
+    Assert-Launcher ($script:promptCount - $promptsBefore -eq 3) 'Empty Enter never silently selects a browser.'
+    $script:answers = @('2')
+    Assert-Launcher ((Select-CoachToolsBrowser -InstalledBrowsers @($chrome, $edge)).Name -eq 'Edge') 'Edge remains option 2 regardless of discovery ordering.'
+    foreach ($answer in @('C', 'Chrome', '  chrome  ')) {
+        $script:answers = @($answer)
+        Assert-Launcher ((Select-CoachToolsBrowser -InstalledBrowsers @($edge, $chrome)).Name -eq 'Chrome') "Chrome choice '$answer' is accepted."
+    }
+    foreach ($answer in @('E', 'Edge', '  edge  ')) {
+        $script:answers = @($answer)
+        Assert-Launcher ((Select-CoachToolsBrowser -InstalledBrowsers @($edge, $chrome)).Name -eq 'Edge') "Edge choice '$answer' is accepted."
+    }
+    $script:answers = @('2', 'C')
+    Assert-Launcher ((Select-CoachToolsBrowser -InstalledBrowsers @($chrome)).Name -eq 'Chrome') 'Chrome-only setup rejects unavailable Edge and accepts the installed choice.'
 
     # Discovery uses a registered custom install before standard folders.
     function Get-CoachToolsRegistryBrowserPath { param([string]$Executable); if ($Executable -eq 'msedge.exe') { return $fakeEdge } }
@@ -80,7 +101,7 @@ try {
     Assert-Launcher ((Get-CoachToolsBrowserPath -Name Chrome) -eq $localChrome) 'Per-user Chrome fallback is discovered.'
     Assert-Launcher ((Get-CoachToolsBrowserPath -Name Edge) -eq $machineEdge) '32-bit machine Edge fallback is discovered.'
     $discovered = @(Get-CoachToolsBrowsers)
-    Assert-Launcher ($discovered.Count -eq 2 -and $discovered[0].Name -eq 'Edge' -and $discovered[1].Name -eq 'Chrome') 'Both browser choices are retained.'
+    Assert-Launcher ($discovered.Count -eq 2 -and $discovered[0].Name -eq 'Chrome' -and $discovered[1].Name -eq 'Edge') 'Both browser choices are retained in the menu order.'
 
     # Verify actual COM-created .lnk contents, collision handling, and reruns.
     $shell = New-Object -ComObject WScript.Shell
@@ -134,7 +155,27 @@ try {
     $result = Invoke-CoachToolsLauncher -SuitePath $suite -PreferredBrowser Chrome -SkipLaunch -ShortcutFolder $desktop
     Assert-Launcher ($result.ShortcutPath -eq $created -and $script:launchRequests.Count -eq 0) 'Isolated shortcut creation does not launch a browser.'
     $result = Invoke-CoachToolsLauncher -SuitePath $suite -PreferredBrowser Chrome -SkipShortcut
-    Assert-Launcher ($result.Launched -and $script:launchRequests.Count -eq 1) 'Normal launch requests exactly one browser process.'
+    Assert-Launcher (-not $result.Launched -and $script:launchRequests.Count -eq 0) 'No browser is opened without an explicit LaunchNow request.'
+    $script:answers = @('Chrome')
+    $result = Invoke-CoachToolsLauncher -SuitePath $suite
+    Assert-Launcher ($result.ShortcutPath -eq (Join-Path $suite 'CoachTools.lnk') -and -not $result.Launched -and $script:launchRequests.Count -eq 0) 'Default setup creates the shortcut beside index.html without opening a browser.'
+    $link = $shell.CreateShortcut($result.ShortcutPath)
+    $originalLinkProperties = @($link.TargetPath, $link.Arguments, $link.WorkingDirectory, $link.IconLocation)
+    $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link)
+    $link = $null
+    $movedFolder = Join-Path $testRoot 'Moved Shortcut Folder'
+    $null = New-Item -ItemType Directory -Path $movedFolder -Force
+    $movedLinkPath = Join-Path $movedFolder 'CoachTools.lnk'
+    Move-Item -LiteralPath $result.ShortcutPath -Destination $movedLinkPath
+    $link = $shell.CreateShortcut($movedLinkPath)
+    Assert-Launcher ($link.TargetPath -eq $originalLinkProperties[0] -and $link.Arguments -eq $originalLinkProperties[1] -and $link.WorkingDirectory -eq $originalLinkProperties[2] -and $link.IconLocation -eq $originalLinkProperties[3]) 'Moving the shortcut preserves its absolute browser, index URI, suite folder, and icon references.'
+    $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link)
+    $link = $null
+    Assert-Launcher (([Uri]$originalLinkProperties[1].Trim('"')).LocalPath -eq (Join-Path $suite 'index.html')) 'Moved shortcut still points to the original index file.'
+    $result = Invoke-CoachToolsLauncher -SuitePath $suite -PreferredBrowser Chrome -LaunchNow -SkipLaunch -SkipShortcut
+    Assert-Launcher (-not $result.Launched -and $script:launchRequests.Count -eq 0) 'NoLaunch overrides an explicit LaunchNow request.'
+    $result = Invoke-CoachToolsLauncher -SuitePath $suite -PreferredBrowser Chrome -LaunchNow -SkipShortcut
+    Assert-Launcher ($result.Launched -and $script:launchRequests.Count -eq 1) 'Explicit LaunchNow requests exactly one browser process.'
     Assert-Launcher ($script:launchRequests[0].Path -eq $fakeChrome -and $script:launchRequests[0].Arguments -eq $target.Arguments -and $script:launchRequests[0].Directory -eq $suite) 'Browser process receives the exact executable, URI, and working folder.'
     Remove-Item Function:\Start-Process
 
@@ -146,6 +187,8 @@ finally {
     Set-Item Function:\Get-CoachToolsRegistryBrowserPath $originalRegistryBrowserPath
     Set-Item Function:\Get-CoachToolsBrowserPath $originalBrowserPath
     Set-Item Function:\Get-CoachToolsBrowsers $originalBrowsers
+    Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
+    Remove-Item Function:\Start-Process -ErrorAction SilentlyContinue
     $env:ProgramFiles = $savedProgramFiles
     ${env:ProgramFiles(x86)} = $savedProgramFilesX86
     $env:LOCALAPPDATA = $savedLocalAppData
