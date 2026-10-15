@@ -1046,7 +1046,7 @@
       for(const area of areas){
         const parsed=M.toDataset(bundle,area),id=area==='retail'?'monthlyRetail':'monthlyReferral';
         if(!parsed.meta.totalRows&&!out.reps.some(r=>r.area==='unclassified'))continue;
-        analysis.recognized.push({file:{name:bundle.opportunity.name,size:0,lastModified:Date.now()},parsed,rawWorkbook:null,classification:{id,confidence:'high',classificationMethod:'reviewed-monthly-bundle',validation:{valid:true},detectedPeriod:out.period?{label:out.period.start+' — '+out.period.end,periodKey:out.period.id,sortKey:out.period.start}:{label:'Non-dated',periodKey:'undated',sortKey:''}}});
+        analysis.recognized.push({file:{name:M.bundleName(bundle),size:0,lastModified:Date.now()},parsed,rawWorkbook:null,classification:{id,confidence:'high',classificationMethod:'reviewed-monthly-bundle',validation:{valid:true},detectedPeriod:out.period?{label:out.period.start+' — '+out.period.end,periodKey:out.period.id,sortKey:out.period.start}:{label:'Non-dated',periodKey:'undated',sortKey:''}}});
       }
     }catch(error){analysis.errors.push({file:candidates[0].file,error});}
     return analysis;

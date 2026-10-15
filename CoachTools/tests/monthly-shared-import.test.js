@@ -66,6 +66,19 @@ let reviews=0,lastReviewOptions;context.CoachToolsMonthlyReview.review=async opt
  assert.equal(retail.recognized.length,1);assert.equal(retail.recognized[0].classification.id,'monthlyRetail');assert.equal(retail.recognized[0].parsed.meta.monthlyBundle.wipers.length,1);assert.equal(M.compile(retail.recognized[0].parsed.meta.monthlyBundle).canApply,true);
  await api.saveRecognizedEntry(retail.recognized[0],{scope:{mode:'all',label:'All people'}});
  assert.equal(JSON.stringify((await data.getCurrent('monthlyReferral',{includeRecord:true})).data),referralBefore);
+ // A fresh Referral roster may come entirely from Wiper names and source coaches.
+ const retailKept=JSON.stringify((await data.getCurrent('monthlyRetail',{includeRecord:true})).data);
+ const onlyRows=[hierarchy.wiper[0],['9/6/2026','Wiper Coach A','Wiper Rep A',2,10],['9/6/2026','Wiper Coach B','Wiper Rep B',3,10]];
+ context.CoachToolsGetMonthlyBundle=async area=>area==='referral'?M.forArea(M.create('referral'),'referral'):null;
+ const only=await api.analyzeFiles([csv('referral-wipers-only.csv',onlyRows)],{monthlyArea:'referral'});delete context.CoachToolsGetMonthlyBundle;
+ assert.equal(only.errors.length,0);assert.equal(only.recognized.length,1);assert.equal(only.recognized[0].classification.id,'monthlyReferral');assert.equal(only.recognized[0].file.name,'referral-wipers-only.csv');
+ const onlyPrepared=await api.prepareRecognizedEntry(only.recognized[0],{scope:{mode:'all',label:'All people'}});assert.equal(onlyPrepared.dataset.meta.monthlyBundle.opportunity,null);assert.equal(onlyPrepared.dataset.meta.monthlyWipersOnly,true);assert.equal(onlyPrepared.dataset.meta.monthlyPartial,false);assert.equal(M.compile(onlyPrepared.dataset.meta.monthlyBundle).overall.wiper.accepted,5);
+ await api.saveRecognizedEntry(only.recognized[0],{scope:{mode:'all',label:'All people'}});
+ const onlySaved=await data.getCurrent('monthlyReferral',{includeRecord:true});assert.equal(onlySaved.originalFileName,'referral-wipers-only.csv');assert.equal(onlySaved.data.meta.monthlyBundle.opportunity,null);assert.equal(M.compile(onlySaved.data.meta.monthlyBundle).reps.length,2);
+ const onlyScope=api.prepareScopedDataset(onlySaved.data,'monthlyReferral',{mode:'coach',coaches:['Wiper Coach B'],label:'Wiper Coach B'});assert.equal(onlyScope.valid,true);assert.deepEqual(plain(onlyScope.dataset.meta.monthlySelection),[['Wiper Rep B','Wiper Coach B']]);assert.equal(M.compile(onlyScope.dataset.meta.monthlyBundle,{selection:onlyScope.dataset.meta.monthlySelection}).overall.wiper.accepted,3);
+ const onlyAdd=await api.analyzeFiles([csv('referral-wipers-extra.csv',[hierarchy.wiper[0],['9/13/2026','Wiper Coach A','Wiper Rep A',4,10]])],{monthlyArea:'referral'});assert.equal(onlyAdd.errors.length,0);assert.equal(onlyAdd.recognized[0].parsed.meta.monthlyBundle.opportunity,null);assert.equal(onlyAdd.recognized[0].parsed.meta.monthlyBundle.wipers.length,2);assert.equal(M.compile(onlyAdd.recognized[0].parsed.meta.monthlyBundle).overall.wiper.accepted,9);
+ await api.saveRecognizedEntry(onlyAdd.recognized[0],{scope:{mode:'all',label:'All people'}});assert.equal(JSON.stringify((await data.getCurrent('monthlyRetail',{includeRecord:true})).data),retailKept);assert.ok(await data.getCurrent('qa'));
+ console.log('PASS Wipers-only Referral through shared intake, scoped roster selection, verified save and additive updates without Opportunity or Manager data');
  console.log('PASS independent Retail / Referral shared imports, safe legacy mixed migration, additive category updates and within-category overlap protection');
  console.log('PASS manager exports through shared Clean Upload / Update Data, full-scope subtotal authority and unresolved Wiper retention');
  console.log('PASS real shared Clean Upload, UTF-16 intake, staged monthly review, additive updates, duplicate prevention, scope preservation, QA retention');

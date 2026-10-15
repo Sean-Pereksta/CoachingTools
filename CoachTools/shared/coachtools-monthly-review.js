@@ -67,7 +67,7 @@
         const scroll=dialog.scrollTop,out=M.compile(b);body.replaceChildren();
         const label=categoryLabel();
         body.append(element('h2',options.readOnly?'Monthly Data Settings':label?`Upload ${label} monthly exports`:'Upload monthly exports'));
-        body.append(element('p',label?`Choose one ${label} Opportunity file and its Wiper files. These files are saved only in ${label}; Retail and Referral keep separate file lists and overlap checks.`:'Choose one Opportunity file and all of its Wiper files. Teams are identified automatically, and Wiper counts are added to the same data preview. Original Opportunity period and Wiper report labels remain separate for coverage review.'));
+        body.append(element('p',label==='Referral'?'Choose Referral Wiper files with representative names and coaches. Opportunity data is optional; Wipers alone can build the roster and run Referral reports. These files are saved only in Referral.':label?`Choose one ${label} Opportunity file and its Wiper files. These files are saved only in ${label}; Retail and Referral keep separate file lists and overlap checks.`:'Choose one Opportunity file and all of its Wiper files. Teams are identified automatically, and Wiper counts are added to the same data preview. Original Opportunity period and Wiper report labels remain separate for coverage review.'));
         const status=element('p',notice);status.setAttribute('role','status');status.setAttribute('aria-live','polite');body.append(status);
         if(!options.readOnly){
           const areaSelect=select([['retail','Retail'],['referral','Referral'],['mixed','All areas — automatic team assignments']],category(),v=>change(()=>chooseCategory(v)));areaSelect.id='monthlyUploadArea';
@@ -79,7 +79,7 @@
             try{const sources=[];for(const file of files)sources.push(await read(file));if(sources.filter(s=>s.kind==='opportunity').length>1)throw new Error('Choose one Opportunity file per upload, plus any number of Wiper files.');b=addSources(b,sources);}
             catch(error){notice=error?.message||String(error);}finally{busy=false;render();}
           };
-          body.append(field(label?`Add ${label} Opportunity / Wiper files`:'Add Opportunity / Wiper files',upload));
+          body.append(field(label==='Referral'?'Add Referral Wiper files (Opportunity optional)':label?`Add ${label} Opportunity / Wiper files`:'Add Opportunity / Wiper files',upload));
         }
         const files=element('div');
         files.append(table(['File','Type','Rows','Loaded',''],[...(b.opportunity?[b.opportunity]:[]),...b.wipers].map(f=>[f.name,f.kind==='opportunity'?'Opportunity / team roster':b.wipers.some(n=>!n.excluded&&n.replaces===f.id)?'Wipers — replaced':'Wipers',f.rows.length,loaded(f.importedAt),options.readOnly?'':button('Remove',()=>change(()=>{if(f.kind==='opportunity'){b.opportunity=null;b.allocations={};}else{b.wipers=b.wipers.filter(x=>x.id!==f.id);for(const x of b.wipers)if(x.replaces===f.id)delete x.replaces;}}))])));
@@ -87,6 +87,7 @@
         body.append(element('p',`${out.reps.length} representatives · ${out.teams.length} teams · ${out.managers?.length||0} manager groups · ${out.matched} matched Wiper rows · ${b.wipers.filter(f=>!f.excluded&&!b.wipers.some(n=>!n.excluded&&n.replaces===f.id)).length} Wiper files combined`));
         body.append(element('p',label?`All teams in this upload belong to ${label}. Consumer fields supply Cash statistics.`:'Cash = Consumer opportunities ÷ (Consumer + Insurance + Commercial opportunities). 15% or higher → Retail; every other team → Referral, including missing or zero opportunity totals and Wiper-only teams. Consumer fields also supply Cash statistics.'));
         body.append(element('p','A coach is enough to assign monthly activity. Manager assignment is optional and does not block saving or running reports.'));
+        if(out.wipersOnly)body.append(element('p','Referral roster comes from Wiper names and coaches. Appointments and opportunities remain N/A because no Opportunity data was supplied.'));
         if(out.reps.length){
           const search=input('search',query,v=>{query=v;render();});search.id='monthlyPreviewSearch';search.placeholder='Representative or coach';body.append(field('Filter preview',search));
           const includes=value=>M.key(value).includes(M.key(query));
