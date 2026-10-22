@@ -60,6 +60,7 @@
     <div id="loadingText" class="loadingText">Preparing...</div>
     <div class="loadingBarTrack"><div id="loadingBarFill" class="loadingBarFill"></div></div>
     <div id="loadingPct" class="loadingPct">0%</div>
+    <button id="allstarCancelImportBtn" class="dark hidden" type="button">Cancel import</button>
     <div id="loadingDiagnostics" class="loadingDiagnostics" aria-live="polite"></div>
     <div id="loadingActions" class="loadingActions hidden"><button id="loadingRetryBtn" type="button">Retry</button><button id="loadingTroubleshootBtn" class="dark" type="button">Open Troubleshooting</button><button id="loadingContinueBtn" class="dark" type="button">Continue with available data</button></div>
   </div>
@@ -166,6 +167,7 @@
         <div class="row"><button type="button" id="monthlyRetailSettingsBtn">Retail Data Settings</button><button type="button" id="monthlyReferralSettingsBtn">Referral Data Settings</button></div>
         <details><summary>Previous monthly imports</summary><div id="monthlyHistory"></div></details>
       </section>
+      <section class="panel importSection" id="coachNameManagement"></section>
       <section class="panel importSection dataToolsSection">
         <div class="panelTitle">Data Tools</div>
         <div class="dataToolGrid">
@@ -197,10 +199,10 @@
             <button id="saveImportCacheBtn" class="green" type="button">Save Imported Data Locally</button>
             <button id="loadImportCacheBtn" class="dark" type="button">Load Local Data</button>
             <button id="persistImportCacheBtn" class="dark" type="button">Protect Local Storage</button>
-            <button id="clearImportCacheBtn" class="red" type="button">Clear All-Star Cache</button>
           </div>
           <div id="importCacheStatus" class="checkResultMeta">Cache status loads when this window opens.</div>
         </details>
+        <div class="row"><button id="clearImportCacheBtn" class="red" type="button">Clear All Data</button><span class="hint">Remove stored reporting data. Settings, models, and mappings are kept.</span></div>
       </section>
     </div>
     <div class="modalFoot"><button class="dark" data-close="importModal">Done</button></div>
@@ -873,6 +875,7 @@
 <script src="js/models.js"></script>
 <script src="js/imports.js"></script>
 <script src="js/source-population.js"></script>
+<script src="js/import-worker-source.js"></script>
 <script src="js/import-jobs.js"></script>
 <script src="js/monthly-import.js"></script>
 <script src="js/calculations.js"></script>
@@ -896,6 +899,7 @@
 <script src="js/creation-views.js"></script>
 <script src="js/sentence-query.js"></script>
 <script src="js/sentence-workspace.js"></script>
+<script src="js/data-management.js"></script>
 <script src="js/app.js"></script>
 
 </body>

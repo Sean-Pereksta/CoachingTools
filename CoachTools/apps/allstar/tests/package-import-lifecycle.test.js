@@ -1,0 +1,60 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const {parseHTML}=require('linkedom'),{IDBFactory}=require('fake-indexeddb');
+const XLSX=require('../../../vendor/xlsx.full.min.js'),root=path.resolve(__dirname,'..');
+function harness(db=new IDBFactory(),storage=new Map()){
+  const html=fs.readFileSync(path.join(root,'allstar.html'),'utf8'),{document}=parseHTML(html),errors=[];
+  const context=vm.createContext({document,window:{indexedDB:db,addEventListener(){},location:{search:''}},indexedDB:db,localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},XLSX,console:{info(){},warn(){},error(...args){errors.push(args);}},performance,setTimeout,clearTimeout,setInterval,clearInterval,structuredClone,URL,TextEncoder,TextDecoder,requestAnimationFrame:fn=>setTimeout(fn,0),navigator:{},location:{search:''},alert:message=>errors.push(message),confirm:()=>true});
+  const names=[...html.matchAll(/<script src="(js\/[^\"]+)"><\/script>/g)].map(match=>match[1]).filter(name=>name!=='js/app.js');
+  vm.runInContext(names.map(name=>fs.readFileSync(path.join(root,name),'utf8')).join('\n'),context);
+  vm.runInContext(`setStatus=renderEditModelSafe=renderTeamSelect=renderCustomSourcesList=renderModelList=populateRunModels=renderOrgBuilder=renderTeamTotalsImportControls=updateResearchCacheBadge=()=>{};showProgress=hideProgress=()=>{};updateProgress=()=>{assertAllStarImportActive();if(state.activeImportJob)state.activeImportJob.lastProgressAt=Date.now();};state.startup.running=false;state.lifecycle.hidden=false;loadModels();loadOrgs();loadResearchGroups();`,context);
+  return {context,db,storage,errors,run:code=>vm.runInContext(code,context)};
+}
+function file(name,bytes){const buffer=Buffer.from(bytes);return {name,size:buffer.length,lastModified:1,text:async()=>buffer.toString('utf8'),arrayBuffer:async()=>buffer.buffer.slice(buffer.byteOffset,buffer.byteOffset+buffer.byteLength)};}
+(async()=>{
+  const h=harness(),instances=[h];
+  h.context.seed=file('previous.csv','Agent Name,Team,Score %,Interaction Start Time\nOriginal Agent,Original Coach,90%,2026-09-01');
+  assert.equal(await h.run('loadQAFile(seed)'),true);
+  assert.equal(await h.run("loadCustomSourceFile(seed,'Temporary source')"),true);
+  h.context.jsonFile=file('corrected.json',h.run(`(()=>{const pack=buildAllStarJsonPackage();pack.customSources=[];pack.sources.qa={...pack.sources.qa,fileName:'package-qa.csv',rows:[{...pack.sources.qa.rows[0],'Agent Name':'Package Agent',_rep:'Package Agent',_repKey:'packageagent'}]};pack.organizations=[{id:'package-org',name:'Package Org',teams:['Original Coach']}];pack.researchGroups=[{id:'package-group',name:'Package Group',repNames:['Package Agent']}];pack.sourceSettings.byModel[state.models[0].id].qa.headerRow=9;return JSON.stringify(pack);})()`));
+  const previousSettings=h.run('JSON.stringify([state.orgs,state.researchGroups,state.models])'),previousStorage=JSON.stringify([...h.storage]);
+  h.run(`const originalRequest=idbReq;idbReq=(request,label)=>originalRequest(request,label).then(value=>label==='Verifying qa'?{...value,value:{rows:[]}}:value);`);
+  assert.equal(await h.run('loadPackagedFile(jsonFile)'),false,'JSON verification failure aborts');
+  assert.equal(h.run('state.data.qa.fileName'),'previous.csv');
+  assert.equal(h.run('JSON.stringify([state.orgs,state.researchGroups,state.models])'),previousSettings);
+  assert.equal(JSON.stringify([...h.storage]),previousStorage,'no preference writes before transaction commit');
+  h.run('idbReq=originalRequest;');
+  // The data/settings journal commits before localStorage/UI synchronization.
+  h.run(`const originalSet=localStorage.setItem;localStorage.setItem=(key,value)=>{if(key===RESEARCH_GROUPS_KEY)throw new Error('Simulated preference quota failure');return originalSet(key,value);};`);
+  assert.equal(await h.run('loadJsonPackageFile(jsonFile)'),true,'post-commit localStorage failure is recoverable success');
+  assert.equal(h.run('state.data.qa.fileName'),'package-qa.csv');
+  assert.equal(h.run('state.packageSettings.researchGroups[0].name'),'Package Group');
+  const restored=harness(h.db,h.storage);instances.push(restored);
+  assert.equal(await restored.run('loadImportedDataFromIndexedDB({deferRender:true})'),true);
+  assert.equal(restored.run('state.data.qa.rows[0]._rep'),'Package Agent');
+  assert.equal(restored.run('state.customSources.length'),0,'removed custom definitions stay removed after reload');
+  assert.equal(await restored.run(`(async()=>{const db=await importCacheOpenDb();try{const rows=await idbReq(db.transaction([IMPORT_CACHE_SOURCE_STORE],'readonly').objectStore(IMPORT_CACHE_SOURCE_STORE).getAll());return rows.some(record=>record.id.startsWith('custom_'));}finally{db.close();}})()`),false,'obsolete custom source records are deleted atomically');
+  assert.equal(restored.run('state.researchGroups[0].name'),'Package Group');
+  assert.equal(restored.run('state.orgs[0].name'),'Package Org');
+  assert.equal(restored.run('state.models[0].sourceSettings.qa.headerRow'),9);
+  assert.equal(restored.run("localStorage.getItem('allStarPackageSettingsApplied.v1')===state.packageSettings.id"),true);
+  console.log('PASS JSON package rollback, one verified transaction, durable models/organizations/groups and recovery after post-commit preference failure');
+  const book=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet([['Package Metadata'],[JSON.stringify({schemaVersion:1,includedSources:['qa'],sourceSheetMap:{qa:'QA Stats'},orgs:[{id:'legacy-org',name:'Legacy Org',teams:['Legacy Coach']}],researchGroups:[{id:'legacy-group',name:'Legacy Group',repNames:['Legacy Agent']}]})]]),'All Star Metadata');
+  XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet([['Agent Name','Team','Score %','Interaction Start Time'],['Legacy Agent','Legacy Coach','95%','2026-09-02']]),'QA Stats');
+  restored.context.legacy=file('legacy-package.xlsx',XLSX.write(book,{type:'buffer',bookType:'xlsx'}));
+  const beforeLegacy=restored.run('JSON.stringify([state.data,state.books,state.orgs,state.researchGroups,state.models])');
+  restored.run(`const originalRebuild=rebuildSourceFromPackage;rebuildSourceFromPackage=async(...args)=>{await originalRebuild(...args);throw new Error('Simulated late package row failure');};`);
+  assert.equal(await restored.run('loadPackagedFile(legacy)'),false);
+  assert.equal(restored.run('JSON.stringify([state.data,state.books,state.orgs,state.researchGroups,state.models])'),beforeLegacy);
+  restored.run(`rebuildSourceFromPackage=originalRebuild;const originalCustomRender=renderCustomSourcesList;renderCustomSourcesList=()=>{throw new Error('Simulated post-commit render error');};`);
+  assert.equal(await restored.run('loadPackagedFile(legacy)'),true,'display errors after commit must not roll back saved data');
+  assert.equal(restored.run('state.data.qa.rows[0]._rep'),'Legacy Agent');
+  const legacyReload=harness(restored.db,restored.storage);instances.push(legacyReload);
+  assert.equal(await legacyReload.run('loadImportedDataFromIndexedDB({deferRender:true})'),true);
+  assert.equal(legacyReload.run('state.data.qa.rows[0]._rep'),'Legacy Agent');
+  assert.ok(legacyReload.run("state.researchGroups.some(group=>group.name==='Legacy Group')"));
+  assert.ok(legacyReload.run("state.orgs.some(org=>org.name==='Legacy Org')"));
+  console.log('PASS legacy XLSX package late-error rollback and retained commit after rendering error/reload');
+  for(const instance of instances)instance.run('state.lifecycle.closing=true;clearTimeout(state.importCacheSaveTimer);');
+})().catch(error=>{console.error(error);process.exitCode=1;});

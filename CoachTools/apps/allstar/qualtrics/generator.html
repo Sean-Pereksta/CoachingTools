@@ -2243,9 +2243,10 @@ async function importAllStarWeeklyStats(payload={}){
 }
 window.addEventListener('message',event=>{
   if(event.data?.type==='allstar-core-files') state.allStarCoreImportPromise=importAllStarCoreFiles(event.data.payload||{});
-  if(event.data?.type==='allstar-weekly-stats') Promise.resolve(state.allStarCoreImportPromise).catch(()=>{}).then(()=>importAllStarWeeklyStats(event.data.payload||{}));
+  if(event.data?.type==='allstar-weekly-stats') {const generation=Number(state.allStarCoachRenameGeneration||0);state.allStarWeeklyImportPromise=Promise.resolve(state.allStarCoreImportPromise).catch(()=>{}).then(()=>generation===Number(state.allStarCoachRenameGeneration||0)?importAllStarWeeklyStats(event.data.payload||{}):null);}
   if(event.data?.type==='allstar-hire-date-source') importAllStarHireDateSource(event.data.payload||{});
   if(event.data?.type==='allstar-clear-data') clearAllStarQualtricsData();
+  if(event.source===window.parent&&event.data?.type==='allstar-rename-coach') renameAllStarQualtricsCoach(event.data.payload||{}).catch(error=>{console.error('Coach rename synchronization failed',error);allStarBridgeNotify('qualtrics-coach-rename-error',{message:String(error?.message||error)});});
 });
 
 function renderCoreChips(){
@@ -3057,6 +3058,44 @@ function queueConcernHistory(action){
   const next=concernHistoryOperation.then(action);
   concernHistoryOperation=next.catch(()=>{});
   return next;
+}
+function renameAllStarQualtricsCoach({from,to}={}){
+  const key=value=>String(value??'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase(),fromKey=key(from);
+  if(!fromKey||!key(to))return Promise.resolve(false);
+  // In-flight report/review work must not publish a snapshot from before the rename.
+  state.allStarCoachRenameGeneration=Number(state.allStarCoachRenameGeneration||0)+1;
+  state.allStarCoreImportToken=uid();state.individualReviewRun?.controller.abort();state.individualCoachingExportRun?.controller.abort();
+  return queueConcernHistory(async()=>{
+    await Promise.allSettled([state.allStarCoreImportPromise,state.allStarWeeklyImportPromise]);
+    const db=state.db||await openDB();
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORES.history,'readwrite'),req=tx.objectStore(STORES.history).openCursor();
+      tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error||new Error('Coach history update aborted'));tx.onerror=()=>{};
+      req.onsuccess=()=>{const cursor=req.result;if(!cursor)return;const row=cursor.value;let changed=false;for(const field of ['coach','team'])if(key(row[field])===fromKey){row[field]=to;changed=true;}if(changed)cursor.update(row);cursor.continue();};
+    });
+    const replace=(row,fields)=>{if(!row||typeof row!=='object')return;for(const field of fields)if(key(row[field])===fromKey)row[field]=to;};
+    const rawSeen=new WeakSet(),raw=row=>{
+      if(!row||typeof row!=='object'||rawSeen.has(row))return;rawSeen.add(row);
+      const fields=Object.keys(row),present=candidates=>fields.filter(field=>candidates.some(name=>headerKey(field)===headerKey(name))&&String(row[field]??'').trim());
+      const coaches=present(['Coach','Job Coach','Coach Name']),teams=present(['Team','Team Name','Coach Team','CSR Team']);
+      replace(row,[...(coaches.length?coaches:present(['Manager','Supervisor','Team Lead','Leader'])),...(teams.length?teams:present(['Sheet','Tab Name'])),'_team','_coach']);
+    };
+    const normalized=row=>{replace(row,['coach','rawCoach','team','rawTeam']);raw(row?.raw);};
+    for(const rows of [state.qaRows,state.coachingRows,state.checklistRows,state.weeklyStatsRows,...Object.values(state.masterRows||{}),state.history])for(const row of rows||[])normalized(row);
+    for(const rows of [state.teamMapRows,state.sampleRows,state.individualRosterRows])for(const row of rows||[])raw(row);
+    for(const file of state.dashboardFiles||[]){for(const row of file.rows||[])raw(row);for(const sheet of file.parsed?.sheets||[])for(const row of sheet.rows||[])raw(row);}
+    for(const row of state.teamMap?.values()||[])normalized(row);
+    for(const org of state.organizations||[])for(const field of ['coachNames','teams'])if(Array.isArray(org[field]))org[field]=[...new Set(org[field].map(name=>key(name)===fromKey?to:name))];
+    if(key(state.reportAudienceSettings?.value)===fromKey)state.reportAudienceSettings.value=to;
+    for(const alias of Object.keys(state.coachAliasOverrides||{}))if(key(state.coachAliasOverrides[alias])===fromKey)state.coachAliasOverrides[alias]=to;
+    state.report=null;state.individualEvaluation=null;state.individualResults=[];state.individualResultsStale=false;state.individualRunCache=null;
+    if(state.individualScopeSelection?.coachKeys?.delete(QualtricsIndividualMessages.normalizeName(from)))state.individualScopeSelection.coachKeys.add(QualtricsIndividualMessages.normalizeName(to));
+    rebuildDerivedMaps();rebuildConcernHistoryIndex();renderConcernHistoryStatus();
+    if(els.reportBody)els.reportBody.innerHTML='<div class="empty">Coach name updated. Generate a report to use the updated data.</div>';
+    if(typeof renderIndividualReview==='function')renderIndividualReview();
+    try{saveCoachAliasOverrides();}catch(error){console.warn('Coach alias preference save will retry later.',error);}
+    allStarBridgeNotify('qualtrics-coach-renamed',{from,to});return true;
+  });
 }
 async function incrementConcernAppearances(records,run){
   if(run.historySaved) return;
@@ -5307,6 +5346,7 @@ generateReport=async function(){
 };
 
 async function generateReport(){
+  const coachRenameGeneration=Number(state.allStarCoachRenameGeneration||0);
   const performanceStarted=performance.now(), performanceTimings={}, performanceMark=(label,started)=>{ performanceTimings[label]=performance.now()-started; };
   const rulesById=new Map((state.rules||[]).map(rule=>[rule.id,rule])), ruleByFileId=new Map((state.dashboardFiles||[]).map(file=>[file.id,rulesById.get(file.ruleId)||matchRuleForFile(file.fileName)]));
   const selectedCoreRules=state.rules.filter(r=>isCoreDataRule(r)&&state.selectedOtherRuleIds.has(r.id));
@@ -5463,7 +5503,8 @@ async function generateReport(){
   for(const arr of byCoach.values()) arr.sort((a,b)=>b.concernScore-a.concernScore || ((b.history?.dateCount||0)-(a.history?.dateCount||0)));
   const alarmSortedByCoach = new Map([...byCoach.entries()].sort((a,b)=>compareAlarmStats(summaryStats(a[1],reportDate,teamPopulationByCoach),summaryStats(b[1],reportDate,teamPopulationByCoach)) || String(a[0]).localeCompare(String(b[0]))));
   const report={ runId:uid(), reportDate:ymd(reportDate), generatedAt:new Date().toISOString(), unmatched, flagged, allFlagged:audienceFlagged, byCoach:alarmSortedByCoach, byCoachAll, teamPopulationByCoach, followUpWatchlist:followUpWatchlist.filter(function(item){ return reportAudienceAllowsCoach(item.coach,audience); }), excludedCoaches, minPeople, urgencyCatalog:buildUrgencyCatalog(selectedCoreRules), audience:{...audience,label:reportAudienceLabel(audience)}, audienceExcludedRecords:allFlagged.length-audienceFlagged.length, hireDateFilter:normalizeHireDateSettings(hireCfg), hireDateExcludedRecords:hireDateExcluded.length, hireDateExcludedPeople:new Set(hireDateExcluded.map(r=>r.repKey)).size };
-  state.report=report; refreshReportConcernHistory(false); performanceStageStarted=performance.now(); impactBuildAnalysis(); performanceMark('Coaching impact',performanceStageStarted); setProgress(96,'Rendering report'); await new Promise(resolve=>setTimeout(resolve,0)); performanceStageStarted=performance.now(); renderReport(); performanceMark('Report render',performanceStageStarted); switchTab('report'); setProgress(null);
+  if(coachRenameGeneration!==Number(state.allStarCoachRenameGeneration||0)){setProgress(null);return;}
+  state.report=report; refreshReportConcernHistory(false); performanceStageStarted=performance.now(); impactBuildAnalysis(); performanceMark('Coaching impact',performanceStageStarted); setProgress(96,'Rendering report'); await new Promise(resolve=>setTimeout(resolve,0)); if(coachRenameGeneration!==Number(state.allStarCoachRenameGeneration||0)){setProgress(null);return;} performanceStageStarted=performance.now(); renderReport(); performanceMark('Report render',performanceStageStarted); switchTab('report'); setProgress(null);
   performanceTimings.Total=performance.now()-performanceStarted; state.reportPerformance={timings:performanceTimings,generatedAt:new Date().toISOString()};
   if(new URLSearchParams(location.search).get('debug')==='1'){ const slowStages=Object.entries(performanceTimings).filter(([label,value])=>label!=='Total'&&value>=1000); console.groupCollapsed('Qualtrics Generate Report Performance'); console.table(performanceTimings); if(slowStages.length) console.warn('Unexpectedly expensive Generate Report stage(s)',Object.fromEntries(slowStages)); console.groupEnd(); }
   setStatus(`Generated ${report.audience.label}: ${flagged.length.toLocaleString()} representative-data-source record(s) identified for review.${report.audienceExcludedRecords?` Audience filter excluded ${report.audienceExcludedRecords.toLocaleString()} record(s).`:''}${hireCfg.filterEnabled?` Hire-date filter excluded ${report.hireDateExcludedPeople.toLocaleString()} representative(s).`:''} ${excludedCoaches.length ? excludedCoaches.length+' team(s) hidden by minimum people filter.' : ''}`);

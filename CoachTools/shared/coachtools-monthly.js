@@ -257,7 +257,7 @@
     const reps=[],repMap=new Map(),seenOp=new Map();
     for(const r of details){
       if(!r.coach||!r.name){issue('blank-identity','Opportunity detail lacks a representative or coach.',{row:r.row,source:op?.name});continue;}
-      const identity=key(r.coach)+'|'+key(r.name),periodKey=identity+'|'+r.periodLabel;
+      const identity=key(r.coach)+'|'+key(r.name),periodKey=key(r._coachRenameIdentity||r.coach)+'|'+key(r.name)+'|'+r.periodLabel;
       const signature=JSON.stringify([r.segments,r.fields]);
       if(seenOp.has(periodKey)){if(seenOp.get(periodKey)!==signature)issue('opportunity-overlap','Conflicting Opportunity detail for the same coach, representative and period.',{row:r.row,source:op.name},'blocker');continue;}seenOp.set(periodKey,signature);
       const part={segments:segmentsFor(r),fields:fieldsFor(r)};
@@ -273,7 +273,17 @@
         rep.fields[name]=m.kind==='percentage'&&new Set(values).size>1?{value:null,status:'conflicting',raw:'Multiple reporting periods; select a single period'}:{value:values.length?(m.kind==='percentage'?values[0]:values.reduce((a,c)=>a+c,0)):null,status:values.length?'valid':'missing'};rep.fields[name].kind=m.kind;
       }
     }
-    const exported=(kind,match)=>{const rows=opRows.filter(r=>r.kind===kind&&match(r));if(rows.length>1){issue('subtotal-conflict',`Multiple ${kind} totals require review; calculated detail is used.`,{rows:rows.map(r=>r.row)});return null;}return rows[0]||null;};
+    const exported=(kind,match)=>{const rows=opRows.filter(r=>r.kind===kind&&match(r));if(rows.length>1){
+      // Permanent coach merges retain original source totals and pool counts.
+      const origins=new Set(rows.map(r=>key(r._coachRenameIdentity||r.coach)));
+      if(kind==='coach'&&rows.some(r=>r._coachRenameIdentity)&&origins.size===rows.length){
+        const combined={...rows[0],segments:{},fields:{}};
+        const sumCell=cells=>cells.every(c=>c?.status==='valid')?{value:cells.reduce((n,c)=>n+c.value,0),status:'valid'}:{value:null,status:'missing'};
+        for(const segment of SEGMENTS){const opportunities=sumCell(rows.map(r=>r.segments[segment].opportunities)),appointments=sumCell(rows.map(r=>r.segments[segment].appointments));combined.segments[segment]={opportunities,appointments,rate:opportunities.value>0&&appointments.value!==null?{value:appointments.value/opportunities.value,status:'valid'}:{value:null,status:'missing'}};}
+        for(const [name,meta] of Object.entries(fieldMetadata)){const cells=rows.map(r=>r.fields?.[name]);combined.fields[name]=meta.kind==='percentage'?(cells.every(c=>c?.status==='valid')&&new Set(cells.map(c=>c.value)).size===1?{...cells[0]}:{value:null,status:'missing'}):sumCell(cells);}
+        return combined;
+      }
+      issue('subtotal-conflict',`Multiple ${kind} totals require review; calculated detail is used.`,{rows:rows.map(r=>r.row)});return null;}return rows[0]||null;};
     const sourceTotals=(rows,record,label)=>{
       const calculated=sumSegments(rows),segments=record?segmentsFor(record):calculated;
       if(record)for(const s of SEGMENTS)for(const m of ['opportunities','appointments'])if(segments[s][m]!==null&&calculated[s][m]!==null&&segments[s][m]!==calculated[s][m])issue('subtotal-reconciliation',`${label}: exported ${s} ${m} differs from detail.`,{exported:segments[s][m],calculated:calculated[s][m],row:record.row,source:op.name});
@@ -288,7 +298,7 @@
     }
     const assignmentMap=new Map(coachAssignments.map(c=>[c.key,c]));
     const active=(b.wipers||[]).filter(f=>!f.excluded&&!b.wipers.some(n=>!n.excluded&&n.replaces===f.id));
-    const seenFiles=new Set(),seenWiper=new Map(),unattributedSources=new Map(),coverage=[],wiperSummaries=[];let matched=0;
+    const seenFiles=new Set(),seenWiper=new Map(),seenFinalWiper=new Map(),unattributedSources=new Map(),coverage=[],wiperSummaries=[];let matched=0;
     for(const f of active){
       if(seenFiles.has(f.canonical))continue;seenFiles.add(f.canonical);
       if(f.replaces&&!b.wipers.some(x=>x.id===f.replaces))issue('replacement-missing','The selected replacement source is missing.',{source:f.name},'blocker');
@@ -314,13 +324,24 @@
         if(r.accepted.status!=='valid'||r.offered.status!=='valid'||r.accepted.value>r.offered.value){target.wiper.invalid=true;issue('invalid-wiper','Invalid or unavailable Wiper counts; not converted to zero.',info);continue;}
         // A date/coach/person is one source contribution, regardless of filename.
         // Legacy undated labels remain file-scoped when no report label is present.
-        if(!r.name){const unattributedKey=reportDate+'|'+key(coach),prior=unattributedSources.get(unattributedKey);if(prior&&prior!==f.id){issue('duplicate-bucket','Unattributed activity overlaps another source. Select a replacement or exclude the row.',info,'blocker');continue;}unattributedSources.set(unattributedKey,f.id);}
-        const bucket=(reportDate||f.id)+'|'+identity+(!r.name?'|'+f.id+':'+r.row:''),signature=JSON.stringify([r.accepted.value,r.offered.value]);
+        if(!r.name){const unattributedKey=reportDate+'|'+key(r._coachRenameIdentity||coach),prior=unattributedSources.get(unattributedKey);if(prior&&prior!==f.id){issue('duplicate-bucket','Unattributed activity overlaps another source. Select a replacement or exclude the row.',info,'blocker');continue;}unattributedSources.set(unattributedKey,f.id);}
+        const contributionIdentity=r._coachRenameIdentity?key(r._coachRenameIdentity)+'|'+key(name):identity;
+        const bucket=(reportDate||f.id)+'|'+contributionIdentity+(!r.name?'|'+f.id+':'+r.row:''),signature=JSON.stringify([r.accepted.value,r.offered.value]);
         if(seenWiper.has(bucket)){
           if(seenWiper.get(bucket)!==signature)issue('duplicate-bucket','Conflicting overlapping Wiper records. Select the corrected source as a replacement or explicitly exclude the conflicting row.',info,'blocker');
           else issue('duplicate-contribution','Identical overlapping Wiper activity counted once.',info);
           continue;
         }
+        // Original coach populations remain distinct after a merge. A newly
+        // corrected upload must not count those same dates and people again.
+        const finalBucket=(reportDate||f.id)+'|'+identity, priorFinal=seenFinalWiper.get(finalBucket)||[], origin=key(r._coachRenameIdentity||coach), renamed=!!r._coachRenameIdentity;
+        const correctedOverlap=priorFinal.some(previous=>previous.origin!==origin&&previous.renamed!==renamed);
+        if(correctedOverlap){
+          if(!renamed&&priorFinal.length===1&&priorFinal[0].signature===signature)issue('duplicate-contribution','Identical activity uploaded with a corrected coach name counted once.',info);
+          else issue('renamed-overlap','This upload overlaps records retained from a coach name correction. Select the corrected file as a replacement or explicitly exclude the overlapping rows.',info,'blocker');
+          continue;
+        }
+        priorFinal.push({origin,renamed,signature});seenFinalWiper.set(finalBucket,priorFinal);
         seenWiper.set(bucket,signature);target.wiper.contributions.push({fileId:f.id,file:f.name,row:r.row,reportDate,reportLabel:r.reportLabel,bucket,coach,sourceCoach:r.coach,accepted:r.accepted.value,offered:r.offered.value,allocation:allocation||null});matched++;
       }
     }

@@ -6,6 +6,9 @@
 async function buildRun(runRequest={}){
   if(runRequest instanceof Event) runRequest={};
   if(!runRequest.org && state.runMode==='multi') return buildMultiRun();
+  const generation=state.reportingDataGeneration||'', revision=state.versions?.data||0;
+  const assertCurrent=()=>{if(state.reportingDataClearing||state.coachRenameActive||generation!==(state.reportingDataGeneration||'')||revision!==(state.versions?.data||0))throw new Error('Reporting data changed during this run. Run the report again.');};
+  assertCurrent();
   const settings=runRequest.settings||captureRunExecutionSettings(), model=findModel(settings.modelId||els.runModelSelect?.value); if(!model) return null;
   const start=parseDateOnly(settings.startDate), end=parseDateOnly(settings.endDate); if(start&&end&&start>end){ const err=new Error('Start Date must be on or before End Date.'); if(runRequest.rethrow) throw err; alert(err.message); return null; }
   let teams=[], includeOrgNames=new Set(), excludeOrgNames=new Set();
@@ -20,24 +23,24 @@ async function buildRun(runRequest={}){
   }
   const qaDateMode=settings.qaDateMode||'interaction', qaTeamScoreMode=settings.qaTeamScoreMode||'assignedReps', view=settings.view||'both';
   resetExpressionRunStats();
-  const opts={start,end,qaDateMode,qaTeamScoreMode,teamSpecificRepRanking:!!settings.teamSpecificRepRanking,selectedTeamNames:teams.slice(),organizationId:runRequest.org?.id||'',organizationName:runRequest.org?.name||'',_sourceRowsCache:new Map(),_entryRowsCache:new Map(),_qaSheetTeamRowsCache:new Map(),_criterionFilteredRowsCache:new Map(),runId:'run_'+Date.now().toString(36)};
+  const opts={_dataRevision:revision,start,end,qaDateMode,qaTeamScoreMode,teamSpecificRepRanking:!!settings.teamSpecificRepRanking,selectedTeamNames:teams.slice(),organizationId:runRequest.org?.id||'',organizationName:runRequest.org?.name||'',_sourceRowsCache:new Map(),_entryRowsCache:new Map(),_qaSheetTeamRowsCache:new Map(),_criterionFilteredRowsCache:new Map(),runId:'run_'+Date.now().toString(36)};
   const oldRunText=els.executeRunBtn?.textContent||'';
   if(els.executeRunBtn&&!runRequest.multi){ els.executeRunBtn.disabled=true; els.executeRunBtn.textContent='Running...'; }
   try{
     const label=runRequest.org?.name?`${runRequest.org.name}: `:'', totalStart=performance.now(), perfStart=runPerfSnapshot(); console.groupCollapsed(`[All Star Run] ${runRequest.org?.name||'Single report'}`); console.time('[All Star Run] Total time from click to visible report');
-    showProgress(`${label}determining required sources...`,2); await yieldToBrowser();
+    showProgress(`${label}determining required sources...`,2); await yieldToBrowser(); assertCurrent();
     console.time('[All Star Run] Required sources'); const plan=compileRunCriterionPlan(model,{qaTeamScoreMode,qaDateMode}); opts._criterionPlan=plan; console.timeEnd('[All Star Run] Required sources'); console.info('requiredSources',plan.requiredSources);
     updateProgress(`${label}awaiting matching preparation jobs`,8); console.time('[All Star Run] Awaited jobs');
-    console.time('[All Star Run] Remaining preparation after final click'); await ensureSelectedModelPreparedForRun(model,{qaTeamScoreMode,qaDateMode}); console.timeEnd('[All Star Run] Awaited jobs'); console.timeEnd('[All Star Run] Remaining preparation after final click');
+    console.time('[All Star Run] Remaining preparation after final click'); await ensureSelectedModelPreparedForRun(model,{qaTeamScoreMode,qaDateMode}); assertCurrent(); console.timeEnd('[All Star Run] Awaited jobs'); console.timeEnd('[All Star Run] Remaining preparation after final click');
     console.time('[All Star Run] Reused indexes'); console.info('Run index counters',runPerfDelta(perfStart)); console.timeEnd('[All Star Run] Reused indexes');
     updateProgress(`${label}filtering rows by date`,18); console.time('[All Star Run] Date filtering'); const teamEntryList=teamEntries(teams), repEntryList=allRepEntries(model,teams); console.timeEnd('[All Star Run] Date filtering');
     console.time('[All Star Run] Team scoring'); const teamRows=await computeEntriesAsync(model,teamEntryList,'team',opts,{start:22,end:48,label:`${label}scoring teams`}); console.timeEnd('[All Star Run] Team scoring');
     console.time('[All Star Run] Representative scoring'); let repRows=await computeEntriesAsync(model,repEntryList,'rep',opts,{start:48,end:88,label:`${label}scoring representatives`}); console.timeEnd('[All Star Run] Representative scoring');
-    console.time('[All Star Run] Rank calculation'); repRows=applyHideNoScoreRepOption(repRows); const teamRepRows=opts.teamSpecificRepRanking?buildTeamScopedRepresentativePack(repRows):repRows; console.timeEnd('[All Star Run] Rank calculation'); updateProgress(`${label}rendering report`,96); await yieldToBrowser();
+    console.time('[All Star Run] Rank calculation'); repRows=applyHideNoScoreRepOption(repRows); const teamRepRows=opts.teamSpecificRepRanking?buildTeamScopedRepresentativePack(repRows):repRows; console.timeEnd('[All Star Run] Rank calculation'); updateProgress(`${label}rendering report`,96); await yieldToBrowser(); assertCurrent();
     renderResults(model,teamRows,repRows,view,start,end,qaDateMode,opts,teamRepRows); console.timeEnd('[All Star Run] Total time from click to visible report'); console.info('[All Star Run] Perf counters',runPerfDelta(perfStart),'visibleMs',Math.round(performance.now()-totalStart)); console.groupEnd();
     if(runRequest.org&&els.workArea) els.workArea.querySelector('.reportMeta')?.insertAdjacentHTML('beforeend',`<span class="badge">Organization: ${esc(runRequest.org.name)}</span>`);
     else { const inc=(settings.includeOrgIds||[]).map(idv=>(state.orgs||[]).find(o=>o.id===idv)?.name).filter(Boolean), exc=(settings.excludeOrgIds||[]).map(idv=>(state.orgs||[]).find(o=>o.id===idv)?.name).filter(Boolean); if((inc.length||exc.length)&&els.workArea) els.workArea.querySelector('.reportMeta')?.insertAdjacentHTML('beforeend',`<span class="badge">Include Orgs: ${esc(inc.join(', ')||'None')}</span><span class="badge">Exclude Orgs: ${esc(exc.join(', ')||'None')}</span>`); }
-    if(els.workArea) els.workArea.insertAdjacentHTML('beforeend',expressionSummaryPanel('Model run expression diagnostics')); updateProgress(`${label}report generated`,100); await yieldToBrowser(); saveRunSettings();
+    if(els.workArea) els.workArea.insertAdjacentHTML('beforeend',expressionSummaryPanel('Model run expression diagnostics')); updateProgress(`${label}report generated`,100); await yieldToBrowser(); assertCurrent(); saveRunSettings();
     if(!runRequest.keepModalOpen) closeModal('runModal'); return state.lastRenderedReport;
   }catch(err){
     console.error(err); if(runRequest.rethrow) throw err; alert(`The report could not finish running.${err?.message?' '+err.message:''}`); return null;
@@ -545,23 +548,23 @@ function syncTeamSelectionsFromDom(){
     if(x.checked) state.selectedTeams.add(x.value); else state.selectedTeams.delete(x.value);
   });
 }
-function visibleTeams(){
+function visibleTeams(teams=runTeamNames()){
   const q=String(state.teamSearch||'').toLowerCase().trim();
-  return runTeamNames().filter(t=>!q || String(t).toLowerCase().includes(q));
+  return teams.filter(t=>!q || String(t).toLowerCase().includes(q));
 }
-function updateTeamCount(){
+function updateTeamCount(teams=runTeamNames()){
   if(!els.teamCountBadge) return;
-  const total=runTeamNames().length, selected=(state.selectedTeams||new Set()).size, visible=visibleTeams().length;
+  const total=teams.length, selected=(state.selectedTeams||new Set()).size, visible=visibleTeams(teams).length;
   els.teamCountBadge.textContent=`${selected} selected • ${visible}/${total} shown`;
 }
 function renderTeamSelect(){
   const teams=runTeamNames();
   if(!state.selectedTeams) state.selectedTeams=new Set();
   if(!state.teamSelectionInitialized && teams.length){ state.selectedTeams=new Set(teams); state.teamSelectionInitialized=true; }
-  const shown=visibleTeams();
+  const shown=visibleTeams(teams);
   els.teamSelectGrid.innerHTML=shown.length ? shown.map(t=>`<label class="checkItem"><input type="checkbox" value="${esc(t)}" ${state.selectedTeams.has(t)?'checked':''}> ${esc(t)}</label>`).join('') : '<div class="checkItem">No teams match the search.</div>';
   els.teamSelectGrid.querySelectorAll('input[type="checkbox"]').forEach(x=>x.onchange=()=>{ state.teamSelectionInitialized=true; if(x.checked) state.selectedTeams.add(x.value); else state.selectedTeams.delete(x.value); updateTeamCount(); saveRunSettings(); });
-  updateTeamCount();
+  updateTeamCount(teams);
 }
 function setVisibleTeamsChecked(checked){
   state.teamSelectionInitialized=true;

@@ -22,7 +22,8 @@ function wire(){
   if(els.saveImportCacheBtn) els.saveImportCacheBtn.onclick=()=>saveImportedDataToIndexedDB('manual cache save',{silent:false,full:true});
   if(els.loadImportCacheBtn) els.loadImportCacheBtn.onclick=()=>loadImportedDataFromIndexedDB({showProgress:true,alert:true});
   if(els.persistImportCacheBtn) els.persistImportCacheBtn.onclick=requestImportCachePersistence;
-  if(els.clearImportCacheBtn) els.clearImportCacheBtn.onclick=clearImportedDataIndexedDB;
+  if(els.clearImportCacheBtn) els.clearImportCacheBtn.onclick=()=>clearAllStarReportingData();
+  if(el('allstarCancelImportBtn')) el('allstarCancelImportBtn').onclick=()=>cancelAllStarImport();
   if(els.addCustomSourceBtn) els.addCustomSourceBtn.onclick=()=>{ state.pendingCustomName=(prompt('Name this custom source','Weekly Stats')||'').trim(); if(state.pendingCustomName) els.customSourceFile.click(); };
   if(els.customSourceFile) els.customSourceFile.onchange=e=>{const f=e.target.files[0]; if(f) loadCustomSourceFile(f,state.pendingCustomName||'Custom Source'); e.target.value=''; state.pendingCustomName='';};
   if(els.troubleSourceSelect) els.troubleSourceSelect.onchange=()=>{ state.troubleshoot.source=els.troubleSourceSelect.value; const cfg=getSourceSetting(activeModelForImport(),state.troubleshoot.source); const book=bookForSource(state.troubleshoot.source); state.troubleshoot.sheetName=preferredRequiredSheetForSource(book.sheetNames||[],state.troubleshoot.source)||cfg.sheetName||book.selectedSheets[state.troubleshoot.source]||book.sheetNames?.[0]||''; state.troubleshoot.headerRow=Math.max(1,Number(cfg.headerRow)||1); state.troubleshoot.startCol=Math.max(1,Number(cfg.startCol)||1); state.troubleshoot.manualHeaders=JSON.parse(JSON.stringify(cfg.manualHeaders||[])); renderTroubleshootControls(); renderTroubleshootPreview(); };
@@ -369,6 +370,7 @@ async function runAllStarStartupPipeline(){
     setAllStarStartupPhase(job,20,85,'Connecting CoachingTools data…');
     state.importCacheStartupPromise=measureAllStarStartupStep('local cache restore',()=>loadImportCacheOnStartup({showProgress:false,deferRender:true,generation}));
     const localLoaded=await state.importCacheStartupPromise;
+    await recoverCoachSavedReportRenames().catch(error=>console.warn('[Saved reports] Coach name recovery will retry on next load.',error));
     state.startup.diagnostics.startupSource=localLoaded?'local cache':'defaults';
     updateAllStarStartupProgress(job,localLoaded?'CoachingTools data connected.':'Ready for CoachingTools data.',55);
     if(state.lifecycle.closing || generation!==state.lifecycle.generation) return false;

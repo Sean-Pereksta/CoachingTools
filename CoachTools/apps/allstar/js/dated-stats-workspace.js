@@ -28,16 +28,17 @@ function datedStatsSelectMetric(settings,metric){
   return settings;
 }
 function datedStatsLoadedObservations(){return ['weeklyRetail','weeklyReferral'].filter(source=>state.data[source]?.rows?.length).flatMap(source=>{try{return datedStatsCategory(source,true,true).observations;}catch(_){return [];}});}
-function datedStatsIdentity(name,source){
+function datedStatsIdentity(name,source,resolvedRoster){
   const area=source==='weeklyReferral'?'referral':'retail',D=window.CoachToolsStatsDirectory;
   name=D?D.resolve(name,'name'):name;
   const unresolved=(state.quarantinedRepAliases||[]).some(a=>(a.sourceArea===area||a.sourceArea==='global')&&fullNameIdentityKey(a.aliasName||a.alias)===fullNameIdentityKey(name));
   if(unresolved)return {reason:'Saved name alias needs review'};
   const canonical=canonicalRepName(name,area),repId=fullNameIdentityKey(canonical);
   if(!repId||!String(canonical).trim())return {reason:'Missing representative identity'};
-  if(ensureRosterIndex().byRepKey.get(repId)?.conflict)return {reason:'Representative name matches multiple roster identities; review aliases before joining dated measurements and events'};
+  if((resolvedRoster||ensureRosterIndex()).byRepKey.get(repId)?.conflict)return {reason:'Representative name matches multiple roster identities; review aliases before joining dated measurements and events'};
   return {id:repId,name:canonical};
 }
+function datedStatsIdentityResolver(source){const roster=ensureRosterIndex(),cache=new Map();return name=>{if(!cache.has(name))cache.set(name,datedStatsIdentity(name,source,roster));return cache.get(name);};}
 const datedStatsDirectCategories=new Map();
 function datedStatsCategory(source,required=true,sourceDate=false){
   let pack=sourceDate?datedStatsDirectCategories.get(source):state.categorized.stats?.sources?.[source];
@@ -46,7 +47,7 @@ function datedStatsCategory(source,required=true,sourceDate=false){
     const data=state.data[source]||{},config=clonePlain(datedStatsConfig(source));
     if(sourceDate)config.calendar={reviewed:false,frequency:'observation'};
     const coachCache=new Map(),resolveCoach=raw=>{if(!coachCache.has(raw))coachCache.set(raw,datedStatsResolveCoach(raw));return coachCache.get(raw);};
-    pack={...window.AllStarDatedStats.categorize(data.rows||[],config,{headers:data.headers||[],fileName:data.fileName,resolveIdentity:name=>datedStatsIdentity(name,source),resolveCoach}),signature};
+    pack={...window.AllStarDatedStats.categorize(data.rows||[],config,{headers:data.headers||[],fileName:data.fileName,resolveIdentity:datedStatsIdentityResolver(source),resolveCoach}),signature};
     if(sourceDate)datedStatsDirectCategories.set(source,pack);else {state.categorized.stats=state.categorized.stats||{version:1,sources:{}};state.categorized.stats.sources[source]=pack;}
   }
   return pack;
@@ -57,7 +58,7 @@ async function datedStatsResearchCategory(source,sourceDate,cancelled){
   if(existing&&!existing.pending&&existing.signature===signature)return existing;
   const data=state.data[source]||{},config=clonePlain(datedStatsConfig(source)),coaches=new Map();
   if(sourceDate)config.calendar={reviewed:false,frequency:'observation'};
-  const result=await window.AllStarDatedStats.categorizeAsync(data.rows||[],config,{headers:data.headers||[],fileName:data.fileName,resolveIdentity:name=>datedStatsIdentity(name,source),resolveCoach:raw=>{if(!coaches.has(raw))coaches.set(raw,datedStatsResolveCoach(raw));return coaches.get(raw);},yield:yieldToBrowser,cancelled,progress:(n,total)=>updateProgress(`Preparing ${labelSource(source)} · ${n} / ${total} rows`,8)});
+  const result=await window.AllStarDatedStats.categorizeAsync(data.rows||[],config,{headers:data.headers||[],fileName:data.fileName,resolveIdentity:datedStatsIdentityResolver(source),resolveCoach:raw=>{if(!coaches.has(raw))coaches.set(raw,datedStatsResolveCoach(raw));return coaches.get(raw);},yield:yieldToBrowser,cancelled,progress:(n,total)=>updateProgress(`Preparing ${labelSource(source)} · ${n} / ${total} rows`,8)});
   if(cancelled()||signature!==datedStatsSourceSignature(source))throw Object.assign(new Error('Research source changed; run again.'),{name:'AbortError'});
   const pack={...result,signature};if(sourceDate)datedStatsDirectCategories.set(source,pack);else{state.categorized.stats=state.categorized.stats||{version:1,sources:{}};state.categorized.stats.sources[source]=pack;}return pack;
 }
@@ -77,7 +78,7 @@ async function buildDatedStatsCategory(options={}){
     const config=clonePlain(datedStatsConfig(source));
     const coachCandidates=[...new Set([...controlRosterRows().map(r=>r._team||r.team),...(window.CoachToolsStatsDirectory?.grouped()||[]).flatMap(g=>g.coaches)].filter(Boolean))],coachCache=new Map();
     const resolveCoach=raw=>{if(coachCache.has(raw))return coachCache.get(raw);const value=window.CoachToolsStatsDirectory?.resolve(raw,'coach')||raw,resolved=resolveWeeklyCoachIdentity(value,'',coachCandidates),result=resolved.method==='unresolved'?{value:String(value||''),method:'historical source label; not in current directory'}:resolved;coachCache.set(raw,result);return result;};
-    const result=await window.AllStarDatedStats.categorizeAsync(data.rows,config,{headers:data.headers,fileName:data.fileName,resolveIdentity:name=>datedStatsIdentity(name,source),resolveCoach,yield:yieldToBrowser,cancelled:()=>options.active&&!options.active(),progress:(done,total)=>updateProgress(`Dated Stats · ${labelSource(source)} · ${done.toLocaleString()} / ${total.toLocaleString()}`,82)});
+    const result=await window.AllStarDatedStats.categorizeAsync(data.rows,config,{headers:data.headers,fileName:data.fileName,resolveIdentity:datedStatsIdentityResolver(source),resolveCoach,yield:yieldToBrowser,cancelled:()=>options.active&&!options.active(),progress:(done,total)=>updateProgress(`Dated Stats · ${labelSource(source)} · ${done.toLocaleString()} / ${total.toLocaleString()}`,82)});
     if(signature!==datedStatsSourceSignature(source))throw Object.assign(new Error('Dated Stats changed during categorization; previous results were retained.'),{name:'AbortError'});
     sources[source]={...result,signature};
   }
@@ -85,7 +86,7 @@ async function buildDatedStatsCategory(options={}){
 }
 async function loadDatedStatsFile(source,file,options={}){
   const load=async()=>{
-    const wb=options.workbook||await readFileWorkbook(file,{cellDates:false,raw:true,cellNF:true}),headers=[],incoming=[];
+    const wb=options.workbook||await readFileWorkbook(file,{cellDates:false,raw:true,cellNF:true}),headers=[],incoming=[],resolveIdentity=datedStatsIdentityResolver(source);
     for(const sheet of wb.SheetNames||[]){
       // Preserve counts, fraction percentages and Excel date serials. A cell's
       // display text (e.g. 9/6/26 or a rounded 56%) is not its numerical value.
@@ -98,7 +99,7 @@ async function loadDatedStatsFile(source,file,options={}){
         const row={_dsUnits:{}};hs.forEach((h,j)=>{if(h){row[h]=values[j]??'';const cell=wb.Sheets[sheet]?.[XLSX.utils.encode_cell({r:i,c:j})];if(cell?.z&&/%/.test(cell.z.replace(/"[^"]*"|\\./g,'')))row._dsUnits[h]='fraction';}});
         const D=window.CoachToolsStatsDirectory;
         for(const [h,role] of [[detected.repField,'name'],[detected.coachField,'coach'],[detected.managerField,'manager']])if(D&&row[h])row[h]=D.resolve(row[h],role);
-        const identity=datedStatsIdentity(row[detected.repField],source);
+        const identity=resolveIdentity(row[detected.repField]);
         incoming.push({...row,_rep:identity.name||row[detected.repField],_repKey:identity.id||'',_rawRep:row[detected.repField],_rawRepKey:fullNameIdentityKey(row[detected.repField]),_team:row[detected.coachField]||'',_date:row[detected.dateField],_sourceKey:source,_sourceArea:source==='weeklyRetail'?'retail':'referral',_dsRow:i+1,_dsFile:file.name});
         if(i%1000===0){await yieldToBrowser();assertAllStarImportActive();}
       }
@@ -135,12 +136,25 @@ async function publishDatedStatsSharedSource(source){
 function renderDatedStatsImportSummary(){
   document.querySelectorAll('[data-ds-summary]').forEach(box=>{
     const source=box.dataset.dsSummary,data=state.data[source]||{};
-    let pack,message='';try{if(data.rows?.length)pack=datedStatsCategory(source,true,true);}catch(error){message=error.message;}
-    const issues=[...new Set((pack?.issues||[]).map(i=>(i.field?i.field+': ':'')+i.reason))];
-    box.innerHTML=weeklySourceStatusHtml(source)+`${data.rows?.length?`<button type="button" class="smallBtn" data-ds-config="${source}">Edit fields</button><span class="hint"> Uses source Date automatically</span>`:''}${message||issues.length?`<div role="status">${esc(message||issues.slice(0,5).join(' · '))}</div>`:''}`;
+    box.innerHTML=weeklySourceStatusHtml(source)+`${data.rows?.length?`<button type="button" class="smallBtn" data-ds-config="${source}">Edit fields</button><span class="hint"> Uses source Date automatically</span><details data-weekly-health-details><summary>Review identity matches, dates, and validation</summary><div data-weekly-health-result class="hint">Open to calculate detailed diagnostics.</div></details>`:''}`;
     box.querySelector('[data-ds-config]')?.addEventListener('click',()=>openDatedStatsSourceEditor(source));
-    box.querySelector('[data-source-fix-teams]')?.addEventListener('click',()=>els.fixTeamsBtn?.click());
+    const details=box.querySelector('[data-weekly-health-details]');details?.addEventListener('toggle',()=>{if(details.open)reviewWeeklySourceDiagnostics(source,details.querySelector('[data-weekly-health-result]')).catch(error=>{details.querySelector('[data-weekly-health-result]').textContent=error.message;});});
   });
+}
+async function reviewWeeklySourceDiagnostics(source,host){
+  const data=state.data[source],revision=sourceHealthRevision(),generation=Number(host._sourceHealthGeneration||0)+1;host._sourceHealthGeneration=generation;
+  const active=()=>host.isConnected&&!state.reportingDataClearing&&host._sourceHealthGeneration===generation&&data===state.data[source]&&revision===sourceHealthRevision();
+  host.textContent='Reviewing weekly identities and dates…';await yieldToBrowser();
+  try{
+    const health=await weeklySourceHealthAsync(source,{active,progress:(count,total)=>{host.textContent=`Reviewing weekly identities: ${count.toLocaleString()} / ${total.toLocaleString()}`;}});
+    if(!active())return false;
+    host.textContent='Checking numerical values and reporting dates…';await yieldToBrowser();
+    const pack=await datedStatsResearchCategory(source,true,()=>!active());
+    if(!active())return false;
+    const issues=[...new Set((pack?.issues||[]).map(issue=>(issue.field?issue.field+': ':'')+issue.reason))];
+    host.innerHTML=weeklySourceStatusHtml(source,health)+(issues.length?`<div role="status">${esc(issues.slice(0,5).join(' · '))}</div>`:'<div class="hint">Numerical values and reporting dates checked.</div>');
+    bindSourceHealthPages(host,health);host.querySelector('[data-source-fix-teams]')?.addEventListener('click',()=>els.fixTeamsBtn?.click());return true;
+  }catch(error){if(error.name==='AbortError')return false;throw error;}
 }
 function evaluateDatedStatsMetric(metric,rows,source,warnings=[]){
   const pack=datedStatsCategory(metric.source);
@@ -507,5 +521,6 @@ function renderDatedStatsUnitReview(wrap,data,config){
 }
 const datedStatsResearchOperations=new Map();
 function normalizeDatedStatsRawIdentities(rows,source,config){
-  return rows.map(row=>{const person=datedStatsIdentity(row[config.repField],source);return {...row,_rep:person.name||String(row[config.repField]||''),_repKey:person.id||'',_team:String(row[config.coachField]||''),_date:row[config.dateField]};});
+  const resolveIdentity=datedStatsIdentityResolver(source);
+  return rows.map(row=>{const person=resolveIdentity(row[config.repField]);return {...row,_rep:person.name||String(row[config.repField]||''),_repKey:person.id||'',_team:String(row[config.coachField]||''),_date:row[config.dateField]};});
 }

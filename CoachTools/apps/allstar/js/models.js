@@ -1647,6 +1647,8 @@ function headerMatch(headers, expected){
   return findHeader(headers||[],[expected]);
 }
 function sourceHasImportedData(source){
+  if(source==='monthly_opportunity')return ['retail','referral'].some(area=>!!state.data[area]?.monthlyBundle?.opportunity);
+  if(source==='monthly_wiper')return ['retail','referral'].some(area=>(state.data[area]?.monthlyBundle?.wipers||[]).length>0);
   if(isDatedStatsSource(source))return !!state.data[source]?.rows?.length;
   if(source===NONDATED_SOURCE) return !!(state.categorized.nondated.rows||[]).length;
   if(source===DATED_SOURCE) return !!(state.categorized.dated.rows||[]).length;

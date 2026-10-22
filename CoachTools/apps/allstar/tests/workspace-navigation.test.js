@@ -65,7 +65,13 @@ async function integration(){
     openSavedReport:id=>calls.push(['report',id]),
     listSavedReports:async()=>[{id:'report1',modelName:'August report',report:{huge:'Excluded from navigation metadata'}}]
   }});
+  const originalRoster=app.data.retail.controlRoster;
+  Object.defineProperty(app.data.retail,'controlRoster',{configurable:true,get(){throw new Error('Opening Data or Settings must not build the representative search index');}});
   api.init();api.init();
+  await api.execute('action:data');await api.execute('action:settings');
+  assert.ok(document.getElementById('settingsClearAllDataBtn'),'Settings offers Clear All Data directly');
+  Object.defineProperty(app.data.retail,'controlRoster',{configurable:true,writable:true,value:originalRoster});
+  await api.execute('action:home');
   assert.equal(document.querySelectorAll('#asWorkspaceHeader').length,1,'Repeated initialization is harmless');
   assert.equal(document.getElementById('categoriesDrop'),legacy,'Original controls are moved, never recreated');
   legacy.dispatchEvent(new window.Event('change'));
@@ -135,4 +141,33 @@ async function integration(){
   assert.equal(statisticalReads,0);
   api.destroy();
 }
-integration().then(()=>console.log('All-Star workspace navigation: search, compatibility, no-scan status, persistence and keyboard tests passed.')).catch(error=>{console.error(error);process.exitCode=1;});
+async function savedPeopleColdStart(){
+  const values=new Map([['allStarWorkspaceNavigation.v1',JSON.stringify({favorites:['rep:catherine mock:coach a','team:Coach A'],recent:[{id:'rep:catherine mock:coach a',at:1}]})]]), storage={getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)};
+  const state={teams:['Coach A'],data:{retail:{}}}, calls=[];
+  Object.defineProperty(state.data.retail,'controlRoster',{get(){throw new Error('Home, History, and cached favorites must not enumerate the roster');}});
+  function controller(){
+    const {window,document}=parseHTML('<html><body><div id="workArea"></div><input id="teamRepSearch"></body></html>');
+    Object.assign(window,{console,setTimeout,clearTimeout});vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/workspace-navigation.js'),'utf8'),vm.createContext({window,document,console,setTimeout,clearTimeout}));
+    const api=window.AllStarWorkspaceNavigation.createController({document,storage,getState:()=>state,getSources:()=>[],actions:{openTeamsImported:()=>calls.push('open'),loadTeamDetails:team=>calls.push(team)}});api.init();return {api,document};
+  }
+  const legacy=controller();
+  assert.ok(legacy.document.getElementById('asWorkspacePanel').textContent.includes('catherine mock'),'Legacy saved representative ids remain visible before Search');
+  assert.ok(legacy.document.querySelector('[data-as-command="team:Coach A"]'),'Legacy team favorites remain visible');
+  // Opening an entity from Search caches only that selected display record.
+  legacy.api.record({id:'rep:catherine mock:coach a',action:'representative',entityId:'catherine mock',name:'Catherine Mock',team:'Coach A',label:'Catherine Mock',category:'Representatives',description:'Coach A'});
+  legacy.api.destroy();
+  const cold=controller();
+  assert.ok(cold.document.getElementById('asWorkspacePanel').textContent.includes('Catherine Mock'),'Cold saved people retain their original display names');
+  await cold.api.execute('action:history');assert.ok(cold.document.getElementById('asWorkspacePanel').textContent.includes('Catherine Mock'));
+  await cold.api.execute('rep:catherine mock:coach a');assert.ok(calls.includes('Coach A'));assert.equal(cold.document.getElementById('teamRepSearch').value,'Catherine Mock');
+  cold.api.invalidateReportingData();assert.ok(cold.api.getPreferences().people.some(x=>x.name==='Catherine Mock'),'Ordinary derived invalidation retains saved entity metadata');
+  state.teams=['Corrected Coach'];cold.api.renameCoach('Coach A','Corrected Coach');
+  assert.deepEqual(Array.from(cold.api.getPreferences().favorites),['rep:catherine mock:corrected coach','team:Corrected Coach']);
+  assert.equal(cold.api.getPreferences().people.find(x=>x.action==='representative').name,'Catherine Mock','Coach rename never rewrites a representative name');
+  await cold.api.execute('rep:catherine mock:corrected coach');assert.ok(calls.includes('Corrected Coach'));
+  state.teams=[];cold.api.invalidateReportingData({clearPeople:true});await cold.api.execute('action:home');
+  assert.ok(!cold.document.querySelector('[data-as-command="rep:catherine mock:corrected coach"]'),'Clearing reporting data hides stale entity shortcuts without deleting favorite preferences');
+  assert.ok(cold.api.getPreferences().favorites.includes('rep:catherine mock:corrected coach'));
+  cold.api.destroy();
+}
+integration().then(savedPeopleColdStart).then(()=>console.log('All-Star workspace navigation: search, compatibility, no-scan status, persistence and keyboard tests passed.')).catch(error=>{console.error(error);process.exitCode=1;});

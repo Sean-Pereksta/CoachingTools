@@ -53,6 +53,22 @@ function workflowSourceMetadata(source,{force=false}={}){
 function workflowImportedSources(){
   return allSourceKeys().filter(source=>{ const m=state.sourceMeta?.[source]; return sourceHasImportedData(source)||Number(m?.rowCount||0)>0; });
 }
+async function workflowSourceMetadataAsync(source){
+  const signature=sourceVersionSignature(source), rows=getRowsRaw(source)||[];
+  const reps=new Set(), teams=new Set(); let min=Infinity,max=-Infinity,started=performance.now();
+  for(let i=0;i<rows.length;i++){
+    const row=rows[i], rep=row?._repKey||fullNameIdentityKey(row?._rep||''), team=row?._teamKey||coachNameKey(row?._team||rowTeam(row)||'');
+    if(rep) reps.add(rep); if(team) teams.add(team);
+    const time=workflowRowTimestamp(row); if(Number.isFinite(time)){ min=Math.min(min,time); max=Math.max(max,time); }
+    if(i%256===0&&performance.now()-started>=8){
+      await yieldToBrowser(); started=performance.now();
+      if(state.reportingDataClearing||signature!==sourceVersionSignature(source)||rows!==getRowsRaw(source)) return null;
+    }
+  }
+  if(signature!==sourceVersionSignature(source)||rows!==getRowsRaw(source)) return null;
+  const prior=state.sourceMeta[source]||{}, book=bookForSource(source)||{};
+  return state.sourceMeta[source]={...prior,rowCount:rows.length,representativeCount:reps.size,teamCount:teams.size,earliestDate:Number.isFinite(min)?new Date(min).toISOString():'',latestDate:Number.isFinite(max)?new Date(max).toISOString():'',workflowSignature:signature,fileName:sourceFileName(source)||prior.fileName||'',selectedWorksheet:prior.selectedWorksheet||prior.selectedSheet||book.selectedSheets?.[source]||'',importedAt:prior.lastImportedAt||prior.importedAt||''};
+}
 function workflowDateText(value){ const d=value?new Date(value):null; return d&&!isNaN(d)?ymd(d):'—'; }
 function workflowImportedTime(value){ const d=value?new Date(value):null; return d&&!isNaN(d)?d.toLocaleString():'—'; }
 function currentCoachToolsDataGroups(){
@@ -75,7 +91,12 @@ function renderSourceHealthOverview(){
   const cards=groups.map(group=>`<div class="currentDataCard"><strong>${esc(group.label)}<i class="sourceStatusDot ${group.ready?'good':''}" aria-hidden="true"></i></strong><span>${group.rowCount.toLocaleString()} rows</span><small title="${esc(group.fileName||'No file connected')}">${esc(group.fileName||'No file connected')}</small><span class="badge ${group.ready?'good':''}">${group.ready?'Ready':'Not loaded'}</span></div>`).join('');
   const imported=workflowImportedSources(), details=state.sourceHealthExpanded?`<div class="sourceMetaCards">${imported.map(source=>{ const m=state.sourceMeta?.[source]||{}; return `<div class="sourceMetaCard"><strong>${esc(labelSource(source))}</strong><span>${Number(m.rowCount||0).toLocaleString()} rows · ${Number(m.representativeCount||0).toLocaleString()} representatives · ${Number(m.teamCount||0).toLocaleString()} teams</span><span>Data: ${workflowDateText(m.earliestDate)} → ${workflowDateText(m.latestDate)}</span><span>${esc(m.selectedWorksheet||m.selectedSheet||'No worksheet selected')}</span></div>`; }).join('')}</div>`:'';
   host.innerHTML=`<div class="sourceHealthHead"><div><strong>${loaded} of 6 connected</strong><div class="hint">Filenames, row counts, and status come from saved source metadata; opening Import does not rescan rows.</div></div><button id="refreshSourceHealthBtn" class="smallBtn dark" type="button">Refresh Detailed Metadata</button></div><div class="currentDataGrid">${cards}</div>${details}`;
-  el('refreshSourceHealthBtn').onclick=()=>{ imported.forEach(source=>workflowSourceMetadata(source,{force:true})); state.sourceHealthExpanded=true; renderSourceHealthOverview(); };
+  el('refreshSourceHealthBtn').onclick=async event=>{
+    const button=event.currentTarget; button.disabled=true; button.textContent='Reading source details…';
+    try{ for(const source of imported) await workflowSourceMetadataAsync(source); state.sourceHealthExpanded=true; renderSourceHealthOverview(); }
+    catch(error){ button.textContent='Refresh failed — try again'; console.warn('[Source details]',error); }
+    finally{button.disabled=false;}
+  };
 }
 
 function renderImportWorkspace(){
@@ -85,6 +106,7 @@ function renderImportWorkspace(){
   renderTeamTotalsImportControls();
   renderCustomSourcesList();
   renderImportCacheStatus();
+  if(typeof mountCoachNameManager==='function') mountCoachNameManager('coachNameManagement');
 }
 
 function modelDependencySummary(model,opts={}){
@@ -195,24 +217,72 @@ function deleteRunPreset(){ const id=el('runPresetSelect')?.value, items=loadRun
 function workflowReportDb(){
   return new Promise((resolve,reject)=>{ const req=indexedDB.open(ALLSTAR_REPORT_DB,1); req.onupgradeneeded=()=>{ const db=req.result; if(!db.objectStoreNames.contains(ALLSTAR_REPORT_STORE)) db.createObjectStore(ALLSTAR_REPORT_STORE,{keyPath:'id'}); }; req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error); });
 }
-async function workflowReportTransaction(mode,run){ const db=await workflowReportDb(); return new Promise((resolve,reject)=>{ const tx=db.transaction(ALLSTAR_REPORT_STORE,mode), store=tx.objectStore(ALLSTAR_REPORT_STORE); let value; try{ value=run(store); }catch(e){db.close();reject(e);return;} tx.oncomplete=()=>{db.close();resolve(value);}; tx.onerror=()=>{db.close();reject(tx.error);}; }); }
+async function workflowReportTransaction(mode,run){ const revision=state.versions?.data||0, generation=state.reportingDataGeneration||''; if(state.reportingDataClearing||state.reportingDataCleanupPending) return null; const db=await workflowReportDb(); if(state.reportingDataClearing||state.reportingDataCleanupPending||revision!==(state.versions?.data||0)||generation!==(state.reportingDataGeneration||'')){db.close();return null;} return new Promise((resolve,reject)=>{ const tx=db.transaction(ALLSTAR_REPORT_STORE,mode), store=tx.objectStore(ALLSTAR_REPORT_STORE); let value; try{ value=run(store); }catch(e){db.close();reject(e);return;} tx.oncomplete=()=>{db.close();resolve(value);}; tx.onerror=()=>{db.close();reject(tx.error);}; }); }
 function workflowRequest(req){ return new Promise((resolve,reject)=>{ req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error); }); }
-async function listSavedReports(){ const db=await workflowReportDb(); try{ const tx=db.transaction(ALLSTAR_REPORT_STORE,'readonly'); const rows=await workflowRequest(tx.objectStore(ALLSTAR_REPORT_STORE).getAll()); return rows.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))); }finally{db.close();} }
+async function listSavedReports({allowPendingRename=false}={}){ if(!allowPendingRename&&state.coachRenameReferences?.pendingSavedReports?.length) return []; const generation=state.reportingDataGeneration||''; if(state.reportingDataClearing||state.reportingDataCleanupPending) return []; const db=await workflowReportDb(); try{ const tx=db.transaction(ALLSTAR_REPORT_STORE,'readonly'); const rows=await workflowRequest(tx.objectStore(ALLSTAR_REPORT_STORE).getAll()); if(state.reportingDataClearing||state.reportingDataCleanupPending||generation!==(state.reportingDataGeneration||'')) return []; return rows.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))); }finally{db.close();} }
 function workflowPlain(value){ return JSON.parse(JSON.stringify(value)); }
+async function renameCoachSavedReports(from,to,{merge=false}={}){
+  const key=exactCoachNameKey(from), replace=name=>exactCoachNameKey(name)===key?to:name;
+  const records=await listSavedReports({allowPendingRename:true}), changed=[];
+  for(const original of records){
+    await new Promise(resolve=>setTimeout(resolve,0));
+    const rec=workflowPlain(original); let affected=false;
+    const replaceNames=names=>(names||[]).map(name=>{const next=replace(name);if(next!==name)affected=true;return next;});
+    rec.teams=[...new Set(replaceNames(rec.teams))];
+    // Typed references include representative-only packs and diagnostic/model scopes.
+    // Compare values: the reference walker also copies unchanged arrays.
+    const reportBefore=JSON.stringify(rec.report||{}), report=coachRenameReferences(rec.report||{},from,to);rec.report=report;
+    if(JSON.stringify(report)!==reportBefore)affected=true;
+    for(const [kind,pack] of [['team',report.teamPack],['rep',report.repPack],['rep',report.teamRepPack]]){
+      for(const row of pack?.rows||[]){
+        if(!row.entry)continue;
+        if(kind==='team'){const name=replace(row.entry.name);if(name!==row.entry.name){affected=true;if(row.entry.key===coachNameKey(from))row.entry.key=coachNameKey(to);}row.entry.name=name;}
+        if(row.entry.team){const name=replace(row.entry.team);if(name!==row.entry.team)affected=true;row.entry.team=name;}
+      }
+    }
+    if(report.runOpts)report.runOpts.selectedTeamNames=[...new Set(replaceNames(report.runOpts.selectedTeamNames))];
+    if(rec.settings)rec.settings.selectedTeams=[...new Set(replaceNames(rec.settings.selectedTeams))];
+    if(affected){
+      rec.coachNameUpdatedAt=new Date().toISOString();
+      // Cached averages, eligibility and ranks require the original report
+      // engine when coaches merge; never add those cached values together.
+      if(merge)rec.requiresRerun='Coach records were combined. Re-run this report to recalculate team scores and rankings.';
+      changed.push(rec);
+    }
+  }
+  if(changed.length)await workflowReportTransaction('readwrite',store=>changed.forEach(rec=>store.put(rec)));
+  if(typeof renameQualtricsCoachHistory==='function')await renameQualtricsCoachHistory(from,to);
+  window.AllStarWorkspaceNavigation?.refresh();
+  return true;
+}
+async function recoverCoachSavedReportRenames(){
+  const pending=state.coachRenameReferences?.pendingSavedReports||[];
+  for(const entry of pending){
+    await renameCoachSavedReports(entry.from,entry.to,{merge:entry.merge});
+    state.coachRenameReferences={...state.coachRenameReferences,pendingSavedReports:(state.coachRenameReferences.pendingSavedReports||[]).filter(item=>item.id!==entry.id)};
+    markImportCacheDirty('misc','coachRenameReferences','Recovered saved report coach names');
+  }
+  if(pending.length)await saveImportedDataToIndexedDB('Recovered saved report coach names',{silent:true,dirtyOnly:true,noRender:true,deferIndexes:true,noRetry:true});
+}
+function savedReportNeedsRerun(rec){
+  if(!rec?.requiresRerun)return false;
+  alert(rec.requiresRerun+' Your saved snapshot is retained. Choose Run Model with the original dates to create an updated report.');
+  return true;
+}
 function workflowReportSnapshot(report){
   const safeOpts={selectedTeamNames:report?.runOpts?.selectedTeamNames||[],organizationId:report?.runOpts?.organizationId||'',organizationName:report?.runOpts?.organizationName||'',teamSpecificRepRanking:!!report?.runOpts?.teamSpecificRepRanking,qaTeamScoreMode:report?.runOpts?.qaTeamScoreMode||'assignedReps',trueValueDiagnostics:report?.runOpts?.trueValueDiagnostics||[]};
   return {model:workflowPlain(report.model),teamPack:workflowPlain(report.teamPack),repPack:workflowPlain(report.repPack),teamRepPack:workflowPlain(report.teamRepPack||report.repPack),view:report.view,start:report.start?ymd(report.start):'',end:report.end?ymd(report.end):'',qaDateMode:report.qaDateMode,runOpts:workflowPlain(safeOpts)};
 }
 async function saveCompletedReport(report,settings={},preflight=null){
-  if(!report) return null;
+  if(!report||state.reportingDataClearing||state.reportingDataCleanupPending||state.coachRenameActive||(report.runOpts?._dataRevision!==undefined&&report.runOpts._dataRevision!==(state.versions?.data||0))) return null;
   const note=String(el('runReportNote')?.value||'').trim(), deps=modelDependencySummary(report.model,settings), sourceSignature=Object.fromEntries(deps.sources.map(s=>[s,sourceVersionSignature(s)]));
   const rec={id:'report_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,7),allStarReportSchemaVersion:ALLSTAR_REPORT_SCHEMA_VERSION,createdAt:new Date().toISOString(),modelId:report.model?.id||'',modelName:report.model?.name||'All-Star Report',periodStart:report.start?ymd(report.start):'',periodEnd:report.end?ymd(report.end):'',teams:report.runOpts?.selectedTeamNames||[],organizationName:report.runOpts?.organizationName||'',settings:workflowPlain(settings),note,sourceSignature,modelSignature:stableSerialize(report.model||{}),diagnostics:workflowPlain(preflight?.diagnostics||[]),report:workflowReportSnapshot(report)};
   await workflowReportTransaction('readwrite',store=>store.put(rec)); const all=await listSavedReports(); if(all.length>ALLSTAR_REPORT_LIMIT) await workflowReportTransaction('readwrite',store=>all.slice(ALLSTAR_REPORT_LIMIT).forEach(x=>store.delete(x.id))); return rec;
 }
 async function deleteSavedReport(id){ if(!confirm('Delete this saved report snapshot?')) return; await workflowReportTransaction('readwrite',store=>store.delete(id)); renderRecentRuns(); }
 function hydrateSavedReport(rec){ const r=workflowPlain(rec.report); r.start=parseDateOnly(r.start); r.end=parseDateOnly(r.end); return r; }
-async function openSavedReport(id){ const rec=(await listSavedReports()).find(r=>r.id===id); if(!rec) return; const report=hydrateSavedReport(rec); renderResults(report.model,report.teamPack,report.repPack,report.view,report.start,report.end,report.qaDateMode,report.runOpts,report.teamRepPack); if(els.workArea) els.workArea.querySelector('.reportMeta')?.insertAdjacentHTML('beforeend',`<span class="badge warn">Saved snapshot: ${esc(new Date(rec.createdAt).toLocaleString())}</span>${rec.note?`<span class="badge">Note: ${esc(rec.note)}</span>`:''}`); closeModal('recentRunsModal'); injectCompletedReportActions(); }
-async function reexportSavedReport(id){ const rec=(await listSavedReports()).find(r=>r.id===id); if(rec) await exportPDF({report:hydrateSavedReport(rec)}); }
+async function openSavedReport(id){ const rec=(await listSavedReports()).find(r=>r.id===id); if(!rec||savedReportNeedsRerun(rec)) return; const report=hydrateSavedReport(rec); renderResults(report.model,report.teamPack,report.repPack,report.view,report.start,report.end,report.qaDateMode,report.runOpts,report.teamRepPack); if(els.workArea) els.workArea.querySelector('.reportMeta')?.insertAdjacentHTML('beforeend',`<span class="badge warn">Saved snapshot: ${esc(new Date(rec.createdAt).toLocaleString())}</span>${rec.note?`<span class="badge">Note: ${esc(rec.note)}</span>`:''}`); closeModal('recentRunsModal'); injectCompletedReportActions(); }
+async function reexportSavedReport(id){ const rec=(await listSavedReports()).find(r=>r.id===id); if(rec&&!savedReportNeedsRerun(rec)) await exportPDF({report:hydrateSavedReport(rec)}); }
 function reportRowMap(pack){ return new Map((pack?.rows||[]).map(r=>[nameKey(r.entry?.name||''),r])); }
 function comparePack(oldPack,newPack,kind){
   const before=reportRowMap(oldPack), after=reportRowMap(newPack), rows=[];
@@ -227,7 +297,7 @@ function compareSavedReportRecords(older,newer){
 function comparisonTable(title,rows){ const shown=rows.filter(r=>r.rankChange||r.scoreChange||r.newlyEligible||r.newlyIneligible).slice(0,25); return `<div class="comparisonSection"><strong>${esc(title)}</strong><div class="tableWrap"><table><thead><tr><th>Name</th><th>Rank</th><th>Score</th><th>Movement</th></tr></thead><tbody>${shown.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.rankA??'—'} → ${r.rankB??'—'}</td><td>${r.scoreA==null?'—':fmt(r.scoreA,'number')} → ${r.scoreB==null?'—':fmt(r.scoreB,'number')}</td><td>${r.newlyEligible?'<span class="badge good">Newly eligible</span>':r.newlyIneligible?'<span class="badge bad">Newly ineligible</span>':`${r.rankChange>0?'+':''}${r.rankChange||0} rank · ${r.scoreChange>0?'+':''}${Number(r.scoreChange||0).toFixed(2)} score`}</td></tr>`).join('')||'<tr><td colspan="4">No movement found.</td></tr>'}</tbody></table></div></div>`; }
 async function compareSelectedReports(){
   const ids=[...document.querySelectorAll('[data-compare-report]:checked')].map(x=>x.value); if(ids.length!==2) return alert('Select exactly two compatible saved reports to compare.');
-  const records=await listSavedReports(), chosen=ids.map(id=>records.find(r=>r.id===id)).filter(Boolean).sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt))); if(chosen.length!==2) return;
+  const records=await listSavedReports(), chosen=ids.map(id=>records.find(r=>r.id===id)).filter(Boolean).sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt))); if(chosen.length!==2||chosen.some(savedReportNeedsRerun)) return;
   if(chosen.some(r=>r.allStarReportSchemaVersion!==ALLSTAR_REPORT_SCHEMA_VERSION)) return alert('One saved report uses an incompatible report schema.');
   const c=compareSavedReportRecords(chosen[0],chosen[1]), host=el('recentRunComparison');
   host.innerHTML=`<div class="comparisonHeader"><strong>${esc(chosen[0].modelName)} · ${esc(chosen[0].periodStart||'All dates')} → ${esc(chosen[1].periodEnd||'All dates')}</strong><span>${esc(new Date(chosen[0].createdAt).toLocaleString())} compared with ${esc(new Date(chosen[1].createdAt).toLocaleString())}</span></div>${c.config.length?`<div class="configurationWarning"><strong>Configuration Changed</strong><span>${c.config.map(esc).join(' · ')}</span><small>Treat movement cautiously; this is not a strict apples-to-apples comparison.</small></div>`:''}${comparisonTable('Team movement',c.teams)}${comparisonTable('Representative movement',c.reps)}`;
@@ -254,7 +324,7 @@ updateRunReadiness=function(...args){ const value=workflowBaseReadiness(...args)
 const workflowBaseColumnCheck=runModelColumnCheck;
 runModelColumnCheck=function(){ const value=workflowBaseColumnCheck(); const model=state.editModel, deps=modelDependencySummary(model), health=modelHealthDiagnostics(model), host=els.columnCheckResults; if(host) host.insertAdjacentHTML('afterbegin',`<div class="modelHealthSummary"><strong>Model Health: ${health.some(d=>d.blocking)?`${health.filter(d=>d.blocking).length} blocker(s)`:health.length?`${health.length} warning(s)`:'Ready'}</strong><span>Uses: ${deps.sources.map(s=>esc(labelSource(s))).join(' · ')||'None'}</span><span>${deps.expressions} expressions · ${deps.autofails} autofails · ${deps.minimums} minimums · ${deps.displayColumns} Display Columns · ${deps.trueValues} True Values</span></div>`); return value; };
 const workflowBaseCommitSource=commitImportedSource;
-commitImportedSource=function(source,file,pack,rows,cfg,meta,options={}){ const value=workflowBaseCommitSource(source,file,pack,rows,cfg,meta,options); const enriched={...(state.sourceMeta[source]||{}),...workflowSourceRowStats(rows||[]),workflowSignature:sourceVersionSignature(source),fileName:file?.name||sourceFileName(source)||'',selectedWorksheet:cfg?.sheetName||'',importedAt:new Date().toISOString()}; state.sourceMeta[source]=enriched; markImportCacheDirty('misc','sourceMeta','source freshness metadata updated'); return value; };
+commitImportedSource=function(source,file,pack,rows,cfg,meta,options={}){ const value=workflowBaseCommitSource(source,file,pack,rows,cfg,meta,options); const enriched={...(state.sourceMeta[source]||{}),rowCount:(rows||[]).length,workflowSignature:'',fileName:file?.name||sourceFileName(source)||'',selectedWorksheet:cfg?.sheetName||'',importedAt:new Date().toISOString()}; state.sourceMeta[source]=enriched; markImportCacheDirty('misc','sourceMeta','source freshness metadata updated'); return value; };
 const workflowBaseBuildRun=buildRun;
 buildRun=async function(runRequest={}){
   if(runRequest instanceof Event) runRequest={};
