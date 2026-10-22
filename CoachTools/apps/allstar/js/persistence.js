@@ -61,7 +61,7 @@ function markBookCacheDirty(bookKey, reason='workbook changed'){
 function scheduleImportedDataSave(reason='automatic save', opts={}){
   // Save scheduling debounces connected edits, merges dirty sets, and queues exactly
   // one follow-up save if another edit arrives while IndexedDB is committing.
-  if(state.lifecycle?.closing) return false;
+  if(state.lifecycle?.closing || state.reportingDataClearing || state.coachRenameActive) return false;
   if(state.activeImportJob) return false;
   if(state.importCacheLoading){ state.importCachePostLoadSave=true; if(reason) state.importCacheSaveReasons=[...(state.importCacheSaveReasons||[]),reason].slice(-8); return true; }
   if(reason) state.importCacheSaveReasons=[...(state.importCacheSaveReasons||[]),reason].slice(-8);
@@ -231,7 +231,7 @@ function bytesToNice(n){
   if(n>=1024) return (n/1024).toFixed(1)+' KB';
   return n.toLocaleString()+' B';
 }
-function importCacheSourceRowCount(){ return allSourceKeys().reduce((sum,src)=>sum+(getRowsRaw(src)||[]).length,0); }
+function importCacheSourceRowCount(){ return allSourceKeys().filter(source=>!['monthly_opportunity','monthly_wiper'].includes(source)).reduce((sum,source)=>sum+(importedSourceRowCount(source)||0),0); }
 function importCacheSheetCount(){ return Object.values(state.books||{}).reduce((sum,b)=>sum+(b?.sheetNames||[]).length,0); }
 async function importCacheStorageEstimate(){
   if(!navigator.storage?.estimate) return null;
@@ -302,8 +302,8 @@ function importCacheMetadata(reason='manual save'){
   // Metadata is built from maintained sourceMeta counts when possible so saving does
   // not scan every imported row just to update the status line.
   const rowCounts={};
-  allSourceKeys().forEach(src=>{ const m=state.sourceMeta?.[src]; rowCounts[src]=Number.isFinite(m?.rowCount)?m.rowCount:(getRowsRaw(src)||[]).length; });
-  return {id:'current',version:IMPORT_CACHE_SCHEMA_VERSION,controlRosterSchemaVersion:CONTROL_ROSTER_SCHEMA_VERSION,savedAt:new Date().toISOString(),allstarModelSchemaVersion,allstarDataSchemaVersion,allstarSourceMappingVersion,reason,rowCounts,totalRows:Object.values(rowCounts).reduce((a,b)=>a+Number(b||0),0),sheetCount:importCacheSheetCount(),fileNames:importedFileNameMap(),customSourceCount:(state.customSources||[]).length,categorizedBuiltAt:state.categorized?.nondated?.builtAt || state.categorized?.dated?.builtAt || '',sourceMeta:importCacheClone(state.sourceMeta||{})};
+  allSourceKeys().filter(source=>!['monthly_opportunity','monthly_wiper'].includes(source)).forEach(src=>{ rowCounts[src]=importedSourceRowCount(src)||0; });
+  return {id:'current',version:IMPORT_CACHE_SCHEMA_VERSION,controlRosterSchemaVersion:CONTROL_ROSTER_SCHEMA_VERSION,savedAt:new Date().toISOString(),allstarModelSchemaVersion,allstarDataSchemaVersion,allstarSourceMappingVersion,reason,rowCounts,totalRows:Object.values(rowCounts).reduce((a,b)=>a+Number(b||0),0),sheetCount:importCacheSheetCount(),fileNames:importedFileNameMap(),customSourceCount:(state.customSources||[]).length,categorizedBuiltAt:state.categorized?.nondated?.builtAt || state.categorized?.dated?.builtAt || '',sourceMeta:importCacheClone(state.sourceMeta||{}),reportingDataCleared:!!state.reportingDataCleared,reportingDataClearedAt:state.reportingDataClearedAt||'',reportingDataGeneration:state.reportingDataGeneration||'',reportingDataCleanupPending:!!state.reportingDataCleanupPending};
 }
 
 function mergeImportCacheDirtySnapshot(snapshot){
@@ -311,11 +311,12 @@ function mergeImportCacheDirtySnapshot(snapshot){
   ['sources','books','sheets','misc','deletedSources','deletedBooks','deletedSheets'].forEach(k=>{ (snapshot[k]||new Set()).forEach(v=>d[k].add(v)); });
 }
 function scheduleImportCacheRetry(reason='retry import cache save'){
-  if(state.lifecycle?.closing) return false;
+  if(state.lifecycle?.closing || state.reportingDataClearing) return false;
   const delays=[500,1500,4000]; state.importCache.retryCount=Number(state.importCache.retryCount||0);
   if(state.importCache.retryCount>=delays.length){ state.importCache.status='manual_action_required'; return false; }
   const delay=delays[state.importCache.retryCount++]; state.importCache.status='retrying';
-  setTimeout(()=>{ if(!state.lifecycle?.closing && importCacheHasDirty()) saveImportedDataToIndexedDB(reason+' retry '+state.importCache.retryCount,{silent:true}); },delay);
+  const generation=state.reportingDataGeneration;
+  setTimeout(()=>{ if(!state.lifecycle?.closing && !state.reportingDataClearing && generation===state.reportingDataGeneration && importCacheHasDirty()) saveImportedDataToIndexedDB(reason+' retry '+state.importCache.retryCount,{silent:true}); },delay);
   return true;
 }
 function lightweightImportCacheManifest(meta={}, snapshot={}){
@@ -337,6 +338,16 @@ function restoreAliasesFromImportCache(value){
   const active=Array.isArray(value)?value:(value?.active||[]); state.repAliases=new Map(); active.forEach(a=>{ const key=a?.alias||a?.aliasKey||a?.aliasName; if(key) state.repAliases.set(key,a); }); state.quarantinedRepAliases=Array.isArray(value?.quarantined)?value.quarantined:(state.quarantinedRepAliases||[]); if(value?.sourceArea) state.aliasSourceArea=value.sourceArea;
 }
 async function saveImportedDataToIndexedDB(reason='manual save', opts={}){
+  if(state.reportingDataClearing || (state.coachRenameActive && !opts.coachRename)) return false;
+  if(state.importCacheSavePromise){ state.importCacheSaveQueued=true; return false; }
+  // The public promise covers preparation, transaction completion, and cleanup.
+  // Imports/clear must never start while an earlier save is still opening its DB.
+  const operation=commitImportedDataToIndexedDB(reason,opts);
+  state.importCacheSavePromise=operation;
+  try{ return await operation; }
+  finally{ if(state.importCacheSavePromise===operation) state.importCacheSavePromise=null; }
+}
+async function commitImportedDataToIndexedDB(reason='manual save', opts={}){
   if(state.activeImportJob && !opts.importJob && state.activeImportJob.stage!=='Waiting for previous save') return false;
   if(state.lifecycle?.closing && !opts.lifecycleSave) return false;
   if(state.importCacheLoading && !opts.force) return false;
@@ -348,11 +359,11 @@ async function saveImportedDataToIndexedDB(reason='manual save', opts={}){
     allSourceKeys().forEach(src=>markSourceCacheDirty(src,reason));
     ['retail:metadata','retail:controlRoster','referral:metadata','referral:itac','referral:controlRoster'].forEach(k=>markImportCacheDirty('source',k,reason));
     Object.keys(state.books||{}).forEach(k=>markBookCacheDirty(k,reason));
-    ['categorized','customSources','teamIndex','sourceMeta','sourceSettings','aliases','manifest'].forEach(k=>markImportCacheDirty('misc',k,reason));
+    ['categorized','customSources','teamIndex','sourceMeta','sourceSettings','aliases','coachNameCorrections','packageSettings','manifest'].forEach(k=>markImportCacheDirty('misc',k,reason));
   }
   if(!opts.lifecycleSave && !opts.deferIndexes && (dirty.sources.size || dirty.misc.has('categorized') || dirty.misc.has('aliases') || dirty.misc.has('customSources'))) dirty.misc.add('teamIndex');
   if(!importCacheHasDirty(dirty) && !opts.force){ if(!opts.noRender) await renderImportCacheStatus('Local cache already up to date.'); return true; }
-  state.importCacheSaving=true; state.importCache.status='saving'; state.importCacheSavePromise=null;
+  state.importCacheSaving=true; state.importCache.status='saving';
   let snapshot=null;
   let writeTx=null;
   let db;
@@ -363,12 +374,15 @@ async function saveImportedDataToIndexedDB(reason='manual save', opts={}){
     const obsoleteBookKeys=existingBookKeys.filter(k=>!expectedBookIds.has(String(k)));
     const meta=importCacheMetadata(reason);
     snapshot={sources:new Set(dirty.sources),books:new Set(dirty.books),sheets:new Set(dirty.sheets),misc:new Set(dirty.misc),deletedSources:new Set(dirty.deletedSources),deletedBooks:new Set(dirty.deletedBooks),deletedSheets:new Set(dirty.deletedSheets)};
+    // Edits arriving during the commit belong to the next batch. Clearing dirty
+    // flags after awaiting IndexedDB used to discard those concurrent edits.
+    clearImportCacheDirty();
     const teamIndex=snapshot.misc.has('teamIndex') ? serializeTeamIndex(state.teamIndexCache || buildCompactTeamIndexFromRows(reason,{mutateRows:opts.mutateRows!==false && !opts.lifecycleSave})) : null;
     if(teamIndex) state.teamIndexCache=restoreTeamIndex(teamIndex);
     const tx=db.transaction([IMPORT_CACHE_META_STORE,IMPORT_CACHE_SOURCE_STORE,IMPORT_CACHE_BOOK_STORE,IMPORT_CACHE_MISC_STORE],'readwrite');
     writeTx=tx;
     if(opts.importJob) opts.importJob.transaction=tx;
-    const done=idbTxDone(tx); done.catch(()=>{}); state.importCacheSavePromise=done;
+    const done=idbTxDone(tx); done.catch(()=>{});
     const metaStore=tx.objectStore(IMPORT_CACHE_META_STORE), sourceStore=tx.objectStore(IMPORT_CACHE_SOURCE_STORE), bookStore=tx.objectStore(IMPORT_CACHE_BOOK_STORE), miscStore=tx.objectStore(IMPORT_CACHE_MISC_STORE);
     // Cleanup and writes share one transaction, so an unsuccessful save still leaves the previous cache intact.
     obsoleteBookKeys.forEach(k=>bookStore.delete(k));
@@ -384,6 +398,9 @@ async function saveImportedDataToIndexedDB(reason='manual save', opts={}){
     if(snapshot.misc.has('sourceMeta')) miscStore.put({id:'sourceMeta',value:importCacheClone(state.sourceMeta||{})});
     if(snapshot.misc.has('sourceSettings')) miscStore.put({id:'sourceSettings',value:importCacheClone((state.models||[]).map(m=>({id:m.id,sourceSettings:m.sourceSettings||{}})))});
     if(snapshot.misc.has('aliases')) miscStore.put({id:'aliases',value:importCacheClone({active:[...(state.repAliases||new Map()).values()],quarantined:state.quarantinedRepAliases||[],sourceArea:state.aliasSourceArea||''})});
+    if(snapshot.misc.has('coachNameCorrections')) miscStore.put({id:'coachNameCorrections',value:importCacheClone(state.coachNameCorrections||[])});
+    if(snapshot.misc.has('coachRenameReferences')) miscStore.put({id:'coachRenameReferences',value:importCacheClone(state.coachRenameReferences||null)});
+    if(snapshot.misc.has('packageSettings')) miscStore.put({id:'packageSettings',value:importCacheClone(state.packageSettings||null)});
     const manifest=opts.lifecycleSave?lightweightImportCacheManifest(meta,snapshot):importCacheManifest(meta, snapshot); meta.manifest=manifest; meta.revision=manifest.revision; meta.generationId=manifest.generationId;
     miscStore.put({id:'manifest',value:manifest});
     metaStore.put(meta); // metadata last is the commit marker for the completed dirty batch.
@@ -395,6 +412,9 @@ async function saveImportedDataToIndexedDB(reason='manual save', opts={}){
         if(!record || record.value?.rows?.length!==expectedRows || record.revision!==meta.revision) throw new Error(`${source} read-back verification failed.`);
       });
     });
+    // A cancelled progress callback can throw before Promise.all is reached.
+    // Every queued verification still needs a rejection observer on abort.
+    verifications.forEach(verification=>verification.catch(()=>{}));
     if(opts.verifySources?.length){
       if(opts.importJob) importJobStage(opts.importJob,'Verifying');
       updateProgress('Verifying saved Allstar sources…',94,{force:true});
@@ -404,8 +424,11 @@ async function saveImportedDataToIndexedDB(reason='manual save', opts={}){
     }
     try{ await Promise.all(verifications); }catch(error){ try{tx.abort();}catch(_){} await done.catch(()=>{}); throw error; }
     await done;
-    if(!opts.noCompaction) Object.keys(state.books||{}).forEach(releaseInactiveWorkbookSheets);
-    clearImportCacheDirty(); state.importCache.meta=meta; state.importCache.generationId=manifest.generationId; state.importCache.revision=manifest.revision; state.importCache.status='saved'; state.importCache.lastError=''; state.importCache.retryCount=0; state.importCacheSaveReasons=[];
+    if(!opts.noCompaction) Object.keys(state.books||{}).forEach(bookKey=>{
+      const pending=ensureImportCacheDirty();
+      if(!pending.books.has(bookKey) && ![...pending.sheets].some(key=>splitSheetDirtyKey(key)[0]===bookKey)) releaseInactiveWorkbookSheets(bookKey);
+    });
+    state.importCache.meta=meta; state.importCache.generationId=manifest.generationId; state.importCache.revision=manifest.revision; state.importCache.status='saved'; state.importCache.lastError=''; state.importCache.retryCount=0; state.importCacheSaveReasons=[];
     if(!opts.silent) alert('Imported data saved locally in IndexedDB.');
     if(!opts.noRender) await renderImportCacheStatus(obsoleteBookKeys.length?`Saved imported data locally and removed ${obsoleteBookKeys.length.toLocaleString()} obsolete duplicated workbook cache records.`:'Saved imported data locally.');
     return true;
@@ -421,8 +444,8 @@ async function saveImportedDataToIndexedDB(reason='manual save', opts={}){
     return false;
   }finally{
     if(db) db.close();
-    state.importCacheSaving=false; state.importCacheSavePromise=null;
-    if(!opts.noRetry && !state.activeImportJob && !state.lifecycle?.closing && (state.importCacheSaveQueued || importCacheHasDirty())){
+    state.importCacheSaving=false;
+    if(!opts.noRetry && !state.activeImportJob && !state.reportingDataClearing && !state.lifecycle?.closing && (state.importCacheSaveQueued || importCacheHasDirty())){
       state.importCacheSaveQueued=false;
       scheduleImportedDataSave('changes queued during save',state.lifecycle?.hidden?{delay:0,silent:true,dirtyOnly:true,noRender:true,noCompaction:true,lifecycleSave:true}:{delay:250});
     }
@@ -466,7 +489,11 @@ function renderAllStarAfterDataBatch({sourcesChanged=[],teamsChanged=false,alias
   if(changed.size || aliasesChanged) renderCustomSourcesList();
   if(changed.size) renderCategorizedSummary();
   if(teamsChanged || [...changed].some(source=>source.startsWith('retail')||source.startsWith('referral'))) renderTeamTotalsImportControls();
-  if(changed.size || teamsChanged || aliasesChanged){ renderModelList(); populateRunModels(); renderTeamSelect(); renderEditModelSafe(); }
+  if(changed.size || teamsChanged || aliasesChanged){
+    if(els.modelsModal?.classList.contains('open')) renderModelList();
+    if(els.runModal?.classList.contains('open')) populateRunModels(); // includes team controls
+    if(els.editModelModal?.classList.contains('open')) renderEditModelSafe();
+  }
   setStatus(); updateResearchCacheBadge();
   state.startup.diagnostics={...(state.startup.diagnostics||{}),fullRenders:Number(state.startup.diagnostics?.fullRenders||0)+1,lastRenderReason:reason};
   return true;
@@ -497,7 +524,7 @@ async function loadImportedDataFromIndexedDB(opts={}){
   // Being hidden/minimized does not invalidate an in-flight hydration. The
   // iframe and its state remain alive; only close or a newer generation wins.
   const stillActive=()=>!state.lifecycle?.closing && generation===Number(state.lifecycle?.generation||0);
-  if(state.activeImportJob || state.importCacheSaving || !stillActive()) return false;
+  if(state.activeImportJob || state.importCacheSaving || state.reportingDataClearing || state.coachRenameActive || !stillActive()) return false;
   state.importCacheLoading=true; state.importCache.status='loading';
   if(opts.showProgress) showProgress('Loading local IndexedDB import cache...',6);
   let db;
@@ -523,8 +550,18 @@ async function loadImportedDataFromIndexedDB(opts={}){
     const sourceMeta=await idbReq(miscStore.get('sourceMeta'));
     const sourceSettings=await idbReq(miscStore.get('sourceSettings'));
     const aliases=await idbReq(miscStore.get('aliases'));
+    const coachNameCorrections=await idbReq(miscStore.get('coachNameCorrections'));
+    const coachRenameReferences=await idbReq(miscStore.get('coachRenameReferences'));
+    const packageSettings=await idbReq(miscStore.get('packageSettings'));
     const manifest=await idbReq(miscStore.get('manifest'));
     if(!stillActive()) return false;
+    state.coachNameCorrections=Array.isArray(coachNameCorrections?.value)?coachNameCorrections.value:[];
+    state.packageSettings=packageSettings?.value||null;
+    state.reportingDataCleared=!!meta.reportingDataCleared;
+    state.reportingDataClearedAt=meta.reportingDataClearedAt||'';
+    state.reportingDataGeneration=meta.reportingDataGeneration||'';
+    state.reportingDataCleanupPending=!!meta.reportingDataCleanupPending;
+    restoreCoachRenameReferences(coachRenameReferences?.value);
     const nextData=defaultImportedDataState();
     const customData={};
     const legacySourceRecordIds=hydrateSourceCacheRecords(nextData,sourceRecords,customData);
@@ -547,6 +584,7 @@ async function loadImportedDataFromIndexedDB(opts={}){
     let migrated=legacySourceRecordIds.length>0;
     legacyBookRecords.forEach(r=>{ const sheets=r.value?.aoaBySheet||{}; Object.keys(sheets).forEach(sn=>{ markImportCacheDirty('sheet',`${r.id}:${sn}`,'legacy workbook sheet migration'); migrated=true; }); markImportCacheDirty('book',r.id,'legacy workbook metadata migration'); });
     state.data=nextData; state.books=nextBooks; state.customSources=Array.isArray(customSources?.value) ? customSources.value.map(c=>({...c,headers:customData[c.sourceKey]?.headers||c.headers||[],rows:customData[c.sourceKey]?.rows||c.rows||[],aoaBySheet:{}})) : []; Object.entries(customData).forEach(([key,val])=>{ if(!customSource(key)) state.customSources.push({...val,sourceKey:key,aoaBySheet:{}}); }); state.categorized=categorized?.value || state.categorized; state.teamIndexCache=restoreTeamIndex(teamIndex?.value); state.sourceMeta=sourceMeta?.value || meta.sourceMeta || {}; if(sourceSettings?.value) mergeSourceSettingsFromImportCache(sourceSettings.value); if(aliases?.value) restoreAliasesFromImportCache(aliases.value); state.importCache.meta={...meta,manifest:manifest?.value||meta.manifest}; state.importCache.generationId=state.importCache.meta.generationId||state.importCache.meta.manifest?.generationId||''; state.importCache.revision=Number(state.importCache.meta.revision||state.importCache.meta.manifest?.revision||0); state.importCache.status='loaded';
+    if(typeof recoverAllStarPackageSettings==='function') recoverAllStarPackageSettings();
     const teamTotalsBefore=[teamTotalsPersistedIdentitySignature(state.data.retail.teamTotals),teamTotalsPersistedIdentitySignature(state.data.referral.teamTotals)];
     const teamTotalsIdentityMigrated=[state.data.retail.teamTotals,state.data.referral.teamTotals].some(ds=>(ds?.rows||[]).length && Number(ds.identitySchemaVersion||0)<TEAM_TOTAL_IDENTITY_SCHEMA_VERSION);
     revalidateRepAliases();
@@ -558,6 +596,8 @@ async function loadImportedDataFromIndexedDB(opts={}){
     if(Number(meta.version||0)<IMPORT_CACHE_SCHEMA_VERSION || migrated || compactedPackageCache){ ['retail:metadata','retail:sv2','retail:wiper','retail:controlRoster','retail:teamTotals','referral:metadata','referral:sv2','referral:wiper','referral:itac','referral:controlRoster','referral:teamTotals'].forEach(k=>markImportCacheDirty('source',k,'schema v8 migration')); markImportCacheDirty('misc','customSources','schema v8 migration'); markImportCacheDirty('misc','manifest','schema v8 migration'); migrated=true; }
     if(teamTotalsIdentityMigrated || teamTotalsIdentityChanged){ ['retail:teamTotals','referral:teamTotals'].forEach(k=>markImportCacheDirty('source',k,'canonical Team Totals coach-name migration')); migrated=true; }
     if(migrated){ legacyBookRecords.forEach(r=>{ markBookCacheDirty(r.id,'legacy cache migrated to sheet records'); }); if(!opts.deferRender) scheduleImportedDataSave(compactedPackageCache?'compacting duplicated packaged workbook cache':'legacy cache migrated to sheet records',{delay:500}); }
+    if(state.reportingDataClearedAt) discardClearedReportingResults();
+    if(state.reportingDataCleanupPending) await cleanupClearedReportingStorage();
     if(opts.showProgress) updateProgress('Local data loaded',100,{force:true});
     if(opts.showProgress) setTimeout(hideProgress,250);
     if(!opts.deferRender) await renderImportCacheStatus(migrated?'Loaded and scheduled one cache migration save.':'Loaded local IndexedDB data.');
@@ -579,26 +619,203 @@ async function loadImportedDataFromIndexedDB(opts={}){
     }else state.importCachePostLoadSave=false;
   }
 }
-async function clearImportedDataIndexedDB(){
-  if(!confirm('Clear the saved local IndexedDB import cache? This does not remove the data currently visible on screen until you refresh or import new data.')) return false;
-  let db;
-  try{
-    db=await importCacheOpenDb();
-    const tx=db.transaction([IMPORT_CACHE_META_STORE,IMPORT_CACHE_SOURCE_STORE,IMPORT_CACHE_BOOK_STORE,IMPORT_CACHE_MISC_STORE],'readwrite');
-    writeTx=tx;
-    if(opts.importJob) opts.importJob.transaction=tx;
-    const done=idbTxDone(tx); done.catch(()=>{}); state.importCacheSavePromise=done;
-    tx.objectStore(IMPORT_CACHE_META_STORE).clear(); tx.objectStore(IMPORT_CACHE_SOURCE_STORE).clear(); tx.objectStore(IMPORT_CACHE_BOOK_STORE).clear(); tx.objectStore(IMPORT_CACHE_MISC_STORE).clear();
-    await done;
-    state.importCache.meta=null; state.importCache.status='empty'; state.importCache.lastError='';
-    await renderImportCacheStatus('Cleared local IndexedDB import cache.');
-    return true;
-  }catch(err){
-    console.error('[Import Cache] Clear failed',err);
-    await renderImportCacheStatus('Could not clear local cache: '+String(err?.message||err));
-    return false;
-  }finally{ if(db) db.close(); }
+function emptyCategorizedReportingData(){
+  return {stats:{version:1,sources:{},builtAt:''},nondated:{headers:['Representative','Coach'],rows:[],builtAt:'',sourceStats:[]},dated:{headers:['Representative','Coach','Date'],rows:[],builtAt:'',sourceStats:[]},warnings:[],stale:false,staleReason:'',changedSources:[],sourceSignatures:{},fragments:{}};
 }
+function restoreCoachRenameReferences(snapshot){
+  if(!snapshot?.id) return;
+  state.coachRenameReferences=snapshot;
+  try{
+    if(localStorage.getItem('allStarCoachRenameApplied.v1')===snapshot.id) return;
+    if(Array.isArray(snapshot.models)){ state.models=snapshot.models; localStorage.setItem(MODEL_KEY,JSON.stringify(state.models)); }
+    if(Array.isArray(snapshot.orgs)){ state.orgs=snapshot.orgs; localStorage.setItem(ORG_BUILDER_KEY,JSON.stringify(state.orgs)); }
+    if(Array.isArray(snapshot.researchItems)){ state.researchItems=snapshot.researchItems; persistResearchItemsToLocalStorage(); }
+    if(Array.isArray(snapshot.selectedTeams)) state.selectedTeams=new Set(snapshot.selectedTeams);
+    if(typeof snapshot.activeTeam==='string') state.activeTeam=snapshot.activeTeam;
+    if(snapshot.runSettings) localStorage.setItem(RUN_SETTINGS_KEY,JSON.stringify(snapshot.runSettings));
+    else if(typeof saveRunSettings==='function') saveRunSettings();
+    if(Array.isArray(snapshot.runPresets)) localStorage.setItem(ALLSTAR_PRESET_KEY,JSON.stringify(snapshot.runPresets));
+    localStorage.setItem('allStarCoachRenameApplied.v1',snapshot.id);
+  }catch(error){ console.warn('[Import Cache] Coach-name settings recovered; local preference save will retry on reload.',error); }
+}
+function discardClearedReportingResults(){
+  const cutoff=Date.parse(state.reportingDataClearedAt||'');
+  for(const item of state.researchItems||[]){
+    if(item.renderedResult && (!Number.isFinite(Date.parse(item.renderedResult.renderedAt)) || Date.parse(item.renderedResult.renderedAt)<=cutoff)) delete item.renderedResult;
+  }
+  if(state.reportingDataCleanupPending){
+    clearResearchComputedCaches('reporting data cleared');
+    state.lastRenderedReport=null;
+  }
+  if(typeof persistResearchItemsToLocalStorage==='function') try{ persistResearchItemsToLocalStorage(); }catch(error){ console.warn('[Import Cache] Saved-result pointers will be discarded again on reload.',error); }
+}
+async function invalidateAllStarRenderedData(reason='reporting data changed'){
+  state.researchResultGeneration=Number(state.researchResultGeneration||0)+1;
+  if(typeof invalidateSourceHealthCaches==='function')invalidateSourceHealthCaches();
+  for(const key of ['researchRenderToken','researchRenderAllToken','researchPreviewCancel','researchWarmToken']) if(state[key]&&typeof state[key]==='object') state[key].cancelled=true;
+  state.researchSaveGenerations?.clear?.();
+  for(const chart of state.researchCanvasCharts?.values()||[]) chart?.destroy?.();
+  state.researchCanvasCharts?.clear?.(); state.lastRenderedReport=null;
+  clearResearchComputedCaches(reason);
+  for(const item of state.researchItems||[]) delete item.renderedResult;
+  try{ persistResearchItemsToLocalStorage(); }catch(error){ console.warn('[Import Cache] Research result references could not be saved after invalidation.',error); }
+  for(const key of ['workArea','researchCanvas','researchFoundPreview','spreadsheetDataPreview']) if(els[key]) els[key].innerHTML='';
+  if(els.workArea) els.workArea.innerHTML='<div class="empty">Reporting data changed. Run a report to use the updated data.</div>';
+  window.AllStarWorkspaceNavigation?.invalidateReportingData?.();
+  // Saved reports are historical records; their owner updates coach identities.
+  // Only derived Research results are discarded here.
+  await clearReportingDatabaseStores(RESEARCH_RENDER_DB,[RESEARCH_RENDER_META_STORE,RESEARCH_RENDER_CHUNK_STORE]);
+}
+async function clearReportingDatabaseStores(name,storeNames,deletions={}){
+  // Do not create an empty version-1 database: its normal owner must create its
+  // schema on first use. Existing databases retain all unrelated object stores.
+  const db=await new Promise((resolve,reject)=>{
+    let missing=false;
+    const req=indexedDB.open(name);
+    req.onupgradeneeded=()=>{ missing=true; req.transaction.abort(); };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>missing?resolve(null):reject(req.error||new Error(`Could not open ${name}.`));
+  });
+  if(!db) return;
+  try{
+    const stores=[...new Set([...storeNames,...Object.keys(deletions)])].filter(key=>db.objectStoreNames.contains(key));
+    if(!stores.length) return;
+    const tx=db.transaction(stores,'readwrite'), done=idbTxDone(tx,`Clearing ${name}`); done.catch(()=>{});
+    for(const key of storeNames) if(stores.includes(key)) tx.objectStore(key).clear();
+    for(const [key,ids] of Object.entries(deletions)) if(stores.includes(key)) for(const id of ids) tx.objectStore(key).delete(id);
+    await done;
+  }finally{ db.close(); }
+}
+async function renameQualtricsCoachHistory(from,to){
+  const frame=els.qualtricsEmailFrame?.contentWindow;
+  if(typeof frame?.renameAllStarQualtricsCoach==='function') return frame.renameAllStarQualtricsCoach({from,to});
+  const key=value=>String(value??'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase(),fromKey=key(from);
+  if(!fromKey||!key(to))return;
+  const db=await new Promise((resolve,reject)=>{
+    let missing=false;const req=indexedDB.open('coachingEmailGeneratorDB');
+    req.onupgradeneeded=()=>{missing=true;req.transaction.abort();};req.onsuccess=()=>resolve(req.result);req.onerror=()=>missing?resolve(null):reject(req.error);
+  });
+  if(!db)return;
+  try{
+    if(!db.objectStoreNames.contains('problemHistory'))return;
+    const tx=db.transaction('problemHistory','readwrite'),done=idbTxDone(tx,'Renaming Qualtrics coach history');done.catch(()=>{});
+    const req=tx.objectStore('problemHistory').openCursor();
+    req.onsuccess=()=>{const cursor=req.result;if(!cursor)return;const row=cursor.value;let changed=false;for(const field of ['coach','team'])if(key(row[field])===fromKey){row[field]=to;changed=true;}if(changed)cursor.update(row);cursor.continue();};
+    await done;
+  }finally{db.close();}
+}
+async function cleanupClearedReportingStorage(){
+  if(!state.reportingDataCleanupPending) return true;
+  try{
+    // These are independent databases, so the main transaction records a durable
+    // cleanup marker first. Interrupted cleanup is retried on the next startup;
+    // result readers never expose snapshots while that marker is present.
+    await Promise.all([
+      clearReportingDatabaseStores(RESEARCH_RENDER_DB,[RESEARCH_RENDER_META_STORE,RESEARCH_RENDER_CHUNK_STORE]),
+      clearReportingDatabaseStores('allStarSavedReports.v1',['reports']),
+      clearReportingDatabaseStores('coachingEmailGeneratorDB',['problemHistory'],{settings:['concernHistoryLoadedFile.v1']})
+    ]);
+    const db=await importCacheOpenDb();
+    try{
+      const tx=db.transaction(IMPORT_CACHE_META_STORE,'readwrite'), done=idbTxDone(tx); done.catch(()=>{});
+      const store=tx.objectStore(IMPORT_CACHE_META_STORE), req=store.get('current');
+      req.onsuccess=()=>{ if(req.result) store.put({...req.result,reportingDataCleanupPending:false}); };
+      await done;
+    }finally{ db.close(); }
+    state.reportingDataCleanupPending=false;
+    if(state.importCache.meta) state.importCache.meta.reportingDataCleanupPending=false;
+    return true;
+  }catch(error){
+    state.importCache.lastError=`Reporting data was cleared; saved-result cleanup will retry when reopened. ${error?.message||error}`;
+    console.warn('[Import Cache] Saved-result cleanup pending',error);
+    return false;
+  }
+}
+function resetAllStarReportingMemory(nextData,customSources){
+  if(typeof invalidateSourceHealthCaches==='function')invalidateSourceHealthCaches();
+  for(const key of ['researchRenderToken','researchRenderAllToken','researchPreviewCancel','researchWarmToken']) if(state[key]&&typeof state[key]==='object') state[key].cancelled=true;
+  for(const token of state.researchActiveCalculations?.values()||[]) token.cancelled=true;
+  state.researchSaveGenerations?.clear?.();
+  for(const chart of state.researchCanvasCharts?.values()||[]) chart?.destroy?.();
+  state.data=nextData; state.books=defaultImportedBooksState(); state.customSources=customSources;
+  state.categorized=emptyCategorizedReportingData(); state.categorizedFragments={}; state.sourceMeta={}; state.teamIndexCache=null;
+  state.selectedTeams=new Set(); state.activeTeam=''; state.teamSelectionInitialized=false;
+  state.pendingRosterReassignment=null; state.lastRenderedReport=null; state.coachToolsPendingFiles=[]; state.coachRenameReferences=null;
+  state.importJobHistory=[]; state.identityConflicts=[]; state.rosterDiagnostics={}; state.teamSummaryRevision='';
+  state.researchEntityTable={signature:'',byRepKey:new Map(),byEntityId:new Map(),teamsById:new Map(),teamIdByKey:new Map(),nextRepId:1,nextTeamId:1};
+  for(const key of ['criterionInputCache','compiledFilterCache','expressionCache','repCandidateCache','quarantineIndexCache','researchTraceStore','researchDrilldownStore','researchCanvasCharts','researchVirtualTables','researchConversationViewers']) state[key]?.clear?.();
+  state.expressionStats=null; state.researchBuildingRowMeta=new WeakMap(); state.researchPerformanceRuns=[]; state.renderedLargeResearchCards=new Set();
+  ['data','retail','referral','roster','teams'].forEach(bumpVersion);
+  clearResearchComputedCaches('all reporting data cleared');
+  afterImportedDataRestored('all reporting data cleared',{deferRender:true});
+  discardClearedReportingResults();
+  try{ const saved=JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)||'{}'); localStorage.setItem(RUN_SETTINGS_KEY,JSON.stringify({...saved,selectedTeams:[],activeTeam:''})); }catch(error){ console.warn('[Import Cache] Cleared team selection could not be saved.',error); }
+  state.qualtricsAutoConnectSuppressed=true; state.qualtricsCoreBuildToken=id(); state.qualtricsCoreConnectedSignature=''; state.qualtricsCorePendingSignature='';
+  // Unload the iframe to stop pending history writes and discard manually loaded
+  // report rows. Opening it again reloads its preserved rules and preferences.
+  if(els.qualtricsEmailFrame){ els.qualtricsEmailFrame.srcdoc=''; els.qualtricsEmailFrame.removeAttribute('src'); }
+  state.qualtricsReady=false; state.qualtricsLoaded=false;
+  if(typeof qualtricsGeneratorLoadPromise!=='undefined') qualtricsGeneratorLoadPromise=null;
+  for(const node of document.querySelectorAll('#importModal input[type="file"]')) node.value='';
+  for(const key of ['workArea','spreadsheetDataPreview','researchCanvas','researchFoundPreview','teamSelectGrid','teamManagerList','teamRepList']) if(els[key]) els[key].innerHTML='';
+  for(const id of ['recentRunsList','recentRunComparison','fixTeamsReview','fixRepReview','teamRepList']){ const node=el(id); if(node) node.innerHTML=''; }
+  if(els.workArea) els.workArea.innerHTML='<div class="empty">Reporting data cleared. Upload new files to create reports.</div>';
+  if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent='Reporting data cleared. Saved rules and settings were kept.';
+}
+async function clearAllStarReportingData(){
+  if(state.reportingDataClearing) return false;
+  if(state.activeImportJob || state.centralSyncStageActive || state.coachRenameActive || state.coachToolsBatchImportRunning || state.importCacheLoading || state.startup?.running){
+    alert('Wait for the current data operation to finish, then clear reporting data.'); return false;
+  }
+  if(!confirm('Clear all stored Allstar reporting data, imported workbooks, saved reports, Research results, and Qualtrics concern history? Application settings, models, mappings, rules, and preferences will be kept. Shared files used by other CoachTools apps will be kept and will not automatically reload into Allstar.')) return false;
+  state.reportingDataClearing=true;
+  const controls=[el('settingsClearAllDataBtn'),els.clearImportCacheBtn].filter(Boolean), disabled=controls.map(node=>node.disabled); controls.forEach(node=>node.disabled=true);
+  if(state.importCacheSaveTimer){ clearTimeout(state.importCacheSaveTimer); state.importCacheSaveTimer=null; }
+  let db,tx,committed=false;
+  try{
+    if(state.importCacheSavePromise) await state.importCacheSavePromise;
+    const nextData=defaultImportedDataState();
+    // Weekly calendar/unit mappings and custom source definitions are settings.
+    for(const key of ['weeklyRetail','weeklyReferral']) nextData[key].config=importCacheClone(state.data[key]?.config||null);
+    const customSources=normalizedCustomSourceDefinitions().map(source=>({...source,fileName:'',sheetName:'',selectedWorksheet:'',sheetNames:[],headers:[],rows:[],aoaBySheet:{}}));
+    const savedAt=new Date().toISOString(),generation=id();
+    const meta={id:'current',version:IMPORT_CACHE_SCHEMA_VERSION,controlRosterSchemaVersion:CONTROL_ROSTER_SCHEMA_VERSION,allstarModelSchemaVersion,allstarDataSchemaVersion,allstarSourceMappingVersion,savedAt,reason:'all reporting data cleared',rowCounts:{},totalRows:0,sheetCount:0,fileNames:{},customSourceCount:customSources.length,sourceMeta:{},revision:Number(state.importCache.revision||0)+1,generationId:generation,reportingDataGeneration:generation,reportingDataCleared:true,reportingDataClearedAt:savedAt,reportingDataCleanupPending:true};
+    db=await importCacheOpenDb();
+    tx=db.transaction([IMPORT_CACHE_META_STORE,IMPORT_CACHE_SOURCE_STORE,IMPORT_CACHE_BOOK_STORE,IMPORT_CACHE_MISC_STORE],'readwrite');
+    const done=idbTxDone(tx,'Clearing Allstar reporting data'); done.catch(()=>{});
+    const sources=tx.objectStore(IMPORT_CACHE_SOURCE_STORE),misc=tx.objectStore(IMPORT_CACHE_MISC_STORE),metadata=tx.objectStore(IMPORT_CACHE_META_STORE);
+    metadata.clear(); sources.clear(); tx.objectStore(IMPORT_CACHE_BOOK_STORE).clear(); misc.clear();
+    for(const key of ['weeklyRetail','weeklyReferral']) if(nextData[key].config) sources.put({id:key,value:nextData[key]});
+    misc.put({id:'customSources',value:customSources});
+    misc.put({id:'sourceSettings',value:(state.models||[]).map(model=>({id:model.id,sourceSettings:importCacheClone(model.sourceSettings||{})}))});
+    misc.put({id:'aliases',value:importCacheClone({active:[...(state.repAliases||new Map()).values()],quarantined:state.quarantinedRepAliases||[],sourceArea:state.aliasSourceArea||''})});
+    misc.put({id:'coachNameCorrections',value:importCacheClone(state.coachNameCorrections||[])});
+    if(state.packageSettings) misc.put({id:'packageSettings',value:importCacheClone(state.packageSettings)});
+    metadata.put(meta);
+    await done; committed=true;
+    state.reportingDataCleared=true; state.reportingDataClearedAt=savedAt; state.reportingDataGeneration=generation; state.reportingDataCleanupPending=true;
+    state.centralSyncGeneration++; state.lifecycle.generation++;
+    state.importCache={...state.importCache,meta,generationId:generation,revision:meta.revision,status:'saved',lastError:'',retryCount:0};
+    clearImportCacheDirty(); state.importCacheSaveQueued=false; state.importCachePostLoadSave=false; state.importCacheSaveReasons=[];
+    resetAllStarReportingMemory(nextData,customSources);
+    const cleaned=await cleanupClearedReportingStorage();
+    renderAllStarAfterDataBatch({sourcesChanged:allSourceKeys(),teamsChanged:true,reason:'all reporting data cleared'});
+    if(typeof renderSourceHealthOverview==='function') renderSourceHealthOverview();
+    if(typeof refreshCoachNameManager==='function') refreshCoachNameManager();
+    window.AllStarWorkspaceNavigation?.invalidateReportingData?.({clearPeople:true});
+    await renderImportCacheStatus(cleaned?'All reporting data cleared. Settings were kept. Ready for new uploads.':state.importCache.lastError);
+    return true;
+  }catch(error){
+    if(!committed) try{tx?.abort();}catch(_){}
+    console.error('[Import Cache] Clear failed',error);
+    const message=committed?'Reporting data was cleared, but part of the display refresh failed. Reopen Allstar to finish refreshing.':'Could not clear reporting data. Your previous data was kept. '+String(error?.message||error);
+    state.importCache.lastError=message;
+    alert(message);
+    return committed;
+  }finally{ if(db) db.close(); state.reportingDataClearing=false; controls.forEach((node,index)=>node.disabled=disabled[index]); if(!committed && importCacheHasDirty()) scheduleImportedDataSave('retry edits retained after failed clear'); }
+}
+// Keep the public name used by older links and integrations on the same path.
+async function clearImportedDataIndexedDB(){ return clearAllStarReportingData(); }
 async function requestImportCachePersistence(){
   if(!navigator.storage?.persist){ alert('This browser does not expose persistent storage requests. IndexedDB can still work, but browser cleanup rules may apply.'); return false; }
   try{

@@ -3959,8 +3959,12 @@ function researchRenderedDb(){
 }
 function researchIdbReq(req){ return new Promise((resolve,reject)=>{ req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error); }); }
 async function researchRenderedResultPut(item,result,renderedAt){
+  const dataGeneration=state.reportingDataGeneration||'', resultGeneration=Number(state.researchResultGeneration||0);
+  const active=()=>!state.reportingDataClearing && !state.reportingDataCleanupPending && dataGeneration===(state.reportingDataGeneration||'') && resultGeneration===Number(state.researchResultGeneration||0);
+  if(!active()) throw new Error('Reporting data changed before the Research result could be saved.');
   const db=await researchRenderedDb(), itemId=item.id, data=clonePlain(result||{}), rows=Array.isArray(data.data)?data.data:(Array.isArray(data.rows)?data.rows:[]);
   let oldMeta=null; try{ const oldTx=db.transaction(RESEARCH_RENDER_META_STORE,'readonly'); oldMeta=await researchIdbReq(oldTx.objectStore(RESEARCH_RENDER_META_STORE).get(itemId)); }catch(_){ oldMeta=null; }
+  if(!active()) throw new Error('Reporting data changed while saving the Research result.');
   const rowProp=Array.isArray(data.data)?'data':(Array.isArray(data.rows)?'rows':'');
   if(rowProp) data[rowProp]=[];
   const meta={itemId,version:2,outputType:item.outputType,resultType:item.outputType,renderedAt,rowCount:rows.length,chunkSize:RESEARCH_RENDER_CHUNK_SIZE,rowProp,columns:data.columns||[],customColumnTitles:(data.columns||[]).map(c=>c.customTitle||c.displayTitle||''),displayColumnNames:(data.columns||[]).map(c=>researchColumnDisplayTitle(item,c)),formatting:(data.columns||[]).map(c=>({formatRules:c.formatRules||[],displayRules:c.displayRules||[],elseDisplay:c.elseDisplay||''})),chartConfig:{outputType:item.outputType,groupField:item.groupField,secondaryGroupField:item.secondaryGroupField,panelField:item.panelField,valueMode:item.valueMode,measureId:item.measureId||researchMeasureIdFromRef(item.valueField)},dataVersion:researchItemCacheKey(item,item.outputType==='conversation'?'raw':'agg'),result:data};
@@ -3969,6 +3973,7 @@ async function researchRenderedResultPut(item,result,renderedAt){
   await researchIdbReq(metaStore.put({...meta,itemId:tmpId,stagingFor:itemId}));
   for(let i=0;i<rows.length;i+=RESEARCH_RENDER_CHUNK_SIZE){ await researchIdbReq(chunkStore.put({id:`${tmpId}::${Math.floor(i/RESEARCH_RENDER_CHUNK_SIZE)}`,itemId:tmpId,index:Math.floor(i/RESEARCH_RENDER_CHUNK_SIZE),rows:rows.slice(i,i+RESEARCH_RENDER_CHUNK_SIZE)})); }
   await new Promise((resolve,reject)=>{ tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error); tx.onabort=()=>reject(tx.error); });
+  if(!active()) throw new Error('Reporting data changed while saving the Research result.');
   tx=db.transaction([RESEARCH_RENDER_META_STORE,RESEARCH_RENDER_CHUNK_STORE],'readwrite'); metaStore=tx.objectStore(RESEARCH_RENDER_META_STORE); const finalChunkStore=tx.objectStore(RESEARCH_RENDER_CHUNK_STORE);
   await researchIdbReq(metaStore.put({...meta,chunkPrefix:tmpId}));
   metaStore.delete(tmpId);
@@ -3976,12 +3981,15 @@ async function researchRenderedResultPut(item,result,renderedAt){
   await new Promise((resolve,reject)=>{ tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error); tx.onabort=()=>reject(tx.error); });
 }
 async function researchRenderedResultGet(itemId){
+  if(state.reportingDataClearing || state.reportingDataCleanupPending) return null;
+  const dataGeneration=state.reportingDataGeneration||'';
   console.time('[Research Builder] saved result load');
   try{
     const db=await researchRenderedDb(), tx=db.transaction([RESEARCH_RENDER_META_STORE,RESEARCH_RENDER_CHUNK_STORE],'readonly'), meta=await researchIdbReq(tx.objectStore(RESEARCH_RENDER_META_STORE).get(itemId));
-    if(!meta){ console.timeEnd('[Research Builder] saved result load'); return null; }
+    if(!meta || state.reportingDataClearing || state.reportingDataCleanupPending || dataGeneration!==(state.reportingDataGeneration||'') || (state.reportingDataClearedAt && (!meta.renderedAt || Date.parse(meta.renderedAt)<=Date.parse(state.reportingDataClearedAt)))){ console.timeEnd('[Research Builder] saved result load'); return null; }
     const rows=[], chunks=Math.ceil((meta.rowCount||0)/(meta.chunkSize||RESEARCH_RENDER_CHUNK_SIZE)), store=tx.objectStore(RESEARCH_RENDER_CHUNK_STORE), prefix=meta.chunkPrefix||itemId;
     for(let i=0;i<chunks;i++){ const c=await researchIdbReq(store.get(`${prefix}::${i}`)); if(c?.rows) rows.push(...c.rows); }
+    if(state.reportingDataClearing || state.reportingDataCleanupPending || dataGeneration!==(state.reportingDataGeneration||'')){ console.timeEnd('[Research Builder] saved result load'); return null; }
     const result={...(meta.result||{})}; if(meta.rowProp) result[meta.rowProp]=rows; console.timeEnd('[Research Builder] saved result load'); return result;
   }catch(e){ console.timeEnd('[Research Builder] saved result load'); console.warn('[Research Builder] unable to load rendered result',e); return null; }
 }
@@ -4004,6 +4012,7 @@ async function migrateLegacyResearchRenderedResults(){
   if(changed) persistResearchItemsToLocalStorage();
 }
 async function researchSaveRenderedResult(item,result){
+  if(state.reportingDataClearing || state.reportingDataCleanupPending) return false;
   const idx=(state.researchItems||[]).findIndex(x=>x.id===item.id);
   if(idx<0) return false;
   const renderedAt=new Date().toISOString(), generation={};

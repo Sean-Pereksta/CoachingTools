@@ -92,6 +92,8 @@ async function mappingsAndUi(){
     h.run("state.data.weeklyRetail={fileName:'Mapped.xlsx',headers:['Observed','Employee','Lead','Consumer Opportunities'],rows:[{Observed:'2026-09-20',Employee:'Dana Direct',Lead:'Coach Alpha','Consumer Opportunities':4,_sourceKey:'weeklyRetail'}],config:{...state.data.weeklyRetail.config,dateField:'Observed',repField:'Employee',coachField:'Lead'}};markDataIndexDirty('mapped weekly',{sources:['weeklyRetail']});");
     assert.deepEqual(plain(h.run("(()=>{const i=weeklySourceRowIdentity(state.data.weeklyRetail.rows[0],'weeklyRetail');return [i.repName,i.coach,i.dateField];})()")),['Dana Direct','Coach Alpha','Observed']);
     h.run('renderDatedStatsImportSummary();renderCoreSourceStatus();');
+    assert.match(h.run("document.querySelector('[data-ds-summary=weeklyRetail]').textContent"),/Open to calculate detailed diagnostics/);
+    await h.run("reviewWeeklySourceDiagnostics('weeklyRetail',document.querySelector('[data-ds-summary=weeklyRetail] [data-weekly-health-result]'))");
     const status=h.run("document.querySelector('[data-ds-summary=weeklyRetail]').textContent");
     assert.match(status,/Coach field identified: Lead/);assert.match(status,/1 coaches identified/);assert.match(status,/0 of 1 representatives/);assert.match(status,/2026-09-20/);
     for(const selector of ['#retailFile','#referralFile','[data-ds-upload=weeklyRetail]','[data-ds-upload=weeklyReferral]','#qaFile','#documentedCoachingFile','#checklistFile','#compCallsFile']){

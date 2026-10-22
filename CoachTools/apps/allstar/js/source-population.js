@@ -15,14 +15,17 @@ window.addEventListener?.('coachtools-stats-directory-change',()=>{
   renderCategorizedSummary();
 });
 function weeklyIdentityContext(source){
-  const data=state.data[source]||{}, roster=ensureRosterIndex(), directory=window.CoachToolsStatsDirectory;
-  const signature=[state.sourceMeta[source]?.sourceVersion||0,state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0,weeklyDirectoryRevision(),data.config?.repField||'',data.config?.coachField||'',data.config?.dateField||''].join('|');
+  const data=state.data[source]||{}, directory=window.CoachToolsStatsDirectory;
+  const signature=[state.sourceMeta[source]?.sourceVersion||0,state.versions?.roster||0,state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0,weeklyDirectoryRevision(),data.config?.repField||'',data.config?.coachField||'',data.config?.dateField||''].join('|');
   const previous=weeklyIdentityContexts.get(source);
-  if(previous&&previous.data===data&&previous.roster===roster&&previous.signature===signature&&previous.configRef===data.config)return previous;
+  // Checking a roster's content signature scans the entire roster. Reuse the
+  // resolved context before calling ensureRosterIndex for each weekly row.
+  if(previous&&previous.data===data&&previous.roster===state.rosterIndex&&previous.roster.signature&&previous.signature===signature&&previous.configRef===data.config&&previous.retailRoster===state.data.retail.controlRoster&&previous.referralRoster===state.data.referral.controlRoster)return previous;
+  const roster=ensureRosterIndex();
   const config=data.config||window.AllStarDatedStats.defaultConfig(source,data.headers||[]);
   const area=source==='weeklyReferral'?'referral':'retail';
   const candidates=[...new Set([...roster.rows.filter(r=>r.sourceArea===area).map(r=>r._team||r.team),...(state.teams||[]),...(state.orgs||[]).flatMap(o=>o.coachNames||[]),...(directory?.grouped()||[]).flatMap(g=>g.coaches)].filter(Boolean))];
-  const context={data,roster,signature,config,configRef:data.config,area,candidates,coaches:new Map(),people:new Map()};
+  const context={data,roster,signature,config,configRef:data.config,area,candidates,coaches:new Map(),people:new Map(),retailRoster:state.data.retail.controlRoster,referralRoster:state.data.referral.controlRoster};
   weeklyIdentityContexts.set(source,context);return context;
 }
 function weeklyCoachIdentity(value,context){
@@ -34,11 +37,11 @@ function weeklyCoachIdentity(value,context){
   const result=resolved.method==='unresolved'?{value:canonicalCoachName(canonical),method:'direct source name',raw}:resolved;
   context.coaches.set(raw,result);return result;
 }
-function weeklySourceRowIdentity(row,source){
-  const context=weeklyIdentityContext(source),config=context.config;
+function weeklySourceRowIdentity(row,source,resolvedContext){
+  const context=resolvedContext||weeklyIdentityContext(source),config=context.config;
   const repField=config.repField||findHeader(getHeaders(source),REP_IDENTITY_COLUMNS)||'';
   const rawRep=row?.[repField]||row?._rep||row?._repKey||'';
-  if(!context.people.has(rawRep))context.people.set(rawRep,datedStatsIdentity(rawRep,source));
+  if(!context.people.has(rawRep))context.people.set(rawRep,datedStatsIdentity(rawRep,source,context.roster));
   let person=context.people.get(rawRep);
   const normalizedKey=row?._repKey||'',normalizedRecord=normalizedKey&&(context.roster.bySourceRepKey.get(sourceRepCompositeKey(context.area,normalizedKey))||context.roster.byRepKey.get(normalizedKey));
   if(!person.reason&&normalizedRecord&&!normalizedRecord.conflict)person={id:normalizedKey,name:normalizedRecord.name||normalizedRecord._rep||person.name};
@@ -57,12 +60,13 @@ function weeklySourceRowIdentity(row,source){
   const coach=canonicalCoachName(team),dateField=config.dateField||'Date';
   return {repKey,repName,rawRep,repField,validRep:!!repKey&&!window.AllStarDatedStats.summaryName(rawRep),repReason:person.reason||'',rosterMatched:!!(rosterRecord&&!rosterRecord.conflict),coach,coachKey:coachNameKey(coach),rawCoach,coachField,directCoach:direct.value||'',coachMethod:manual?'manual mapping':rosterTeam?'trusted roster':direct.value?direct.method:fallback.value?fallback.method:mapped?'representative mapping':'unresolved',dateField,date:row?.[dateField]??row?._date};
 }
-function weeklySourceHealth(source,rows=getRowsRaw(source)){
-  const context=weeklyIdentityContext(source),reps=new Map(),coaches=new Map(),dates=new Set(),unresolvedCoaches=new Set(),unresolvedReps=new Set();
-  if(rows===context.data.rows&&context.health)return context.health;
+function* scanWeeklySourceHealth(source,rows,context){
+  const reps=new Map(),coaches=new Map(),dates=new Set(),unresolvedCoaches=new Set(),unresolvedReps=new Set(),sourceCoachValues=new Set();
   let validRows=0,recognizedCoachRows=0,rosterMatchedRows=0,directCoachRows=0;
-  for(const row of rows||[]){
-    const identity=weeklySourceRowIdentity(row,source);
+  for(let index=0;index<(rows||[]).length;index++){
+    if(index&&index%500===0)yield index;
+    const row=rows[index],rawCoach=String(row[context.config.coachField]||'').trim();if(rawCoach)sourceCoachValues.add(rawCoach);
+    const identity=weeklySourceRowIdentity(row,source,context);
     if(!identity.validRep)continue;
     validRows++;
     if(!reps.has(identity.repKey))reps.set(identity.repKey,identity);
@@ -76,12 +80,21 @@ function weeklySourceHealth(source,rows=getRowsRaw(source)){
     (identity.rosterMatched?coach.rosterReps:coach.unresolvedReps).add(identity.repKey);
     if(identity.directCoach)coach.directReps.add(identity.repKey);
   }
-  const sourceCoachValues=[...new Set((rows||[]).map(r=>String(r[context.config.coachField]||'').trim()).filter(Boolean))];
   const canonicalKeys=new Set(context.candidates.map(coachNameKey));
-  const matchedSourceCoaches=sourceCoachValues.filter(raw=>canonicalKeys.has(coachNameKey(weeklyCoachIdentity(raw,context).value))).length;
+  const matchedSourceCoaches=[...sourceCoachValues].filter(raw=>canonicalKeys.has(coachNameKey(weeklyCoachIdentity(raw,context).value))).length;
   const weeks=[...dates].sort();
-  const health={source,rows:(rows||[]).length,validRows,recognizedCoachRows,unrecognizedCoachRows:validRows-recognizedCoachRows,rosterMatchedRows,rosterUnmatchedRows:validRows-rosterMatchedRows,directCoachRows,uniqueReps:reps.size,rosterMatchedReps:[...reps.values()].filter(r=>r.rosterMatched).length,coaches:[...coaches.values()].sort((a,b)=>a.name.localeCompare(b.name)).map(c=>({...c,reps:c.reps.size,rosterReps:c.rosterReps.size,directReps:c.directReps.size,unresolvedReps:c.unresolvedReps.size})),weeks,dateRange:weeks.length?[weeks[0],weeks.at(-1)]:[],repField:context.config.repField||'',coachField:context.config.coachField||'',dateField:context.config.dateField||'',sourceCoachCount:sourceCoachValues.length,matchedSourceCoaches,unresolvedCoachValues:[...unresolvedCoaches],unresolvedRepNames:[...unresolvedReps]};
+  const health={source,rows:(rows||[]).length,validRows,recognizedCoachRows,unrecognizedCoachRows:validRows-recognizedCoachRows,rosterMatchedRows,rosterUnmatchedRows:validRows-rosterMatchedRows,directCoachRows,uniqueReps:reps.size,rosterMatchedReps:[...reps.values()].filter(r=>r.rosterMatched).length,coaches:[...coaches.values()].sort((a,b)=>a.name.localeCompare(b.name)).map(c=>({...c,reps:c.reps.size,rosterReps:c.rosterReps.size,directReps:c.directReps.size,unresolvedReps:c.unresolvedReps.size})),weeks,dateRange:weeks.length?[weeks[0],weeks.at(-1)]:[],repField:context.config.repField||'',coachField:context.config.coachField||'',dateField:context.config.dateField||'',sourceCoachCount:sourceCoachValues.size,matchedSourceCoaches,unresolvedCoachValues:[...unresolvedCoaches],unresolvedRepNames:[...unresolvedReps]};
   if(rows===context.data.rows)context.health=health;return health;
+}
+function weeklySourceHealth(source,rows=getRowsRaw(source)){
+  const context=weeklyIdentityContext(source);if(rows===context.data.rows&&context.health)return context.health;
+  const scan=scanWeeklySourceHealth(source,rows,context);let step;do{step=scan.next();}while(!step.done);return step.value;
+}
+async function weeklySourceHealthAsync(source,{active=()=>true,progress=()=>{}}={}){
+  const context=weeklyIdentityContext(source),rows=context.data.rows||[];if(context.health)return context.health;
+  const scan=scanWeeklySourceHealth(source,rows,context);let step;
+  do{if(!active())throw Object.assign(new Error('Identity review cancelled.'),{name:'AbortError'});step=scan.next();if(!step.done){progress(step.value,rows.length);await yieldToBrowser();}}while(!step.done);
+  return step.value;
 }
 function normalizeResearchCoverage(value={}){
   return {enabled:!!value.enabled,minWeeks:Math.max(1,Math.floor(Number(value.minWeeks)||8))};
@@ -144,21 +157,63 @@ function weeklyGuidedInterpretation(cfg){
   return [['Population',orgs.length?orgs.map(o=>`${o.name} · ${orgCoachSet(o).size} coaches`).join(' | '):guidedPopulationDescription()],['Preview','Click Run preview for a small sample; full results are calculated by Save & Run Research.'],['Eligibility',coverage.enabled?`Representatives appearing in at least ${coverage.minWeeks} weeks within the selected population and date range`:'All eligible representatives with an observation'],...(line?[['Chart interpretation',`Each point = ${cfg.guidedQuestion==='percentage'?'percentage of eligible unique representatives for':'result for'} one ${series==='None'?'group':series} during one imported week · X-axis = ${config.dateField||'Date'} (weekly source dates) · Line = ${series} · ${cfg.guidedSort==='default'?'Natural chronological order':cfg.guidedSort}`],['Expected',`${possible&&['coach','team'].includes(series)?'Up to '+possible+' coach lines':'One line per selected '+series} across imported weeks in the selected date range`]]:[])];
 }
 function sourceCoachDetailHtml(health){
-  return `<details><summary>View ${health.coaches.length} coaches</summary><div class="tableWrap"><table class="sourceCoachTable"><thead><tr><th>Coach</th><th>Weekly Reps</th><th>Roster Matches</th><th>Direct Source Matches</th><th>Unresolved Reps</th></tr></thead><tbody>${health.coaches.map(c=>`<tr><td>${esc(c.name)}</td><td>${c.reps}</td><td>${c.rosterReps}</td><td>${c.directReps}</td><td>${c.unresolvedReps}</td></tr>`).join('')}</tbody></table></div></details>`;
+  return `<details><summary>View ${health.coaches.length} coaches</summary><div data-source-coach-page></div></details>`;
 }
-function weeklySourceStatusHtml(source){
-  const data=state.data[source]||{},health=weeklySourceHealth(source);
-  if(!health.rows)return '<div class="hint">No data loaded</div>';
-  return `<strong class="good">Loaded</strong><div class="fileName">File: ${esc(data.fileName||'Imported source')}</div><div>${health.rows.toLocaleString()} rows · ${health.weeks.length} weeks · ${health.uniqueReps} unique representatives · ${health.coaches.length} coaches identified</div><div class="hint">Date range: ${health.dateRange.map(esc).join(' – ')||'No valid dates'}<br>Representative field: ${esc(health.repField)} · Coach field identified: ${esc(health.coachField)} · Date field: ${esc(health.dateField)}<br>Last updated: ${esc(state.sourceMeta[source]?.lastImportedAt||data.lastImportedAt||'Unavailable')}</div><div>Identity matching: ${health.rosterMatchedReps} of ${health.uniqueReps} representatives matched to known roster identities</div><div>Coach matching: ${health.matchedSourceCoaches} of ${health.sourceCoachCount} source coaches matched to canonical coaches</div>${sourceCoachDetailHtml(health)}${health.unresolvedRepNames.length?`<details><summary>${health.unresolvedRepNames.length} representative names need review</summary><p>${health.unresolvedRepNames.map(esc).join(', ')}</p><button type="button" data-source-fix-teams class="smallBtn">Review in Fix Teams</button></details>`:''}${health.unresolvedCoachValues.length?`<p role="status">Unresolved coach values: ${health.unresolvedCoachValues.slice(0,20).map(esc).join(', ')}</p>`:''}`;
+function weeklySourceStatusHtml(source,health){
+  const data=state.data[source]||{},meta=state.sourceMeta[source]||{},rows=data.rows?.length||0,config=data.config||window.AllStarDatedStats.defaultConfig(source,data.headers||[]);
+  if(!rows)return '<div class="hint">No data loaded</div>';
+  const head=`<strong class="good">Loaded</strong><div class="fileName">File: ${esc(data.fileName||'Imported source')}</div>`;
+  if(!health)return head+`<div>${rows.toLocaleString()} rows</div><div class="hint">Representative field: ${esc(config.repField||'Not mapped')} · Coach field identified: ${esc(config.coachField||'Not mapped')} · Date field: ${esc(config.dateField||'Not mapped')}<br>Last updated: ${esc(meta.lastImportedAt||data.lastImportedAt||'Unavailable')}</div>`;
+  return head+`<div>${health.rows.toLocaleString()} rows · ${health.weeks.length} weeks · ${health.uniqueReps} unique representatives · ${health.coaches.length} coaches identified</div><div class="hint">Date range: ${health.dateRange.map(esc).join(' – ')||'No valid dates'}<br>Representative field: ${esc(health.repField)} · Coach field identified: ${esc(health.coachField)} · Date field: ${esc(health.dateField)}<br>Last updated: ${esc(meta.lastImportedAt||data.lastImportedAt||'Unavailable')}</div><div>Identity matching: ${health.rosterMatchedReps} of ${health.uniqueReps} representatives matched to known roster identities</div><div>Coach matching: ${health.matchedSourceCoaches} of ${health.sourceCoachCount} source coaches matched to canonical coaches</div>${sourceCoachDetailHtml(health)}${health.unresolvedRepNames.length?`<details><summary>${health.unresolvedRepNames.length} representative names need review</summary><div data-source-name-page="unresolvedRepNames"></div><button type="button" data-source-fix-teams class="smallBtn">Review in Fix Teams</button></details>`:''}${health.unresolvedCoachValues.length?`<details><summary>Unresolved coach values</summary><div data-source-name-page="unresolvedCoachValues"></div></details>`:''}`;
+}
+function bindSourceHealthPages(root,health){
+  const bind=(host,rows,render)=>{
+    if(!host)return;let offset=0;const size=100;
+    const paint=()=>{host.innerHTML=render(rows.slice(offset,offset+size))+`<div class="row"><span>${rows.length?offset+1:0}–${Math.min(offset+size,rows.length)} of ${rows.length}</span>${offset?'<button type="button" class="smallBtn" data-page-prev>Previous</button>':''}${offset+size<rows.length?'<button type="button" class="smallBtn" data-page-next>Next</button>':''}</div>`;host.querySelector('[data-page-prev]')?.addEventListener('click',()=>{offset-=size;paint();});host.querySelector('[data-page-next]')?.addEventListener('click',()=>{offset+=size;paint();});};paint();
+  };
+  bind(root.querySelector('[data-source-coach-page]'),health.coaches||[],rows=>`<div class="tableWrap"><table class="sourceCoachTable"><thead><tr><th>Coach</th><th>Weekly Reps</th><th>Roster Matches</th><th>Direct Source Matches</th><th>Unresolved Reps</th></tr></thead><tbody>${rows.map(c=>`<tr><td>${esc(c.name)}</td><td>${c.reps}</td><td>${c.rosterReps}</td><td>${c.directReps}</td><td>${c.unresolvedReps}</td></tr>`).join('')}</tbody></table></div>`);
+  root.querySelectorAll('[data-source-name-page]').forEach(host=>bind(host,health[host.dataset.sourceNamePage]||[],rows=>`<p>${rows.map(esc).join(', ')}</p>`));
+}
+const coreSourceHealthCache=new Map();
+function importedSourceRowCount(source){
+  if(source==='monthly_opportunity'||source==='monthly_wiper'){
+    if(typeof monthlySourceCache!=='undefined'&&monthlySourceCache?.retail===state.data.retail&&monthlySourceCache?.referral===state.data.referral)return monthlySourceCache[source]?.length||0;
+    if(!state.data.retail.monthlyBundle&&!state.data.referral.monthlyBundle)return 0;
+    return null; // derived monthly population is compiled only by a report/user action
+  }
+  return (getRowsRaw(source)||[]).length;
+}
+function invalidateSourceHealthCaches(){weeklyIdentityContexts.clear();coreSourceHealthCache.clear();if(typeof datedStatsDirectCategories!=='undefined')datedStatsDirectCategories.clear();}
+function sourceHealthRevision(){const v=state.versions||{};return [v.data||0,v.roster||0,v.aliases||0,v.teams||0,v.mappings||0].join('|');}
+async function reviewCoreSourceHealth(source,host){
+  const rows=getRowsRaw(source)||[],revision=sourceHealthRevision(),active=()=>host.isConnected&&!state.reportingDataClearing&&revision===sourceHealthRevision()&&rows===getRowsRaw(source);
+  const cached=coreSourceHealthCache.get(source);
+  let result=cached?.rows===rows&&cached.revision===revision?cached.result:null;
+  if(!result){
+    const reps=new Set(),coaches=new Set(),managers=new Set();host.textContent='Reviewing source identities…';await yieldToBrowser();
+    const roster=ensureRosterIndex();
+    for(let i=0;i<rows.length;i++){
+      if(i%500===0){if(!active())return false;host.textContent=`Reviewing source identities: ${i.toLocaleString()} / ${rows.length.toLocaleString()}`;await yieldToBrowser();}
+      const row=rows[i],key=repKeyFromAnyRow(row),team=rowTeam(row,{roster,mutate:false});if(key)reps.add(key);if(team&&team!==NA_TEAM)coaches.add(canonicalCoachName(team));if(row._manager)managers.add(row._manager);
+    }
+    result={representativeCount:reps.size,teamCount:coaches.size,managerCount:managers.size,coachNames:[...coaches].sort()};
+    if(!active())return false;
+    coreSourceHealthCache.set(source,{rows,revision,result});
+    state.sourceMeta[source]={...(state.sourceMeta[source]||{}),rowCount:rows.length,representativeCount:result.representativeCount,teamCount:result.teamCount};
+  }
+  host.innerHTML=`<div>${result.representativeCount.toLocaleString()} representatives · ${result.teamCount.toLocaleString()} coaches · ${result.managerCount.toLocaleString()} manager groups</div><details><summary>View ${result.coachNames.length} coaches</summary><div data-source-name-page="coachNames"></div></details>`;
+  bindSourceHealthPages(host,result);return true;
 }
 function renderCoreSourceStatus(){
   // IndexedDB hydration can finish while the portable page is still loading
   // scripts. The normal startup render will fill these cards once rows are ready.
   if(typeof isDatedStatsSource!=='function')return;
   document.querySelectorAll('[data-source-status]').forEach(box=>{
-    const source=box.dataset.sourceStatus,area=source==='retail_sv2'?'retail':source==='referral_sv2'?'referral':'',data=area?state.data[area]:state.data[source],rows=getRowsRaw(source)||[],reps=new Set(),coaches=new Set(),managers=new Set();
-    for(const row of rows){const key=repKeyFromAnyRow(row),team=rowTeam(row);if(key)reps.add(key);if(team&&team!==NA_TEAM)coaches.add(canonicalCoachName(team));if(row._manager)managers.add(row._manager);}
+    const source=box.dataset.sourceStatus,area=source==='retail_sv2'?'retail':source==='referral_sv2'?'referral':'',data=area?state.data[area]:state.data[source],rows=getRowsRaw(source)||[],meta=state.sourceMeta[source]||{};
     const summary=data?.monthlySummary;
-    box.innerHTML=rows.length?`<strong class="good">Loaded</strong><div>${rows.length.toLocaleString()} rows · ${reps.size} representatives · ${coaches.size} coaches${area?` · ${summary?.managerCount??managers.size} manager groups`:''}</div>${area?`<div class="hint">Opportunity file: ${esc(data.monthlyBundle?(data.monthlyBundle.opportunity?.name||'Not supplied (optional for Referral)'):(sourceFileName(source)||'Imported source'))}<br>Wiper file(s): ${(summary?.files||[]).map(f=>esc(f.name)).join(', ')||esc(sourceFileName(area+'_wiper')||'None')}</div>`:''}<div class="hint">Last updated: ${esc(state.sourceMeta[source]?.lastImportedAt||summary?.importedAt||'Unavailable')}</div>${coaches.size?`<details><summary>View ${coaches.size} coaches</summary><p>${[...coaches].sort().map(esc).join(', ')}</p></details>`:''}`:'<div class="hint">No data loaded</div>';
+    const cached=coreSourceHealthCache.get(source),health=cached?.rows===rows&&cached.revision===sourceHealthRevision()?cached.result:null;
+    const reps=summary?.repCount??health?.representativeCount,coaches=summary?.teamCount??health?.teamCount,managers=summary?.managerCount;
+    box.innerHTML=rows.length?`<strong class="good">Loaded</strong><div>${rows.length.toLocaleString()} rows${Number.isFinite(reps)?` · ${reps} representatives`:''}${Number.isFinite(coaches)?` · ${coaches} coaches`:''}${area&&Number.isFinite(managers)?` · ${managers} manager groups`:''}</div>${area?`<div class="hint">Opportunity file: ${esc(data.monthlyBundle?(data.monthlyBundle.opportunity?.name||'Not supplied (optional for Referral)'):(sourceFileName(source)||'Imported source'))}<br>Wiper file(s): ${(summary?.files||[]).map(f=>esc(f.name)).join(', ')||esc(sourceFileName(area+'_wiper')||'None')}</div>`:''}<div class="hint">Last updated: ${esc(meta.lastImportedAt||summary?.importedAt||'Unavailable')}</div><details data-source-health-details><summary>Review representatives and coaches</summary><div data-source-health-result class="hint">Open to calculate identity details.</div></details>`:'<div class="hint">No data loaded</div>';
+    const details=box.querySelector('[data-source-health-details]');details?.addEventListener('toggle',()=>{if(details.open)reviewCoreSourceHealth(source,details.querySelector('[data-source-health-result]')).catch(error=>{details.querySelector('[data-source-health-result]').textContent=error.message;});});
   });
 }

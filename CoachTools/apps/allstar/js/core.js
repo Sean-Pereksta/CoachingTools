@@ -356,6 +356,39 @@ function teamTotalsIndexSignature(ds){
   const mappingIdentity=mappings.map(m=>[m?.team,m?.teamKey,m?.controlTab,m?.summaryLookupKey,m?.lookupKey].map(x=>String(x??'')).join('\u001e')).join('\u001d');
   return stableSerialize({rowsVersion:Number(ds?.rowsVersion)||0,rowCount:rows.length,headers:headers.join('\u001f'),rowIdentity,mappingIdentity,identitySchemaVersion:Number(ds?.identitySchemaVersion)||0,identityHeader:ds?.identityHeader||'',teams:v.teams||0,mappings:v.mappings||0,fileName:ds?.fileName||'',sheetName:ds?.sheetName||''});
 }
+// Explicit coach merges pool each original team's total once. Ordinary duplicate
+// source summary rows continue using the existing preferred-row rule.
+function mergedCoachTeamTotalsRows(rows,headers=[]){
+  const groups=new Map();
+  for(const row of rows||[]){const key=coachNameKey(row._team||row['Full Team Name']||'');if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row);}
+  const output=[];
+  for(const group of groups.values()){
+    if(group.length<2||!group.some(r=>r._coachRenameOrigin)){output.push(...group);continue;}
+    const origins=new Map();
+    for(const row of group){const key=coachNameKey(row._coachRenameOrigin||row._team);origins.set(key,teamTotalsPreferredRow(origins.get(key),row,headers));}
+    const parts=[...origins.values()];if(parts.length<2){output.push(parts[0]);continue;}
+    const merged={...parts[0],_coachMergedRows:parts,_coachMergeUnavailable:[]};
+    const number=v=>v===null||v===undefined||String(v).trim()===''?NaN:Number(String(v).replace(/[,%$\s]/g,''));
+    const headerKey=h=>String(h).toLowerCase().replace(/[^a-z0-9]/g,'');
+    const lookup=names=>headers.find(h=>names.includes(headerKey(h)));
+    const sum=h=>{const values=parts.map(r=>number(r[h]));return values.every(Number.isFinite)?values.reduce((a,b)=>a+b,0):NaN;};
+    for(const h of headers){
+      if(h===teamTotalsIdentityHeader(headers)||TEAM_TOTAL_METADATA_HEADERS.includes(h))continue;
+      const values=parts.map(r=>r[h]);if(!values.every(v=>Number.isFinite(number(v)))){if(values.some(v=>Number.isFinite(number(v)))){merged[h]='';merged._coachMergeUnavailable.push(h);}continue;}
+      if(/rate|percent|%|pct/i.test(h)||values.some(v=>/%/.test(String(v)))){
+        const stem=headerKey(h).replace(/appointmentrate|apprate|rate|percentage|percent|pct/g,'');
+        const numerator=lookup([stem+'appointments',stem+'apps',stem+'accepted',stem+'wipersaccepted',...(stem==='wiper'||stem==='wipers'?['accepted','wipersaccepted','countwipersaccepted','count']:[])]);
+        const denominator=lookup([stem+'opportunities',stem+'opps',stem+'offered',stem+'wipersoffered',...(stem==='wiper'||stem==='wipers'?['offered','wipersoffered','countwipersoffered','jobs']:[])]);
+        const n=numerator?sum(numerator):NaN,d=denominator?sum(denominator):NaN;
+        if(Number.isFinite(n)&&d>0)merged[h]=merged._monthly?n/d*100:String(n/d*100)+'%';
+        else if(new Set(values.map(v=>String(v).trim())).size===1)merged[h]=values[0];
+        else{merged[h]='';merged._coachMergeUnavailable.push(h);}
+      }else merged[h]=sum(h);
+    }
+    output.push(merged);
+  }
+  return output;
+}
 function ensureTeamTotalsIndex(ds){
   ds=ds||emptyTeamTotalsDataset('retail');
   const source=ds._sourceKey || (/referral/i.test(ds.sheetName||ds.fileName||'')?'referral_team_totals':'retail_team_totals');
@@ -365,7 +398,7 @@ function ensureTeamTotalsIndex(ds){
   const t0=performance.now(), exact=Object.create(null), aliases=Object.create(null), aliasOwners=Object.create(null), aliasConflicts=new Set(), identityHeader=teamTotalsIdentityHeader(ds.headers||[]), headers=ds.headers||[];
   const addExact=(name,row)=>{ const key=coachNameKey(name||''); if(key) exact[key]=teamTotalsPreferredRow(exact[key],row,headers); };
   const addAlias=(name,row,owner)=>{ const key=coachInitialSurnameKey(name); if(!key || aliasConflicts.has(key)) return; const priorOwner=aliasOwners[key]; if(priorOwner && priorOwner!==owner){ aliasConflicts.add(key); delete aliases[key]; delete aliasOwners[key]; return; } aliasOwners[key]=owner; aliases[key]=teamTotalsPreferredRow(aliases[key],row,headers); };
-  (ds.rows||[]).forEach(r=>{
+  mergedCoachTeamTotalsRows(ds.rows||[],headers).forEach(r=>{
     const owner=coachNameKey(r?._team||r?.['Full Team Name']||(identityHeader?r?.[identityHeader]:'')||r?._summaryLookupKey||'');
     [r?._team,r?.['Full Team Name'],identityHeader?r?.[identityHeader]:'',r?._teamKey,r?._summaryLookupKey,r?._summaryDisplayName].forEach(name=>{ addExact(name,r); addAlias(name,r,owner); });
   });

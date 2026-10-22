@@ -1,6 +1,6 @@
 /* Discoverable navigation layered over the existing All-Star actions.
  * No source hydration, normalization, scoring or automatic categorization occurs here.
- * Preferences contain only command ids; models, reports and imported data retain their stores.
+ * Preferences retain command ids and bounded display metadata for saved people only.
  */
 (function(root,factory){
   'use strict';
@@ -15,10 +15,21 @@
   const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const number=value=>Number(value||0).toLocaleString();
   const asArray=value=>Array.isArray(value)?value:[];
+  function savedPerson(item){
+    if(!item||typeof item.id!=='string'||!['team','representative'].includes(item.action)) return null;
+    const keys=['id','action','entityId','name','team','label','category','description'];
+    const result=Object.fromEntries(keys.filter(key=>typeof item[key]==='string').map(key=>[key,item[key]]));
+    if(!result.label||!result.id.startsWith(item.action==='team'?'team:':'rep:')) return null;
+    if(item.action==='team'&&!result.entityId||item.action==='representative'&&!result.name) return null;
+    return result;
+  }
   function readPreferences(storage){
     try{
       const saved=JSON.parse(storage?.getItem(PREF_KEY)||'{}');
-      return {favorites:[...new Set(asArray(saved.favorites).filter(x=>typeof x==='string'))].slice(0,40),recent:asArray(saved.recent).filter(x=>x&&typeof x.id==='string'&&Number.isFinite(x.at)).slice(0,24)};
+      const prefs={favorites:[...new Set(asArray(saved.favorites).filter(x=>typeof x==='string'))].slice(0,40),recent:asArray(saved.recent).filter(x=>x&&typeof x.id==='string'&&Number.isFinite(x.at)).map(({id,at})=>({id,at})).slice(0,24)};
+      const kept=new Set([...prefs.favorites,...prefs.recent.map(x=>x.id)]), people=asArray(saved.people).map(savedPerson).filter(x=>x&&kept.has(x.id)).slice(0,64);
+      if(people.length) prefs.people=people;
+      return prefs;
     }catch(_){ return {favorites:[],recent:[]}; }
   }
   function searchCatalog(catalog,query,preferences={},limit=50){
@@ -32,7 +43,7 @@
     }).filter(Boolean).sort((a,b)=>b.score-a.score||a.index-b.index).slice(0,limit).map(x=>x.item);
   }
   function sourceSummary(app,sources){
-    const raw=sources.filter(s=>!s.categorized), loaded=raw.filter(s=>s.rowCount>0||s.headers?.length);
+    const raw=sources.filter(s=>!s.categorized&&!s.derived), loaded=raw.filter(s=>s.rowCount>0||s.headers?.length);
     const warningCount=asArray(app.categorized?.warnings).length;
     const identityCount=asArray(app.identityConflicts).length+asArray(app.quarantinedRepAliases).length;
     const categorizedRows=sources.filter(s=>s.categorized).reduce((sum,s)=>sum+s.rowCount,0);
@@ -40,7 +51,7 @@
     const updated=loaded.map(s=>s.updatedAt).filter(Boolean).sort().pop()||'';
     return {loaded:loaded.length,rows:loaded.reduce((sum,s)=>sum+s.rowCount,0),models:asArray(app.models).length,research:asArray(app.researchItems).length,warningCount,identityCount,categorizedRows,stale,updated};
   }
-  function buildCatalog(app,sources,reportMetadata=[],chartMetadata=[]){
+  function buildCatalog(app,sources,reportMetadata=[],chartMetadata=[],{includePeople=true}={}){
     const result=[], ids=new Set();
     function add(item){
       if(!item.id||ids.has(item.id)) return;
@@ -67,6 +78,7 @@
       ['messages','Open Messages / Qualtrics','Messages','Rules, mass messages and individual reviews'],
       ['history','Open History','History','Recently opened work and saved report snapshots'],
       ['settings','Open Settings','Settings','Mapping, storage, exports and diagnostics'],
+      ['clear-data','Clear All Data','Settings','Remove stored reporting data; preserve settings'],
       ['mapping','Review Column Mappings','Data','Mass Header Check and missing columns'],
       ['roster','Roster Reassignment','Organizations','Preview and apply a replacement roster'],
       ['list-tester','Open List Tester','Research','Compare a list of representatives'],
@@ -81,11 +93,12 @@
     for(const item of asArray(app.researchItems)) add({id:'research:'+item.id,action:'research-item',entityId:item.id,label:item.title||'Untitled research',category:'Research',description:item.outputType||'Analysis',keywords:item.source||''});
     for(const metric of asArray(app.metrics)) add({id:'metric:'+metric.id,action:'metric',entityId:metric.id,label:metric.name||'Untitled metric',category:'Metrics',description:metric.notes||metric.field||'Edit saved metric'});
     for(const source of sources){
-      add({id:'source:'+source.id,action:'source',entityId:source.id,label:source.label,category:'Data Sources',description:`${number(source.rowCount)} rows · inspect mappings`,keywords:'update import '+source.fileName});
+      add({id:'source:'+source.id,action:'source',entityId:source.id,label:source.label,category:'Data Sources',description:`${source.rowCount==null?'Count on first use':number(source.rowCount)+' rows'} · inspect mappings`,keywords:'update import '+source.fileName});
       for(const column of source.headers||[]) add({id:'column:'+source.id+':'+column,action:'column',entityId:source.id,column,label:column,category:'Columns',description:source.label,keywords:source.id});
     }
     for(const org of asArray(app.orgs)) add({id:'org:'+org.id,action:'organization',entityId:org.id,label:org.name||'Organization',category:'Organizations',description:`${asArray(org.coachNames).length} coaches`});
     for(const group of asArray(app.researchGroups)) add({id:'research-group:'+group.id,action:'research-group',entityId:group.id,label:group.name||'Research Group',category:'Research Groups',description:`${asArray(group.repNames).length} representatives`,keywords:'work group scope'});
+    if(includePeople){
     const teams=new Set(asArray(app.teams).map(x=>typeof x==='string'?x:x.name||x.team).filter(Boolean));
     const roster=[...asArray(app.data?.retail?.controlRoster),...asArray(app.data?.referral?.controlRoster)];
     if(!app.dataIndex?.dirty) roster.push(...asArray(app.dataIndex?.reps));
@@ -102,6 +115,7 @@
       add({id:'rep:'+normalize(name)+':'+normalize(team),action:'representative',entityId:rep._repKey||name,name,team,label:name,category:'Representatives',description:team||'No assigned team',keywords:'find '+team});
     }
     teams.forEach(team=>add({id:'team:'+team,action:'team',entityId:team,label:team,category:'Teams / Coaches',description:'Open team roster and identity details',keywords:'find coach'}));
+    }
     for(const report of reportMetadata) add({id:'report:'+report.id,action:'report',entityId:report.id,label:report.modelName||'Saved report',category:'Reports',description:[report.periodStart,report.periodEnd,report.organizationName].filter(Boolean).join(' · '),keywords:report.note||''});
     for(const chart of chartMetadata) add({id:'chart:'+chart.id,action:'chart',entityId:chart.id,label:chart.title||chart.name||'Saved chart',category:'Charts',description:chart.type||chart.chartType||'Open saved chart'});
     return result;
@@ -114,19 +128,19 @@
     if(storage===undefined){ try{ storage=root.localStorage; }catch(_){ storage=null; } }
     const prefs=readPreferences(storage), providers=new Map();
     let initialized=false, currentSection='Home', workspaceSection='Home', catalog=[], results=[], selected=0, paletteOpen=false, restoreFocus=null;
-    let reports=[], reportsLoadedAt=0, reportsFlight=null, pendingRefresh=0, catalogDirty=true;
+    let reports=[], reportsLoadedAt=0, reportsFlight=null, pendingRefresh=0, catalogDirty=true, navigationCatalog=null;
     const observers=[], cleanups=[];
     const byId=id=>document?.getElementById(id);
     function call(name,...args){ const fn=options.actions?.[name]||root[name]; if(typeof fn==='function') return fn(...args); throw new Error('This action is unavailable: '+name); }
-    function persist(){ try{ storage?.setItem(PREF_KEY,JSON.stringify(prefs)); }catch(_){ announce('Navigation preferences could not be saved. You can continue using this session.'); } }
+    function persist(){ const kept=new Set([...prefs.favorites,...prefs.recent.map(x=>x.id)]); if(prefs.people) prefs.people=prefs.people.filter(x=>kept.has(x.id)).slice(0,64); try{ storage?.setItem(PREF_KEY,JSON.stringify(prefs)); }catch(_){ announce('Navigation preferences could not be saved. You can continue using this session.'); } }
     function announce(message){ const node=byId('asWorkspaceNotice'); if(node) node.textContent=message; }
-    function sourceMetadata(){
+    function sourceMetadata(detailed=false){
       if(options.getSources) return options.getSources();
       const app=getState(), sourceKeys=typeof allSourceKeys==='function'?allSourceKeys():[];
       return sourceKeys.map(source=>{
-        const meta=app.sourceMeta?.[source]||{}, rows=typeof getRowsRaw==='function'?getRowsRaw(source):[];
+        const meta=app.sourceMeta?.[source]||{}, derived=['monthly_opportunity','monthly_wiper'].includes(source), rows=(!derived||detailed)&&typeof getRowsRaw==='function'?getRowsRaw(source):null;
         const categorized=typeof isCategorizedSource==='function'?isCategorizedSource(source):['date','nondate'].includes(source);
-        return {id:source,label:typeof labelSource==='function'?labelSource(source):source,rowCount:rows?.length||Number(meta.rowCount)||0,headers:typeof getHeaders==='function'?getHeaders(source):meta.normalizedHeaders||[],fileName:meta.fileName||(typeof sourceFileName==='function'?sourceFileName(source):''),updatedAt:meta.lastImportedAt||meta.importedAt||'',categorized};
+        return {id:source,label:typeof labelSource==='function'?labelSource(source):source,rowCount:rows?rows.length:typeof importedSourceRowCount==='function'?importedSourceRowCount(source):null,headers:(!derived||detailed)&&typeof getHeaders==='function'?getHeaders(source):meta.normalizedHeaders||[],derived,available:derived&&typeof sourceHasImportedData==='function'&&sourceHasImportedData(source),fileName:meta.fileName||(typeof sourceFileName==='function'?sourceFileName(source):''),updatedAt:meta.lastImportedAt||meta.importedAt||'',categorized};
       });
     }
     function chartMetadata(){
@@ -137,7 +151,7 @@
     }
     function getCatalog(force=false){
       if(force||catalogDirty){
-        catalog=buildCatalog(getState(),sourceMetadata(),reports,chartMetadata());
+        catalog=buildCatalog(getState(),sourceMetadata(true),reports,chartMetadata());
         providers.forEach(provider=>{
           try{ for(const item of provider()||[]) if(item?.id&&item.label) catalog.push({...item,searchText:normalize([item.label,item.category,item.description,item.keywords].join(' '))}); }
           catch(error){ console.warn('[All-Star navigation] Search provider unavailable',error); }
@@ -146,15 +160,56 @@
       }
       return catalog;
     }
+    // Common navigation never builds the potentially enormous representative
+    // search index. Keep it available, on demand, in Search and entity commands.
+    function getNavigationCatalog(){
+      if(!navigationCatalog) navigationCatalog=buildCatalog(getState(),sourceMetadata(),reports,chartMetadata(),{includePeople:false});
+      return navigationCatalog;
+    }
+    function rememberPerson(command){
+      const person=savedPerson(command); if(!person) return;
+      prefs.people=[person,...asArray(prefs.people).filter(x=>x.id!==person.id)].slice(0,64);
+    }
+    // Legacy preferences saved only ids. Recover their small display records from
+    // team metadata; opening Home never enumerates the representative roster.
+    function savedCommand(id){
+      const current=getNavigationCatalog().find(x=>x.id===id)||(!catalogDirty&&catalog.find(x=>x.id===id));
+      if(current) return current;
+      const cached=asArray(prefs.people).find(x=>x.id===id); if(cached) return cached;
+      const app=getState(), teams=[...asArray(app.teams).map(x=>typeof x==='string'?x:x.name||x.team),...asArray(app.teamIndexCache?.teamCounts).map(x=>x.team),...(!app.dataIndex?.dirty?asArray(app.dataIndex?.teamCounts).map(x=>x.team):[])].filter(Boolean);
+      if(id.startsWith('team:')){const team=id.slice(5);if(!teams.includes(team))return null;return {id,action:'team',entityId:team,label:team,category:'Teams / Coaches',description:'Open team roster and identity details'};}
+      if(!id.startsWith('rep:'))return null;
+      const rest=id.slice(4), team=teams.filter(name=>rest.endsWith(':'+normalize(name))).sort((a,b)=>b.length-a.length)[0];
+      if(!team)return null;
+      const name=rest.slice(0,-normalize(team).length-1);if(!name)return null;
+      return {id,action:'representative',entityId:name,name,team,label:name,category:'Representatives',description:team,legacyPerson:true};
+    }
+    function renameCoach(from,to){
+      const coachKey=value=>String(value??'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase(), before=coachKey(from), replacements=new Map();
+      const updated=[];
+      for(const id of new Set([...prefs.favorites,...prefs.recent.map(x=>x.id)])){
+        let item=savedCommand(id);
+        // state.teams may already contain the corrected name by this point.
+        if(!item&&id.startsWith('team:')&&coachKey(id.slice(5))===before)item={id,action:'team',entityId:from,label:from,category:'Teams / Coaches',description:'Open team roster and identity details'};
+        if(!item&&id.startsWith('rep:')&&id.endsWith(':'+normalize(from))){const name=id.slice(4,-normalize(from).length-1);item={id,action:'representative',entityId:name,name,team:from,label:name,category:'Representatives',description:from};}
+        if(!item)continue;
+        if(item.action==='team'&&coachKey(item.entityId)===before)item={...item,id:'team:'+to,entityId:to,label:to};
+        else if(item.action==='representative'&&coachKey(item.team)===before)item={...item,id:'rep:'+normalize(item.name)+':'+normalize(to),team:to,description:to};
+        replacements.set(id,item.id);const person=savedPerson(item);if(person)updated.push(person);
+      }
+      prefs.favorites=[...new Set(prefs.favorites.map(id=>replacements.get(id)||id))];
+      const seen=new Set();prefs.recent=prefs.recent.map(item=>({...item,id:replacements.get(item.id)||item.id})).filter(item=>{if(seen.has(item.id))return false;seen.add(item.id);return true;});
+      prefs.people=[...new Map(updated.map(item=>[item.id,item])).values()];persist();catalog=[];catalogDirty=true;navigationCatalog=null;renderPanel();
+    }
     function record(command){
-      if(typeof command==='string') command=getCatalog().find(x=>x.id===command);
+      if(typeof command==='string') command=savedCommand(command)||getCatalog().find(x=>x.id===command);
       if(!command?.id||command.id==='action:home'||command.id==='action:history') return;
-      prefs.recent=[{id:command.id,at:Date.now()},...prefs.recent.filter(x=>x.id!==command.id)].slice(0,24);
-      persist(); scheduleRefresh();
+      prefs.recent=[{id:command.id,at:Date.now()},...prefs.recent.filter(x=>x.id!==command.id)].slice(0,24);rememberPerson(command);
+      persist(); renderPanel();
     }
     function toggleFavorite(id){
       if(prefs.favorites.includes(id)) prefs.favorites=prefs.favorites.filter(x=>x!==id);
-      else if(prefs.favorites.length<40) prefs.favorites.push(id);
+      else if(prefs.favorites.length<40){prefs.favorites.push(id);rememberPerson(savedCommand(id)||getCatalog().find(x=>x.id===id));}
       else return announce('You can keep up to 40 favorites. Remove one to add another.');
       persist(); if(paletteOpen) renderPalette(); renderPanel();
     }
@@ -176,25 +231,25 @@
       }
     }
     function homeHtml(){
-      const app=getState(), sources=sourceMetadata(), summary=sourceSummary(app,sources), all=getCatalog();
-      const recent=prefs.recent.map(x=>all.find(y=>y.id===x.id)).filter(Boolean).slice(0,6);
-      const favorites=prefs.favorites.map(x=>all.find(y=>y.id===x)).filter(Boolean);
+      const app=getState(), sources=sourceMetadata(), summary=sourceSummary(app,sources), all=getNavigationCatalog();
+      const recent=prefs.recent.map(x=>savedCommand(x.id)).filter(Boolean).slice(0,6);
+      const favorites=prefs.favorites.map(savedCommand).filter(Boolean);
       const updated=summary.updated?new Date(summary.updated):null;
       const stat=(label,value,detail)=>`<div class="asStat"><span>${label}</span><strong>${value}</strong><small>${escape(detail)}</small></div>`;
       return `<div class="asPageHeading"><div><p class="asEyebrow">ALL-STAR WORKSPACE</p><h1>Start with your data. Find your next action.</h1><p>Update sources, run a model, or explore a question in Research.</p></div><button type="button" data-as-command="action:data" class="asPrimary">Update Data</button></div>
         <div class="asStats">${stat('Loaded sources',number(summary.loaded),number(summary.rows)+' imported rows')}${stat('Models',number(summary.models),summary.models?'Saved and ready to configure':'Create your first model')}${stat('Research',number(summary.research),'Saved analyses')}${stat('Categorization',summary.stale?'Needs update':summary.categorizedRows?'Ready':'Not run',number(summary.categorizedRows)+' categorized rows')}</div>
         <section class="asCard"><h2>Quick start</h2><div class="asQuickActions">${[['action:data','1. Update Data'],['action:run','2. Run Model'],['action:research-new','Start Research'],['action:report-new','Create Report'],['action:messages','Open Messages']].map(([id,label])=>commandButton({id,label})).join('')}</div><p class="asMuted">New here? Load your files first. If models use categorized data, open Data and press Categorize Data after the upload.</p></section>
         <div class="asColumns"><section class="asCard"><h2>Recent work</h2>${cardsFor(recent,'The models, Research items, charts and reports you open appear here.')}<button type="button" data-as-command="action:history" class="asTextButton">View history</button></section><section class="asCard"><h2>Favorites</h2>${cardsFor(favorites,'Use the star beside an item in Search or Recent work to keep it here.')}<button type="button" data-as-open-palette class="asTextButton">Search everything</button></section></div>
-        <div class="asColumns"><section class="asCard"><h2>Data health</h2><ul class="asHealthList"><li><span>Data</span><strong>${summary.loaded?'Loaded':'Choose files to begin'}</strong></li><li><span>Models</span><strong>${summary.models?'Check readiness when selecting a model':'No models yet'}</strong></li><li><span>Categorization</span><strong>${summary.stale?'Update required':summary.categorizedRows?'Current':'Not yet created'}</strong></li><li><span>Mapping warnings</span><strong>${number(summary.warningCount)}</strong></li><li><span>Identity warnings</span><strong>${number(summary.identityCount)}</strong></li></ul><p class="asMuted">Model-specific blocking issues are checked in Run → View Details.</p><div class="asQuickActions"><button type="button" data-as-command="action:mapping">Review mappings</button><button type="button" data-as-command="action:teams">Review identities</button></div></section><section class="asCard"><h2>Loaded sources</h2><p class="asMuted">${updated&&!isNaN(updated)?'Last imported '+escape(updated.toLocaleString()):'Import time will appear after a new upload.'}</p><div class="asSourceList">${sources.filter(x=>!x.categorized&&(x.rowCount||x.headers?.length)).map(source=>`<div class="asSourceRow">${commandButton({id:'source:'+source.id,label:source.label})}<span>${number(source.rowCount)} rows</span><small>${escape(source.fileName||'Connected data')}</small></div>`).join('')||'<p class="asEmptyState">No sources loaded. Choose Update Data to connect your coaching files.</p>'}</div></section></div>`;
+        <div class="asColumns"><section class="asCard"><h2>Data health</h2><ul class="asHealthList"><li><span>Data</span><strong>${summary.loaded?'Loaded':'Choose files to begin'}</strong></li><li><span>Models</span><strong>${summary.models?'Check readiness when selecting a model':'No models yet'}</strong></li><li><span>Categorization</span><strong>${summary.stale?'Update required':summary.categorizedRows?'Current':'Not yet created'}</strong></li><li><span>Mapping warnings</span><strong>${number(summary.warningCount)}</strong></li><li><span>Identity warnings</span><strong>${number(summary.identityCount)}</strong></li></ul><p class="asMuted">Model-specific blocking issues are checked in Run → View Details.</p><div class="asQuickActions"><button type="button" data-as-command="action:mapping">Review mappings</button><button type="button" data-as-command="action:teams">Review identities</button></div></section><section class="asCard"><h2>Loaded sources</h2><p class="asMuted">${updated&&!isNaN(updated)?'Last imported '+escape(updated.toLocaleString()):'Import time will appear after a new upload.'}</p><div class="asSourceList">${sources.filter(x=>!x.categorized&&!x.derived&&(x.rowCount||x.headers?.length)).map(source=>`<div class="asSourceRow">${commandButton({id:'source:'+source.id,label:source.label})}<span>${number(source.rowCount)} rows</span><small>${escape(source.fileName||'Connected data')}</small></div>`).join('')||'<p class="asEmptyState">No sources loaded. Choose Update Data to connect your coaching files.</p>'}</div></section></div>`;
     }
     function historyHtml(){
-      const all=getCatalog(), recent=prefs.recent.map(entry=>{ const item=all.find(x=>x.id===entry.id); return item?{...item,description:new Date(entry.at).toLocaleString()}:null; }).filter(Boolean);
+      const all=getNavigationCatalog(), recent=prefs.recent.map(entry=>{ const item=savedCommand(entry.id); return item?{...item,description:new Date(entry.at).toLocaleString()}:null; }).filter(Boolean);
       const saved=all.filter(x=>x.category==='Reports');
       return `<div class="asPageHeading"><div><h1>History</h1><p>Continue recent work or inspect an automatically saved report snapshot.</p></div><button type="button" data-as-command="action:report-saved">Compare saved reports</button></div><div class="asColumns"><section class="asCard"><h2>Recently opened</h2>${cardsFor(recent,'Your recent actions will appear here.')}</section><section class="asCard"><h2>Saved reports</h2>${cardsFor(saved,'No report snapshots are available yet. Run a model to create your first report.')}${commandButton({id:'action:report-new',label:'Create Report'})}</section></div>`;
     }
     function settingsHtml(){
-      const all=getCatalog();
-      return `<div class="asPageHeading"><div><h1>Settings and tools</h1><p>Find mapping, storage, reporting and diagnostic controls in their existing workspaces.</p></div></div><div class="asColumns"><section class="asCard"><h2>Data and identity</h2>${cardsFor(all.filter(x=>['action:data','action:mapping','action:roster','action:teams'].includes(x.id)),'')}</section><section class="asCard"><h2>Reporting and diagnostics</h2>${cardsFor(all.filter(x=>['action:pdf-settings','action:model-health','action:metrics','action:performance'].includes(x.id)),'')}<p class="asMuted">Open Data for cache backup, persistence, troubleshooting and package exports. Your existing presets remain in Run.</p></section></div>`;
+      const all=getNavigationCatalog();
+      return `<div class="asPageHeading"><div><h1>Settings and tools</h1><p>Find mapping, storage, reporting and diagnostic controls in their existing workspaces.</p></div></div><div class="asColumns"><section class="asCard"><h2>Data and identity</h2>${cardsFor(all.filter(x=>['action:data','action:mapping','action:roster','action:teams'].includes(x.id)),'')}<div class="asDataClear"><h3>Clear reporting data</h3><p class="asMuted">Remove imported records, saved report snapshots, and calculated results. Your settings, models, and mappings are kept.</p><button type="button" id="settingsClearAllDataBtn" class="red" data-as-command="action:clear-data">Clear All Data</button></div></section><section class="asCard"><h2>Reporting and diagnostics</h2>${cardsFor(all.filter(x=>['action:pdf-settings','action:model-health','action:metrics','action:performance'].includes(x.id)),'')}<p class="asMuted">Open Data for cache backup, persistence, troubleshooting and package exports. Your existing presets remain in Run.</p></section></div>`;
     }
     function renderPanel(){
       const host=byId('asWorkspacePanel'); if(!host||host.hidden) return;
@@ -205,7 +260,7 @@
       const empty=work.querySelector('.empty'); if(empty.querySelector('[data-as-report-empty]')) return;
       empty.innerHTML='<section data-as-report-empty class="asReportEmpty"><h1>Your reports</h1><p>Run a model to compare performance, inspect calculations and export your report.</p><div class="asQuickActions"><button type="button" class="asPrimary" data-as-command="action:report-new">Create Report</button><button type="button" data-as-command="action:report-saved">Open saved reports</button></div></section>';
     }
-    function refresh(){ catalogDirty=true; if(!initialized) return; renderPanel(); if(paletteOpen) renderPalette(); }
+    function refresh(){ catalogDirty=true; navigationCatalog=null; if(!initialized) return; renderPanel(); if(paletteOpen) renderPalette(); }
     function scheduleRefresh(){ if(pendingRefresh) root.clearTimeout(pendingRefresh); pendingRefresh=root.setTimeout(()=>{ pendingRefresh=0; refresh(); },120); }
     async function loadReportMetadata(force=false){
       if(reportsFlight) return reportsFlight;
@@ -215,7 +270,7 @@
       reportsFlight=Promise.resolve().then(()=>list()).then(values=>{
         // Discard report row snapshots; global search needs metadata only.
         reports=asArray(values).map(({id,modelName,periodStart,periodEnd,organizationName,note,createdAt})=>({id,modelName,periodStart,periodEnd,organizationName,note,createdAt}));
-        reportsLoadedAt=Date.now(); catalogDirty=true;
+        reportsLoadedAt=Date.now(); catalogDirty=true; navigationCatalog=null;
         if(initialized){ renderPanel(); if(paletteOpen) renderPalette(); }
         return reports;
       }).catch(error=>{ console.warn('[All-Star navigation] Saved reports unavailable',error); return []; }).finally(()=>{ reportsFlight=null; });
@@ -241,7 +296,7 @@
     function openPalette(){
       if(!initialized) init();
       if(paletteOpen){ byId('asCommandInput')?.focus(); return; }
-      restoreFocus=document.activeElement; paletteOpen=true; catalogDirty=true; results=[]; selected=0;
+      restoreFocus=document.activeElement; paletteOpen=true; results=[]; selected=0;
       byId('asCommandPalette').hidden=false; byId('asCommandInput').value=''; renderPalette(); byId('asCommandInput').focus(); loadReportMetadata();
     }
     function closePalette(){
@@ -262,7 +317,7 @@
       return true;
     }
     async function execute(command){
-      if(typeof command==='string') command=getCatalog(true).find(x=>x.id===command);
+      if(typeof command==='string'){const id=command;command=savedCommand(id);if(!command||command.legacyPerson)command=getCatalog().find(x=>x.id===id)||command;}
       if(!command) return;
       closePalette();
       try{
@@ -317,10 +372,11 @@
           case 'messages': call('openQualtricsEmailWorkspace'); break;
           case 'history': setSection('History'); await loadReportMetadata(true); break;
           case 'settings': setSection('Settings'); break;
+          case 'clear-data': await call('clearAllStarReportingData'); refresh(); break;
           case 'mapping': call('openMassHeaderCheck'); break;
           case 'source': case 'column': {
             const source=sourceMetadata().find(x=>x.id===command.entityId);
-            if(source&&(source.rowCount||source.headers?.length)) call('openTroubleshoot',command.entityId);
+            if(source&&(source.available||source.rowCount||source.headers?.length)) call('openTroubleshoot',command.entityId);
             else call('openModal','importModal');
             break;
           }
@@ -376,7 +432,7 @@
             const open=[...document.querySelectorAll('.modalBackdrop.open')].filter(modal=>sections[modal.id]).pop();
             setSection(open?sections[open.id]:workspaceSection,{showPanel:false}); scheduleRefresh(); return;
           }
-          setSection(section,{showPanel:false}); catalogDirty=true;
+          setSection(section,{showPanel:false});
           const app=getState();
           if(id==='modelsModal'&&!app.models?.length&&byId('modelList')) byId('modelList').innerHTML='<p class="asEmptyState">Create your first model to combine criteria, scoring, display fields and source data.</p><button type="button" data-as-command="action:model-new">Create Model</button>';
           if(id==='editModelModal'&&app.editOriginalId) record('model:'+app.editOriginalId);
@@ -421,11 +477,11 @@
       bind(perf,'click',event=>{if(event.target===perf)closePerformance();});
       bind(perf,'keydown',event=>{if(event.key==='Escape'){event.preventDefault();closePerformance();}if(event.key==='Tab'){event.preventDefault();byId('asPerformanceClose').focus();}});
       bind(root,'coachtools:data-updated',scheduleRefresh); bind(root,'allstar:workspace-updated',scheduleRefresh);
-      bind(root,'storage',event=>{if(event.key===PREF_KEY){ const next=readPreferences(storage); prefs.favorites=next.favorites;prefs.recent=next.recent;refresh(); }});
-      observeLegacyActions(); setSection('Home'); loadReportMetadata();
+      bind(root,'storage',event=>{if(event.key===PREF_KEY){ const next=readPreferences(storage); prefs.favorites=next.favorites;prefs.recent=next.recent;prefs.people=next.people;refresh(); }});
+      observeLegacyActions(); setSection('Home');
       return api;
     }
-    const api={init,refresh,record,openPalette,closePalette,execute,toggleFavorite,getCatalog,loadReportMetadata,registerProvider:(name,provider)=>{providers.set(name,provider);catalogDirty=true;},destroy:()=>{observers.forEach(x=>x.disconnect());cleanups.forEach(x=>x());if(pendingRefresh)root.clearTimeout(pendingRefresh);},getPreferences:()=>JSON.parse(JSON.stringify(prefs))};
+    const api={init,refresh,renameCoach,invalidateReportingData:({clearPeople=false}={})=>{reports=[];reportsLoadedAt=0;catalog=[];navigationCatalog=null;if(clearPeople){prefs.people=[];persist();}refresh();},record,openPalette,closePalette,execute,toggleFavorite,getCatalog,loadReportMetadata,registerProvider:(name,provider)=>{providers.set(name,provider);catalogDirty=true;},destroy:()=>{observers.forEach(x=>x.disconnect());cleanups.forEach(x=>x());if(pendingRefresh)root.clearTimeout(pendingRefresh);},getPreferences:()=>JSON.parse(JSON.stringify(prefs))};
     return api;
   }
   const instance=createController();

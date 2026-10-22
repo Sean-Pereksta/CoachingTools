@@ -261,6 +261,9 @@
     if (!root.XLSX && root.CoachToolsDependencies) await root.CoachToolsDependencies.ensureXlsx();
     if (!root.XLSX) throw new Error('SheetJS could not load.');
     if (!file || !isSupportedFile(file)) throw new Error('Choose an XLSX, XLS, or CSV file.');
+    // Allstar can supply its bundled worker reader. Other suite applications
+    // retain this parser and its existing discovery/materialization behavior.
+    if(typeof root.CoachToolsWorkbookReader==='function') return root.CoachToolsWorkbookReader(file);
     const extension = extensionOf(file);
     const diagnostics = root.CoachToolsDiagnostics;
     if (diagnostics) diagnostics.start('File read', { fileName: file.name, fileSize: Number(file.size) || 0 });
