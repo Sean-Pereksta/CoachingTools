@@ -382,7 +382,7 @@ async function buildIndividualRunContext(scopeIndex,rules,reportFiles,signal,onP
 }
 function individualReviewSignature(representatives,rules,reportFiles,template,reportDate){
   const selection=individualScopeSelection();
-  return JSON.stringify({dataRevision:state.individualDataRevision,reportDate:ymd(reportDate),rules,reportFileIds:(reportFiles||[]).map(file=>file.id).sort(),template,rosterRevision:state.individualRosterRevision||0,reps:representatives.map(rep=>rep.repKey),scope:{allByDefault:selection.allByDefault,organizations:[...selection.organizationIds].sort(),coaches:[...selection.coachKeys].sort(),include:[...selection.includeRepKeys].sort(),exclude:[...selection.excludeRepKeys].sort()}});
+  return JSON.stringify({dataRevision:state.individualDataRevision,reportDate:ymd(reportDate),coachingWeeks:currentCoachLookbackWeeks(),rules,reportFileIds:(reportFiles||[]).map(file=>file.id).sort(),template,rosterRevision:state.individualRosterRevision||0,reps:representatives.map(rep=>rep.repKey),scope:{allByDefault:selection.allByDefault,organizations:[...selection.organizationIds].sort(),coaches:[...selection.coachKeys].sort(),include:[...selection.includeRepKeys].sort(),exclude:[...selection.excludeRepKeys].sort()}});
 }
 function renderIndividualPerformance(){
   if(!els.individualPerformanceDiagnostics) return;
@@ -629,9 +629,9 @@ async function exportIndividualEmails(){
 }
 
 function coachingNeedsRecord(record,rule,reportDate,coached=null){
-  const lookbackWeeks=Number(rule?.coachLookbackWeeks)||Number(els.globalCoachLookback?.value)||2;
+  const lookbackWeeks=currentCoachLookbackWeeks(), {end}=coachingDateRange(reportDate,lookbackWeeks);
   const match=coached||coachMatch(record,rule,reportDate,lookbackWeeks);
-  const latest=rows=>[...(rows||[])].filter(row=>row.date&&row.date<=reportDate).sort((a,b)=>b.date-a.date)[0]?.date||null;
+  const latest=rows=>[...(rows||[])].filter(row=>row.date&&row.date<=end).sort((a,b)=>b.date-a.date)[0]?.date||null;
   return {repKey:record.repKey,repName:record.repName||record.fullName,coach:record.coach||'',team:record.team||'',organizationNames:record.organizationNames||[],topicId:rule.id,topic:rule.title||record.ruleTitle,lookbackDays:lookbackWeeks*7,recent:!!match.isCoached,latestTopicCoaching:latest(match.matched)||match.latestMatch?.date||match.latest?.date,latestAnyCoaching:latest(match.all),followUp:!!record.alarm||Number(record.history?.dateCount)>=2||Number(record.concernHistory?.appearanceCount)>=2||['candidate','repeat','critical'].includes(record.correctiveContext?.state)};
 }
 function downloadCoachingNeeds(records,reportDate,source,status){

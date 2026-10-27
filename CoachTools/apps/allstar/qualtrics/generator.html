@@ -145,7 +145,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
                 <label>Base file name contains — file rules only<input id="ruleBaseName" placeholder="Insurance_Cash_Usage"></label>
                 <label>Rule type<select id="ruleType"><option value="multiHeader">Multi-header rule</option><option value="headerCount">Header count rule</option><option value="statRule">Stat Rules — 4 key files</option><option value="statCount">Stat Count — count matching rows in a master file</option><option value="coachingCorrective">Documented Coaching → Corrective</option></select></label>
                 <label>Agent header<input id="ruleAgentHeader" value="Agent Name"></label>
-                <label>Default coached lookback weeks<input id="ruleCoachLookback" type="number" min="1" max="52" value="2"></label>
+                <div class="sub">Recent coaching uses the weeks setting in Load Key Files for every rule.</div>
                 <label>Dashboard criteria logic<select id="ruleCriteriaLogic"><option value="and">AND — all dashboard criteria must match</option><option value="or">OR — any dashboard criterion can match</option></select></label>
                 <label id="ruleDisplayColumnToggleField" class="inlineCheck"><input id="ruleDisplayColumnEnabled" type="checkbox"> Use report-file display column beside representative names</label>
                 <label id="ruleDisplayColumnField" class="hidden">Display column<select id="ruleDisplayColumn"><option value="">Select a report-file column</option></select></label>
@@ -456,10 +456,11 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
         <h2>Report Session</h2>
         <div class="grid">
           <label>Report date<input id="reportDate" type="date"></label>
-          <label>Recent coaching lookback weeks<input id="globalCoachLookback" type="number" min="1" max="52" value="2"></label>
+          <label>Count matching coaching from the past X weeks<input id="globalCoachLookback" type="number" min="1" max="52" step="1" value="2"></label>
           <label>History warning window days<input id="historyWindowDays" type="number" min="7" max="365" value="30"></label>
           <label>Follow-up history sort weight<input id="historySortWeight" type="number" min="0" max="20" value="4"></label>
         </div>
+        <div class="sub">Defaults to 2 weeks. Applies to every rule's recent-coaching check, including all times on the report date. Coaching must match that rule's topic or keywords.</div>
         <div class="note" style="margin-top:10px">Report history is stored by report date. When the same representative appears again within the history window, the tool raises them in the coach table and marks them as recurring.</div>
       </div>
       <div class="card">
@@ -518,7 +519,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
   <section class="view" id="view-report">
     <div class="card coachingNeedsExportCard">
       <div class="row"><div><h2 style="margin:0">Representatives Needing Coaching</h2><div class="sub">Export one row per representative using the current email report scope, rules, and report date. Includes every qualifying topic and the last coaching dates.</div></div><span class="spacer"></span><button class="btn blue" id="exportEmailCoachingNeedsBtn" type="button">Export All Representatives Needing Coaching</button></div>
-      <div class="sub">High: no concern topics coached recently. Medium: some topics still need coaching. Low — follow-up: all topics coached recently, with a repeated or elevated concern. Each topic uses its rule's lookback, listed in the CSV.</div>
+      <div class="sub">High: no concern topics coached recently. Medium: some topics still need coaching. Low — follow-up: all topics coached recently, with a repeated or elevated concern. All topics use the past X weeks setting, listed in the CSV.</div>
       <div class="sub" id="emailCoachingNeedsStatus" role="status" aria-live="polite">Builds a fresh list from the loaded data. Includes small teams hidden by the minimum-people display setting. No email roster is required.</div>
     </div>
     <div class="card">
@@ -557,7 +558,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
     <div class="stepBanner"><strong>Individual Reviews</strong><span class="sub">Upload the report files you want, explicitly choose the rules to run, then select organizations, coaches, or representatives. Nothing runs or sends automatically.</span></div>
     <div class="card coachingNeedsExportCard">
       <div class="row"><div><h2 style="margin:0">Representatives Needing Coaching</h2><div class="sub">Export every selected representative with a qualifying Concern that still needs coaching or follow-up. Includes all concern topics, even when message limits show fewer.</div></div><span class="spacer"></span><button class="btn blue" id="exportIndividualCoachingNeedsBtn" type="button">Export All Representatives Needing Coaching</button></div>
-      <div class="sub">High: no concern topics coached recently. Medium: some topics still need coaching. Low — follow-up: all topics coached recently, with a repeated or elevated concern. Each topic uses its rule's lookback, listed in the CSV.</div>
+      <div class="sub">High: no concern topics coached recently. Medium: some topics still need coaching. Low — follow-up: all topics coached recently, with a repeated or elevated concern. All topics use the past X weeks setting, listed in the CSV.</div>
       <div class="sub" id="individualCoachingNeedsStatus" role="status" aria-live="polite">Uses the selected people, rules, files, and report date. No email roster or message review is required; result display filters do not limit the list.</div>
     </div>
     <div class="card"><div class="individualWorkflow"><span>1. Select people / rules</span><span>2. Review messages</span><span>3. Choose Negative / Mixed / Positive</span><span>4. Export</span></div></div>
@@ -750,12 +751,36 @@ function uid(){ return 'id_' + Date.now().toString(36) + '_' + Math.random().toS
 function ymd(d){ if(!(d instanceof Date) || isNaN(d)) return ''; const z=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`; }
 function parseDate(v){
   if(v instanceof Date && !isNaN(v)) return v;
-  if(typeof v === 'number' && isFinite(v)){ const d = new Date(Math.round((v-25569)*86400*1000)); return isNaN(d)?null:d; }
+  if(typeof v === 'number' && isFinite(v)){ const days=Math.floor(v), d=new Date(1899,11,30+days,0,0,0,Math.round((v-days)*86400000)); return isNaN(d)?null:d; }
   const s = String(v ?? '').trim(); if(!s) return null;
   const iso=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); if(iso){ const local=new Date(+iso[1],+iso[2]-1,+iso[3]); return isNaN(local)?null:local; }
   let d = new Date(s); if(!isNaN(d)) return d;
   const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/); if(m){ const yy = +m[3] < 100 ? 2000 + +m[3] : +m[3]; d = new Date(yy, +m[1]-1, +m[2]); if(!isNaN(d)) return d; }
   return null;
+}
+function normalizeCoachLookbackWeeks(value){
+  const weeks=Number(value);
+  return Number.isFinite(weeks)&&weeks>0?Math.max(1,Math.min(52,Math.floor(weeks))):2;
+}
+function currentCoachLookbackWeeks(){
+  return normalizeCoachLookbackWeeks(els.globalCoachLookback ? els.globalCoachLookback.value : state.coachLookbackWeeks);
+}
+function coachingDateRange(reportDate,weeks){
+  const day=parseDate(reportDate)||new Date(), start=new Date(day), end=new Date(day);
+  start.setHours(0,0,0,0); start.setDate(start.getDate()-7*Math.max(1,Number(weeks)||2));
+  end.setHours(23,59,59,999);
+  return {start,end};
+}
+function loadCoachLookbackWeeks(){
+  let weeks=2;
+  try{ weeks=normalizeCoachLookbackWeeks(localStorage.getItem('coachingEmailGeneratorCoachLookbackWeeks.v1')); }catch(_){}
+  state.coachLookbackWeeks=weeks;
+  if(els.globalCoachLookback) els.globalCoachLookback.value=String(weeks);
+}
+function saveCoachLookbackWeeks(){
+  const weeks=currentCoachLookbackWeeks(); state.coachLookbackWeeks=weeks;
+  if(els.globalCoachLookback) els.globalCoachLookback.value=String(weeks);
+  try{ localStorage.setItem('coachingEmailGeneratorCoachLookbackWeeks.v1',String(weeks)); }catch(_){}
 }
 const HIRE_DATE_SETTINGS_KEY='coachingEmailGeneratorHireDateSettings.v1';
 function normalizeHireDateSettings(raw={}){
@@ -1456,7 +1481,6 @@ function readRuleForm(){
   rule.baseName = els.ruleBaseName.value.trim();
   rule.ruleType = els.ruleType?.value || rule.ruleType || 'multiHeader';
   rule.agentHeader = els.ruleAgentHeader.value.trim() || 'Agent Name';
-  rule.coachLookbackWeeks = Number(els.ruleCoachLookback.value) || 2;
   rule.criteriaLogic = (els.ruleCriteriaLogic?.value || rule.criteriaLogic || 'and');
   rule.countRule = { nameHeader:els.countNameHeader?.value || rule.countRule?.nameHeader || '', minCount:Math.max(0, Number(els.countMin?.value ?? rule.countRule?.minCount ?? 1) || 0), label:(els.countLabel?.value || rule.countRule?.label || 'Rows found').trim() || 'Rows found' };
   rule.displayColumn = { enabled:!!els.ruleDisplayColumnEnabled?.checked, header:els.ruleDisplayColumn?.value || '',format:els.ruleDisplayFormat?.value||'auto',precision:Math.max(0,Math.min(4,Number(els.ruleDisplayPrecision?.value)||0)),template:(els.ruleDisplayTextTemplate?.value||'').trim() };
@@ -1484,7 +1508,6 @@ function fillRuleForm(rule){
   els.ruleBaseName.value = rule?.baseName || '';
   if(els.ruleType) els.ruleType.value = rule?.ruleType || 'multiHeader';
   els.ruleAgentHeader.value = rule?.agentHeader || 'Agent Name';
-  els.ruleCoachLookback.value = rule?.coachLookbackWeeks || 2;
   if(els.ruleCriteriaLogic) els.ruleCriteriaLogic.value = rule?.criteriaLogic || 'and';
   if(els.countMin) els.countMin.value = Number(rule?.countRule?.minCount ?? 1);
   if(els.countLabel) els.countLabel.value = rule?.countRule?.label || 'Rows found';
@@ -2272,7 +2295,8 @@ function renderCoachingDiagnostics(allRules=false){
   const traces=raw.slice(0,25).map(r=>`<tr><td>${esc(r.rawName)}</td><td>${esc(String(r.dateTrace?.coachingDateRaw??''))}</td><td>${esc(String(r.dateTrace?.createdOnRaw??''))}</td><td>${esc(String(r.dateTrace?.bridgeDateRaw??''))}</td><td>${esc(r.dateTrace?.selectedSource||'none')}</td><td>${r.dateTrace?.parsed?'Yes':'No'}</td><td>${esc(r.desc||'')}</td><td>${r.repKey?'Yes':'No'}</td></tr>`).join('');
   const reportDate=parseDate(els.reportDate?.value)||new Date();
   const rules=state.rules.filter(r=>r.coaching?.mode==='descriptionContains');
-  const ruleRows=rules.map(rule=>{ const phrases=phraseListFromRule(rule), described=state.coachingRows.filter(r=>r.desc), matched=described.filter(r=>coachingMatchInfo(r,rule).matches), known=matched.filter(r=>r.repKey&&state.indexes.coachingByRep.has(r.repKey)), from=addDays(reportDate,-7*rule.coachLookbackWeeks), recent=known.filter(r=>r.date>=from&&r.date<=reportDate), final=recent.filter(r=>coachMatch({repKey:r.repKey},rule,reportDate,rule.coachLookbackWeeks).isCoached); let reason=!phrases.length?'Rule has no Description phrases at runtime.':!matched.length?'Description exists but phrase did not match.':!known.length?'Row never entered coachingByRep.':!recent.length?'Coaching existed but fell outside lookback.':!final.length?'coachMatch found no final signal.':'Complete'; return `<tr><td>${esc(rule.title)}</td><td>${esc(rule.id)}</td><td>${esc(rule.coaching.mode)}</td><td>${esc(phrases.join(' | '))}</td><td>${described.length}</td><td>${matched.length}</td><td>${known.length}</td><td>${recent.length}</td><td>${final.length}</td><td>${esc(reason)}</td></tr>`; }).join('');
+  const lookback=currentCoachLookbackWeeks(), {start:from,end}=coachingDateRange(reportDate,lookback);
+  const ruleRows=rules.map(rule=>{ const phrases=phraseListFromRule(rule), described=state.coachingRows.filter(r=>r.desc), matched=described.filter(r=>coachingMatchInfo(r,rule).matches), known=matched.filter(r=>r.repKey&&state.indexes.coachingByRep.has(r.repKey)), recent=known.filter(r=>r.date>=from&&r.date<=end), final=recent.filter(r=>coachMatch({repKey:r.repKey},rule,reportDate,lookback).isCoached); let reason=!phrases.length?'Rule has no Description phrases at runtime.':!matched.length?'Description exists but phrase did not match.':!known.length?'Row never entered coachingByRep.':!recent.length?'Coaching existed but fell outside lookback.':!final.length?'coachMatch found no final signal.':'Complete'; return `<tr><td>${esc(rule.title)}</td><td>${esc(rule.id)}</td><td>${esc(rule.coaching.mode)}</td><td>${esc(phrases.join(' | '))}</td><td>${described.length}</td><td>${matched.length}</td><td>${known.length}</td><td>${recent.length}</td><td>${final.length}</td><td>${esc(reason)}</td></tr>`; }).join('');
   panel.classList.remove('hidden'); panel.innerHTML=`<div class="row"><h3>Documented Coaching Diagnostic</h3><span class="spacer"></span><button class="btn small" id="closeCoachingDiagnostics">Close</button></div>${blocker?`<div class="pill bad">BLOCKER: ${esc(blocker)}</div>`:'<div class="pill good">Pipeline has usable indexed rows</div>'}<p><strong>Source:</strong> ${esc(d.source||'none')} • Allstar raw ${(d.bridge?.rawRows||0).toLocaleString()} → bridge ${(d.bridge?.bridgeRows||d.received||0).toLocaleString()} → received ${(d.received||0).toLocaleString()} → parsed ${(d.parsed||0).toLocaleString()} → valid date ${(d.validDate||0).toLocaleString()} → state.coachingRows ${(d.survived||0).toLocaleString()} → coachingByRep ${indexed.toLocaleString()}</p><h4>Column health (name-based)</h4><table><thead><tr><th>Required field</th><th>Found?</th><th>Actual header</th><th>Sample</th></tr></thead><tbody>${columns}</tbody></table><h4>Row parsing funnel and date selection</h4><p>Received ${d.received||0} • Associate Name ${d.withName||0} • Coaching Date present ${d.withCoachingDate||0} • parser succeeded ${d.validDate||0} • survived ${d.survived||0} • assigned repKey ${state.coachingRows.filter(r=>r.repKey).length} • indexed ${indexed}</p><table><thead><tr><th>Rep</th><th>Source Coaching Date</th><th>Created On</th><th>Bridge Date</th><th>Selected</th><th>Parsed?</th><th>Description (searched field)</th><th>repKey?</th></tr></thead><tbody>${traces}</tbody></table><h4>Saved rule persistence and match funnel${allRules?' — all rules':''}</h4><table><thead><tr><th>Rule</th><th>ID</th><th>Runtime mode</th><th>Description phrases</th><th>With Description</th><th>Raw matches</th><th>Known rep</th><th>Recent</th><th>Final used</th><th>First blocking reason</th></tr></thead><tbody>${ruleRows||'<tr><td colspan="10">No saved descriptionContains rules.</td></tr>'}</tbody></table><p class="sub">Description matching is strictly scoped to the Description column. Coaching Type, Coaching Type-Multi, Corrective, and other workbook fields cannot satisfy these rules.</p>`; $('closeCoachingDiagnostics').onclick=()=>panel.classList.add('hidden');
 }
 function renderUploadReadiness(){
@@ -2472,7 +2496,8 @@ function trendHtml(trend,label){
   return `<span class="pill ${cls}">${esc(trendPlainText(trend,label))}</span>`;
 }
 function matchingCoachingRowsForRule(repK,rule,reportDate){
-  return rowsForRep('coachingByRep',repK).filter(c=>c.date<=reportDate && coachingMatchInfo(c,rule).matches).sort((a,b)=>b.date-a.date);
+  const {end}=coachingDateRange(reportDate,currentCoachLookbackWeeks());
+  return rowsForRep('coachingByRep',repK).filter(c=>c.date&&c.date<=end && coachingMatchInfo(c,rule).matches).sort((a,b)=>b.date-a.date);
 }
 function evaluateStatRuleForRep(repK, config, reportDate, forcedEnd=null){
   const relative=config?.dateMode!=='fixed' || !!forcedEnd;
@@ -2588,7 +2613,7 @@ function formerCorrectiveWatchlist(reportDate,rules,existing){
   return out.sort(function(a,b){ return b.score-a.score||String(a.repName).localeCompare(String(b.repName)); }).filter(function(item){ const key=item.repKey+'::'+item.ruleId; if(seen.has(key)) return false; seen.add(key); return true; });
 }
 function coachingSummaryFromRows(repK,matched,reportDate,lookbackWeeks){
-  const from=addDays(reportDate,-7*Math.max(1,Number(lookbackWeeks||2))); const allRows=rowsForRep('coachingByRep',repK).filter(c=>c.date<=reportDate); const rows=matched.slice().sort((a,b)=>b.date-a.date).map(c=>Object.assign({},c,{matchInfo:{matches:true,reason:'selected coaching topic'}})); const recentMatched=rows.filter(c=>c.date>=from&&c.date<=reportDate); const latestMatch=rows[0]||null;
+  const {start:from,end}=coachingDateRange(reportDate,lookbackWeeks??currentCoachLookbackWeeks()); const allRows=rowsForRep('coachingByRep',repK).filter(c=>c.date&&c.date<=end); const rows=matched.filter(c=>c.date&&c.date<=end).sort((a,b)=>b.date-a.date).map(c=>Object.assign({},c,{matchInfo:{matches:true,reason:'selected coaching topic'}})); const recentMatched=rows.filter(c=>c.date>=from); const latestMatch=rows[0]||null;
   return {all:allRows,recent:allRows.filter(c=>c.date>=from),matched:rows,recentMatched,allCount:allRows.length,anyRecentCount:allRows.filter(c=>c.date>=from).length,totalCount:rows.length,recentCount:recentMatched.length,matchCount:rows.length,recentMatchCount:recentMatched.length,hasAny:allRows.length>0,hasMatch:rows.length>0,isCoached:recentMatched.length>0,isRecentMatch:recentMatched.length>0,latestMatch,latest:latestMatch};
 }
 function buildUpMetricConfig(buildUp){ return {metric:buildUp?.metric||'cashAppointmentRate',customHeader:buildUp?.customHeader||'',customSourceMode:buildUp?.customSourceMode||'column',customValueHeader:buildUp?.customValueHeader||'',customNumeratorHeader:buildUp?.customNumeratorHeader||'',customDenominatorHeader:buildUp?.customDenominatorHeader||'',cashSourceMode:buildUp?.cashSourceMode==='auto'?'consumerRatio':(buildUp?.cashSourceMode||'consumerRatio'),cashRateHeader:buildUp?.cashRateHeader||'',cashNumeratorHeader:buildUp?.cashNumeratorHeader||'',cashDenominatorHeader:buildUp?.cashDenominatorHeader||'',dateMode:'relative',lookbackWeeks:Math.max(1,Number(buildUp?.weeks||10)),goalRaw:buildUp?.goalRaw||'',minimumMode:'percent',minPctRaw:buildUp?.minPctRaw||'75%',minWeeks:1}; }
@@ -2598,9 +2623,9 @@ function buildUpPasses(c,buildUp,reportDate){
   return {passes:check.meets,check,impactTrend};
 }
 function buildCoachingCorrectiveRecords(rule,reportDate){
-  const c=rule.coachingCorrective||{}; const from=addDays(reportDate,-7*Math.max(1,Number(c.coachingLookbackWeeks||52))); const groups=new Map();
+  const c=rule.coachingCorrective||{}; const {start:from,end}=coachingDateRange(reportDate,c.coachingLookbackWeeks||52); const groups=new Map();
   for(const row of state.coachingRows||[]){
-    if(row.date<from||row.date>reportDate||!coachingTopicMatches(row,c)) continue;
+    if(!row.date||row.date<from||row.date>end||!coachingTopicMatches(row,c)) continue;
     const build=buildUpPasses(row,c.buildUp,reportDate); if(!build.passes) continue;
     if(!groups.has(row.key)) groups.set(row.key,[]);
     groups.get(row.key).push(Object.assign({},row,{buildUpCheck:build.check,buildUpImpactTrend:build.impactTrend}));
@@ -2745,7 +2770,7 @@ function renderRuleNamePreview(){
   }
   const sources=previewSourceRowsForRule(rule);
   if(!sources.length){ els.ruleNamePreview.className='previewBox empty'; els.ruleNamePreview.innerHTML='Load a sample file for this rule to preview while building, or add report files in Step 3 to preview against the actual report files.'; return; }
-  const lookback=Number(rule.coachLookbackWeeks)||Number(els.globalCoachLookback?.value)||2;
+  const lookback=currentCoachLookbackWeeks();
   if(isHeaderCountRule(rule)){
     const built=buildHeaderCountRecords(rule, sources);
     const found=new Map();
@@ -2819,6 +2844,10 @@ function rowMeetsRule(row, rule){
 }
 function getAgentFromRow(row, rule){ return String(row[rule.agentHeader] || rowVal(row,['Agent Name','Associate Name','Representative','Rep','CSR Name','Name']) || '').trim(); }
 function coachingMatchInfo(c, rule){
+  if(rule?.ruleType==='coachingCorrective'){
+    const matches=coachingTopicMatches(c,rule.coachingCorrective||{});
+    return {matches,reason:matches?`coaching topic: ${rule.coachingCorrective?.coachingTopic||'any coaching'}`:''};
+  }
   const mode=rule?.coaching?.mode || 'none';
   if(mode==='none') return {matches:true, reason:'any coaching'};
   const typeParts=(c.typeParts&&c.typeParts.length ? c.typeParts : splitCoachingTypes(c.type));
@@ -2850,12 +2879,12 @@ function coachingRowMatchesRule(c, rule){
 }
 function coachMatch(row, rule, reportDate, lookbackWeeks){
   const repK=row.repKey||row.key;
-  const from=addDays(reportDate,-7*lookbackWeeks);
+  const {start:from,end}=coachingDateRange(reportDate,lookbackWeeks??currentCoachLookbackWeeks());
   // Representative-name-only match. Do not require coach/team alignment because coach assignments can move over time.
-  const allRows=rowsForRep('coachingByRep',repK).filter(c=>(!reportDate || c.date<=reportDate));
-  const recent=allRows.filter(c=>c.date>=from && c.date<=reportDate);
+  const allRows=rowsForRep('coachingByRep',repK).filter(c=>c.date&&c.date<=end).slice().sort((a,b)=>b.date-a.date);
+  const recent=allRows.filter(c=>c.date>=from);
   const matched=allRows.map(c=>Object.assign({}, c, {matchInfo:coachingMatchInfo(c, rule)})).filter(c=>c.matchInfo.matches);
-  const recentMatched=matched.filter(c=>c.date>=from && c.date<=reportDate);
+  const recentMatched=matched.filter(c=>c.date>=from);
   const latestMatch=matched[0]||null;
   return {
     all:allRows,
@@ -3163,8 +3192,8 @@ function ruleCategories(rule){
 function ruleDataSource(rule){ return rule?.title || rule?.baseName || 'Unknown data source'; }
 function rowCategoryList(r){ return (r?.categories&&r.categories.length ? r.categories : [r?.category || 'Uncategorized']).filter(Boolean); }
 function assignedRepSetForCoach(coach, reportDate){
-  const d=reportDate instanceof Date && !isNaN(reportDate) ? reportDate : (parseDate(state.report?.reportDate) || new Date());
-  const from=addDays(d,-35); const set=new Set(); const coachKey=coachNameKey(coach);
+  const {start:from,end:d}=coachingDateRange(reportDate||state.report?.reportDate,5);
+  const set=new Set(); const coachKey=coachNameKey(coach);
   const add=(r)=>{
     if(!r?.key || !(r.date>=from && r.date<=d)) return;
     const mapped=state.teamMap.get(r.key) || {};
@@ -3437,12 +3466,11 @@ function urgencyPct(value,digits){ return isFinite(value)?(Number(value)*100).to
 function urgencyScoreLabel(score){ score=Number(score)||0; return score>=80?'Critical':score>=65?'High':score>=40?'Moderate':'Low'; }
 function urgencyNeedLabel(score){ score=Number(score)||0; return score>=70?'High Priority':score>=45?'Moderate Priority':'Monitor'; }
 function urgencyCoachingLookbackWeeks(rule,globalLookback){
-  return Math.max(1,Number(rule?.coachLookbackWeeks)||Number(globalLookback)||2);
+  return normalizeCoachLookbackWeeks(globalLookback??currentCoachLookbackWeeks());
 }
 function urgencyCoachingPeriod(rule,reportDate,globalLookback){
-  const end=reportDate instanceof Date&&!isNaN(reportDate)?new Date(reportDate):new Date();
   const lookbackWeeks=urgencyCoachingLookbackWeeks(rule,globalLookback);
-  return {lookbackWeeks:lookbackWeeks,start:addDays(end,-7*lookbackWeeks),end:end};
+  return Object.assign({lookbackWeeks},coachingDateRange(reportDate,lookbackWeeks));
 }
 function urgencyKpiConfigsForRule(rule){
   const out=[];
@@ -4204,7 +4232,7 @@ function impactRowMatchesRule(row,rule){
   if(resolution&&resolution.indexOf('assign:')===0) matches=resolution.slice(7)===rule.id;
   return {matches:matches,evidence:evidence};
 }
-function impactRowsForRep(repKey,reportDate){ return rowsForRep('coachingByRep',repKey).filter(function(row){ return row.date<=reportDate; }).sort(function(a,b){ return a.date-b.date; }); }
+function impactRowsForRep(repKey,reportDate){ const {end}=coachingDateRange(reportDate,currentCoachLookbackWeeks()); return rowsForRep('coachingByRep',repKey).filter(function(row){ return row.date&&row.date<=end; }).sort(function(a,b){ return a.date-b.date; }); }
 function impactEpisodeChecklist(repKey,rule,start,end){
   const phrases=impactRulePhrases(rule), from=addDays(start,-7), through=addDays(end,28);
   return rowsForRep('checklistByRep',repKey).filter(function(row){ if(row.date<from||row.date>through) return false; if(!phrases.length) return true; return phrases.some(function(phrase){ return impactPhraseMatch(row.searchText||'',phrase); }); });
@@ -4338,7 +4366,8 @@ function impactAnalyzeNeed(record,rule,reportDate,recentDays){
 }
 function impactDiagnosticRows(needs,rules,reportDate){
   const activeRules=rules.filter(function(rule){ return needs.some(function(need){ return need.ruleId===rule.id; }); }), diagnostics=[];
-  (state.coachingRows||[]).filter(function(row){ return row.date<=reportDate; }).forEach(function(row){
+  const {end}=coachingDateRange(reportDate,currentCoachLookbackWeeks());
+  (state.coachingRows||[]).filter(function(row){ return row.date&&row.date<=end; }).forEach(function(row){
     const matches=activeRules.filter(function(rule){ return impactRowMatchesRule(row,rule).matches; });
     if(matches.length>1) diagnostics.push({rowId:impactRowId(row),representative:row.name||row.rawName,date:row.date,coach:row.coach||'Unassigned',topics:matches.map(function(rule){ return {id:rule.id,title:rule.title,topic:impactRuleTopic(rule)}; }),record:row});
   });
@@ -5351,7 +5380,7 @@ async function generateReport(){
   const rulesById=new Map((state.rules||[]).map(rule=>[rule.id,rule])), ruleByFileId=new Map((state.dashboardFiles||[]).map(file=>[file.id,rulesById.get(file.ruleId)||matchRuleForFile(file.fileName)]));
   const selectedCoreRules=state.rules.filter(r=>isCoreDataRule(r)&&state.selectedOtherRuleIds.has(r.id));
   if(!state.dashboardFiles.length && !selectedCoreRules.length){ toast('Add dashboard files or select at least one Other Type rule.'); return; }
-  const reportDate=parseDate(els.reportDate.value) || new Date(); const globalLookback=Number(els.globalCoachLookback.value)||2;
+  const reportDate=parseDate(els.reportDate.value) || new Date(); const globalLookback=currentCoachLookbackWeeks();
   const hireCfg=state.hireDateSettings;
   if(hireCfg.filterEnabled && !hireCfg.sourceKey){ toast('Choose the spreadsheet that contains Date of Hire before generating.'); return; }
   if(hireCfg.filterEnabled && (!hireCfg.repColumn||!hireCfg.hireDateColumn)){ toast('Select both the representative-name match column and Date of Hire column before using the hire-date filter.'); return; }
@@ -5432,7 +5461,6 @@ async function generateReport(){
     } else if(isCoachingCorrectiveRule(rule)){
       for(const base of buildCoachingCorrectiveRecords(rule,reportDate)){
         const rec=addRepRecord(base.repKey,base.repName,base.coach,base.team,rule,'4 key files',null,base.matchedValues,reportSetting);
-        rec.precomputedCoached=coachingSummaryFromRows(base.repKey,base.coachings,reportDate,Number(rule.coachLookbackWeeks)||globalLookback);
         rec.precomputedChecklist={rows:base.checklist,count:base.checklist.length,latest:base.checklist[0]||null};
         rec.specialMetrics={coachingCount:base.coachings.length,checklistCount:base.checklist.length,ratio:base.ratio,ratioLabel:base.ratioLabel,buildUpEnabled:!!rule.coachingCorrective?.buildUp?.enabled,trend:base.trend,coachingImpactTrend:base.coachingImpactTrend,trendLabel:metricLabel(rule.coachingCorrective?.buildUp?.metric,rule.coachingCorrective?.buildUp?.customHeader),connectedStatChecks:base.coachings.map(x=>x.buildUpCheck).filter(Boolean)};
       }
@@ -5446,8 +5474,8 @@ async function generateReport(){
   const allFlagged=collectedFlagged.filter(r=>hireDatePassesReportFilter(r.repKey));
   urgencyPreparePeriodKpiContext(allFlagged,reportDate,globalLookback);
   for(let i=0;i<allFlagged.length;i++){
-    const rec=allFlagged[i]; const rule=rulesById.get(rec.ruleId); const lookback=Number(rule?.coachLookbackWeeks)||globalLookback;
-    rec.coached = rec.precomputedCoached || coachMatch(rec, rule, reportDate, lookback);
+    const rec=allFlagged[i]; const rule=rulesById.get(rec.ruleId); const lookback=globalLookback;
+    rec.coached = coachMatch(rec, rule, reportDate, lookback);
     rec.concernHistory = concernHistoryForRecord(rec,rule,reportDate);
     rec.checklist = rec.precomputedChecklist || checklistMatch(rec, rule, reportDate, 10);
     rec.statChecks = rec.directStatCheck ? [rec.directStatCheck] : (rule?.stats||[]).map(s=>computeStatCheck(rec.repKey,s,reportDate)).filter(Boolean);
@@ -5952,7 +5980,7 @@ function bind(){
   els.refreshRulePreviewBtn.onclick=()=>{ setStatus('Calculating representative preview...'); requestAnimationFrame(()=>{ renderRuleNamePreview(); setStatus('Representative preview refreshed.'); }); };
   if(els.ruleType) els.ruleType.onchange=async()=>{ updateRuleTypeVisibility(); const r=readRuleForm(); await saveRuleObj(r); toast(`Rule type set to ${ruleTypeLabel(r)}.`); };
   if(els.ruleCriteriaLogic) els.ruleCriteriaLogic.onchange=async()=>{ const r=readRuleForm(); await saveRuleObj(r); toast(`Dashboard criteria logic set to ${String(r.criteriaLogic).toUpperCase()}.`); };
-  ['ruleTitle','ruleBaseName','ruleAgentHeader','ruleCoachLookback'].forEach(id=>{ if(els[id]) els[id].addEventListener('input',()=>{ if(id==='ruleTitle' && els.ruleEditorTitle) els.ruleEditorTitle.textContent=els.ruleTitle.value||'Untitled Rule Set'; if(id==='ruleBaseName' && els.ruleEditorSubtitle && !isCoreDataRule(readRuleForm())) els.ruleEditorSubtitle.textContent=`Matches filenames containing: ${els.ruleBaseName.value||'base filename not set'}`; autoSaveRuleEdit(); }); });
+  ['ruleTitle','ruleBaseName','ruleAgentHeader'].forEach(id=>{ if(els[id]) els[id].addEventListener('input',()=>{ if(id==='ruleTitle' && els.ruleEditorTitle) els.ruleEditorTitle.textContent=els.ruleTitle.value||'Untitled Rule Set'; if(id==='ruleBaseName' && els.ruleEditorSubtitle && !isCoreDataRule(readRuleForm())) els.ruleEditorSubtitle.textContent=`Matches filenames containing: ${els.ruleBaseName.value||'base filename not set'}`; autoSaveRuleEdit(); }); });
   ['countNameHeader','countMin','countLabel'].forEach(id=>{ if(els[id]) els[id].addEventListener(id==='countNameHeader'?'change':'input', autoSaveRuleEdit); });
   if(els.ruleDisplayColumnEnabled) els.ruleDisplayColumnEnabled.addEventListener('change',()=>{ updateRuleTypeVisibility(); autoSaveRuleEdit(); markRulePreviewStale('Display column setting saved. Generated reports will use the selected report-file value beside representative names.'); });
   if(els.ruleDisplayColumn) els.ruleDisplayColumn.addEventListener('change',()=>{ autoSaveRuleEdit(); markRulePreviewStale('Display column changed. Generate the report to use the selected value beside representative names.'); });
@@ -6000,6 +6028,7 @@ function bind(){
   els.dashboardDrop.addEventListener('drop',e=>addDashboardFiles(e.dataTransfer.files));
   els.clearDashboardFilesBtn.onclick=()=>{ for(const f of state.dashboardFiles) delete state.reportSettings.items[reportItemKeyForFile(f)]; state.dashboardFiles=[]; state.individualSelectedReportFileIds.clear(); saveReportSettings(); invalidateIndividualScopeIndex('report files cleared'); renderDashboardFileList(); renderUploadReadiness(); markRulePreviewStale('Report files cleared. Click Refresh Preview after adding new files.'); };
   if(els.reportDate) els.reportDate.addEventListener('change',()=>invalidateIndividualRunCache('report date changed'));
+  if(els.globalCoachLookback) els.globalCoachLookback.addEventListener('change',()=>{ saveCoachLookbackWeeks(); invalidateIndividualRunCache('coaching weeks changed'); markRulePreviewStale('Coaching weeks changed. Refresh Preview or generate the report to update coaching counts.'); setStatus(`Matching coaching from the past ${currentCoachLookbackWeeks()} weeks will count, including the full report date. Generate the report to refresh results.`); });
   els.generateReportBtn.onclick=()=>runEmailWorkflow(true); if(els.reviewReportBtn) els.reviewReportBtn.onclick=()=>runEmailWorkflow(false); els.saveHistoryBtn.onclick=saveProblemHistory; if(els.clearConcernHistoryBtn) els.clearConcernHistoryBtn.onclick=()=>queueConcernHistory(clearConcernHistory); els.exportEmailsBtn.onclick=exportEmails; if(els.exportUrgencyPdfBtn) els.exportUrgencyPdfBtn.onclick=exportUrgencyEmailPdf; els.exportProblemRepsBtn.onclick=exportProblemReps; els.importProblemRepsInput.onchange=e=>{ const file=e.target.files[0]; queueConcernHistory(()=>importProblemReps(file)); }; if(els.urgencyCoverageGreen) els.urgencyCoverageGreen.addEventListener('change',saveUrgencyCoverageControls); if(els.urgencyCoverageYellow) els.urgencyCoverageYellow.addEventListener('change',saveUrgencyCoverageControls);
   if(els.concernHistoryStatusBtn) els.concernHistoryStatusBtn.onclick=()=>{ const opening=els.concernHistoryViewer.classList.contains('hidden'); els.concernHistoryViewer.classList.toggle('hidden',!opening); els.concernHistoryStatusBtn.setAttribute('aria-expanded',String(opening)); if(opening) renderConcernHistoryStatus(); };
   if(els.closeConcernHistoryViewerBtn) els.closeConcernHistoryViewerBtn.onclick=()=>{ els.concernHistoryViewer.classList.add('hidden'); els.concernHistoryStatusBtn.setAttribute('aria-expanded','false'); };
@@ -6013,7 +6042,7 @@ function bind(){
   if(els.clearEmailIntroBtn) els.clearEmailIntroBtn.onclick=()=>{ els.emailIntroEditor.innerHTML=''; saveEmailIntro(); if(state.report) renderReport(); toast('Email opening-text editor cleared. The saved copy is still available to load.'); };
 }
 async function init(){
-  bind(); loadCoachAliasOverrides(); loadHireDateSettings(); loadEmailIntro(); loadOtherRuleSelection(); loadReportSettings(); loadReportAudienceSettings(); loadUrgencyCoverageControls(); els.reportDate.value=ymd(new Date());
+  bind(); loadCoachLookbackWeeks(); loadCoachAliasOverrides(); loadHireDateSettings(); loadEmailIntro(); loadOtherRuleSelection(); loadReportSettings(); loadReportAudienceSettings(); loadUrgencyCoverageControls(); els.reportDate.value=ymd(new Date());
   switchTab('keyfiles');
   rebuildCoachAliasIndex();
   renderHireDateControls(); renderCoreChips(); renderDashboardFileList(); renderUploadReadiness(); renderOtherRulePicker(); renderStatCountSelectors(currentRule()); updateStatCountFieldVisibility(); renderReportAudienceControls(); populateOrgSummarySelect(); markRulePreviewStale('Select a saved rule, then use Refresh Preview when ready.');
