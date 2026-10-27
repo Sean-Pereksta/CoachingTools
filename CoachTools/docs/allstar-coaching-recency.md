@@ -12,8 +12,17 @@ Previously, the report date was midnight while coaching entries retained their t
 
 After changing the weeks setting or loading updated data, refresh the preview or generate the report again. A coaching must be present in the imported data to count.
 
+## Hide reps without recent Weekly Stats
+
+The **Weekly Stats filter** card is the first item in **Load Key Files**, above the upload instructions. Select **Hide reps with no weekly stats in the past X weeks** and enter the number of weeks. It starts unchecked, with **2** weeks filled in, and remembers both settings on this device.
+
+When enabled, a representative must have at least one dated row in the loaded **Weekly Stats** within that window, through the full selected report day. Zero values count. Future dates, older dates, missing dates, and QA or coaching rows do not qualify. If Weekly Stats are absent, all reps are hidden and the card explains how to restore them.
+
+The filter applies to every rule preview, generated report, report population denominator, corrective follow-up watchlist, individual review, and both coaching-needs downloads. Saved individual selections remain available when the filter is turned off. Reports show the selected filter and the number of reps hidden. Changing the filter, its date window, or the Weekly Stats source requires generating the report again before downloading existing email/PDF output.
+
 ## Validation
 
 - `npm run test:allstar` builds and checks the portable app and runs the All-Star regression suite.
 - `node apps/allstar/tests/qualtrics-coaching-window.test.js` checks UTC and America/New_York, same-day timestamps, inclusive boundaries, future/older exclusions, DST, Excel dates, keyword scope, corrective topics, shared weeks, persistence, previews, urgency, and exports.
+- `node apps/allstar/tests/qualtrics-weekly-stats-filter.test.js` checks optional defaults, date boundaries, zero values, any matching weekly row, import replacement, persistence, individual scope, population denominators, and export snapshots in UTC and America/New_York.
 - `node apps/allstar/tests/browser-qualtrics-coaching-needs.test.js` exercises real coaching imports and both download actions in a browser.

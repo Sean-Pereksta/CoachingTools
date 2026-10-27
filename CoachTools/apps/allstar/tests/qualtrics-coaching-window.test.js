@@ -27,7 +27,7 @@ const state={coachLookbackWeeks:2,coachingRows:[],checklistRows:[],qaRows:[],wee
 const byRep=new Map();
 const savedSettings=new Map(),localStorage={getItem:key=>savedSettings.get(key)??null,setItem:(key,value)=>savedSettings.set(key,value)};
 const context=vm.createContext({Date,Map,Set,console,els,state,localStorage,rowsForRep:(_,key)=>byRep.get(key)||[],QualtricsWorkflow:workflow});
-for(const name of ['parseDate','addDays','normalizeCoachLookbackWeeks','currentCoachLookbackWeeks','coachingDateRange','loadCoachLookbackWeeks','saveCoachLookbackWeeks','splitListInput','cleanTextForSearch','phraseListFromRule','typeListFromRule','splitCoachingTypes','textMatch','coachingTopicMatches','coachingMatchInfo','coachMatch','coachingSummaryFromRows','matchingCoachingRowsForRule','urgencyCoachingLookbackWeeks','urgencyCoachingPeriod','summaryStats']){
+for(const name of ['parseDate','addDays','normalizeCoachLookbackWeeks','currentCoachLookbackWeeks','normalizeWeeklyStatsFilter','currentWeeklyStatsFilter','weeklyStatsActivityPasses','coachingDateRange','loadCoachLookbackWeeks','saveCoachLookbackWeeks','splitListInput','cleanTextForSearch','phraseListFromRule','typeListFromRule','splitCoachingTypes','textMatch','coachingTopicMatches','coachingMatchInfo','coachMatch','coachingSummaryFromRows','matchingCoachingRowsForRule','urgencyCoachingLookbackWeeks','urgencyCoachingPeriod','summaryStats']){
   vm.runInContext(sourceFunction(html,name),context);
 }
 vm.runInContext(sourceFunction(ui,'coachingNeedsRecord'),context);

@@ -179,6 +179,7 @@ function individualAddRepresentative(map,rawName,repK,extra={}){
   map.set(ident.key,current);
 }
 function invalidateIndividualRunCache(reason='inputs changed'){
+  state.individualReviewRun?.controller?.abort();
   state.individualCoachingExportRun?.controller.abort();
   state.individualRunCache=null;
   state.individualResultsStale=!!state.individualResults?.length;
@@ -219,7 +220,7 @@ function individualScopeIndex(){
 }
 function individualNameAllowed(rep){ return !document.getElementById('individualExcludeNumericNames')?.checked || !/^\d+$/.test(String(rep.fullName||'').trim()); }
 function individualRepresentativeCatalog(){ return individualScopeIndex().representatives; }
-function individualResolvedScope(){ return QualtricsIndividualMessages.resolveScope(individualScopeIndex(),individualScopeSelection()).filter(individualNameAllowed); }
+function individualResolvedScope(){ const date=parseDate(els.reportDate?.value)||new Date(); return QualtricsIndividualMessages.resolveScope(individualScopeIndex(),individualScopeSelection()).filter(rep=>individualNameAllowed(rep)&&weeklyStatsActivityPasses(rep.repKey,date)); }
 function individualScopeSummary(){
   const reps=individualResolvedScope(), coachKeys=new Set(), organizationIds=new Set();
   for(const rep of reps){ if(rep.coachKey) coachKeys.add(rep.coachKey); for(const id of rep.organizationIds||[]) organizationIds.add(id); }
@@ -247,7 +248,8 @@ function individualRepScopeMode(repKey){ const selection=individualScopeSelectio
 function renderIndividualRepresentativeOptions(){
   if(!els.individualRepresentativeOptions) return;
   const index=individualScopeIndex(), query=QualtricsIndividualMessages.normalizeName(els.individualRepresentativeSearch?.value||'');
-  const matches=index.representatives.filter(item=>individualNameAllowed(item)&&(!query||item.normalizedSearch.includes(query))), visible=matches.slice(0,160);
+  const date=parseDate(els.reportDate?.value)||new Date();
+  const matches=index.representatives.filter(item=>individualNameAllowed(item)&&weeklyStatsActivityPasses(item.repKey,date)&&(!query||item.normalizedSearch.includes(query))), visible=matches.slice(0,160);
   els.individualRepresentativeOptions.innerHTML=visible.map(rep=>`<div class="individualRepScopeRow"><span><strong>${esc(rep.fullName)}</strong><small>${esc([rep.coach,rep.team,...(rep.organizationNames||[])].filter(Boolean).join(' • ')||'No coach or organization')}</small></span><select data-individual-rep="${esc(rep.repKey)}" aria-label="Scope behavior for ${esc(rep.fullName)}"><option value="automatic"${individualRepScopeMode(rep.repKey)==='automatic'?' selected':''}>Use group scope</option><option value="include"${individualRepScopeMode(rep.repKey)==='include'?' selected':''}>Always include</option><option value="exclude"${individualRepScopeMode(rep.repKey)==='exclude'?' selected':''}>Exclude</option></select></div>`).join('')+individualScopeListNote(matches.length,visible.length)||'<div class="empty compact">No representatives match.</div>';
   els.individualRepresentativeOptions.querySelectorAll('[data-individual-rep]').forEach(select=>select.onchange=()=>{ const key=select.dataset.individualRep, scope=individualScopeSelection(); scope.includeRepKeys.delete(key); scope.excludeRepKeys.delete(key); if(select.value==='include'){ if(!scope.organizationIds.size&&!scope.coachKeys.size) scope.allByDefault=false; scope.includeRepKeys.add(key); } if(select.value==='exclude') scope.excludeRepKeys.add(key); invalidateIndividualRunCache('review scope changed'); renderIndividualScopeSummary(); });
 }
@@ -382,7 +384,7 @@ async function buildIndividualRunContext(scopeIndex,rules,reportFiles,signal,onP
 }
 function individualReviewSignature(representatives,rules,reportFiles,template,reportDate){
   const selection=individualScopeSelection();
-  return JSON.stringify({dataRevision:state.individualDataRevision,reportDate:ymd(reportDate),coachingWeeks:currentCoachLookbackWeeks(),rules,reportFileIds:(reportFiles||[]).map(file=>file.id).sort(),template,rosterRevision:state.individualRosterRevision||0,reps:representatives.map(rep=>rep.repKey),scope:{allByDefault:selection.allByDefault,organizations:[...selection.organizationIds].sort(),coaches:[...selection.coachKeys].sort(),include:[...selection.includeRepKeys].sort(),exclude:[...selection.excludeRepKeys].sort()}});
+  return JSON.stringify({dataRevision:state.individualDataRevision,reportDate:ymd(reportDate),coachingWeeks:currentCoachLookbackWeeks(),weeklyStatsFilter:currentWeeklyStatsFilter(),rules,reportFileIds:(reportFiles||[]).map(file=>file.id).sort(),template,rosterRevision:state.individualRosterRevision||0,reps:representatives.map(rep=>rep.repKey),scope:{allByDefault:selection.allByDefault,organizations:[...selection.organizationIds].sort(),coaches:[...selection.coachKeys].sort(),include:[...selection.includeRepKeys].sort(),exclude:[...selection.excludeRepKeys].sort()}});
 }
 function renderIndividualPerformance(){
   if(!els.individualPerformanceDiagnostics) return;
@@ -447,6 +449,7 @@ async function evaluateIndividualMessages(){
     setIndividualReviewProgress(72,'Ranking review priority','Putting the people who need attention first'); await individualYieldToBrowser();
     started=performance.now(); const results=QualtricsIndividualMessages.sortReviewResults(evaluation.results); evaluation.results=results; evaluation.summary=QualtricsIndividualMessages.summarize(results); mark('Priority ranking',started);
     setIndividualReviewProgress(87,'Building messages','Deduplicating and preparing review blocks'); await individualYieldToBrowser();
+    individualThrowIfCancelled(controller.signal);
     started=performance.now(); state.individualEvaluation=evaluation; state.individualResults=results; state.individualResultsStale=false; state.individualRenderLimit=80; mark('Message model',started);
     setIndividualReviewProgress(95,'Rendering review',`${results.length.toLocaleString()} representative blocks`);
     individualThrowIfCancelled(controller.signal);
@@ -683,7 +686,7 @@ async function exportIndividualCoachingNeeds(){
   }
 }
 function emailCoachingNeedsSignature(){
-  return JSON.stringify({revision:state.individualDataRevision,rules:QualtricsWorkflow.fingerprint(state.rules||[]),files:(state.dashboardFiles||[]).map(file=>file.id),otherRules:[...(state.selectedOtherRuleIds||[])].sort(),audience:currentReportAudience(),hireDate:state.hireDateSettings,date:els.reportDate?.value||'',lookback:els.globalCoachLookback?.value||''});
+  return JSON.stringify({revision:state.individualDataRevision,rules:QualtricsWorkflow.fingerprint(state.rules||[]),files:(state.dashboardFiles||[]).map(file=>file.id),otherRules:[...(state.selectedOtherRuleIds||[])].sort(),audience:currentReportAudience(),hireDate:state.hireDateSettings,date:els.reportDate?.value||'',lookback:els.globalCoachLookback?.value||'',weeklyStatsFilter:currentWeeklyStatsFilter()});
 }
 async function exportEmailCoachingNeeds(){
   if(state.emailWorkflowRunning||state.individualReviewRun||state.individualCoachingExportRun) return;
