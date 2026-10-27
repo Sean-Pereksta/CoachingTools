@@ -145,7 +145,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
                 <label>Base file name contains — file rules only<input id="ruleBaseName" placeholder="Insurance_Cash_Usage"></label>
                 <label>Rule type<select id="ruleType"><option value="multiHeader">Multi-header rule</option><option value="headerCount">Header count rule</option><option value="statRule">Stat Rules — 4 key files</option><option value="statCount">Stat Count — count matching rows in a master file</option><option value="coachingCorrective">Documented Coaching → Corrective</option></select></label>
                 <label>Agent header<input id="ruleAgentHeader" value="Agent Name"></label>
-                <label>Default coached lookback weeks<input id="ruleCoachLookback" type="number" min="1" max="52" value="2"></label>
+                <div class="sub">Recent coaching uses the weeks setting in Load Key Files for every rule.</div>
                 <label>Dashboard criteria logic<select id="ruleCriteriaLogic"><option value="and">AND — all dashboard criteria must match</option><option value="or">OR — any dashboard criterion can match</option></select></label>
                 <label id="ruleDisplayColumnToggleField" class="inlineCheck"><input id="ruleDisplayColumnEnabled" type="checkbox"> Use report-file display column beside representative names</label>
                 <label id="ruleDisplayColumnField" class="hidden">Display column<select id="ruleDisplayColumn"><option value="">Select a report-file column</option></select></label>
@@ -447,6 +447,15 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
   </section>
 
   <section class="view active" id="view-keyfiles">
+    <div class="card reportConfigCard" id="weeklyStatsActivityFilter" style="margin-bottom:14px">
+      <h2>Weekly Stats filter</h2>
+      <div class="reportAudienceControls" style="padding-top:0">
+        <label class="inlineCheck"><input id="hideRepsWithoutRecentStats" type="checkbox" style="width:18px;min-width:18px;height:18px"> Hide reps with no weekly stats in the past X weeks</label>
+        <label>Weeks<input id="weeklyStatsFilterWeeks" type="number" min="1" max="52" step="1" value="2" disabled></label>
+      </div>
+      <div class="sub">Uses the report date below. A rep needs at least one dated Weekly Stats row in the selected window; zero values count. Applies to previews, reports, and downloads.</div>
+      <div class="sub" id="weeklyStatsFilterStatus" role="status" aria-live="polite">Off — no reps are hidden by this filter.</div>
+    </div>
     <div class="stepBanner">
       <strong>Step 1 — Add the 4 key files</strong>
       <span class="sub">Start with 90-day QA, documented coaching, checklist/correctives, and weekly stats. These four files power the name resolution, coach/team mapping, recent-coaching checks, checklist checks, and performance trend checks used later in rule previews and reports.</span>
@@ -456,10 +465,11 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
         <h2>Report Session</h2>
         <div class="grid">
           <label>Report date<input id="reportDate" type="date"></label>
-          <label>Recent coaching lookback weeks<input id="globalCoachLookback" type="number" min="1" max="52" value="2"></label>
+          <label>Count matching coaching from the past X weeks<input id="globalCoachLookback" type="number" min="1" max="52" step="1" value="2"></label>
           <label>History warning window days<input id="historyWindowDays" type="number" min="7" max="365" value="30"></label>
           <label>Follow-up history sort weight<input id="historySortWeight" type="number" min="0" max="20" value="4"></label>
         </div>
+        <div class="sub">Defaults to 2 weeks. Applies to every rule's recent-coaching check, including all times on the report date. Coaching must match that rule's topic or keywords.</div>
         <div class="note" style="margin-top:10px">Report history is stored by report date. When the same representative appears again within the history window, the tool raises them in the coach table and marks them as recurring.</div>
       </div>
       <div class="card">
@@ -518,7 +528,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
   <section class="view" id="view-report">
     <div class="card coachingNeedsExportCard">
       <div class="row"><div><h2 style="margin:0">Representatives Needing Coaching</h2><div class="sub">Export one row per representative using the current email report scope, rules, and report date. Includes every qualifying topic and the last coaching dates.</div></div><span class="spacer"></span><button class="btn blue" id="exportEmailCoachingNeedsBtn" type="button">Export All Representatives Needing Coaching</button></div>
-      <div class="sub">High: no concern topics coached recently. Medium: some topics still need coaching. Low — follow-up: all topics coached recently, with a repeated or elevated concern. Each topic uses its rule's lookback, listed in the CSV.</div>
+      <div class="sub">High: no concern topics coached recently. Medium: some topics still need coaching. Low — follow-up: all topics coached recently, with a repeated or elevated concern. All topics use the past X weeks setting, listed in the CSV.</div>
       <div class="sub" id="emailCoachingNeedsStatus" role="status" aria-live="polite">Builds a fresh list from the loaded data. Includes small teams hidden by the minimum-people display setting. No email roster is required.</div>
     </div>
     <div class="card">
@@ -557,7 +567,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
     <div class="stepBanner"><strong>Individual Reviews</strong><span class="sub">Upload the report files you want, explicitly choose the rules to run, then select organizations, coaches, or representatives. Nothing runs or sends automatically.</span></div>
     <div class="card coachingNeedsExportCard">
       <div class="row"><div><h2 style="margin:0">Representatives Needing Coaching</h2><div class="sub">Export every selected representative with a qualifying Concern that still needs coaching or follow-up. Includes all concern topics, even when message limits show fewer.</div></div><span class="spacer"></span><button class="btn blue" id="exportIndividualCoachingNeedsBtn" type="button">Export All Representatives Needing Coaching</button></div>
-      <div class="sub">High: no concern topics coached recently. Medium: some topics still need coaching. Low — follow-up: all topics coached recently, with a repeated or elevated concern. Each topic uses its rule's lookback, listed in the CSV.</div>
+      <div class="sub">High: no concern topics coached recently. Medium: some topics still need coaching. Low — follow-up: all topics coached recently, with a repeated or elevated concern. All topics use the past X weeks setting, listed in the CSV.</div>
       <div class="sub" id="individualCoachingNeedsStatus" role="status" aria-live="polite">Uses the selected people, rules, files, and report date. No email roster or message review is required; result display filters do not limit the list.</div>
     </div>
     <div class="card"><div class="individualWorkflow"><span>1. Select people / rules</span><span>2. Review messages</span><span>3. Choose Negative / Mixed / Positive</span><span>4. Export</span></div></div>
@@ -750,12 +760,99 @@ function uid(){ return 'id_' + Date.now().toString(36) + '_' + Math.random().toS
 function ymd(d){ if(!(d instanceof Date) || isNaN(d)) return ''; const z=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`; }
 function parseDate(v){
   if(v instanceof Date && !isNaN(v)) return v;
-  if(typeof v === 'number' && isFinite(v)){ const d = new Date(Math.round((v-25569)*86400*1000)); return isNaN(d)?null:d; }
+  if(typeof v === 'number' && isFinite(v)){ const days=Math.floor(v), d=new Date(1899,11,30+days,0,0,0,Math.round((v-days)*86400000)); return isNaN(d)?null:d; }
   const s = String(v ?? '').trim(); if(!s) return null;
   const iso=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); if(iso){ const local=new Date(+iso[1],+iso[2]-1,+iso[3]); return isNaN(local)?null:local; }
   let d = new Date(s); if(!isNaN(d)) return d;
   const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/); if(m){ const yy = +m[3] < 100 ? 2000 + +m[3] : +m[3]; d = new Date(yy, +m[1]-1, +m[2]); if(!isNaN(d)) return d; }
   return null;
+}
+function normalizeCoachLookbackWeeks(value){
+  const weeks=Number(value);
+  return Number.isFinite(weeks)&&weeks>0?Math.max(1,Math.min(52,Math.floor(weeks))):2;
+}
+function currentCoachLookbackWeeks(){
+  return normalizeCoachLookbackWeeks(els.globalCoachLookback ? els.globalCoachLookback.value : state.coachLookbackWeeks);
+}
+function coachingDateRange(reportDate,weeks){
+  const day=parseDate(reportDate)||new Date(), start=new Date(day), end=new Date(day);
+  start.setHours(0,0,0,0); start.setDate(start.getDate()-7*Math.max(1,Number(weeks)||2));
+  end.setHours(23,59,59,999);
+  return {start,end};
+}
+function loadCoachLookbackWeeks(){
+  let weeks=2;
+  try{ weeks=normalizeCoachLookbackWeeks(localStorage.getItem('coachingEmailGeneratorCoachLookbackWeeks.v1')); }catch(_){}
+  state.coachLookbackWeeks=weeks;
+  if(els.globalCoachLookback) els.globalCoachLookback.value=String(weeks);
+}
+function saveCoachLookbackWeeks(){
+  const weeks=currentCoachLookbackWeeks(); state.coachLookbackWeeks=weeks;
+  if(els.globalCoachLookback) els.globalCoachLookback.value=String(weeks);
+  try{ localStorage.setItem('coachingEmailGeneratorCoachLookbackWeeks.v1',String(weeks)); }catch(_){}
+}
+function normalizeWeeklyStatsFilter(raw={}){
+  return {enabled:raw?.enabled===true,weeks:normalizeCoachLookbackWeeks(raw?.weeks)};
+}
+function currentWeeklyStatsFilter(){
+  return normalizeWeeklyStatsFilter({enabled:els.hideRepsWithoutRecentStats?els.hideRepsWithoutRecentStats.checked:state.weeklyStatsFilter?.enabled,weeks:els.weeklyStatsFilterWeeks?els.weeklyStatsFilterWeeks.value:state.weeklyStatsFilter?.weeks});
+}
+function weeklyStatsActivityKeys(reportDate,weeks){
+  const {start,end}=coachingDateRange(reportDate,weeks), index=state.indexes?.weeklyByRep, rows=state.weeklyStatsRows||[], previous=state.weeklyStatsActivityCache;
+  if(previous&&previous.index===index&&previous.rows===rows&&previous.start===+start&&previous.end===+end) return previous.keys;
+  const keys=new Set(), inRange=row=>row?.date instanceof Date&&isFinite(+row.date)&&row.date>=start&&row.date<=end;
+  if(index){ for(const [key,records] of index) if(records.some(inRange)) keys.add(key); }
+  else for(const row of rows) if(inRange(row)&&(row.repKey||row.key)) keys.add(row.repKey||row.key);
+  state.weeklyStatsActivityCache={index,rows,start:+start,end:+end,keys};
+  return keys;
+}
+function weeklyStatsActivityPasses(repK,reportDate){
+  const filter=currentWeeklyStatsFilter();
+  return !filter.enabled||weeklyStatsActivityKeys(reportDate,filter.weeks).has(repK);
+}
+function filterWeeklyStatsRecords(records,reportDate){
+  const visible=records.filter(row=>weeklyStatsActivityPasses(row.repKey||row.key,reportDate));
+  for(const key of Object.keys(records)) if(!/^\d+$/.test(key)) visible[key]=records[key];
+  return visible;
+}
+function weeklyStatsFilterNoteHtml(report=state.report){
+  const filter=report?.weeklyStatsFilter;
+  return filter?.enabled?`<div class="note"><strong>Weekly Stats filter:</strong> Showing reps with weekly stats in the past ${filter.weeks} weeks through ${esc(report.reportDate)}. ${Number(report.weeklyStatsExcludedPeople||0).toLocaleString()} rep(s) hidden for having no weekly stats in that window.</div>`:'';
+}
+function renderWeeklyStatsFilter(){
+  const filter=currentWeeklyStatsFilter();
+  if(els.weeklyStatsFilterWeeks){ els.weeklyStatsFilterWeeks.value=String(filter.weeks); els.weeklyStatsFilterWeeks.disabled=!filter.enabled; }
+  if(!els.weeklyStatsFilterStatus) return;
+  if(!filter.enabled){ els.weeklyStatsFilterStatus.textContent='Off — no reps are hidden by this filter.'; return; }
+  const date=parseDate(els.reportDate?.value)||new Date(), count=weeklyStatsActivityKeys(date,filter.weeks).size;
+  const loaded=(state.weeklyStatsRows||[]).some(row=>row?.date instanceof Date&&isFinite(+row.date));
+  els.weeklyStatsFilterStatus.textContent=!loaded?'On — no dated Weekly Stats are loaded. Load Weekly Stats or turn this filter off; all reps are currently hidden.':`On — ${count.toLocaleString()} rep${count===1?'':'s'} with weekly stats in the past ${filter.weeks} weeks through ${ymd(date)}. Generate the report to apply.`;
+}
+function loadWeeklyStatsFilter(){
+  let filter=normalizeWeeklyStatsFilter();
+  try{ filter=normalizeWeeklyStatsFilter(JSON.parse(localStorage.getItem('coachingEmailGeneratorWeeklyStatsFilter.v1')||'{}')); }catch(_){}
+  state.weeklyStatsFilter=filter;
+  if(els.hideRepsWithoutRecentStats) els.hideRepsWithoutRecentStats.checked=filter.enabled;
+  if(els.weeklyStatsFilterWeeks) els.weeklyStatsFilterWeeks.value=String(filter.weeks);
+  renderWeeklyStatsFilter();
+}
+function saveWeeklyStatsFilter(){
+  state.weeklyStatsFilter=currentWeeklyStatsFilter();
+  try{ localStorage.setItem('coachingEmailGeneratorWeeklyStatsFilter.v1',JSON.stringify(state.weeklyStatsFilter)); }catch(_){}
+  renderWeeklyStatsFilter();
+}
+function markWeeklyStatsFilterResultsStale(){
+  state.weeklyStatsFilterRevision=(Number(state.weeklyStatsFilterRevision)||0)+1;
+  if(state.report) state.report.weeklyStatsFilterStale=true;
+  if(els.exportEmailsBtn) els.exportEmailsBtn.disabled=true;
+  if(els.exportUrgencyPdfBtn) els.exportUrgencyPdfBtn.disabled=true;
+}
+function refreshWeeklyStatsFilter(){
+  saveWeeklyStatsFilter(); markWeeklyStatsFilterResultsStale();
+  invalidateIndividualRunCache('weekly stats filter changed');
+  renderIndividualRepresentativeOptions(); renderIndividualScopeSummary();
+  markRulePreviewStale('Weekly Stats filter changed. Refresh Preview or generate the report to update the people shown.');
+  setStatus('Weekly Stats filter saved. Generate the report to update reports and downloads.');
 }
 const HIRE_DATE_SETTINGS_KEY='coachingEmailGeneratorHireDateSettings.v1';
 function normalizeHireDateSettings(raw={}){
@@ -1068,6 +1165,8 @@ function correctSelectedCoachAliases(){
   rebuildCoachAliasIndex();
   applyCoachAliasesToRows();
   rebuildDataIndexes();
+  renderWeeklyStatsFilter();
+  if(currentWeeklyStatsFilter().enabled) markWeeklyStatsFilterResultsStale();
   rebuildTeamMapFromCoreData();
   applyCoachAliasesToTeamMap();
   invalidateIndividualScopeIndex('coach alias mapping changed');
@@ -1193,6 +1292,8 @@ function rebuildDerivedMaps(){
   rebuildCoachAliasIndex();
   applyCoachAliasesToRows();
   rebuildDataIndexes();
+  renderWeeklyStatsFilter();
+  if(currentWeeklyStatsFilter().enabled) markWeeklyStatsFilterResultsStale();
   rebuildTeamMapFromCoreData();
   applyCoachAliasesToTeamMap();
   rebuildHireDateIndex();
@@ -1456,7 +1557,6 @@ function readRuleForm(){
   rule.baseName = els.ruleBaseName.value.trim();
   rule.ruleType = els.ruleType?.value || rule.ruleType || 'multiHeader';
   rule.agentHeader = els.ruleAgentHeader.value.trim() || 'Agent Name';
-  rule.coachLookbackWeeks = Number(els.ruleCoachLookback.value) || 2;
   rule.criteriaLogic = (els.ruleCriteriaLogic?.value || rule.criteriaLogic || 'and');
   rule.countRule = { nameHeader:els.countNameHeader?.value || rule.countRule?.nameHeader || '', minCount:Math.max(0, Number(els.countMin?.value ?? rule.countRule?.minCount ?? 1) || 0), label:(els.countLabel?.value || rule.countRule?.label || 'Rows found').trim() || 'Rows found' };
   rule.displayColumn = { enabled:!!els.ruleDisplayColumnEnabled?.checked, header:els.ruleDisplayColumn?.value || '',format:els.ruleDisplayFormat?.value||'auto',precision:Math.max(0,Math.min(4,Number(els.ruleDisplayPrecision?.value)||0)),template:(els.ruleDisplayTextTemplate?.value||'').trim() };
@@ -1484,7 +1584,6 @@ function fillRuleForm(rule){
   els.ruleBaseName.value = rule?.baseName || '';
   if(els.ruleType) els.ruleType.value = rule?.ruleType || 'multiHeader';
   els.ruleAgentHeader.value = rule?.agentHeader || 'Agent Name';
-  els.ruleCoachLookback.value = rule?.coachLookbackWeeks || 2;
   if(els.ruleCriteriaLogic) els.ruleCriteriaLogic.value = rule?.criteriaLogic || 'and';
   if(els.countMin) els.countMin.value = Number(rule?.countRule?.minCount ?? 1);
   if(els.countLabel) els.countLabel.value = rule?.countRule?.label || 'Rows found';
@@ -2272,7 +2371,8 @@ function renderCoachingDiagnostics(allRules=false){
   const traces=raw.slice(0,25).map(r=>`<tr><td>${esc(r.rawName)}</td><td>${esc(String(r.dateTrace?.coachingDateRaw??''))}</td><td>${esc(String(r.dateTrace?.createdOnRaw??''))}</td><td>${esc(String(r.dateTrace?.bridgeDateRaw??''))}</td><td>${esc(r.dateTrace?.selectedSource||'none')}</td><td>${r.dateTrace?.parsed?'Yes':'No'}</td><td>${esc(r.desc||'')}</td><td>${r.repKey?'Yes':'No'}</td></tr>`).join('');
   const reportDate=parseDate(els.reportDate?.value)||new Date();
   const rules=state.rules.filter(r=>r.coaching?.mode==='descriptionContains');
-  const ruleRows=rules.map(rule=>{ const phrases=phraseListFromRule(rule), described=state.coachingRows.filter(r=>r.desc), matched=described.filter(r=>coachingMatchInfo(r,rule).matches), known=matched.filter(r=>r.repKey&&state.indexes.coachingByRep.has(r.repKey)), from=addDays(reportDate,-7*rule.coachLookbackWeeks), recent=known.filter(r=>r.date>=from&&r.date<=reportDate), final=recent.filter(r=>coachMatch({repKey:r.repKey},rule,reportDate,rule.coachLookbackWeeks).isCoached); let reason=!phrases.length?'Rule has no Description phrases at runtime.':!matched.length?'Description exists but phrase did not match.':!known.length?'Row never entered coachingByRep.':!recent.length?'Coaching existed but fell outside lookback.':!final.length?'coachMatch found no final signal.':'Complete'; return `<tr><td>${esc(rule.title)}</td><td>${esc(rule.id)}</td><td>${esc(rule.coaching.mode)}</td><td>${esc(phrases.join(' | '))}</td><td>${described.length}</td><td>${matched.length}</td><td>${known.length}</td><td>${recent.length}</td><td>${final.length}</td><td>${esc(reason)}</td></tr>`; }).join('');
+  const lookback=currentCoachLookbackWeeks(), {start:from,end}=coachingDateRange(reportDate,lookback);
+  const ruleRows=rules.map(rule=>{ const phrases=phraseListFromRule(rule), described=state.coachingRows.filter(r=>r.desc), matched=described.filter(r=>coachingMatchInfo(r,rule).matches), known=matched.filter(r=>r.repKey&&state.indexes.coachingByRep.has(r.repKey)), recent=known.filter(r=>r.date>=from&&r.date<=end), final=recent.filter(r=>coachMatch({repKey:r.repKey},rule,reportDate,lookback).isCoached); let reason=!phrases.length?'Rule has no Description phrases at runtime.':!matched.length?'Description exists but phrase did not match.':!known.length?'Row never entered coachingByRep.':!recent.length?'Coaching existed but fell outside lookback.':!final.length?'coachMatch found no final signal.':'Complete'; return `<tr><td>${esc(rule.title)}</td><td>${esc(rule.id)}</td><td>${esc(rule.coaching.mode)}</td><td>${esc(phrases.join(' | '))}</td><td>${described.length}</td><td>${matched.length}</td><td>${known.length}</td><td>${recent.length}</td><td>${final.length}</td><td>${esc(reason)}</td></tr>`; }).join('');
   panel.classList.remove('hidden'); panel.innerHTML=`<div class="row"><h3>Documented Coaching Diagnostic</h3><span class="spacer"></span><button class="btn small" id="closeCoachingDiagnostics">Close</button></div>${blocker?`<div class="pill bad">BLOCKER: ${esc(blocker)}</div>`:'<div class="pill good">Pipeline has usable indexed rows</div>'}<p><strong>Source:</strong> ${esc(d.source||'none')} • Allstar raw ${(d.bridge?.rawRows||0).toLocaleString()} → bridge ${(d.bridge?.bridgeRows||d.received||0).toLocaleString()} → received ${(d.received||0).toLocaleString()} → parsed ${(d.parsed||0).toLocaleString()} → valid date ${(d.validDate||0).toLocaleString()} → state.coachingRows ${(d.survived||0).toLocaleString()} → coachingByRep ${indexed.toLocaleString()}</p><h4>Column health (name-based)</h4><table><thead><tr><th>Required field</th><th>Found?</th><th>Actual header</th><th>Sample</th></tr></thead><tbody>${columns}</tbody></table><h4>Row parsing funnel and date selection</h4><p>Received ${d.received||0} • Associate Name ${d.withName||0} • Coaching Date present ${d.withCoachingDate||0} • parser succeeded ${d.validDate||0} • survived ${d.survived||0} • assigned repKey ${state.coachingRows.filter(r=>r.repKey).length} • indexed ${indexed}</p><table><thead><tr><th>Rep</th><th>Source Coaching Date</th><th>Created On</th><th>Bridge Date</th><th>Selected</th><th>Parsed?</th><th>Description (searched field)</th><th>repKey?</th></tr></thead><tbody>${traces}</tbody></table><h4>Saved rule persistence and match funnel${allRules?' — all rules':''}</h4><table><thead><tr><th>Rule</th><th>ID</th><th>Runtime mode</th><th>Description phrases</th><th>With Description</th><th>Raw matches</th><th>Known rep</th><th>Recent</th><th>Final used</th><th>First blocking reason</th></tr></thead><tbody>${ruleRows||'<tr><td colspan="10">No saved descriptionContains rules.</td></tr>'}</tbody></table><p class="sub">Description matching is strictly scoped to the Description column. Coaching Type, Coaching Type-Multi, Corrective, and other workbook fields cannot satisfy these rules.</p>`; $('closeCoachingDiagnostics').onclick=()=>panel.classList.add('hidden');
 }
 function renderUploadReadiness(){
@@ -2472,7 +2572,8 @@ function trendHtml(trend,label){
   return `<span class="pill ${cls}">${esc(trendPlainText(trend,label))}</span>`;
 }
 function matchingCoachingRowsForRule(repK,rule,reportDate){
-  return rowsForRep('coachingByRep',repK).filter(c=>c.date<=reportDate && coachingMatchInfo(c,rule).matches).sort((a,b)=>b.date-a.date);
+  const {end}=coachingDateRange(reportDate,currentCoachLookbackWeeks());
+  return rowsForRep('coachingByRep',repK).filter(c=>c.date&&c.date<=end && coachingMatchInfo(c,rule).matches).sort((a,b)=>b.date-a.date);
 }
 function evaluateStatRuleForRep(repK, config, reportDate, forcedEnd=null){
   const relative=config?.dateMode!=='fixed' || !!forcedEnd;
@@ -2588,7 +2689,7 @@ function formerCorrectiveWatchlist(reportDate,rules,existing){
   return out.sort(function(a,b){ return b.score-a.score||String(a.repName).localeCompare(String(b.repName)); }).filter(function(item){ const key=item.repKey+'::'+item.ruleId; if(seen.has(key)) return false; seen.add(key); return true; });
 }
 function coachingSummaryFromRows(repK,matched,reportDate,lookbackWeeks){
-  const from=addDays(reportDate,-7*Math.max(1,Number(lookbackWeeks||2))); const allRows=rowsForRep('coachingByRep',repK).filter(c=>c.date<=reportDate); const rows=matched.slice().sort((a,b)=>b.date-a.date).map(c=>Object.assign({},c,{matchInfo:{matches:true,reason:'selected coaching topic'}})); const recentMatched=rows.filter(c=>c.date>=from&&c.date<=reportDate); const latestMatch=rows[0]||null;
+  const {start:from,end}=coachingDateRange(reportDate,lookbackWeeks??currentCoachLookbackWeeks()); const allRows=rowsForRep('coachingByRep',repK).filter(c=>c.date&&c.date<=end); const rows=matched.filter(c=>c.date&&c.date<=end).sort((a,b)=>b.date-a.date).map(c=>Object.assign({},c,{matchInfo:{matches:true,reason:'selected coaching topic'}})); const recentMatched=rows.filter(c=>c.date>=from); const latestMatch=rows[0]||null;
   return {all:allRows,recent:allRows.filter(c=>c.date>=from),matched:rows,recentMatched,allCount:allRows.length,anyRecentCount:allRows.filter(c=>c.date>=from).length,totalCount:rows.length,recentCount:recentMatched.length,matchCount:rows.length,recentMatchCount:recentMatched.length,hasAny:allRows.length>0,hasMatch:rows.length>0,isCoached:recentMatched.length>0,isRecentMatch:recentMatched.length>0,latestMatch,latest:latestMatch};
 }
 function buildUpMetricConfig(buildUp){ return {metric:buildUp?.metric||'cashAppointmentRate',customHeader:buildUp?.customHeader||'',customSourceMode:buildUp?.customSourceMode||'column',customValueHeader:buildUp?.customValueHeader||'',customNumeratorHeader:buildUp?.customNumeratorHeader||'',customDenominatorHeader:buildUp?.customDenominatorHeader||'',cashSourceMode:buildUp?.cashSourceMode==='auto'?'consumerRatio':(buildUp?.cashSourceMode||'consumerRatio'),cashRateHeader:buildUp?.cashRateHeader||'',cashNumeratorHeader:buildUp?.cashNumeratorHeader||'',cashDenominatorHeader:buildUp?.cashDenominatorHeader||'',dateMode:'relative',lookbackWeeks:Math.max(1,Number(buildUp?.weeks||10)),goalRaw:buildUp?.goalRaw||'',minimumMode:'percent',minPctRaw:buildUp?.minPctRaw||'75%',minWeeks:1}; }
@@ -2598,9 +2699,9 @@ function buildUpPasses(c,buildUp,reportDate){
   return {passes:check.meets,check,impactTrend};
 }
 function buildCoachingCorrectiveRecords(rule,reportDate){
-  const c=rule.coachingCorrective||{}; const from=addDays(reportDate,-7*Math.max(1,Number(c.coachingLookbackWeeks||52))); const groups=new Map();
+  const c=rule.coachingCorrective||{}; const {start:from,end}=coachingDateRange(reportDate,c.coachingLookbackWeeks||52); const groups=new Map();
   for(const row of state.coachingRows||[]){
-    if(row.date<from||row.date>reportDate||!coachingTopicMatches(row,c)) continue;
+    if(!row.date||row.date<from||row.date>end||!coachingTopicMatches(row,c)) continue;
     const build=buildUpPasses(row,c.buildUp,reportDate); if(!build.passes) continue;
     if(!groups.has(row.key)) groups.set(row.key,[]);
     groups.get(row.key).push(Object.assign({},row,{buildUpCheck:build.check,buildUpImpactTrend:build.impactTrend}));
@@ -2656,13 +2757,13 @@ function buildStatCountRecords(rule,reportDate){
 }
 function coreRulePreviewHtml(rule,reportDate){
   if(isStatRule(rule)){
-    const records=buildStatRuleRecords(rule,reportDate), rows=records.slice(0,150); return `<div class="row"><span class="pill blue">${records.length} representative(s) meet Stat Rule</span><span class="pill coreRuleBadge">4 key files only</span><span class="pill">Authoritative lookback: ${Number(rule.statRule?.lookbackWeeks||10)} weekly rows</span><span class="pill">Missing values = N/A</span>${rule.statRule?.metric==='cashAppointmentRate'?`<span class="pill">Cash source: ${esc(cashSourceDescription(rule.statRule))}</span>`:rule.statRule?.metric==='custom'?`<span class="pill">Custom source: ${esc(customSourceDescription(rule.statRule))}</span>`:''}</div><div class="tableWrap"><table><thead><tr><th>Representative</th><th>Coach / Team</th><th>Stat</th><th>Weeks Below Goal</th><th>Representative Trend</th><th>3 Before vs 3 After Coaching</th><th>N/A Weeks</th><th>Why Included</th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${esc(r.repName)}</strong></td><td>${esc(r.coach)}<div class="mini muted">${esc(r.team)}</div></td><td>${esc(r.check.label)}<div class="mini muted">Average ${formatMetricValue(r.check.label,r.check.avg)}</div></td><td><span class="pill ${r.check.meets?'bad':'warn'}">${r.check.lowWeeks}/${r.check.valuedWeeks} • ${fmtPct(r.check.pctLow,1)}</span></td><td>${trendHtml(r.check.trend,r.check.label)}</td><td>${r.check.coachingDate?`<div class="mini muted">Coaching ${esc(ymd(r.check.coachingDate))}</div>`:''}${trendHtml(r.check.coachingTrend,r.check.label)}</td><td>${r.check.naWeeks}</td><td>${esc(r.matchedValues)}</td></tr>`).join('')||'<tr><td colspan="8">No representatives currently meet this Stat Rule.</td></tr>'}</tbody></table></div>${records.length>150?'<div class="sub">Preview capped at 150 representatives for responsiveness.</div>':''}`;
+    const records=filterWeeklyStatsRecords(buildStatRuleRecords(rule,reportDate),reportDate), rows=records.slice(0,150); return `<div class="row"><span class="pill blue">${records.length} representative(s) meet Stat Rule</span><span class="pill coreRuleBadge">4 key files only</span><span class="pill">Authoritative lookback: ${Number(rule.statRule?.lookbackWeeks||10)} weekly rows</span><span class="pill">Missing values = N/A</span>${rule.statRule?.metric==='cashAppointmentRate'?`<span class="pill">Cash source: ${esc(cashSourceDescription(rule.statRule))}</span>`:rule.statRule?.metric==='custom'?`<span class="pill">Custom source: ${esc(customSourceDescription(rule.statRule))}</span>`:''}</div><div class="tableWrap"><table><thead><tr><th>Representative</th><th>Coach / Team</th><th>Stat</th><th>Weeks Below Goal</th><th>Representative Trend</th><th>3 Before vs 3 After Coaching</th><th>N/A Weeks</th><th>Why Included</th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${esc(r.repName)}</strong></td><td>${esc(r.coach)}<div class="mini muted">${esc(r.team)}</div></td><td>${esc(r.check.label)}<div class="mini muted">Average ${formatMetricValue(r.check.label,r.check.avg)}</div></td><td><span class="pill ${r.check.meets?'bad':'warn'}">${r.check.lowWeeks}/${r.check.valuedWeeks} • ${fmtPct(r.check.pctLow,1)}</span></td><td>${trendHtml(r.check.trend,r.check.label)}</td><td>${r.check.coachingDate?`<div class="mini muted">Coaching ${esc(ymd(r.check.coachingDate))}</div>`:''}${trendHtml(r.check.coachingTrend,r.check.label)}</td><td>${r.check.naWeeks}</td><td>${esc(r.matchedValues)}</td></tr>`).join('')||'<tr><td colspan="8">No representatives currently meet this Stat Rule.</td></tr>'}</tbody></table></div>${records.length>150?'<div class="sub">Preview capped at 150 representatives for responsiveness.</div>':''}`;
   }
   if(isStatCountRule(rule)){
-    const records=buildStatCountRecords(rule,reportDate), rows=records.slice(0,150), c=rule.statCount||{};
+    const records=filterWeeklyStatsRecords(buildStatCountRecords(rule,reportDate),reportDate), rows=records.slice(0,150), c=rule.statCount||{};
     return `<div class="row"><span class="pill blue">${records.length} representative(s) meet Stat Count</span><span class="pill coreRuleBadge">${esc(statCountSourceLabel(c.source))}</span><span class="pill">${records.matchingRows||0} matching row(s)</span><span class="pill">${records.scanned||0} row(s) scanned</span></div><div class="tableWrap"><table><thead><tr><th>Representative</th><th>Coach / Team</th><th>${esc(c.label||'Count')}</th><th>Condition</th><th>Recent examples</th><th>Why Included</th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${esc(r.repName)}</strong><div class="mini muted">${esc(r.rawName||'')}</div></td><td>${esc(r.coach)}<div class="mini muted">${esc(r.team)}</div></td><td><span class="pill ${r.count>0?'bad':'good'}">${r.count}</span></td><td>${esc(c.conditionHeader||'No header')} ${esc(statCountOperatorLabel(c.operator))} ${esc(['blank','notBlank'].includes(c.operator)?'':c.value||'')}</td><td>${r.examples.length?r.examples.map(x=>`${x.date?ymd(x.date):'No date'}: ${String(x.value??'')}`).map(esc).join('<br>'):'—'}</td><td>${esc(r.matchedValues)}</td></tr>`).join('')||'<tr><td colspan="6">No representatives currently meet this Stat Count rule.</td></tr>'}</tbody></table></div>${records.length>150?'<div class="sub">Preview capped at 150 representatives for responsiveness.</div>':''}`;
   }
-  const records=buildCoachingCorrectiveRecords(rule,reportDate), rows=records.slice(0,150); const c=rule.coachingCorrective||{}; const trendLabel=metricLabel(c.buildUp?.metric,c.buildUp?.customHeader); return `<div class="row"><span class="pill blue">${records.length} representative(s) meet Coaching → Corrective rule</span><span class="pill coreRuleBadge">4 key files only</span><span class="pill">Ratio = documented coachings : checklist items</span>${records.excludedImproving?`<span class="pill good">${records.excludedImproving} improving rep(s) not flagged</span>`:''}</div><div class="tableWrap"><table><thead><tr><th>Representative</th><th>Coach / Team</th><th>Documented Coachings</th><th>Checklist / Corrective</th><th>Ratio</th>${c.buildUp?.enabled?'<th>Representative Trend</th><th>Latest Coaching Impact</th>':''}<th>Why Included</th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${esc(r.repName)}</strong></td><td>${esc(r.coach)}<div class="mini muted">${esc(r.team)}</div></td><td><span class="pill good">${r.coachings.length}</span></td><td><span class="pill ${r.checklist.length?'warn':'bad'}">${r.checklist.length}</span></td><td><span class="ratioBadge">${esc(r.ratioLabel)}</span></td>${c.buildUp?.enabled?`<td>${trendHtml(r.trend,trendLabel)}</td><td>${trendHtml(r.coachingImpactTrend,trendLabel)}</td>`:''}<td>${esc(r.matchedValues)}</td></tr>`).join('')||`<tr><td colspan="${c.buildUp?.enabled?8:6}">No representatives currently meet this Coaching → Corrective rule.</td></tr>`}</tbody></table></div>${records.length>150?'<div class="sub">Preview capped at 150 representatives for responsiveness.</div>':''}`;
+  const records=filterWeeklyStatsRecords(buildCoachingCorrectiveRecords(rule,reportDate),reportDate), rows=records.slice(0,150); const c=rule.coachingCorrective||{}; const trendLabel=metricLabel(c.buildUp?.metric,c.buildUp?.customHeader); return `<div class="row"><span class="pill blue">${records.length} representative(s) meet Coaching → Corrective rule</span><span class="pill coreRuleBadge">4 key files only</span><span class="pill">Ratio = documented coachings : checklist items</span>${records.excludedImproving?`<span class="pill good">${records.excludedImproving} improving rep(s) not flagged</span>`:''}</div><div class="tableWrap"><table><thead><tr><th>Representative</th><th>Coach / Team</th><th>Documented Coachings</th><th>Checklist / Corrective</th><th>Ratio</th>${c.buildUp?.enabled?'<th>Representative Trend</th><th>Latest Coaching Impact</th>':''}<th>Why Included</th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${esc(r.repName)}</strong></td><td>${esc(r.coach)}<div class="mini muted">${esc(r.team)}</div></td><td><span class="pill good">${r.coachings.length}</span></td><td><span class="pill ${r.checklist.length?'warn':'bad'}">${r.checklist.length}</span></td><td><span class="ratioBadge">${esc(r.ratioLabel)}</span></td>${c.buildUp?.enabled?`<td>${trendHtml(r.trend,trendLabel)}</td><td>${trendHtml(r.coachingImpactTrend,trendLabel)}</td>`:''}<td>${esc(r.matchedValues)}</td></tr>`).join('')||`<tr><td colspan="${c.buildUp?.enabled?8:6}">No representatives currently meet this Coaching → Corrective rule.</td></tr>`}</tbody></table></div>${records.length>150?'<div class="sub">Preview capped at 150 representatives for responsiveness.</div>':''}`;
 }
 function previewSourceRowsForRule(rule){
   const sources=[];
@@ -2745,11 +2846,12 @@ function renderRuleNamePreview(){
   }
   const sources=previewSourceRowsForRule(rule);
   if(!sources.length){ els.ruleNamePreview.className='previewBox empty'; els.ruleNamePreview.innerHTML='Load a sample file for this rule to preview while building, or add report files in Step 3 to preview against the actual report files.'; return; }
-  const lookback=Number(rule.coachLookbackWeeks)||Number(els.globalCoachLookback?.value)||2;
+  const lookback=currentCoachLookbackWeeks();
   if(isHeaderCountRule(rule)){
     const built=buildHeaderCountRecords(rule, sources);
     const found=new Map();
     for(const base of built.records){
+      if(!weeklyStatsActivityPasses(base.repKey,reportDate)) continue;
       const rec={...base, matchedValues:`${rule.countRule?.label || 'Rows found'}: ${base.count} in ${built.countHeader || 'selected column'} (minimum ${built.threshold})`};
       rec.coaching=coachMatch(rec, rule, reportDate, lookback);
       rec.checklistCount=checklistMatch(rec, rule, reportDate, 10).count;
@@ -2771,7 +2873,7 @@ function renderRuleNamePreview(){
       scanned++;
       if((rule.criteria||[]).length && !rowMeetsRule(raw, rule)) continue;
       const rawName=getAgentFromRow(raw, rule); if(!rawName) continue;
-      const ident=resolveIdentityFromRow(raw,rawName); if(!ident.key) continue;
+      const ident=resolveIdentityFromRow(raw,rawName); if(!ident.key||!weeklyStatsActivityPasses(ident.key,reportDate)) continue;
       const map=state.teamMap.get(ident.key) || {};
       const rec={repName:ident.name||displayName(rawName), rawName:displayName(rawName), repKey:ident.key, key:ident.key, coach:map.coach||'Unassigned', team:map.team||'Unassigned', source:src.name, raw, matchedValues:criteriaValueSummary(raw, rule)};
       const coaching=coachMatch(rec, rule, reportDate, lookback);
@@ -2819,6 +2921,10 @@ function rowMeetsRule(row, rule){
 }
 function getAgentFromRow(row, rule){ return String(row[rule.agentHeader] || rowVal(row,['Agent Name','Associate Name','Representative','Rep','CSR Name','Name']) || '').trim(); }
 function coachingMatchInfo(c, rule){
+  if(rule?.ruleType==='coachingCorrective'){
+    const matches=coachingTopicMatches(c,rule.coachingCorrective||{});
+    return {matches,reason:matches?`coaching topic: ${rule.coachingCorrective?.coachingTopic||'any coaching'}`:''};
+  }
   const mode=rule?.coaching?.mode || 'none';
   if(mode==='none') return {matches:true, reason:'any coaching'};
   const typeParts=(c.typeParts&&c.typeParts.length ? c.typeParts : splitCoachingTypes(c.type));
@@ -2850,12 +2956,12 @@ function coachingRowMatchesRule(c, rule){
 }
 function coachMatch(row, rule, reportDate, lookbackWeeks){
   const repK=row.repKey||row.key;
-  const from=addDays(reportDate,-7*lookbackWeeks);
+  const {start:from,end}=coachingDateRange(reportDate,lookbackWeeks??currentCoachLookbackWeeks());
   // Representative-name-only match. Do not require coach/team alignment because coach assignments can move over time.
-  const allRows=rowsForRep('coachingByRep',repK).filter(c=>(!reportDate || c.date<=reportDate));
-  const recent=allRows.filter(c=>c.date>=from && c.date<=reportDate);
+  const allRows=rowsForRep('coachingByRep',repK).filter(c=>c.date&&c.date<=end).slice().sort((a,b)=>b.date-a.date);
+  const recent=allRows.filter(c=>c.date>=from);
   const matched=allRows.map(c=>Object.assign({}, c, {matchInfo:coachingMatchInfo(c, rule)})).filter(c=>c.matchInfo.matches);
-  const recentMatched=matched.filter(c=>c.date>=from && c.date<=reportDate);
+  const recentMatched=matched.filter(c=>c.date>=from);
   const latestMatch=matched[0]||null;
   return {
     all:allRows,
@@ -3163,8 +3269,8 @@ function ruleCategories(rule){
 function ruleDataSource(rule){ return rule?.title || rule?.baseName || 'Unknown data source'; }
 function rowCategoryList(r){ return (r?.categories&&r.categories.length ? r.categories : [r?.category || 'Uncategorized']).filter(Boolean); }
 function assignedRepSetForCoach(coach, reportDate){
-  const d=reportDate instanceof Date && !isNaN(reportDate) ? reportDate : (parseDate(state.report?.reportDate) || new Date());
-  const from=addDays(d,-35); const set=new Set(); const coachKey=coachNameKey(coach);
+  const {start:from,end:d}=coachingDateRange(reportDate||state.report?.reportDate,5);
+  const set=new Set(); const coachKey=coachNameKey(coach);
   const add=(r)=>{
     if(!r?.key || !(r.date>=from && r.date<=d)) return;
     const mapped=state.teamMap.get(r.key) || {};
@@ -3181,15 +3287,15 @@ function assignedRepSetForCoach(coach, reportDate){
 }
 function assignedRepSetForRows(rows, reportDate){
   const out=new Set();
-  for(const coach of [...new Set((rows||[]).map(r=>r.coach||'Unassigned'))]) for(const k of assignedRepSetForCoach(coach, reportDate)) if(hireDatePassesReportFilter(k)) out.add(k);
+  for(const coach of [...new Set((rows||[]).map(r=>r.coach||'Unassigned'))]) for(const k of assignedRepSetForCoach(coach, reportDate)) if(hireDatePassesReportFilter(k)&&weeklyStatsActivityPasses(k,reportDate)) out.add(k);
   return out;
 }
 function reportTeamPopulationForRows(rows, reportDate){
   const byCoach=new Map();
   for(const coach of [...new Set((rows||[]).map(r=>r.coach||'Unassigned'))]){
     const coachKey=coachNameKey(coach), eligible=new Set();
-    for(const repK of assignedRepSetForCoach(coach,reportDate)) if(hireDatePassesReportFilter(repK)) eligible.add(repK);
-    for(const row of rows||[]) if(coachNameKey(row.coach||'Unassigned')===coachKey && row.repKey && hireDatePassesReportFilter(row.repKey)) eligible.add(row.repKey);
+    for(const repK of assignedRepSetForCoach(coach,reportDate)) if(hireDatePassesReportFilter(repK)&&weeklyStatsActivityPasses(repK,reportDate)) eligible.add(repK);
+    for(const row of rows||[]) if(coachNameKey(row.coach||'Unassigned')===coachKey && row.repKey && hireDatePassesReportFilter(row.repKey) && weeklyStatsActivityPasses(row.repKey,reportDate)) eligible.add(row.repKey);
     byCoach.set(coachKey,eligible);
   }
   return byCoach;
@@ -3437,12 +3543,11 @@ function urgencyPct(value,digits){ return isFinite(value)?(Number(value)*100).to
 function urgencyScoreLabel(score){ score=Number(score)||0; return score>=80?'Critical':score>=65?'High':score>=40?'Moderate':'Low'; }
 function urgencyNeedLabel(score){ score=Number(score)||0; return score>=70?'High Priority':score>=45?'Moderate Priority':'Monitor'; }
 function urgencyCoachingLookbackWeeks(rule,globalLookback){
-  return Math.max(1,Number(rule?.coachLookbackWeeks)||Number(globalLookback)||2);
+  return normalizeCoachLookbackWeeks(globalLookback??currentCoachLookbackWeeks());
 }
 function urgencyCoachingPeriod(rule,reportDate,globalLookback){
-  const end=reportDate instanceof Date&&!isNaN(reportDate)?new Date(reportDate):new Date();
   const lookbackWeeks=urgencyCoachingLookbackWeeks(rule,globalLookback);
-  return {lookbackWeeks:lookbackWeeks,start:addDays(end,-7*lookbackWeeks),end:end};
+  return Object.assign({lookbackWeeks},coachingDateRange(reportDate,lookbackWeeks));
 }
 function urgencyKpiConfigsForRule(rule){
   const out=[];
@@ -4005,6 +4110,7 @@ function makeEmailHtml(title,rows,isExec=false){
 }
 async function exportUrgencyEmailPdf(){
   if(!state.report){ toast('Generate a report first.'); return; }
+  if(state.report.weeklyStatsFilterStale){ toast('Generate the report again to apply the Weekly Stats filter before downloading.'); return; }
   const exporter=window.html2pdf||(window.parent!==window?window.parent.html2pdf:null);
   if(!exporter){ toast('PDF export is not available in this browser session.'); return; }
   const parsed=new DOMParser().parseFromString(makeEmailHtml('Executive Coaching Opportunity Review',state.report.flagged,true),'text/html');
@@ -4204,7 +4310,7 @@ function impactRowMatchesRule(row,rule){
   if(resolution&&resolution.indexOf('assign:')===0) matches=resolution.slice(7)===rule.id;
   return {matches:matches,evidence:evidence};
 }
-function impactRowsForRep(repKey,reportDate){ return rowsForRep('coachingByRep',repKey).filter(function(row){ return row.date<=reportDate; }).sort(function(a,b){ return a.date-b.date; }); }
+function impactRowsForRep(repKey,reportDate){ const {end}=coachingDateRange(reportDate,currentCoachLookbackWeeks()); return rowsForRep('coachingByRep',repKey).filter(function(row){ return row.date&&row.date<=end; }).sort(function(a,b){ return a.date-b.date; }); }
 function impactEpisodeChecklist(repKey,rule,start,end){
   const phrases=impactRulePhrases(rule), from=addDays(start,-7), through=addDays(end,28);
   return rowsForRep('checklistByRep',repKey).filter(function(row){ if(row.date<from||row.date>through) return false; if(!phrases.length) return true; return phrases.some(function(phrase){ return impactPhraseMatch(row.searchText||'',phrase); }); });
@@ -4338,7 +4444,8 @@ function impactAnalyzeNeed(record,rule,reportDate,recentDays){
 }
 function impactDiagnosticRows(needs,rules,reportDate){
   const activeRules=rules.filter(function(rule){ return needs.some(function(need){ return need.ruleId===rule.id; }); }), diagnostics=[];
-  (state.coachingRows||[]).filter(function(row){ return row.date<=reportDate; }).forEach(function(row){
+  const {end}=coachingDateRange(reportDate,currentCoachLookbackWeeks());
+  (state.coachingRows||[]).filter(function(row){ return row.date&&row.date<=end; }).forEach(function(row){
     const matches=activeRules.filter(function(rule){ return impactRowMatchesRule(row,rule).matches; });
     if(matches.length>1) diagnostics.push({rowId:impactRowId(row),representative:row.name||row.rawName,date:row.date,coach:row.coach||'Unassigned',topics:matches.map(function(rule){ return {id:rule.id,title:rule.title,topic:impactRuleTopic(rule)}; }),record:row});
   });
@@ -4702,13 +4809,14 @@ function impactDownloadRows(rows,baseName){
   if(window.XLSX){ const ws=XLSX.utils.json_to_sheet(rows), wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Coaching Impact'); XLSX.writeFile(wb,baseName+'.xlsx'); }
   else { const headers=Object.keys(rows[0]), csv=[headers.join(',')].concat(rows.map(function(row){ return headers.map(function(header){ return '"'+String(row[header]??'').replace(/"/g,'""')+'"'; }).join(','); })).join('\n'); downloadBlob(new Blob([csv],{type:'text/csv'}),baseName+'.csv'); }
 }
-function impactExportCurrent(){ const needs=state.activeTab==='overallcoaching'?impactScopedNeeds():(state.report?.coachingImpact?.needs||[]); impactDownloadRows(needs.map(impactExportShape),'coaching_impact_'+(state.report?.reportDate||ymd(new Date()))); }
+function impactExportCurrent(){ if(state.report?.weeklyStatsFilterStale){ toast('Generate the report again to apply the Weekly Stats filter before downloading.'); return; } const needs=state.activeTab==='overallcoaching'?impactScopedNeeds():(state.report?.coachingImpact?.needs||[]); impactDownloadRows(needs.map(impactExportShape),'coaching_impact_'+(state.report?.reportDate||ymd(new Date()))); }
 const impactExportProblemRepsBefore=exportProblemReps;
 exportProblemReps=function(){
   return impactExportProblemRepsBefore();
 };
 async function impactExportOverallPdf(){
   if(!state.report?.coachingImpact){ toast('Generate an Action Report first.'); return; }
+  if(state.report.weeklyStatsFilterStale){ toast('Generate the report again to apply the Weekly Stats filter before downloading.'); return; }
   const exporter=window.html2pdf||(window.parent!==window?window.parent.html2pdf:null); if(!exporter){ toast('PDF export is not available in this browser session.'); return; }
   const host=document.createElement('div'); host.style.cssText='position:fixed;left:-22000px;top:0;width:1100px;background:#f8fafc;padding:18px;z-index:-1'; host.innerHTML='<h1 style="margin:0 0 4px">Overall Coaching Profile</h1><div style="color:#64748b;margin-bottom:12px">Report date: '+esc(state.report.reportDate)+' • Trend KPI: '+esc(impactKpiLabel(els.impactOverallKpiSelect?.value||''))+'</div>'+impactOverallHtml(impactScopedNeeds(),els.impactMovementUnit?.value||'needs',els.impactOverallKpiSelect?.value||''); document.body.appendChild(host);
   try{ setStatus('Building the Overall Coaching Profile PDF...'); await exporter().set({margin:[.25,.25,.3,.25],filename:'Overall_Coaching_Profile_'+state.report.reportDate+'.pdf',image:{type:'jpeg',quality:.96},html2canvas:{scale:1.3,useCORS:true,logging:false},jsPDF:{unit:'in',format:'letter',orientation:'landscape'},pagebreak:{mode:['css','legacy'],avoid:['tr','.impactArea','.impactMetric']}}).from(host).save(); setStatus('Overall Coaching Profile PDF exported.'); }
@@ -5332,12 +5440,12 @@ renderReport=function(){
   if(!root) return;
   if(!report){ root.innerHTML='<div class="empty">Generate a report to view the executive summary.</div>'; return; }
   const rows=report.flagged||[], groups=simpleQualtricsCoachGroups(rows);
-  root.innerHTML='<div class="card"><h2 style="margin-bottom:10px">Executive Summary — '+esc(report.reportDate)+'</h2>'+simpleQualtricsOverallStripHtml(rows)+simpleQualtricsCorrectiveLegendHtml(rows)+simpleQualtricsExecutiveMatrixHtml(rows)+'</div>'+groups.map(function(group){ return '<section class="card" style="margin-top:12px"><h2 style="margin:0">'+esc(group.coach)+'</h2>'+simpleQualtricsCoachOverviewHtml(group.rows)+simpleQualtricsRuleTableHtml(group.rows)+simpleQualtricsFollowUpHtml(group.rows)+'</section>'; }).join('');
+  root.innerHTML='<div class="card"><h2 style="margin-bottom:10px">Executive Summary — '+esc(report.reportDate)+'</h2>'+weeklyStatsFilterNoteHtml(report)+simpleQualtricsOverallStripHtml(rows)+simpleQualtricsCorrectiveLegendHtml(rows)+simpleQualtricsExecutiveMatrixHtml(rows)+'</div>'+groups.map(function(group){ return '<section class="card" style="margin-top:12px"><h2 style="margin:0">'+esc(group.coach)+'</h2>'+simpleQualtricsCoachOverviewHtml(group.rows)+simpleQualtricsRuleTableHtml(group.rows)+simpleQualtricsFollowUpHtml(group.rows)+'</section>'; }).join('');
 };
 makeEmailHtml=function(title,rows,isExec){
   rows=rows||[];
   const content=isExec?simpleQualtricsOverallStripHtml(rows)+simpleQualtricsExecutiveMatrixHtml(rows)+simpleQualtricsExecutiveCoachTableHtml(rows):simpleQualtricsCoachOverviewHtml(rows)+simpleQualtricsRuleTableHtml(rows)+simpleQualtricsFollowUpHtml(rows);
-  return '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:Segoe UI,Arial,sans-serif;color:#0f172a;line-height:1.35}table{max-width:100%}@media(max-width:700px){table{font-size:10px}td,th{padding:5px!important}}@media print{tr{break-inside:avoid;page-break-inside:avoid}}</style></head><body style="margin:0;padding:18px;background:#f8fafc"><div style="max-width:1120px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;padding:18px"><h1 style="margin:0 0 4px;color:#0f172a">'+esc(title)+'</h1><div style="color:#64748b;font-weight:700;margin-bottom:12px">Report date: '+esc(state.report?.reportDate||'')+'</div>'+simpleQualtricsCorrectiveLegendHtml(rows)+content+'</div></body></html>';
+  return '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:Segoe UI,Arial,sans-serif;color:#0f172a;line-height:1.35}table{max-width:100%}@media(max-width:700px){table{font-size:10px}td,th{padding:5px!important}}@media print{tr{break-inside:avoid;page-break-inside:avoid}}</style></head><body style="margin:0;padding:18px;background:#f8fafc"><div style="max-width:1120px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;padding:18px"><h1 style="margin:0 0 4px;color:#0f172a">'+esc(title)+'</h1><div style="color:#64748b;font-weight:700;margin-bottom:12px">Report date: '+esc(state.report?.reportDate||'')+'</div>'+weeklyStatsFilterNoteHtml()+simpleQualtricsCorrectiveLegendHtml(rows)+content+'</div></body></html>';
 };
 const simpleQualtricsGenerateReportBefore=generateReport;
 generateReport=async function(){
@@ -5346,12 +5454,13 @@ generateReport=async function(){
 };
 
 async function generateReport(){
+  const weeklyFilterRunSignature=JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value}), weeklyStatsRunIndex=state.indexes?.weeklyByRep, weeklyFilterRunRevision=Number(state.weeklyStatsFilterRevision)||0;
   const coachRenameGeneration=Number(state.allStarCoachRenameGeneration||0);
   const performanceStarted=performance.now(), performanceTimings={}, performanceMark=(label,started)=>{ performanceTimings[label]=performance.now()-started; };
   const rulesById=new Map((state.rules||[]).map(rule=>[rule.id,rule])), ruleByFileId=new Map((state.dashboardFiles||[]).map(file=>[file.id,rulesById.get(file.ruleId)||matchRuleForFile(file.fileName)]));
   const selectedCoreRules=state.rules.filter(r=>isCoreDataRule(r)&&state.selectedOtherRuleIds.has(r.id));
   if(!state.dashboardFiles.length && !selectedCoreRules.length){ toast('Add dashboard files or select at least one Other Type rule.'); return; }
-  const reportDate=parseDate(els.reportDate.value) || new Date(); const globalLookback=Number(els.globalCoachLookback.value)||2;
+  const reportDate=parseDate(els.reportDate.value) || new Date(); const globalLookback=currentCoachLookbackWeeks();
   const hireCfg=state.hireDateSettings;
   if(hireCfg.filterEnabled && !hireCfg.sourceKey){ toast('Choose the spreadsheet that contains Date of Hire before generating.'); return; }
   if(hireCfg.filterEnabled && (!hireCfg.repColumn||!hireCfg.hireDateColumn)){ toast('Select both the representative-name match column and Date of Hire column before using the hire-date filter.'); return; }
@@ -5432,7 +5541,6 @@ async function generateReport(){
     } else if(isCoachingCorrectiveRule(rule)){
       for(const base of buildCoachingCorrectiveRecords(rule,reportDate)){
         const rec=addRepRecord(base.repKey,base.repName,base.coach,base.team,rule,'4 key files',null,base.matchedValues,reportSetting);
-        rec.precomputedCoached=coachingSummaryFromRows(base.repKey,base.coachings,reportDate,Number(rule.coachLookbackWeeks)||globalLookback);
         rec.precomputedChecklist={rows:base.checklist,count:base.checklist.length,latest:base.checklist[0]||null};
         rec.specialMetrics={coachingCount:base.coachings.length,checklistCount:base.checklist.length,ratio:base.ratio,ratioLabel:base.ratioLabel,buildUpEnabled:!!rule.coachingCorrective?.buildUp?.enabled,trend:base.trend,coachingImpactTrend:base.coachingImpactTrend,trendLabel:metricLabel(rule.coachingCorrective?.buildUp?.metric,rule.coachingCorrective?.buildUp?.customHeader),connectedStatChecks:base.coachings.map(x=>x.buildUpCheck).filter(Boolean)};
       }
@@ -5443,11 +5551,13 @@ async function generateReport(){
   performanceStageStarted=performance.now();
   const collectedFlagged=[...reps.values()].map(attachHireDateToRecord);
   const hireDateExcluded=collectedFlagged.filter(r=>!hireDatePassesReportFilter(r.repKey));
-  const allFlagged=collectedFlagged.filter(r=>hireDatePassesReportFilter(r.repKey));
+  const hireEligible=collectedFlagged.filter(r=>hireDatePassesReportFilter(r.repKey));
+  const weeklyStatsExcluded=hireEligible.filter(r=>!weeklyStatsActivityPasses(r.repKey,reportDate)&&reportAudienceAllowsCoach(r.coach,audience));
+  const allFlagged=hireEligible.filter(r=>weeklyStatsActivityPasses(r.repKey,reportDate));
   urgencyPreparePeriodKpiContext(allFlagged,reportDate,globalLookback);
   for(let i=0;i<allFlagged.length;i++){
-    const rec=allFlagged[i]; const rule=rulesById.get(rec.ruleId); const lookback=Number(rule?.coachLookbackWeeks)||globalLookback;
-    rec.coached = rec.precomputedCoached || coachMatch(rec, rule, reportDate, lookback);
+    const rec=allFlagged[i]; const rule=rulesById.get(rec.ruleId); const lookback=globalLookback;
+    rec.coached = coachMatch(rec, rule, reportDate, lookback);
     rec.concernHistory = concernHistoryForRecord(rec,rule,reportDate);
     rec.checklist = rec.precomputedChecklist || checklistMatch(rec, rule, reportDate, 10);
     rec.statChecks = rec.directStatCheck ? [rec.directStatCheck] : (rule?.stats||[]).map(s=>computeStatCheck(rec.repKey,s,reportDate)).filter(Boolean);
@@ -5487,7 +5597,7 @@ async function generateReport(){
   performanceMark('Coaching, history, and priority',performanceStageStarted);
   const audienceFlagged=allFlagged.filter(r=>reportAudienceAllowsCoach(r.coach,audience));
   const activeRules=[...new Map([...(state.dashboardFiles||[]).map(file=>ruleByFileId.get(file.id)),...selectedCoreRules].filter(Boolean).map(function(rule){ return [rule.id,rule]; })).values()];
-  const followUpWatchlist=formerCorrectiveWatchlist(reportDate,activeRules,new Set(allFlagged.map(function(record){ return record.repKey+'::'+record.ruleId; })));
+  const followUpWatchlist=formerCorrectiveWatchlist(reportDate,activeRules,new Set(allFlagged.map(function(record){ return record.repKey+'::'+record.ruleId; }))).filter(item=>weeklyStatsActivityPasses(item.repKey,reportDate));
   const teamPopulationByCoach=reportTeamPopulationForRows(audienceFlagged,reportDate);
   const byCoachAll=new Map();
   for(const r of audienceFlagged){ if(!byCoachAll.has(r.coach)) byCoachAll.set(r.coach,[]); byCoachAll.get(r.coach).push(r); }
@@ -5502,7 +5612,8 @@ async function generateReport(){
   for(const r of flagged){ if(!byCoach.has(r.coach)) byCoach.set(r.coach,[]); byCoach.get(r.coach).push(r); }
   for(const arr of byCoach.values()) arr.sort((a,b)=>b.concernScore-a.concernScore || ((b.history?.dateCount||0)-(a.history?.dateCount||0)));
   const alarmSortedByCoach = new Map([...byCoach.entries()].sort((a,b)=>compareAlarmStats(summaryStats(a[1],reportDate,teamPopulationByCoach),summaryStats(b[1],reportDate,teamPopulationByCoach)) || String(a[0]).localeCompare(String(b[0]))));
-  const report={ runId:uid(), reportDate:ymd(reportDate), generatedAt:new Date().toISOString(), unmatched, flagged, allFlagged:audienceFlagged, byCoach:alarmSortedByCoach, byCoachAll, teamPopulationByCoach, followUpWatchlist:followUpWatchlist.filter(function(item){ return reportAudienceAllowsCoach(item.coach,audience); }), excludedCoaches, minPeople, urgencyCatalog:buildUrgencyCatalog(selectedCoreRules), audience:{...audience,label:reportAudienceLabel(audience)}, audienceExcludedRecords:allFlagged.length-audienceFlagged.length, hireDateFilter:normalizeHireDateSettings(hireCfg), hireDateExcludedRecords:hireDateExcluded.length, hireDateExcludedPeople:new Set(hireDateExcluded.map(r=>r.repKey)).size };
+  if(weeklyFilterRunRevision!==(Number(state.weeklyStatsFilterRevision)||0)||weeklyFilterRunSignature!==JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value})||weeklyStatsRunIndex!==state.indexes?.weeklyByRep){ markWeeklyStatsFilterResultsStale(); setProgress(null); toast('Weekly Stats, filter settings, or report date changed. Generate the report again.'); return; }
+  const report={ runId:uid(), reportDate:ymd(reportDate), generatedAt:new Date().toISOString(), unmatched, flagged, allFlagged:audienceFlagged, byCoach:alarmSortedByCoach, byCoachAll, teamPopulationByCoach, followUpWatchlist:followUpWatchlist.filter(function(item){ return reportAudienceAllowsCoach(item.coach,audience); }), excludedCoaches, minPeople, urgencyCatalog:buildUrgencyCatalog(selectedCoreRules), audience:{...audience,label:reportAudienceLabel(audience)}, audienceExcludedRecords:allFlagged.length-audienceFlagged.length, hireDateFilter:normalizeHireDateSettings(hireCfg), hireDateExcludedRecords:hireDateExcluded.length, hireDateExcludedPeople:new Set(hireDateExcluded.map(r=>r.repKey)).size, weeklyStatsFilter:currentWeeklyStatsFilter(), weeklyStatsExcludedPeople:new Set(weeklyStatsExcluded.map(r=>r.repKey)).size };
   if(coachRenameGeneration!==Number(state.allStarCoachRenameGeneration||0)){setProgress(null);return;}
   state.report=report; refreshReportConcernHistory(false); performanceStageStarted=performance.now(); impactBuildAnalysis(); performanceMark('Coaching impact',performanceStageStarted); setProgress(96,'Rendering report'); await new Promise(resolve=>setTimeout(resolve,0)); if(coachRenameGeneration!==Number(state.allStarCoachRenameGeneration||0)){setProgress(null);return;} performanceStageStarted=performance.now(); renderReport(); performanceMark('Report render',performanceStageStarted); switchTab('report'); setProgress(null);
   performanceTimings.Total=performance.now()-performanceStarted; state.reportPerformance={timings:performanceTimings,generatedAt:new Date().toISOString()};
@@ -5771,6 +5882,8 @@ function makeEml(subject, html){
 }
 async function exportEmails(){
   if(!state.report){ toast('Generate a report first.'); return; }
+  if(state.report.weeklyStatsFilterStale){ toast('Generate the report again to apply the Weekly Stats filter before downloading.'); return; }
+  const report=state.report, filterSignature=JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value});
   refreshReportConcernHistory(false);
   if(!window.JSZip){ toast('JSZip is still loading. Try again in a moment.'); return; }
   const ext = els.exportMsgExtension.checked ? 'msg' : 'eml'; const zip=new JSZip();
@@ -5779,7 +5892,9 @@ async function exportEmails(){
   for(const item of coachEmails){
     zip.file(`${sanitizeFile(item.coach)}_${state.report.reportDate}.${ext}`, makeEml(`${item.coach} - Coaching Opportunity Review - ${state.report.reportDate}`, makeEmailHtml(`${item.coach} Coaching Opportunity Review`, item.rows)));
   }
-  const blob=await zip.generateAsync({type:'blob'}); downloadBlob(blob,`coaching_opportunity_emails_${state.report.reportDate}.zip`);
+  const blob=await zip.generateAsync({type:'blob'});
+  if(state.report!==report||report.weeklyStatsFilterStale||filterSignature!==JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value})){ toast('Report inputs changed. Generate the report again before downloading.'); return; }
+  downloadBlob(blob,`coaching_opportunity_emails_${report.reportDate}.zip`);
 }
 function renderEmailWorkflowStatus(){
   const uploads=state.dashboardFiles||[], files=uploads.filter(file=>file.status==='matched'&&file.rows?.length), rules=(state.rules||[]).filter(rule=>isCoreDataRule(rule)&&state.selectedOtherRuleIds?.has(rule.id));
@@ -5799,8 +5914,8 @@ function renderEmailWorkflowStatus(){
     els.emailDataStatus.className=`pill ${ready?'good':'warn'}`;
   }
   if(els.emailOutputStatus) els.emailOutputStatus.textContent=state.report?`${(state.report.byCoach?.size||0)+1} email files • ${(state.report.flagged||[]).length.toLocaleString()} findings`:'Coach + executive email files';
-  if(els.exportEmailsBtn) els.exportEmailsBtn.disabled=!state.report||!!state.emailWorkflowRunning;
-  if(els.exportUrgencyPdfBtn) els.exportUrgencyPdfBtn.disabled=!state.report||!!state.emailWorkflowRunning;
+  if(els.exportEmailsBtn) els.exportEmailsBtn.disabled=!state.report||!!state.emailWorkflowRunning||!!state.report.weeklyStatsFilterStale;
+  if(els.exportUrgencyPdfBtn) els.exportUrgencyPdfBtn.disabled=!state.report||!!state.emailWorkflowRunning||!!state.report.weeklyStatsFilterStale;
   if(els.saveHistoryBtn) els.saveHistoryBtn.disabled=!state.report||!!state.report.historySaved||!!state.emailWorkflowRunning;
   for(const id of ['generateReportBtn','reviewReportBtn','exportEmailCoachingNeedsBtn']) if(els[id]) els[id].disabled=!!state.emailWorkflowRunning||!!state.individualReviewRun||!!state.individualCoachingExportRun;
 }
@@ -5952,7 +6067,7 @@ function bind(){
   els.refreshRulePreviewBtn.onclick=()=>{ setStatus('Calculating representative preview...'); requestAnimationFrame(()=>{ renderRuleNamePreview(); setStatus('Representative preview refreshed.'); }); };
   if(els.ruleType) els.ruleType.onchange=async()=>{ updateRuleTypeVisibility(); const r=readRuleForm(); await saveRuleObj(r); toast(`Rule type set to ${ruleTypeLabel(r)}.`); };
   if(els.ruleCriteriaLogic) els.ruleCriteriaLogic.onchange=async()=>{ const r=readRuleForm(); await saveRuleObj(r); toast(`Dashboard criteria logic set to ${String(r.criteriaLogic).toUpperCase()}.`); };
-  ['ruleTitle','ruleBaseName','ruleAgentHeader','ruleCoachLookback'].forEach(id=>{ if(els[id]) els[id].addEventListener('input',()=>{ if(id==='ruleTitle' && els.ruleEditorTitle) els.ruleEditorTitle.textContent=els.ruleTitle.value||'Untitled Rule Set'; if(id==='ruleBaseName' && els.ruleEditorSubtitle && !isCoreDataRule(readRuleForm())) els.ruleEditorSubtitle.textContent=`Matches filenames containing: ${els.ruleBaseName.value||'base filename not set'}`; autoSaveRuleEdit(); }); });
+  ['ruleTitle','ruleBaseName','ruleAgentHeader'].forEach(id=>{ if(els[id]) els[id].addEventListener('input',()=>{ if(id==='ruleTitle' && els.ruleEditorTitle) els.ruleEditorTitle.textContent=els.ruleTitle.value||'Untitled Rule Set'; if(id==='ruleBaseName' && els.ruleEditorSubtitle && !isCoreDataRule(readRuleForm())) els.ruleEditorSubtitle.textContent=`Matches filenames containing: ${els.ruleBaseName.value||'base filename not set'}`; autoSaveRuleEdit(); }); });
   ['countNameHeader','countMin','countLabel'].forEach(id=>{ if(els[id]) els[id].addEventListener(id==='countNameHeader'?'change':'input', autoSaveRuleEdit); });
   if(els.ruleDisplayColumnEnabled) els.ruleDisplayColumnEnabled.addEventListener('change',()=>{ updateRuleTypeVisibility(); autoSaveRuleEdit(); markRulePreviewStale('Display column setting saved. Generated reports will use the selected report-file value beside representative names.'); });
   if(els.ruleDisplayColumn) els.ruleDisplayColumn.addEventListener('change',()=>{ autoSaveRuleEdit(); markRulePreviewStale('Display column changed. Generate the report to use the selected value beside representative names.'); });
@@ -5999,7 +6114,10 @@ function bind(){
   ['dragleave','drop'].forEach(ev=>els.dashboardDrop.addEventListener(ev,e=>{e.preventDefault(); els.dashboardDrop.classList.remove('drag');}));
   els.dashboardDrop.addEventListener('drop',e=>addDashboardFiles(e.dataTransfer.files));
   els.clearDashboardFilesBtn.onclick=()=>{ for(const f of state.dashboardFiles) delete state.reportSettings.items[reportItemKeyForFile(f)]; state.dashboardFiles=[]; state.individualSelectedReportFileIds.clear(); saveReportSettings(); invalidateIndividualScopeIndex('report files cleared'); renderDashboardFileList(); renderUploadReadiness(); markRulePreviewStale('Report files cleared. Click Refresh Preview after adding new files.'); };
-  if(els.reportDate) els.reportDate.addEventListener('change',()=>invalidateIndividualRunCache('report date changed'));
+  if(els.reportDate) els.reportDate.addEventListener('change',()=>{ invalidateIndividualRunCache('report date changed'); renderWeeklyStatsFilter(); if(currentWeeklyStatsFilter().enabled) markWeeklyStatsFilterResultsStale(); renderIndividualRepresentativeOptions(); renderIndividualScopeSummary(); markRulePreviewStale('Report date changed. Refresh Preview to update the people shown.'); });
+  for(const control of [els.hideRepsWithoutRecentStats,els.weeklyStatsFilterWeeks]) control?.addEventListener('change',refreshWeeklyStatsFilter);
+  for(const control of [els.hideRepsWithoutRecentStats,els.weeklyStatsFilterWeeks]) control?.addEventListener('input',()=>{ markWeeklyStatsFilterResultsStale(); invalidateIndividualRunCache('weekly stats filter edited'); });
+  if(els.globalCoachLookback) els.globalCoachLookback.addEventListener('change',()=>{ saveCoachLookbackWeeks(); invalidateIndividualRunCache('coaching weeks changed'); markRulePreviewStale('Coaching weeks changed. Refresh Preview or generate the report to update coaching counts.'); setStatus(`Matching coaching from the past ${currentCoachLookbackWeeks()} weeks will count, including the full report date. Generate the report to refresh results.`); });
   els.generateReportBtn.onclick=()=>runEmailWorkflow(true); if(els.reviewReportBtn) els.reviewReportBtn.onclick=()=>runEmailWorkflow(false); els.saveHistoryBtn.onclick=saveProblemHistory; if(els.clearConcernHistoryBtn) els.clearConcernHistoryBtn.onclick=()=>queueConcernHistory(clearConcernHistory); els.exportEmailsBtn.onclick=exportEmails; if(els.exportUrgencyPdfBtn) els.exportUrgencyPdfBtn.onclick=exportUrgencyEmailPdf; els.exportProblemRepsBtn.onclick=exportProblemReps; els.importProblemRepsInput.onchange=e=>{ const file=e.target.files[0]; queueConcernHistory(()=>importProblemReps(file)); }; if(els.urgencyCoverageGreen) els.urgencyCoverageGreen.addEventListener('change',saveUrgencyCoverageControls); if(els.urgencyCoverageYellow) els.urgencyCoverageYellow.addEventListener('change',saveUrgencyCoverageControls);
   if(els.concernHistoryStatusBtn) els.concernHistoryStatusBtn.onclick=()=>{ const opening=els.concernHistoryViewer.classList.contains('hidden'); els.concernHistoryViewer.classList.toggle('hidden',!opening); els.concernHistoryStatusBtn.setAttribute('aria-expanded',String(opening)); if(opening) renderConcernHistoryStatus(); };
   if(els.closeConcernHistoryViewerBtn) els.closeConcernHistoryViewerBtn.onclick=()=>{ els.concernHistoryViewer.classList.add('hidden'); els.concernHistoryStatusBtn.setAttribute('aria-expanded','false'); };
@@ -6013,7 +6131,7 @@ function bind(){
   if(els.clearEmailIntroBtn) els.clearEmailIntroBtn.onclick=()=>{ els.emailIntroEditor.innerHTML=''; saveEmailIntro(); if(state.report) renderReport(); toast('Email opening-text editor cleared. The saved copy is still available to load.'); };
 }
 async function init(){
-  bind(); loadCoachAliasOverrides(); loadHireDateSettings(); loadEmailIntro(); loadOtherRuleSelection(); loadReportSettings(); loadReportAudienceSettings(); loadUrgencyCoverageControls(); els.reportDate.value=ymd(new Date());
+  bind(); loadCoachLookbackWeeks(); loadCoachAliasOverrides(); loadHireDateSettings(); loadEmailIntro(); loadOtherRuleSelection(); loadReportSettings(); loadReportAudienceSettings(); loadUrgencyCoverageControls(); els.reportDate.value=ymd(new Date()); loadWeeklyStatsFilter();
   switchTab('keyfiles');
   rebuildCoachAliasIndex();
   renderHireDateControls(); renderCoreChips(); renderDashboardFileList(); renderUploadReadiness(); renderOtherRulePicker(); renderStatCountSelectors(currentRule()); updateStatCountFieldVisibility(); renderReportAudienceControls(); populateOrgSummarySelect(); markRulePreviewStale('Select a saved rule, then use Refresh Preview when ready.');
