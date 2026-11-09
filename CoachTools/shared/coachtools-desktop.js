@@ -3,23 +3,23 @@
 
   const manifest = root.COACHTOOLS_MANIFEST || { schemaVersion: 1, suite: { name: 'CoachTools', version: '2.0' }, apps: [] };
   const APP_ICON_PATHS = Object.freeze({
-    allstar: 'icons/allstar.png',
-    'weekly-data': 'icons/weekly-data.png',
-    'coaching-gaps': 'icons/coaching-gaps.png',
-    'coach-timeline': 'icons/coach-timeline.png',
-    'kpi-impact': 'icons/kpi-impact.png',
-    'qa-scores': 'icons/qa-scores.png',
-    'audit-checklist': 'icons/audit-checklist.png',
+    allstar: 'icons/horizon/allstar.png',
+    'weekly-data': 'icons/horizon/weekly-data.png',
+    'coaching-gaps': 'icons/horizon/coaching-gaps.png',
+    'coach-timeline': 'icons/horizon/coach-timeline.png',
+    'kpi-impact': 'icons/horizon/kpi-impact.png',
+    'qa-scores': 'icons/horizon/qa-scores.png',
+    'audit-checklist': 'icons/horizon/audit-checklist.png',
   });
   const SYSTEM_ICON_PATHS = Object.freeze({
-    'coachtools-home': 'icons/coachtools-home.png',
-    start: 'icons/coachtools-home.png',
-    'shared-data': 'icons/shared-data.png',
-    'backup-restore': 'icons/backup-restore.png',
-    settings: 'icons/settings.png',
-    'all-apps': 'icons/all-apps.png',
-    'default-app': 'icons/default-app.png',
-    'weekly-data': 'icons/weekly-data.png'
+    'coachtools-home': 'icons/horizon/coachtools-home.png',
+    start: 'icons/horizon/start.png',
+    'shared-data': 'icons/horizon/shared-data.png',
+    'backup-restore': 'icons/horizon/backup-restore.png',
+    settings: 'icons/horizon/settings.png',
+    'all-apps': 'icons/horizon/all-apps.png',
+    'default-app': 'icons/horizon/default-app.png',
+    'weekly-data': 'icons/horizon/weekly-data.png'
   });
   const DEFAULT_APP_ICON = SYSTEM_ICON_PATHS['default-app'];
   const apps = (manifest.apps || [])
@@ -37,7 +37,7 @@
   const APP_LOAD_TIMEOUT_MS = 12000;
   const ICON_PRELOAD_CONCURRENCY = 4;
   const ICON_PRELOAD_TIMEOUT_MS = 5000;
-  const FILTERS = Object.freeze(['All', 'Favorites', 'Core', 'People', 'Data', 'Coaching', 'Performance', 'Quality', 'General Apps', 'Other', 'Needs Data']);
+  const FILTERS = Object.freeze(['All', 'Favorites', 'Data', 'Coaching', 'Performance', 'Quality', 'Needs Data']);
   const elements = {};
   const openWindows = new Map();
   const state = {
@@ -345,6 +345,7 @@
     else state.favorites.add(app.id);
     writeJson(FAVORITES_KEY, Array.from(state.favorites));
     renderApps();
+    root.dispatchEvent(new CustomEvent('coachtools:favorites-updated'));
   }
 
   function selectApp(app) {
@@ -371,7 +372,13 @@
     const name = document.createElement('span');
     name.className = 'app-name';
     name.textContent = app.name;
-    main.appendChild(name);
+    const copy = document.createElement('span');
+    copy.className = 'app-copy';
+    const description = document.createElement('span');
+    description.className = 'app-description';
+    description.textContent = app.description || 'Open ' + app.name;
+    copy.append(name, description);
+    main.appendChild(copy);
     tile.appendChild(main);
 
     const status = document.createElement('span');
@@ -386,10 +393,7 @@
       tile.appendChild(favorite);
     }
 
-    tile.addEventListener('click', () => {
-      if (isTouchMode()) openApp(app);
-      else selectApp(app);
-    });
+    tile.addEventListener('click', () => { selectApp(app); openApp(app); });
     tile.addEventListener('dblclick', event => {
       event.preventDefault();
       openApp(app);
@@ -413,7 +417,7 @@
     elements.appGrid.replaceChildren(...visible.map(createAppCard));
     elements.emptyState.hidden = visible.length > 0;
     const labels = {
-      All: 'All applications',
+      All: 'Your tools',
       Favorites: 'Favorite applications',
       'Needs Data': 'Applications needing data'
     };
@@ -462,7 +466,7 @@
   function scopeValue(scope) {
     if (!scope || scope.mode === 'all') return 'all:';
     if ((scope.mode === 'coach' || scope.mode === 'representative') && scope.personId) return `${scope.mode}:${scope.personId}`;
-    const value = scope[scope.mode] || '';
+    const value = scope[scope.mode] || (scope.mode === 'coach' ? scope.coaches?.[0] : scope.mode === 'representative' ? scope.representatives?.[0] : '') || scope.label || '';
     return `${scope.mode}:${encodeURIComponent(value)}`;
   }
 
@@ -479,6 +483,9 @@
     for (const role of ['coach', 'representative']) for (const person of people.filter(candidate => candidate.role === role).sort((a, b) => a.displayName.localeCompare(b.displayName))) {
       options.push({ value: `${role}:${person.personId}`, label: `${role === 'coach' ? 'Coach' : 'Representative'}: ${person.displayName}`, scope: { mode: role, personId: person.personId, label: person.displayName, department: person.department || '', team: person.currentTeam || person.team || '', coaches: role === 'coach' ? [person.displayName] : [], representatives: role === 'representative' ? [person.displayName] : [] } });
     }
+    const savedScope = storage && storage.getScope ? storage.getScope() : null;
+    const savedValue = scopeValue(savedScope);
+    if (savedScope && savedScope.mode !== 'all' && !options.some(option => option.value === savedValue)) options.push({value:savedValue,label:`Saved ${savedScope.mode}: ${scopeText(savedScope)}`,scope:savedScope});
     state.scopeOptions = new Map(options.map(option => [option.value, option.scope]));
     elements.globalScopeSelect.replaceChildren(...options.map(option => { const element = document.createElement('option'); element.value = option.value; element.textContent = option.label; return element; }));
     const current = scopeValue(storage && storage.getScope ? storage.getScope() : null);
@@ -764,7 +771,7 @@
   function openApp(app) {
     if (!app || !app.file) return;
     const existing = openWindows.get(app.id);
-    if (existing && !existing.closeRequested) promoteWindowState(existing);
+    if (existing && !existing.closeRequested) { if (!existing.deferred) promoteWindowState(existing); }
     else if (existing) return;
     else createWindow(app);
     activateWindow(app.id);
@@ -1738,6 +1745,7 @@
       for (const windowState of openWindows.values()) try { windowState.iframe.contentWindow.postMessage({ type: 'coachtools:scope-updated', detail: event.detail || {} }, '*'); } catch (_) {}
     });
     root.addEventListener('coachtools:identity-updated', () => { refreshGlobalScope(); renderDataStatus(); });
+    root.addEventListener('coachtools:favorites-updated', () => { state.favorites = new Set(readJson(FAVORITES_KEY, [])); renderApps(); });
   }
 
   function collectElements() {

@@ -103,7 +103,7 @@ test('multi-period Wiper uploads return choices without silently combining perio
   assert.equal(selected.rows[0].date,'2026-10-14');
 });
 
-test('history loader streams all retained datasets unscoped and ignores superseded versions', async () => {
+test('history loader uses the scoped stream boundary and ignores superseded versions', async () => {
   const histories = {
     weeklyReferral:[{id:'week-one',importedAt:'2026-10-08'},{id:'replaced',supersededBy:'week-one'},{id:'week-two',importedAt:'2026-10-15'}],
     qa:[{id:'eval',importedAt:'2026-11-01'}], checklist:[{id:'items',importedAt:'2026-11-01'}]
@@ -119,7 +119,7 @@ test('history loader streams all retained datasets unscoped and ignores supersed
   const storage = {getHistory:async(type)=>histories[type] || []};
   const result = await data.loadMonth('2026-10',reps,{appData,data:storage});
   assert.equal(calls.length,4);
-  assert.ok(calls.every(call=>call.scope.mode==='all'));
+  assert.ok(calls.every(call=>!call.scope&&!call.unscoped),'the application must not override the global read scope');
   assert.equal(result.metrics['alex example'].accepted,7);
   assert.equal(result.metrics['alex example'].quality,0.95);
   assert.equal(result.metrics['alex example'].correctives,1);
@@ -184,6 +184,15 @@ test('bad uploaded counts replace stored values with a blocking missing metric',
   assert.equal(result.metrics['alex example'].wiperRate,null);
   assert.match(result.metrics['alex example'].issues.join(' '),/Wiper counts need review/);
   assert.match(result.diagnostics.join(' '),/not a valid statistic/);
+});
+
+test('scoped workbook warnings retain generic and selected-person issues without naming other representatives',()=>{
+  const warnings=['Lane 3: Avg Cases per hr Salesforce header not found; using column D.',
+    'Conflicting coaches in Phone Data for A Rep.','Conflicting coaches in Phone Data for B Rep.',
+    'Lane 3: conflicting activity values for B Rep.','B Rep appears in more than one lane; review the monthly roster.'];
+  const filtered=data.filterWarningsForRoster(warnings,[{name:'A Rep'}],true);
+  assert.deepEqual(filtered,[warnings[0],warnings[1]]);
+  assert.deepEqual(data.filterWarningsForRoster(warnings,[{name:'A Rep'}],false),warnings);
 });
 
 test('real CoachToolsData history and streamed chunks produce monthly metrics', async () => {

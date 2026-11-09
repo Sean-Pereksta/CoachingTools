@@ -1,23 +1,9 @@
-# CoachTools icons
+# Horizon icons
 
-Place square PNG artwork here using these exact filenames. CoachTools preloads them on startup and reuses the same cached artwork across desktop cards, the taskbar, menus, and dialogs.
+The active icon family lives in `horizon/`: 26 distinct, individual **512 × 512 PNGs** for all applications, folders, and desktop controls. Each has an editable SVG master with the same filename. The suite loads the PNGs from the app manifest, folder configuration, and desktop control map.
 
-```text
-allstar.png
-weekly-data.png
-coaching-gaps.png
-coach-timeline.png
-kpi-impact.png
-qa-scores.png
-audit-checklist.png
-coachtools-home.png
-shared-data.png
-backup-restore.png
-settings.png
-all-apps.png
-default-app.png
-```
+The design uses deep teal tiles, warm champagne line work, and amber sunrise accents. Every icon is self-contained and available offline. Icons are preloaded during startup and reused by desktop cards, favorites, the taskbar, menus, and dialogs.
 
-The first seven filenames are normalized to their matching application IDs, so a stale manifest entry cannot point a built-in app at the wrong image. The remaining files provide desktop, shared-data, backup/restore, settings, All Apps, and future-app artwork. If a configured icon is unavailable, CoachTools tries `default-app.png` and then keeps the built-in initials or symbol fallback visible; a broken-image indicator is never shown.
+The PNGs at the root of this directory are compatibility copies using established filenames. `coachtools-galaxy.ico` and `coachtools-galaxy.png` retain their filenames for Windows launcher compatibility and now contain the Horizon mark. Wallpaper and loading artwork remain in `graphics/`.
 
-`coachtools-home.png` is the branded graphic used by both the taskbar Start button and the top-left CoachTools button. The desktop wallpaper is separate and must be named `graphics/background.png`.
+For regeneration, see `docs/horizon-workspace.md` and the two icon scripts under `build/`.

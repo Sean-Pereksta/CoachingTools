@@ -5,9 +5,9 @@
 
 function qualtricsStatSourceChoices(){
   const out=[{key:'auto',label:'Auto — weekly custom source first, otherwise combined Retail + Referral SV2'},{key:'combined_sv2',label:'Combined Retail + Referral SV2'}];
-  if((state.data.retail.sv2||[]).length) out.push({key:'retail_sv2',label:`Retail SV2 (${state.data.retail.sv2.length.toLocaleString()} rows)`});
-  if((state.data.referral.sv2||[]).length) out.push({key:'referral_sv2',label:`Referral SV2 (${state.data.referral.sv2.length.toLocaleString()} rows)`});
-  (state.customSources||[]).filter(c=>(c.rows||[]).length).sort((a,b)=>{ const aw=isCustomWeeklyStatSource(a.sourceKey)?0:1,bw=isCustomWeeklyStatSource(b.sourceKey)?0:1; return aw-bw||String(a.name||'').localeCompare(String(b.name||'')); }).forEach(c=>out.push({key:c.sourceKey,label:`${c.name||c.displayName||c.sourceKey}${isCustomWeeklyStatSource(c.sourceKey)?' — Weekly Stat File':''} (${(c.rows||[]).length.toLocaleString()} rows)`}));
+  if((getRowsRaw('retail_sv2')||[]).length) out.push({key:'retail_sv2',label:`Retail SV2 (${getRowsRaw('retail_sv2').length.toLocaleString()} rows)`});
+  if((getRowsRaw('referral_sv2')||[]).length) out.push({key:'referral_sv2',label:`Referral SV2 (${getRowsRaw('referral_sv2').length.toLocaleString()} rows)`});
+  (state.customSources||[]).filter(c=>(getRowsRaw(c.sourceKey)||[]).length).sort((a,b)=>{ const aw=isCustomWeeklyStatSource(a.sourceKey)?0:1,bw=isCustomWeeklyStatSource(b.sourceKey)?0:1; return aw-bw||String(a.name||'').localeCompare(String(b.name||'')); }).forEach(c=>out.push({key:c.sourceKey,label:`${c.name||c.displayName||c.sourceKey}${isCustomWeeklyStatSource(c.sourceKey)?' — Weekly Stat File':''} (${(getRowsRaw(c.sourceKey)||[]).length.toLocaleString()} rows)`}));
   return out;
 }
 function populateQualtricsStatsSources(){
@@ -15,11 +15,11 @@ function populateQualtricsStatsSources(){
   els.qualtricsStatsSource.innerHTML=choices.map(x=>`<option value="${esc(x.key)}">${esc(x.label)}</option>`).join(''); els.qualtricsStatsSource.value=choices.some(x=>x.key===previous)?previous:'auto';
 }
 function qualtricsStatRows(selection){
-  const customWeekly=(state.customSources||[]).filter(c=>(c.rows||[]).length&&isCustomWeeklyStatSource(c.sourceKey)).sort((a,b)=>(b.rows||[]).length-(a.rows||[]).length)[0];
+  const customWeekly=(state.customSources||[]).filter(c=>(getRowsRaw(c.sourceKey)||[]).length&&isCustomWeeklyStatSource(c.sourceKey)).sort((a,b)=>(b.rows||[]).length-(a.rows||[]).length)[0];
   let key=selection||'auto'; if(key==='auto') key=customWeekly?.sourceKey||'combined_sv2';
-  if(key==='combined_sv2') return {key,label:'Combined Retail + Referral SV2',rows:[...(state.data.retail.sv2||[]),...(state.data.referral.sv2||[])]};
-  if(key==='retail_sv2') return {key,label:'Retail SV2',rows:state.data.retail.sv2||[]}; if(key==='referral_sv2') return {key,label:'Referral SV2',rows:state.data.referral.sv2||[]};
-  const custom=customSource(key); return custom?{key,label:custom.name||custom.displayName||key,rows:custom.rows||[]}:{key:'combined_sv2',label:'Combined Retail + Referral SV2',rows:[...(state.data.retail.sv2||[]),...(state.data.referral.sv2||[])]};
+  if(key==='combined_sv2') return {key,label:'Combined Retail + Referral SV2',rows:[...(getRowsRaw('retail_sv2')||[]),...(getRowsRaw('referral_sv2')||[])]};
+  if(key==='retail_sv2') return {key,label:'Retail SV2',rows:getRowsRaw('retail_sv2')||[]}; if(key==='referral_sv2') return {key,label:'Referral SV2',rows:getRowsRaw('referral_sv2')||[]};
+  const custom=customSource(key); return custom?{key,label:custom.name||custom.displayName||key,rows:getRowsRaw(key)||[]}:{key:'combined_sv2',label:'Combined Retail + Referral SV2',rows:[...(getRowsRaw('retail_sv2')||[]),...(getRowsRaw('referral_sv2')||[])]};
 }
 function bridgeValue(v){ if(v instanceof Date) return isNaN(v)?'':ymd(v); if(typeof v==='number') return Number.isFinite(v)?v:''; if(typeof v==='string'||typeof v==='boolean') return v; if(v==null) return ''; if(Array.isArray(v)) return v.join('; '); return ''; }
 function qualtricsBridgeRow(row,kind,sourceLabel=''){
@@ -49,6 +49,12 @@ async function qualtricsBridgeRowsDeferred(rows,kind,sourceLabel='',isCurrent=()
   return out;
 }
 function qualtricsBridgeHeaders(source,rows,extra=[]){ return [...new Set([...(getHeaders(source)||[]),...extra,...Object.keys((rows||[])[0]||{})])].filter(h=>h&&!String(h).startsWith('_')); }
+function qualtricsScopedOrganizations(){
+  const scoped=typeof allStarGlobalScopeKey==='function'&&allStarGlobalScopeKey()!=='all';
+  const key=typeof allStarGlobalNameKey==='function'?allStarGlobalNameKey:name=>String(name||'').trim().toLowerCase();
+  const coaches=new Set((state.teams||[]).map(key));
+  return (state.orgs||[]).map(org=>({id:org.id,name:org.name,coachNames:(org.coachNames||[]).filter(name=>!scoped||coaches.has(key(name)))})).filter(org=>!scoped||org.coachNames.length);
+}
 function qualtricsHireDateSourceCatalog(){
   return allSourceKeys().map(sourceKey=>{
     const rows=getRowsRaw(sourceKey)||[], headers=new Set(getHeaders(sourceKey)||[]);
@@ -61,16 +67,16 @@ function qualtricsCoreSourceSignature(){
     const rows=getRowsRaw(source)||[], meta=state.sourceMeta?.[source]||{}, data=state.data?.[source]||{};
     return `${source}:${meta.version||state.versions?.data||0}:${rows.length}:${getHeaders(source).length}:${data.fileName||''}`;
   }).join('|');
-  const orgSignature=(state.orgs||[]).map(o=>`${o.id}:${o.name}:${(o.coachNames||[]).join(',')}`).sort().join(';');
+  const orgSignature=qualtricsScopedOrganizations().map(o=>`${o.id}:${o.name}:${(o.coachNames||[]).join(',')}`).sort().join(';');
   const lookupSignature=qualtricsHireDateSourceCatalog().map(source=>`${source.key}:${source.rowCount}:${source.headers.join(',')}`).join(';');
-  return `${sourceSignature}|orgs:${orgSignature}|lookup:${lookupSignature}`;
+  return `${typeof allStarGlobalScopeKey==='function'?allStarGlobalScopeKey():'all'}|${sourceSignature}|orgs:${orgSignature}|lookup:${lookupSignature}`;
 }
 async function buildQualtricsCorePayload(isCurrent=()=>true){
-  const rawCoachingRows=state.data.documented_coaching.rows||[];
-  const qaRows=await qualtricsBridgeRowsDeferred(state.data.qa.rows||[],'qa','',isCurrent);
+  const rawCoachingRows=getRowsRaw('documented_coaching')||[];
+  const qaRows=await qualtricsBridgeRowsDeferred(getRowsRaw('qa')||[],'qa','',isCurrent);
   const coachingRows=await qualtricsBridgeRowsDeferred(rawCoachingRows,'coaching','',isCurrent);
-  const checklistRows=await qualtricsBridgeRowsDeferred(state.data.checklist.rows||[],'checklist','',isCurrent);
-  return {sentAt:new Date().toISOString(),diagnostics:{documentedCoaching:{rawRows:rawCoachingRows.length,normalizedRows:rawCoachingRows.length,bridgeRows:coachingRows.length}},organizations:(state.orgs||[]).map(o=>({id:o.id,name:o.name,coachNames:[...(o.coachNames||[])]})),lookupSources:qualtricsHireDateSourceCatalog(),files:{
+  const checklistRows=await qualtricsBridgeRowsDeferred(getRowsRaw('checklist')||[],'checklist','',isCurrent);
+  return {sentAt:new Date().toISOString(),diagnostics:{documentedCoaching:{rawRows:rawCoachingRows.length,normalizedRows:rawCoachingRows.length,bridgeRows:coachingRows.length}},organizations:qualtricsScopedOrganizations(),lookupSources:qualtricsHireDateSourceCatalog(),files:{
     qa:{fileName:state.data.qa.fileName||'All-Star QA',sheetName:'90-day KPI',headers:qualtricsBridgeHeaders('qa',qaRows,['All-Star Representative Key','Agent Name','Team','Coach','Interaction Start Time','Score %']),rows:qaRows},
     coaching:{fileName:state.data.documented_coaching.fileName||'All-Star Documented Coaching',sheetName:'Documented Coaching',headers:qualtricsBridgeHeaders('documented_coaching',coachingRows,['All-Star Representative Key','Associate Name','Job Coach','Date']),rows:coachingRows},
     checklist:{fileName:state.data.checklist.fileName||'All-Star Checklist',sheetName:'Checklist',headers:qualtricsBridgeHeaders('checklist',checklistRows,['All-Star Representative Key','Associate Name','Job Coach','Incident Date']),rows:checklistRows}

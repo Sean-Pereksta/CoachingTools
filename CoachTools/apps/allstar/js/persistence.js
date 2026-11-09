@@ -51,7 +51,7 @@ function markImportCacheDirty(kind, key='', reason='data changed'){
 function markSourceCacheDirty(source, reason='source changed'){
   invalidateRunSourceIndex(source,reason);
   markImportCacheDirty('source',source,reason);
-  const rows=getRowsRaw(source)||[], headers=getHeaders(source)||[];
+  const rows=getRowsUnscoped(source)||[], headers=getHeaders(source)||[];
   state.sourceMeta[source]={...(state.sourceMeta[source]||{}),version:(state.versions?.data||0),rowCount:rows.length,headerCount:headers.length,fileName:sourceFileName(source),selectedSheet:bookForSource(source)?.selectedSheets?.[source]||''};
 }
 function markBookCacheDirty(bookKey, reason='workbook changed'){
@@ -407,7 +407,7 @@ async function commitImportedDataToIndexedDB(reason='manual save', opts={}){
     // Read the newly written records within the same transaction. A failed
     // verification aborts every write, retaining the previous committed source.
     const verifications=(opts.verifySources||[]).map(source=>{
-      const expectedRows=(getRowsRaw(source)||[]).length;
+      const expectedRows=(getRowsUnscoped(source)||[]).length;
       return idbReq(sourceStore.get(sourceCacheRecordId(source)),`Verifying ${source}`).then(record=>{
         if(!record || record.value?.rows?.length!==expectedRows || record.revision!==meta.revision) throw new Error(`${source} read-back verification failed.`);
       });

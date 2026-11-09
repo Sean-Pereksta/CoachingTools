@@ -360,6 +360,7 @@ async function runAllStarStartupPipeline(){
         window.AllStarModelWorkspace?.init();
         window.AllStarWorkspaceNavigation?.init();
         window.addEventListener('coachtools:data-updated',event=>scheduleAllStarCentralSync(event.detail||{}));
+        window.CoachToolsAppData?.subscribeScope?.(()=>scheduleAllStarCentralSync({source:'all',reason:'scope changed'}));
         state.startup.initialized=true;
         await loadMetrics().catch(error=>console.warn('[Research Metrics] Startup load failed',error));
       }

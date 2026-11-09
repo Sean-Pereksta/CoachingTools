@@ -14,7 +14,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "All-Star Report",
       "description": "Build and run organization-wide performance models, research, and reports.",
       "file": "apps/allstar/allstar.html",
-      "icon": "icons/allstar.png",
+      "icon": "icons/horizon/allstar.png",
       "initials": "AS",
       "category": "Core",
       "keywords": [
@@ -38,7 +38,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Verification All Star",
       "description": "Find monthly Verification All Stars across five lanes using VAPH, Wipers, Call Quality, attendance, and correctives.",
       "file": "apps/verification-all-star.html",
-      "icon": "icons/verification-all-star.png",
+      "icon": "icons/horizon/verification-all-star.png",
       "initials": "VA",
       "category": "All Star Tools",
       "keywords": [
@@ -68,7 +68,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Data Manager",
       "description": "Import current and historical CoachTools data, review status, correct coach names, and manage weekly scope.",
       "file": "apps/weekly-data.html",
-      "icon": "icons/weekly-data.png",
+      "icon": "icons/horizon/weekly-data.png",
       "initials": "WD",
       "category": "Data",
       "keywords": [
@@ -93,7 +93,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "People Profiles",
       "description": "Find a coach or representative and review department-relative performance, rankings, coaching, checklist, QA, and timeline details.",
       "file": "apps/people-profiles.html",
-      "icon": "icons/default-app.png",
+      "icon": "icons/horizon/people-profiles.png",
       "initials": "PP",
       "category": "People",
       "keywords": [
@@ -128,7 +128,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Coaching Command Center",
       "description": "Prioritize coaching needs, follow-ups, support delays, and recognition from shared CoachTools data.",
       "file": "apps/coaching-command-center.html",
-      "icon": "icons/default-app.png",
+      "icon": "icons/horizon/coaching-command-center.png",
       "initials": "CC",
       "category": "Coaching",
       "keywords": [
@@ -161,7 +161,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Coaching Gaps",
       "description": "Compare documented coaching, performance, QA, and checklist gaps.",
       "file": "apps/coaching-gaps.html",
-      "icon": "icons/coaching-gaps.png",
+      "icon": "icons/horizon/coaching-gaps.png",
       "initials": "CG",
       "category": "Coaching",
       "keywords": [
@@ -190,7 +190,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Coach Timeline",
       "description": "Follow checklist response speed and documented coaching over time.",
       "file": "apps/coach-timeline.html",
-      "icon": "icons/coach-timeline.png",
+      "icon": "icons/horizon/coach-timeline.png",
       "initials": "CT",
       "category": "Coaching",
       "keywords": [
@@ -216,7 +216,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "KPI Impact",
       "description": "Measure KPI movement and the coaching associated with performance change.",
       "file": "apps/kpi-impact-galactic.html",
-      "icon": "icons/kpi-impact.png",
+      "icon": "icons/horizon/kpi-impact.png",
       "initials": "KI",
       "category": "Performance",
       "keywords": [
@@ -244,7 +244,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Performance Scorecard",
       "description": "Fast team scorecards with configurable KPIs, coaching, checklist stats, and representative performance briefs.",
       "file": "apps/performance-scorecard-enhanced.html",
-      "icon": "icons/scorecard.png",
+      "icon": "icons/horizon/performance-scorecard.png",
       "initials": "PS",
       "category": "Performance",
       "keywords": [
@@ -279,7 +279,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Weekly Comparison",
       "description": "Search Retail representatives and compare configurable metrics across two selected week sets.",
       "file": "apps/weekly-comparison.html",
-      "icon": "icons/calculator.png",
+      "icon": "icons/horizon/weekly-comparison.png",
       "initials": "WC",
       "category": "Performance",
       "keywords": [
@@ -309,7 +309,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "QA Scores",
       "description": "Review QA performance, reviewer alignment, and Call Quality coaching.",
       "file": "apps/qa-scores.html",
-      "icon": "icons/qa-scores.png",
+      "icon": "icons/horizon/qa-scores.png",
       "initials": "QA",
       "category": "Quality",
       "keywords": [
@@ -335,7 +335,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Audit / Checklist",
       "description": "Analyze checklist addressing speed alongside documented coaching.",
       "file": "apps/audit-checklist.html",
-      "icon": "icons/audit-checklist.png",
+      "icon": "icons/horizon/audit-checklist.png",
       "initials": "AC",
       "category": "Quality",
       "keywords": [
@@ -361,7 +361,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Contact Center Checklist",
       "description": "Open contact center checklist and documentation records in Dynamics.",
       "file": "apps/contact_center_checklist_iframe.html",
-      "icon": "icons/checklist-and-documentation.png",
+      "icon": "icons/horizon/contact-center-checklist.png",
       "initials": "CC",
       "category": "Quality",
       "keywords": [
@@ -383,7 +383,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Training Videos",
       "description": "Browse and watch CoachTools training videos from the Videos folder.",
       "file": "apps/video-library.html",
-      "icon": "icons/video-player.png",
+      "icon": "icons/horizon/video-library.png",
       "initials": "TV",
       "category": "Training",
       "keywords": [
@@ -406,7 +406,7 @@ window.COACHTOOLS_MANIFEST = {
       "name": "Weekly Data Builder",
       "description": "Add new weekly data or preview and selectively modify existing appointment and wiper values by date and representative.",
       "file": "apps/weekly-data-builder.html",
-      "icon": "icons/databuilder.png",
+      "icon": "icons/horizon/weekly-data-builder.png",
       "initials": "WDB",
       "category": "General Apps",
       "keywords": [

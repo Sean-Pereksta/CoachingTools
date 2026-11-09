@@ -6,7 +6,7 @@
   <meta name="coachtools-id" content="contact-center-checklist" />
   <meta name="coachtools-name" content="Contact Center Checklist" />
   <meta name="coachtools-description" content="Open contact center checklist and documentation records in Dynamics." />
-  <meta name="coachtools-icon" content="icons/checklist-and-documentation.png" />
+  <meta name="coachtools-icon" content="icons/horizon/contact-center-checklist.png" />
   <meta name="coachtools-initials" content="CC" />
   <meta name="coachtools-category" content="Quality" />
   <meta name="coachtools-keywords" content="checklist, documentation, dynamics, contact center" />
@@ -25,12 +25,15 @@
     iframe {
       display: block;
       width: 100vw;
-      height: 100vh;
+      height: calc(100vh - 40px);
       border: 0;
     }
+    .external-scope-note { height:40px; box-sizing:border-box; display:flex; align-items:center; gap:10px; padding:0 16px; background:#142d38; color:#f0f7f7; font:12px/1.3 "Segoe UI",sans-serif; }
+    .external-scope-note strong { font-weight:600; }
   </style>
 </head>
 <body>
+  <div class="external-scope-note" role="note"><strong>External Dynamics app</strong><span>Uses its own filters. The CoachTools scope applies to reports in this suite.</span></div>
   <iframe
     src="https://org5dd9371b.crm.dynamics.com/main.aspx?appid=61b7cd89-049c-ef11-8a6a-000d3a33ff27&amp;pagetype=entitylist&amp;etn=crbac_contactcenterchecklist&amp;viewid=a9028bb5-689d-ef11-8a6a-000d3a33ff27&amp;viewType=1039"
     title="Contact Center Checklist"

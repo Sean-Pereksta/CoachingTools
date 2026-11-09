@@ -25,7 +25,7 @@ Browsers do not allow a local HTML file to enumerate a neighboring folder, so au
 
 ## Desktop behavior
 
-- Single-click an application icon to select it; double-click to open it. Touch devices open with a normal tap.
+- Click an application or folder once to open it. Horizon places the current data view beside editable favorites, with all tools below and visible Update Data / Clean Upload actions above.
 - Each opened application receives its own iframe. Opening another tool does not reload or destroy the first tool.
 - **Minimize** hides an application but preserves its live DOM, uploaded files, and UI state for the running desktop session.
 - Clicking the active taskbar icon minimizes it. Clicking a minimized icon restores it. Clicking another open icon switches directly without reloading either application.

@@ -8,7 +8,7 @@
   <meta name="coachtools-name" content="Coaching Command Center">
   <meta name="coachtools-description" content="Run focused coaching intelligence for one coach or saved All-Star organization.">
   <meta name="coachtools-category" content="Coaching">
-  <meta name="coachtools-icon" content="icons/default-app.png">
+  <meta name="coachtools-icon" content="icons/horizon/coaching-command-center.png" />
   <meta name="coachtools-initials" content="CC">
   <meta name="coachtools-keywords" content="coaching, command center, coach, organization, qa, wipers, cash appointment, correctives, checklist, reminders, intelligence">
   <meta name="coachtools-data" content="weeklyRetail, weeklyReferral, qa, documentedCoaching, checklist">
@@ -141,6 +141,7 @@
     scopeLoading: false,
     scopeRefreshTimer: 0,
     scopeRefreshGeneration: 0,
+    globalScopeGeneration: 0,
     running: false
   };
 
@@ -314,18 +315,19 @@
   }
 
   async function readCoachSnapshot() {
+    const scopeKey=CoachToolsAppData.getScopeKey();
     const identity = window.CoachToolsIdentity;
     if (!identity) throw new Error('CoachToolsIdentity is unavailable.');
 
     let people = [];
     if (typeof identity.getAllPeople === 'function') {
-      try { people = await identity.getAllPeople(); }
+      try { people = await CoachToolsAppData.filterPeople(await identity.getAllPeople()); }
       catch (error) { console.warn('[Coaching Command Center] cached people snapshot unavailable', error); }
     }
 
     let coaches = deriveCoaches(people);
     if (!people.length && !coaches.length && typeof identity.getCoaches === 'function') {
-      try { coaches = await identity.getCoaches(); }
+      try { coaches = await CoachToolsAppData.filterPeople(await identity.getCoaches()); }
       catch (error) { console.warn('[Coaching Command Center] cached coach snapshot unavailable', error); }
     }
 
@@ -335,6 +337,7 @@
       people = Array.from(peopleById.values()).sort((a, b) => clean(a.displayName).localeCompare(clean(b.displayName)));
     }
 
+    if(scopeKey!==CoachToolsAppData.getScopeKey())throw new DOMException('Scope changed','AbortError');
     state.people = Array.isArray(people) ? people : [];
     state.byId = new Map(state.people.filter(person => person && person.personId).map(person => [person.personId, person]));
     state.coaches = Array.from(new Map((coaches.length ? coaches : deriveCoaches(state.people))
@@ -391,6 +394,15 @@
     placeholder.textContent = state.scopeLoading ? 'Loading cached coaches and organizations…' : 'Choose a coach or organization…';
     select.appendChild(placeholder);
 
+    const sharedScope = CoachToolsAppData.getScope();
+    const hasCurrentScope = sharedScope && sharedScope.mode && sharedScope.mode !== 'all' && state.people.length;
+    if (hasCurrentScope) {
+      const current = document.createElement('option');
+      current.value = 'global:current';
+      current.textContent = `Current CoachTools scope · ${sharedScope.label || state.people.map(person => person.displayName).slice(0, 2).join(', ')}`;
+      select.appendChild(current);
+    }
+
     if (state.coaches.length) {
       const group = document.createElement('optgroup');
       group.label = `Coaches (0/${state.coaches.length})`;
@@ -420,7 +432,8 @@
 
     const matching = preserveValue && Array.from(select.options).find(option => option.value === preserveValue && !option.disabled);
     if (matching) select.value = preserveValue;
-    placeholder.textContent = state.coaches.length || state.orgs.length
+    else if (hasCurrentScope) select.value = 'global:current';
+    placeholder.textContent = hasCurrentScope || state.coaches.length || state.orgs.length
       ? 'Choose a coach or organization…'
       : state.scopeLoading ? 'Discovering coaches and organizations…' : 'No coaches or organizations found';
     $('runBtn').disabled = state.running || !select.value;
@@ -447,6 +460,14 @@
   }
 
   function scopeFromValue(value) {
+    if (value === 'global:current' && state.people.length) {
+      const sharedScope = CoachToolsAppData.getScope();
+      return {
+        kind: 'global', value, label: sharedScope.label || 'Current CoachTools scope',
+        coaches: state.coaches.map(coach => coach.displayName),
+        coachIds: Array.from(new Set(state.people.map(person => person.role === 'coach' ? person.personId : person.currentCoachId).filter(Boolean)))
+      };
+    }
     if (value.startsWith('coach:')) {
       const id = value.slice(6);
       const coach = state.coaches.find(item => item.personId === id) || state.byId.get(id);
@@ -469,6 +490,7 @@
   }
 
   function intelligenceScope(scope) {
+    if (scope.kind === 'global') return { ...CoachToolsAppData.getScope() };
     return scope.kind === 'coach'
       ? { mode: 'coach', personId: scope.personId, label: scope.label, coaches: scope.coaches.slice() }
       : { mode: 'organization', label: scope.label, coaches: scope.coaches.slice() };
@@ -476,6 +498,7 @@
 
   function inSelectedScope(person) {
     if (!person || !state.scope) return false;
+    if (state.scope.kind === 'global') return state.byId.has(person.personId);
     if (state.scope.kind === 'coach') return person.personId === state.scope.personId || person.currentCoachId === state.scope.personId;
     if (person.role === 'coach') return state.scope.coachIds.includes(person.personId);
     return Boolean(person.currentCoachId && state.scope.coachIds.includes(person.currentCoachId));
@@ -579,8 +602,8 @@
     const identity = window.CoachToolsIdentity;
     if (identity && typeof identity.getAllPeople === 'function') {
       try {
-        const latestPeople = await identity.getAllPeople();
-        if (Array.isArray(latestPeople) && latestPeople.length) {
+        const latestPeople = await CoachToolsAppData.filterPeople(await identity.getAllPeople());
+        if (Array.isArray(latestPeople)) {
           state.people = latestPeople;
           state.byId = new Map(state.people.map(person => [person.personId, person]));
         }
@@ -611,7 +634,7 @@
     setProgress(26, 'History', 'Reading recent weekly snapshots for coaching impact.');
     const histories = { weeklyRetail: [], weeklyReferral: [] };
     const historyRows = await Promise.all(['weeklyRetail', 'weeklyReferral'].map(async type => {
-      try { return window.CoachToolsData && typeof window.CoachToolsData.getHistory === 'function' ? await window.CoachToolsData.getHistory(type, { activeOnly: true, limit: 12 }) : []; }
+      try { return typeof CoachToolsAppData.getHistory === 'function' ? await CoachToolsAppData.getHistory(type, { activeOnly: true, limit: 12 }) : []; }
       catch (_) { return []; }
     }));
     histories.weeklyRetail = historyRows[0] || [];
@@ -966,10 +989,12 @@
   function runFingerprint(scope) {
     const version = Alignment && Alignment.currentVersionFingerprint ? Alignment.currentVersionFingerprint(window.CoachToolsAppData, window.CoachToolsIdentity, ['weeklyRetail', 'weeklyReferral', 'qa', 'documentedCoaching', 'checklist']) : { key: 'uncached' };
     const kpi = I.coverageThreshold ? I.coverageThreshold() : .5, quality = I.qualityCoverageThreshold ? I.qualityCoverageThreshold() : .25;
-    return `${version.key}|${scope.value}|${Math.round(kpi * 1000)}|${Math.round(quality * 1000)}`;
+    return `${CoachToolsAppData.getScopeKey()}|${version.key}|${scope.value}|${Math.round(kpi * 1000)}|${Math.round(quality * 1000)}`;
   }
 
   async function runSelected() {
+    const generation = state.globalScopeGeneration;
+    const assertScopeCurrent = () => { if (generation !== state.globalScopeGeneration) throw new DOMException('Scope changed', 'AbortError'); };
     const scope = scopeFromValue($('scopeSelect').value);
     if (!scope) return;
 
@@ -991,12 +1016,14 @@
       for (let attempt = 0; attempt < 3 && !stableSnapshot; attempt += 1) {
         const before = runFingerprint(scope);
         built = await buildContextChunked(scope);
+        assertScopeCurrent();
         const after = runFingerprint(scope);
         stableSnapshot = before === after;
         cacheKey = after;
         if (!stableSnapshot) setProgress(12, 'Source update detected', 'Restarting once the import and identity versions settle so snapshots are never mixed.');
       }
       if (!stableSnapshot) throw new Error('Source data kept changing while the report was building. Wait for the import to finish, then run the report again.');
+      assertScopeCurrent();
       state.context = built.context;
       state.correctives = built.correctives;
       state.snapshot = { id: built.context.snapshotKey, asOf: built.context.asOf };
@@ -1004,6 +1031,7 @@
       setProgress(93, 'Intelligence', 'Building Coaching Intelligence summary.');
       state.summary = I.buildSummary(state.context);
       await yieldBrowser();
+      assertScopeCurrent();
 
       setProgress(95, 'Individuals', 'Building representative-level dashboard.');
       state.repRows = buildRepRows();
@@ -1017,11 +1045,13 @@
       state.runCache.set(cacheKey, { context: state.context, correctives: state.correctives, summary: state.summary, repRows: state.repRows, alerts: state.alerts, impact: state.impact, snapshot: state.snapshot });
       while (state.runCache.size > 10) state.runCache.delete(state.runCache.keys().next().value);
 
+      assertScopeCurrent();
       setProgress(99, 'Rendering', 'Putting the highest-value items first.');
       renderDashboard();
       closeLoader();
       console.info('[Coaching Command Center Timing]', { cached: false, durationMs: Math.round(performance.now() - started), snapshot: state.snapshot && state.snapshot.id });
     } catch (error) {
+      if (error?.name === 'AbortError') return;
       console.error('[Coaching Command Center]', error);
       $('loadingStage').textContent = 'Could not finish this run.';
       $('loadingDetail').textContent = String(error && error.message || error);
@@ -1083,6 +1113,16 @@
     }
   }
 
+  async function handleCommandScopeChange() {
+    state.globalScopeGeneration += 1;state.scopeRefreshGeneration += 1;
+    state.runCache.clear();state.scope=null;state.context=null;state.summary=null;state.snapshot=null;
+    state.correctives=[];state.repRows=[];state.alerts=[];state.impact={};state.people=[];state.byId.clear();state.coaches=[];state.orgs=[];
+    $('content').hidden=true;$('content').innerHTML='';$('welcome').hidden=false;
+    $('modalShade').classList.remove('open');closeLoader();
+    $('scopeSelect').replaceChildren();$('runBtn').disabled=true;
+    try{await refreshScopeOptions({force:true});}catch(error){if(error?.name!=='AbortError')console.warn('[Coaching Command Center] scope update failed',error)}
+  }
+  CoachToolsAppData.subscribeScope(handleCommandScopeChange);
   $('runBtn').addEventListener('click', runSelected);
   $('scopeSelect').addEventListener('change', () => { $('runBtn').disabled = state.running || !$('scopeSelect').value; });
   $('scopeSelect').addEventListener('keydown', event => { if (event.key === 'Enter' && $('scopeSelect').value) runSelected(); });

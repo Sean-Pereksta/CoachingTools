@@ -818,13 +818,13 @@
   }
   const STREAM_PERSON_HEADERS = Object.freeze([
     'Representative', 'Representative Name', 'Associate Name', 'Agent Name', 'AgentName',
-    'CSR/SSR Name', 'Employee', 'Name'
+    'CSR/SSR Name', 'CSR Name', 'SSR Name', 'Employee', 'Employee Name', 'Employee Full Name', 'Full Name', 'Agent', 'Rep Name', 'Name'
   ]);
   const STREAM_OWNERSHIP_HEADERS = Object.freeze({
     documentedCoaching: ['Job Coach', 'Coach Assigned', 'Coach', 'Team'],
     weeklyRetail: ['Sheet', 'Team', 'Coach', 'Job Coach'],
     weeklyReferral: ['Sheet', 'Team', 'Coach', 'Job Coach'],
-    qa: ['Team'],
+    qa: ['Team', 'Team Name', 'Team_Name', 'Coach', 'Coach Name', 'Coach Assigned'],
     checklist: ['Coach Assigned', 'Coach', 'Job Coach', 'Team'],
     monthlyRetail: ['Sheet', 'Team', 'Coach', 'Job Coach'],
     monthlyReferral: ['Sheet', 'Team', 'Coach', 'Job Coach'],
@@ -832,7 +832,18 @@
   });
   function streamNormalize(value) {
     if (root.CoachToolsIdentity && typeof root.CoachToolsIdentity.normalizeName === 'function') return root.CoachToolsIdentity.normalizeName(value);
-    return String(value == null ? '' : value).trim().replace(/,/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+    let name = String(value == null ? '' : value).normalize('NFKC').trim().replace(/[‘’]/g, "'").replace(/[‐‑–—]/g, '-').replace(/\s+/g, ' ').toLowerCase();
+    const parts = name.split(',').map(part => part.trim());
+    if (parts.length === 2 && parts.every(Boolean)) name = parts[1] + ' ' + parts[0];
+    return name;
+  }
+  const scopeRosterCache = new Map();
+  function getScopeKey(scope) {
+    const value = scope || getScope() || {mode:'all'};
+    const mode = String(value.mode || 'all').toLowerCase();
+    if (mode === 'all') return 'all';
+    const list = key => Array.from(new Set((Array.isArray(value[key]) ? value[key] : []).map(streamNormalize).filter(Boolean))).sort();
+    return JSON.stringify({mode, personId:value.personId || '', label:streamNormalize(value.label), department:streamNormalize(value.department), team:streamNormalize(value.team), coordinator:streamNormalize(value.coordinator), coachPersonIds:list('coachPersonIds'), coachKeys:list('coachKeys'), coaches:list('coaches'), representatives:list('representatives')});
   }
   function personLookupNames(person) {
     if (!person) return [];
@@ -842,14 +853,17 @@
     return [person.displayName, person.normalizedName, ...(person.aliases || []), ...sourceNames].map(streamNormalize).filter(Boolean);
   }
   async function streamFilterContext(datasetType, options) {
-    const scope = options && options.scope && typeof options.scope === 'object' ? options.scope : null;
+    const suppliedScope = options && options.scope && typeof options.scope === 'object' ? options.scope : null;
+    const scope = suppliedScope && suppliedScope.mode !== 'all' ? suppliedScope : null;
     const coachIds = Array.from(new Set([...(options && options.coachIds || []), ...(scope && scope.coachPersonIds || []), ...(scope && scope.mode === 'coach' && scope.personId ? [scope.personId] : [])].filter(Boolean)));
     const personIds = Array.from(new Set([...(options && options.personIds || []), ...(scope && scope.mode === 'representative' && scope.personId ? [scope.personId] : [])].filter(Boolean)));
     const coachKeys = new Set([...(options && options.coachNames || []), ...(scope && scope.coachKeys || []), ...(scope && scope.coaches || [])].map(streamNormalize).filter(Boolean));
-    const personKeys = new Set([...(options && options.personNames || []), ...(scope && scope.representatives || [])].map(streamNormalize).filter(Boolean));
+    const personKeys = new Set([...(options && options.personNames || []), ...(scope && scope.mode === 'representative' && scope.representatives || [])].map(streamNormalize).filter(Boolean));
     if (scope && scope.mode === 'team') coachKeys.add(streamNormalize(scope.team || scope.label));
     if (scope && scope.mode === 'department') coachKeys.add(streamNormalize(scope.department || scope.label));
     if (scope && scope.mode === 'coordinator') coachKeys.add(streamNormalize(scope.coordinator || scope.label));
+    if (scope && scope.mode === 'coach' && !coachKeys.size && scope.label) coachKeys.add(streamNormalize(scope.label));
+    if (scope && scope.mode === 'representative' && !personKeys.size && scope.label) personKeys.add(streamNormalize(scope.label));
     const identity = root.CoachToolsIdentity;
     if (scope && identity) {
       try {
@@ -878,14 +892,65 @@
       const target = coachIdSet.has(person.personId) ? coachKeys : personIdSet.has(person.personId) ? personKeys : null;
       if (target) for (const key of personLookupNames(person)) target.add(key);
     }
+    const rosterKeys = new Set(scope && scope.mode !== 'representative' ? (scope.representatives || []).map(streamNormalize) : []);
+    const excludedPersonKeys = new Set();
+    if (scope && scope.mode !== 'representative') {
+      const identityVersion = identity && typeof identity.getIdentityVersion === 'function' ? identity.getIdentityVersion() : '';
+      const rosterKey = getScopeKey(scope) + ':' + identityVersion + ':' + ['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral'].map(type => { const version = getDatasetVersion(type); return version ? version.datasetId + ':' + version.version : ''; }).join('|');
+      let roster = scopeRosterCache.get(rosterKey);
+      if (!roster) {
+        roster = (async () => {
+          const included = new Set(rosterKeys), excluded = new Set(), selectedIds = new Set(coachIds);
+          if (identity) {
+            if (typeof identity.resolveName === 'function') for (const name of coachKeys) {
+              try { const result = await identity.resolveName(name); if (result && result.person && result.person.role === 'coach' && ['exact','id'].includes(result.confidence)) selectedIds.add(result.person.personId); } catch (_) {}
+            }
+            if (typeof identity.getRepsForCoach === 'function') for (const id of selectedIds) {
+              try { for (const person of await identity.getRepsForCoach(id)) for (const name of personLookupNames(person)) included.add(name); } catch (_) {}
+            }
+            if (typeof identity.getRepresentatives === 'function') {
+              try { for (const person of await identity.getRepresentatives()) if (person.currentCoachId && !selectedIds.has(person.currentCoachId)) for (const name of personLookupNames(person)) excluded.add(name); } catch (_) {}
+            }
+          }
+          // Names-only evaluation/checklist exports need the same roster as stats.
+          // Only explicit ownership fields participate; Supervisor/Manager never join a person.
+          for (const type of ['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral']) {
+            let raw;
+            try { raw = await getCurrent(type); } catch (_) { continue; }
+            const sheets = raw && raw.workbook && raw.workbook.data || {};
+            for (const [sheetName, sheet] of Object.entries(sheets)) {
+              const rows = Array.isArray(sheet && sheet.aoa) ? sheet.aoa : [];
+              const header = streamHeaderContext(rows, 0, type);
+              const sheetMatches = coachKeys.has(streamNormalize(sheetName));
+              for (let index = header.headerRow + 1; index < rows.length; index++) {
+                const row = rows[index];
+                const ownsRow = header.coachColumns.length ? header.coachColumns.some(column => coachKeys.has(streamNormalize(row && row[column]))) : sheetMatches;
+                if (!Array.isArray(row) || !ownsRow) continue;
+                for (const column of header.personColumns) { const name = streamNormalize(row[column]); if (name && !excluded.has(name)) included.add(name); }
+              }
+            }
+          }
+          return {included,excluded};
+        })();
+        scopeRosterCache.clear();
+        scopeRosterCache.set(rosterKey, roster);
+      }
+      const membership = await roster;
+      for (const name of membership.included) rosterKeys.add(name);
+      for (const name of membership.excluded) excludedPersonKeys.add(name);
+    }
     const narrowScope = Boolean(scope && scope.mode && scope.mode !== 'all');
     return {
       datasetType,
       coachKeys,
       personKeys,
+      rosterKeys,
+      excludedPersonKeys,
+      coachIds: new Set(coachIds),
+      personIds: new Set(personIds),
       active: narrowScope || coachIds.length > 0 || personIds.length > 0 || coachKeys.size > 0 || personKeys.size > 0 || typeof (options && options.rowFilter) === 'function',
-      requireCoach: coachIds.length > 0 || coachKeys.size > 0 || Boolean(narrowScope && scope.mode !== 'representative'),
-      requirePerson: personIds.length > 0 || personKeys.size > 0 || Boolean(narrowScope && scope.mode === 'representative'),
+      requireCoach: scope && scope.mode === 'representative' ? Boolean(options && (options.coachNames && options.coachNames.length || options.coachIds && options.coachIds.length)) : coachIds.length > 0 || coachKeys.size > 0 || Boolean(narrowScope && scope.mode !== 'representative'),
+      requirePerson: personIds.length > 0 || Boolean(options && options.personNames && options.personNames.length) || Boolean(narrowScope && scope.mode === 'representative'),
       rowFilter: options && typeof options.rowFilter === 'function' ? options.rowFilter : null
     };
   }
@@ -906,6 +971,51 @@
     }
     return best && best.score ? best : { score: 0, headerRow: rowStart - 1, header: [], coachColumns: [], personColumns: [] };
   }
+  function rowMatchesScope(row, header, sheetName, context) {
+    if (!context || !context.active) return true;
+    if (!Array.isArray(row)) return false;
+    const columns = Array.isArray(header) ? streamHeaderContext([header], 0, context.datasetType) : header;
+    const names = (columns.personColumns || []).map(index => streamNormalize(row[index])).filter(Boolean);
+    if (names.some(name => context.excludedPersonKeys && context.excludedPersonKeys.has(name))) return false;
+    const ownsRow = (columns.coachColumns || []).length
+      ? columns.coachColumns.some(index => context.coachKeys.has(streamNormalize(row[index])))
+      : context.coachKeys.has(streamNormalize(sheetName));
+    const inRoster = names.some(name => context.rosterKeys && context.rosterKeys.has(name));
+    const coachMatch = !context.requireCoach || ownsRow || inRoster;
+    const personMatch = !context.requirePerson || names.some(name => context.personKeys.has(name));
+    return coachMatch && personMatch && !(context.constraints || []).some(extra => !rowMatchesScope(row, columns, sheetName, extra));
+  }
+  async function resolveReadScope(scope, datasetType) {
+    return streamFilterContext(canonicalType(datasetType) || 'qa', {scope:scope || getScope() || {mode:'all'}});
+  }
+  async function filterPeople(people, scope) {
+    const context = await resolveReadScope(scope);
+    if (!context.active) return people || [];
+    return (people || []).filter(person => {
+      const names = personLookupNames(person);
+      if (context.requirePerson) return names.some(name => context.personKeys.has(name));
+      if (person.role === 'coach') return context.coachIds.has(person.personId) || names.some(name => context.coachKeys.has(name));
+      if (names.some(name => context.excludedPersonKeys.has(name))) return false;
+      return context.coachIds.has(person.currentCoachId) || names.some(name => context.rosterKeys.has(name));
+    });
+  }
+  async function filterDataset(dataset, type, scope) {
+    if (!dataset) return dataset;
+    const context = await resolveReadScope(scope, type);
+    if (!context.active) return dataset;
+    const source = dataset.workbook && dataset.workbook.data || {};
+    const sheets = dataset.workbook && dataset.workbook.sheets || Object.keys(source);
+    const filtered = {}, sheetContexts = new Map();
+    let matched = 0;
+    for (const sheetName of sheets) {
+      const sheet = source[sheetName] || {}, rows = Array.isArray(sheet.aoa) ? sheet.aoa : [];
+      const chunk = filterStreamChunk({sheetName,rowStart:0,rows},context,sheetContexts,{});
+      const {merges, ...retained} = sheet;
+      filtered[sheetName] = {...retained,aoa:chunk.rows};
+      matched += chunk.matchedRowCount;
+    }
+    return {...dataset,meta:{...(dataset.meta || {}),totalRows:matched,readScope:scope || getScope(),readScopeKey:getScopeKey(scope),matchedRowCount:matched},workbook:{...(dataset.workbook || {}),sheets:[...sheets],data:filtered}};
+  }
   function filterStreamChunk(chunk, context, sheetContexts, options) {
     const rows = Array.isArray(chunk && chunk.rows) ? chunk.rows : [];
     let header = sheetContexts.get(chunk.sheetName);
@@ -916,20 +1026,17 @@
     if (!context.active) return { ...chunk, rows, header: header.header, headerRow: header.headerRow, sourceRowCount: rows.length, matchedRowCount: rows.length };
     const selected = [];
     let sourceRowCount = 0, matchedRowCount = 0;
-    const sheetMatchesCoach = context.coachKeys.has(streamNormalize(chunk.sheetName));
     for (let offset = 0; offset < rows.length; offset += 1) {
       const row = rows[offset];
       const absoluteRow = (Number(chunk.rowStart) || 0) + offset;
       if (absoluteRow <= header.headerRow) {
-        if (!options || options.includeHeaders !== false) selected.push(row);
+        if (absoluteRow === header.headerRow && (!options || options.includeHeaders !== false)) selected.push(row);
         continue;
       }
       if (!Array.isArray(row) || !row.some(value => String(value == null ? '' : value).trim())) continue;
       sourceRowCount += 1;
-      const coachMatch = !context.requireCoach || sheetMatchesCoach || header.coachColumns.some(index => context.coachKeys.has(streamNormalize(row[index])));
-      const personMatch = !context.requirePerson || header.personColumns.some(index => context.personKeys.has(streamNormalize(row[index])));
       const customMatch = !context.rowFilter || context.rowFilter(row, { datasetType: context.datasetType, sheetName: chunk.sheetName, header: header.header, headerRow: header.headerRow, absoluteRow });
-      if (coachMatch && personMatch && customMatch) { selected.push(row); matchedRowCount += 1; }
+      if (rowMatchesScope(row, header, chunk.sheetName, context) && customMatch) { selected.push(row); matchedRowCount += 1; }
     }
     return { ...chunk, rows: selected, header: header.header, headerRow: header.headerRow, sourceRowCount, matchedRowCount };
   }
@@ -962,6 +1069,7 @@
       }
       if (!record) return;
       const context = await streamFilterContext(datasetType, options || {});
+      context.constraints = await Promise.all((options && options.scopeConstraints || []).map(scope => resolveReadScope(scope,datasetType)));
       const sheetContexts = new Map();
       const metadata = compactMetadata(record);
       const emitChunk = chunk => filterStreamChunk({ ...chunk, datasetType, datasetId: record.id, metadata }, context, sheetContexts, options);
@@ -1416,6 +1524,7 @@
     importDataset: async (type, data, metadata) => { await readyPromise; if (databaseUnavailable) throw new Error('IndexedDB is unavailable.'); const datasetType = canonicalType(type); const result = await putDataset(datasetType, data, metadata); queueIdentityIngestion(datasetType, result, data, metadata); return result; },
     replaceDataset: async (type, data, metadata) => { await readyPromise; const datasetType = canonicalType(type); const result = await putDataset(datasetType, data, { ...(metadata || {}), replace: true }); queueIdentityIngestion(datasetType, result, data, metadata); return result; },
     getCurrent, streamRows, getHistory, getDatasetVersion, getImportHistory, inspectDataset, removeDataset, resolveUpdateScope,
+    filterDataset, resolveReadScope, rowMatchesScope, filterPeople, getScopeKey,
     getStatus: async () => { await readyPromise; return centralStatus(); },
     getStatusSync: centralStatus,
     mountStatus, renderPeopleSelection, subscribe: listener => subscribe(listener), subscribeScope: listener => subscribe(listener, { scope: true }),

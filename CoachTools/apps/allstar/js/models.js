@@ -810,7 +810,7 @@ function getHeaders(source){
   return [];
 }
 function allSourceKeys(){ return [NONDATED_SOURCE,DATED_SOURCE,'weeklyRetail','weeklyReferral','monthly_opportunity','monthly_wiper','retail_sv2','retail_wiper','retail_team_totals','referral_sv2','referral_wiper','referral_team_totals','qa',QA_DIRECT_SOURCE,'checklist','documented_coaching','comp_calls',...customSourceKeys()]; }
-function getRowsRaw(source){
+function getRowsUnscoped(source){
   if(isDatedStatsSource(source)) return state.data[source]?.rows||[];
   if(['monthly_opportunity','monthly_wiper'].includes(source))return monthlySourceRows(source);
   if(source===NONDATED_SOURCE) return state.categorized.nondated.rows || [];
@@ -828,6 +828,10 @@ function getRowsRaw(source){
   if(source==='documented_coaching') return state.data.documented_coaching.rows || [];
   if(source==='comp_calls') return state.data.comp_calls.rows || [];
   return [];
+}
+function getRowsRaw(source){
+  const rows=getRowsUnscoped(source);
+  return typeof filterAllStarRowsForGlobalScope==='function'?filterAllStarRowsForGlobalScope(rows):rows;
 }
 function filterRowsForSource(source, rows, opts={}){
   rows=rows||[];
@@ -858,7 +862,7 @@ function dataIndexSignature(){
     const sourceVersion=Number(state.sourceMeta?.[src]?.sourceVersion||state.sourceMeta?.[src]?.version||0);
     return [src,sourceVersion,rows.length,headers.length,headers.join('\u001f'),fn].join('\u001e');
   }).join('\u001d');
-  return `${sourceSig}\u001dcontrolRoster:${controlRosterSignature()}\u001daliases:${repAliasCacheSignature()}`;
+  return `${typeof allStarGlobalScopeKey==='function'?allStarGlobalScopeKey():'all'}\u001d${sourceSig}\u001dcontrolRoster:${controlRosterSignature()}\u001daliases:${repAliasCacheSignature()}`;
 }
 
 function bumpVersion(key){
