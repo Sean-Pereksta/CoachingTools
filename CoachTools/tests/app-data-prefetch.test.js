@@ -98,6 +98,13 @@ function deferred() {
     h.statuses.qa.scopeSnapshot.coaches = ['Coach A', 'Coach B'];
     assert.strictEqual(h.adapter.canPrefetch('qa'), false, 'A matching person ID or hash must not conceal extra stored coach names.');
     h.statuses.qa.scopeSnapshot.coaches = ['Coach A'];
+    h.statuses.qa.scopeSnapshot.coachKeys = ['coach a', 'coach b'];
+    assert.strictEqual(h.adapter.canPrefetch('qa'), false, 'Matching IDs and hashes must not conceal additional coachKeys population filters.');
+    h.statuses.qa.scopeSnapshot.coachKeys = ['coach a'];
+    assert.strictEqual(h.adapter.canPrefetch('qa'), true);
+    h.statuses.qa.scopeSnapshot.coachKeys = ['coach a', 'unverified alias'];
+    assert.strictEqual(h.adapter.canPrefetch('qa'), false, 'Unknown stored alias keys must remain cold until the active scope establishes them.');
+    delete h.statuses.qa.scopeSnapshot.coachKeys;
     h.statuses.qa.scopeSnapshot.sourceSelections = { qa: ['Coach A', 'Coach B'] };
     assert.strictEqual(h.adapter.canPrefetch('qa'), false, 'Snapshot per-source selections must be checked even without sourceScoped diagnostics.');
     delete h.statuses.qa.scopeSnapshot.sourceSelections;

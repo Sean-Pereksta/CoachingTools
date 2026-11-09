@@ -585,6 +585,8 @@
     const coachIds = value => [...new Set([...(value.coachPersonIds || []), ...(value.coachIds || []), value.mode === 'coach' ? value.personId : ''].filter(Boolean))];
     const selectedIds = coachIds(selected), storedIds = coachIds(stored);
     if (selectedIds.length && storedIds.some(id => !selectedIds.includes(id))) return false;
+    const storedCoachKeys = (stored.coachKeys || []).map(normalize).filter(Boolean);
+    if (storedCoachKeys.some(key => !selectedNames.includes(key))) return false;
     const storedCoaches = (stored.coaches || []).map(normalize).filter(Boolean);
     if (selectedNames.length && storedCoaches.some(name => !selectedNames.includes(name))) return false;
     if (selectedMode === 'coach' && ((!selectedIds.length && storedIds.length > 1) || (!selectedNames.length && storedCoaches.length > 1))) return false;
