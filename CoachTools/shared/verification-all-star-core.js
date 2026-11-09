@@ -1,0 +1,210 @@
+(function (root) {
+  'use strict';
+  const clean = value => String(value == null ? '' : value).normalize('NFKC').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  const headerKey = value => clean(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+  function normalizeName(value) {
+    let name = clean(value).toLowerCase().replace(/[‘’]/g, "'").replace(/[‐‑–—]/g, '-');
+    if ((name.match(/,/g) || []).length === 1) {
+      const parts = name.split(',').map(clean);
+      if (parts[0] && parts[1]) name = parts[1] + ' ' + parts[0];
+    }
+    return name;
+  }
+  function number(value) {
+    if (value == null || clean(value) === '' || typeof value === 'boolean') return null;
+    const result = Number(typeof value === 'string' ? value.replace(/,/g, '').trim() : value);
+    return Number.isFinite(result) ? result : null;
+  }
+  function previousMonth(date) {
+    const current = date instanceof Date ? date : new Date(date || Date.now());
+    const year = current.getFullYear(), month = current.getMonth();
+    return month ? year + '-' + String(month).padStart(2, '0') : (year - 1) + '-12';
+  }
+  function selectMonthSheet(sheetNames, month) {
+    const match = /^(\d{4})-(\d{2})$/.exec(month || previousMonth());
+    if (!match || +match[2] < 1 || +match[2] > 12) return null;
+    const year = match[1], index = +match[2] - 1, full = MONTHS[index], short = full.slice(0, 3);
+    const candidates = [];
+    for (const name of sheetNames || []) {
+      const normalized = clean(name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      const tokens = normalized.split(' '), numeric = normalized.match(/^(\d{4}) (\d{1,2})$|^(\d{1,2}) (\d{4})$/);
+      const textual = tokens.includes(full) || tokens.includes(short) || (index === 8 && tokens.includes('sept'));
+      const dateMatch = numeric && ((numeric[1] === year && +numeric[2] === index + 1) || (numeric[4] === year && +numeric[3] === index + 1));
+      if (!textual && !dateMatch) continue;
+      const years = tokens.filter(t => /^\d{4}$/.test(t));
+      const shortYears = tokens.filter(t => /^\d{2}$/.test(t));
+      if (years.length && !years.includes(year)) continue;
+      if (!years.length && textual && shortYears.length && !shortYears.includes(year.slice(2))) continue;
+      candidates.push({name, score: years.includes(year) || dateMatch ? 3 : shortYears.includes(year.slice(2)) ? 2 : 1});
+    }
+    candidates.sort((a,b) => b.score - a.score);
+    return candidates.length ? candidates[0].name : null;
+  }
+  function workbookSheets(workbook, XLSX) {
+    if (!workbook || typeof workbook !== 'object') return {};
+    if (!workbook.Sheets) return workbook;
+    const sheets = {};
+    for (const name of workbook.SheetNames || Object.keys(workbook.Sheets)) {
+      const sheet = workbook.Sheets[name];
+      if (Array.isArray(sheet)) sheets[name] = sheet;
+      else if (XLSX && XLSX.utils) {
+        const end = sheet && sheet['!ref'] ? sheet['!ref'].split(':').pop() : 'A1';
+        sheets[name] = XLSX.utils.sheet_to_json(sheet, {header:1, defval:'', raw:true, blankrows:true, range:'A1:' + end});
+      }
+      else throw new Error('A workbook reader is required for spreadsheet worksheets.');
+    }
+    return sheets;
+  }
+  const isNameLabel = value => /^(name|names|fullname|staff|staffname|employee|employeename|employeefullname|representative|representativename|rep|repname|agent|agentname)$/.test(headerKey(value));
+  const isTotal = value => /^(totals?|grandtotals?)$/.test(headerKey(value));
+  const isPerson = value => clean(value) && /[a-z\u00c0-\uffff]/i.test(clean(value)) && !isNameLabel(value) && !isTotal(value);
+  function parseMonthly(workbook, XLSX) {
+    const sheets = workbookSheets(workbook, XLSX), reps = [], warnings = [];
+    const laneNames = Object.keys(sheets);
+    const coachSheetName = laneNames.find(name => headerKey(name) === 'phonedata');
+    const coaches = new Map();
+    if (coachSheetName) {
+      const rows = sheets[coachSheetName] || [];
+      let header = rows.findIndex(row => row.some(v => headerKey(v) === 'teamname'));
+      let coachColumn = 2, nameColumn = 0;
+      if (header >= 0) {
+        coachColumn = rows[header].findIndex(v => headerKey(v) === 'teamname');
+        const named = rows[header].findIndex(isNameLabel);
+        if (named >= 0) nameColumn = named;
+      } else header = -1;
+      for (const row of rows.slice(header + 1)) {
+        if (isPerson(row[nameColumn]) && clean(row[coachColumn])) {
+          const key = normalizeName(row[nameColumn]), coach = clean(row[coachColumn]);
+          if (coaches.has(key) && coaches.get(key) !== coach) warnings.push('Conflicting coaches in Phone Data for ' + clean(row[nameColumn]) + '.');
+          else coaches.set(key, coach);
+        }
+      }
+    } else warnings.push('Phone Data tab was not found. Coaches need review.');
+    const globalNames = new Map();
+    for (let lane = 1; lane <= 5; lane++) {
+      const sheetName = laneNames.find(name => headerKey(name) === 'lane' + lane);
+      if (!sheetName) { warnings.push('Lane ' + lane + ' tab was not found.'); continue; }
+      const rows = sheets[sheetName] || [], namesColumn = 26;
+      const nameHeaders = [];
+      rows.forEach((row, index) => { if (isNameLabel(row[namesColumn])) nameHeaders.push(index); });
+      // The first roster is authoritative; the repeated roster below it supplies activity.
+      const secondHeader = nameHeaders.find(index => index > Math.max(4, nameHeaders[0] == null ? 2 : nameHeaders[0]));
+      const metricHeader = rows.findIndex((row,index) => index > 4 && row.some(value => headerKey(value) === 'verificationactivityperstaffedtime'));
+      const sectionStart = secondHeader == null ? metricHeader : secondHeader;
+      const rosterEnd = sectionStart >= 0 ? sectionStart : rows.length;
+      const activityHeader = metricHeader >= 0 && metricHeader >= rosterEnd ? metricHeader : sectionStart;
+      let valueColumn = 37;
+      if (activityHeader >= 0) {
+        const found = rows[activityHeader].findIndex(value => headerKey(value) === 'verificationactivityperstaffedtime');
+        if (found >= 0) valueColumn = found;
+        else warnings.push('Lane ' + lane + ': activity header not found; using column AL in the second section.');
+      } else warnings.push('Lane ' + lane + ': second activity section was not found.');
+      const values = new Map();
+      if (sectionStart >= 0) {
+        for (let rowIndex = Math.max(sectionStart, activityHeader) + 1; rowIndex < rows.length; rowIndex++) {
+          const row = rows[rowIndex], label = row[namesColumn];
+          if (isNameLabel(label)) break;
+          if (!isPerson(label)) continue;
+          const key = normalizeName(label), value = number(row[valueColumn]);
+          if (values.has(key) && values.get(key) !== value) {
+            values.set(key, null);
+            warnings.push('Lane ' + lane + ': conflicting activity values for ' + clean(label) + '.');
+          } else if (!values.has(key)) values.set(key, value);
+        }
+      }
+      const seen = new Set();
+      for (let rowIndex = 5; rowIndex < rosterEnd; rowIndex++) {
+        const name = clean((rows[rowIndex] || [])[namesColumn]);
+        if (!isPerson(name)) continue;
+        const key = normalizeName(name);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (globalNames.has(key) && globalNames.get(key) !== lane) warnings.push(name + ' appears in more than one lane; review the monthly roster.');
+        globalNames.set(key, lane);
+        reps.push({name, key, lane, coach:coaches.get(key) || '', vaph:values.has(key) ? values.get(key) : null});
+      }
+      if (!seen.size) warnings.push('Lane ' + lane + ': no representative names found in AA6 onward.');
+    }
+    return {reps, warnings};
+  }
+  function parseLane3(workbook, sheetName, XLSX) {
+    const sheets = workbookSheets(workbook, XLSX), values = {}, warnings = [];
+    if (!Object.prototype.hasOwnProperty.call(sheets, sheetName)) return {values, warnings:['Select a Lane 3 month tab.']};
+    const rows = sheets[sheetName] || [];
+    let metricRow = rows.findIndex(row => row.some(value => headerKey(value) === 'avgcasesperhrsalesforce'));
+    let metricColumn = 3, nameColumn = 0;
+    if (metricRow >= 0) {
+      metricColumn = rows[metricRow].findIndex(value => headerKey(value) === 'avgcasesperhrsalesforce');
+      const foundName = rows[metricRow].findIndex(isNameLabel);
+      if (foundName >= 0) nameColumn = foundName;
+    } else {
+      metricRow = rows.findIndex(row => row.some(isNameLabel));
+      if (metricRow >= 0) nameColumn = rows[metricRow].findIndex(isNameLabel);
+      warnings.push('Lane 3: Avg Cases per hr Salesforce header not found; using column D.');
+    }
+    for (const row of rows.slice(metricRow + 1)) {
+      const label = row[nameColumn];
+      if (!isPerson(label)) continue;
+      const key = normalizeName(label), value = number(row[metricColumn]);
+      if (Object.prototype.hasOwnProperty.call(values, key) && values[key] !== value) {
+        values[key] = null;
+        warnings.push('Lane 3: conflicting activity values for ' + clean(label) + '.');
+      } else if (!Object.prototype.hasOwnProperty.call(values, key)) values[key] = value;
+    }
+    return {values, warnings};
+  }
+  function buildReport(options) {
+    const {reps = [], lane3Values = {}, metrics = {}, month = ''} = options || {};
+    const normalizedMetrics = new Map(Object.entries(metrics instanceof Map ? Object.fromEntries(metrics) : metrics).map(([key,value]) => [normalizeName(key), value]));
+    const lane3 = new Map(Object.entries(lane3Values instanceof Map ? Object.fromEntries(lane3Values) : lane3Values).map(([key,value]) => [normalizeName(key), value]));
+    const warnings = [], rows = reps.map(rep => {
+      const key = normalizeName(rep.key || rep.name), metric = normalizedMetrics.get(key) || {};
+      const accepted = number(metric.accepted), offered = number(metric.offered);
+      const wipers = accepted != null && accepted >= 0 && offered != null && offered > 0 && accepted <= offered ? accepted / offered : null;
+      const rawVaph = Number(rep.lane) === 3 ? lane3.get(key) : rep.vaph;
+      const vaph = number(rawVaph), quality = number(metric.quality), attendance = number(metric.attendance), correctives = number(metric.correctives);
+      const issues = (Array.isArray(metric.issues) ? metric.issues : metric.issues ? [metric.issues] : []).map(issue => typeof issue === 'string' ? {message:issue,blocking:true} : issue);
+      const result = {...rep, key, lane:Number(rep.lane), accepted, offered, wipers, wiperRate:wipers, vaph:vaph != null && vaph >= 0 ? vaph : null,
+        quality:quality != null && quality >= 0 && quality <= 1 ? quality : null, qaCount:number(metric.qaCount),
+        attendance:attendance != null && attendance >= 0 && Number.isInteger(attendance) ? attendance : null,
+        correctives:correctives != null && correctives >= 0 && Number.isInteger(correctives) ? correctives : null,
+        weeklyWipers:metric.weeklyWipers || [], issues, ranks:{}, total:null, penalty:null, winner:false};
+      result.penalty = result.correctives == null ? null : result.correctives * 500;
+      result.missing = ['wipers','vaph','quality','attendance','correctives'].filter(field => result[field] == null);
+      result.provisional = result.missing.length > 0 || issues.some(issue => issue && issue.blocking !== false && issue.severity !== 'warning' && issue.severity !== 'info');
+      if (!result.coach) warnings.push(result.name + ': coach was not found in Phone Data.');
+      return result;
+    });
+    const duplicateKeys = new Set();
+    rows.forEach((row,index) => { if (rows.findIndex(other => other.key === row.key) !== index) duplicateKeys.add(row.key); });
+    const lanes = [];
+    for (let lane = 1; lane <= 5; lane++) {
+      const members = rows.filter(row => row.lane === lane);
+      for (const field of ['wipers','vaph','quality','attendance','correctives']) {
+        const descending = ['wipers','vaph','quality'].includes(field);
+        const ranked = members.filter(row => row[field] != null).sort((a,b) => descending ? b[field] - a[field] : a[field] - b[field]);
+        let rank = 0, last;
+        ranked.forEach((row,index) => { if (index === 0 || row[field] !== last) rank = index + 1; row.ranks[field] = rank; last = row[field]; });
+        members.filter(row => row[field] == null).forEach(row => { row.ranks[field] = null; });
+      }
+      members.forEach(row => { if (!row.provisional) row.total = Object.values(row.ranks).reduce((sum,rank) => sum + rank, 0) + row.penalty; });
+      const ready = members.length > 0 && members.every(row => !row.provisional && !duplicateKeys.has(row.key));
+      members.forEach(row => { row.laneProvisional = !ready; });
+      if (!ready && members.length) warnings.push('Lane ' + lane + ': winner is pending until missing or conflicting data is resolved.');
+      const lowest = ready ? Math.min(...members.map(row => row.total)) : null;
+      const ordered = members.slice().sort((a,b) => (a.total == null ? Infinity : a.total) - (b.total == null ? Infinity : b.total) || a.name.localeCompare(b.name));
+      let laneRank = 0, lastTotal;
+      ordered.forEach((row,index) => {
+        if (row.total == null) row.laneRank = null;
+        else { if (index === 0 || row.total !== lastTotal) laneRank = index + 1; row.laneRank = laneRank; lastTotal = row.total; }
+        row.winner = ready && row.total === lowest;
+      });
+      lanes.push({lane, ready, provisional:!ready, count:members.length, winners:members.filter(row => row.winner), rows:ordered});
+    }
+    return {month, rows:lanes.flatMap(lane => lane.rows), lanes, winners:rows.filter(row => row.winner), warnings};
+  }
+  const api = {normalizeName, nameKey:normalizeName, previousMonth, selectMonthSheet, workbookSheets, parseMonthly, parseLane3, buildReport};
+  root.VerificationAllStarCore = api;
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
