@@ -1,6 +1,7 @@
 (function(root){
 'use strict';
 const F=[
+{id:'all-star-tools',name:'All Star Tools',icon:'icons/all-star-tools.png',members:['allstar','verification-all-star'],description:'All-Star Report and Verification All Star'},
 {id:'coach-analytics-tools',name:'Coach Analytics Tools',icon:'icons/analyticsfolder.png',members:['coaching-gaps','kpi-impact','qa-scores'],description:'Coaching Gaps, KPI Impact, and QA Scores'},
 {id:'general-apps',name:'General Apps',icon:'icons/otherfolder.png',members:['coach-timeline','audit-checklist'],description:'Coach Timeline and Audit / Checklist'},
 {id:'under-construction',name:'Under Construction',icon:'icons/underconstructionfolder.png',members:['people-profiles','coaching-command-center'],description:'People Profiles and Coaching Command Center'}

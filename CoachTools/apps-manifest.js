@@ -34,6 +34,36 @@ window.COACHTOOLS_MANIFEST = {
       "enabled": true
     },
     {
+      "id": "verification-all-star",
+      "name": "Verification All Star",
+      "description": "Find monthly Verification All Stars across five lanes using VAPH, Wipers, Call Quality, attendance, and correctives.",
+      "file": "apps/verification-all-star.html",
+      "icon": "icons/verification-all-star.png",
+      "initials": "VA",
+      "category": "All Star Tools",
+      "keywords": [
+        "verification",
+        "all star",
+        "lane",
+        "monthly",
+        "VAPH",
+        "wipers",
+        "rankings",
+        "winners"
+      ],
+      "data": [
+        "weeklyReferral",
+        "qa",
+        "checklist"
+      ],
+      "favorite": false,
+      "featured": false,
+      "preload": false,
+      "order": 15,
+      "version": "1.0",
+      "enabled": true
+    },
+    {
       "id": "weekly-data",
       "name": "Data Manager",
       "description": "Import current and historical CoachTools data, review status, correct coach names, and manage weekly scope.",

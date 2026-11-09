@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Verification All Star</title>
+<meta name="coachtools-id" content="verification-all-star">
+<meta name="coachtools-name" content="Verification All Star">
+<meta name="coachtools-description" content="Find monthly Verification All Stars across five lanes using VAPH, Wipers, Call Quality, attendance, and correctives.">
+<meta name="coachtools-icon" content="icons/verification-all-star.png">
+<meta name="coachtools-category" content="All Star Tools">
+<meta name="coachtools-initials" content="VA">
+<meta name="coachtools-keywords" content="verification, all star, lane, monthly, VAPH, wipers, rankings, winners">
+<meta name="coachtools-data" content="weeklyReferral, weeklyRetail, qa, checklist">
+<meta name="coachtools-order" content="15"><meta name="coachtools-version" content="1.0">
+<link rel="stylesheet" href="../shared/verification-all-star.css">
+<script src="../vendor/lz-string.min.js"></script>
+<script src="../vendor/xlsx.full.min.js"></script>
+<script src="../vendor/chart.umd.js"></script>
+<script src="../shared/coachtools-storage.js"></script>
+<script src="../shared/coachtools-app-data.js"></script>
+<!-- CoachToolsAppData connects this report to the suite's shared datasets. -->
+<script src="../shared/weekly-data-builder-core.js"></script>
+<script src="../shared/verification-all-star-core.js"></script>
+<script src="../shared/verification-all-star-data.js"></script>
+<script src="../shared/coachtools-shell.js" defer></script>
+<script src="../shared/verification-all-star.js" defer></script>
+</head>
+<body>
+<header class="topbar"><a class="brand" href="../index.html" aria-label="CoachTools home"><img src="../icons/verification-all-star.png" alt=""><span><strong>CoachTools</strong><small>ALL STAR TOOLS</small></span></a><span class="private"><i></i> Files processed on this device</span></header>
+<main>
+<section class="intro"><div><p class="eyebrow">MONTHLY RECOGNITION · VERIFICATION</p><h1>Every lane. Its All Star.</h1><p class="lede">One clear view of the people setting the pace. Bring your two workbooks; we’ll connect the monthly performance data and reveal each lane’s leaders.</p></div><div class="intro-mark" aria-hidden="true">★</div></section>
+<section class="setup panel" aria-labelledby="setup-title">
+<div class="section-head"><div><span class="step">01</span><h2 id="setup-title">Build your monthly report</h2></div><span class="pill">5 lanes · 5 measures</span></div>
+<div class="upload-grid">
+<div class="upload-card"><span class="file-number">01 / TEAM WORKBOOK</span><h3>Monthly verification file</h3><p>Lane 1–5 names and VAPH, plus Phone Data for coach assignments.</p><label class="file-button" for="monthly-file">Choose monthly file<input id="monthly-file" type="file" accept=".xlsx,.xls,.xlsm,.xlsb,.ods"></label><p class="file-status" id="monthly-status">No file selected</p></div>
+<div class="upload-card"><span class="file-number">02 / LANE 3 WORKBOOK</span><h3>Lane 3 performance file</h3><p>Monthly Avg Cases per hr Salesforce replaces Lane 3 VAPH.</p><label class="file-button" for="lane3-file">Choose Lane 3 file<input id="lane3-file" type="file" accept=".xlsx,.xls,.xlsm,.xlsb,.ods"></label><p class="file-status" id="lane3-status">No file selected</p></div>
+</div>
+<div class="run-controls"><label>Report month<input id="report-month" type="month" required></label><label>Lane 3 month tab<select id="lane3-sheet" disabled><option value="">Upload Lane 3 workbook first</option></select></label><button id="run-report" class="primary" disabled>Run All Star report <span aria-hidden="true">→</span></button></div>
+<div class="source-strip"><span>CONNECTED DATA</span><p id="source-status">Wipers, 90-day evaluations, and checklist records are read from your stored CoachTools data when you run.</p><button id="refresh-data" class="text-button" type="button">Refresh data</button></div>
+<details class="settings"><summary>Wiper data settings <span>Upload additional weekly data</span></summary><div class="settings-body"><p>Uses the Weekly Data Builder reader. Uploaded rows replace the same representative and week in this report. These additions stay in this tab until you close it; use Weekly Data Builder to save them across the suite.</p><div class="wiper-controls"><label>Publication date <small>For files without dates</small><input id="wiper-date" type="date"></label><label class="file-button" for="wiper-file">Add Wiper data<input id="wiper-file" type="file" accept=".xlsx,.csv,.tsv,.txt" multiple></label><button id="clear-wipers" type="button">Clear additions</button></div><p id="wiper-status" class="file-status" role="status">Using stored Wiper data.</p></div></details>
+</section>
+<p id="status" role="status" aria-live="polite" class="status">Choose both workbooks to get started.</p>
+<section id="results" hidden>
+<div class="report-heading"><div><p class="eyebrow" id="report-period"></p><h2>Your lane leaders</h2><p class="muted" id="report-summary"></p></div><button id="export-report" class="primary">Export full report ↓</button></div>
+<div id="winners" class="winner-grid"></div>
+<details id="data-review" class="panel review" hidden><summary id="review-title">Review data coverage</summary><ul id="review-list"></ul></details>
+<section class="panel rankings"><div class="section-head"><div><span class="step">02</span><h2>Full standings</h2></div><div class="table-controls"><label class="sr-only" for="lane-filter">Filter lane</label><select id="lane-filter"><option value="all">All lanes</option><option value="1">Lane 1</option><option value="2">Lane 2</option><option value="3">Lane 3</option><option value="4">Lane 4</option><option value="5">Lane 5</option></select><label class="sr-only" for="rep-search">Find representative or coach</label><input id="rep-search" type="search" placeholder="Find representative or coach…"></div></div><div class="table-wrap"><table><caption class="sr-only">Monthly verification standings with values and ranks for every measure</caption><thead><tr><th scope="col">Lane rank</th><th scope="col">Representative / coach</th><th scope="col">Lane</th><th scope="col">Wipers <small>rate / rank</small></th><th scope="col">VAPH <small>value / rank</small></th><th scope="col">Call Quality <small>score / rank</small></th><th scope="col">Attendance <small>count / rank</small></th><th scope="col">Correctives <small>count / rank</small></th><th scope="col">Penalty</th><th scope="col">Total points</th></tr></thead><tbody id="standings"></tbody></table></div><div class="ranking-note">Ranks are calculated within each lane. Highest Wipers, VAPH, and Call Quality rank best; lowest attendance and corrective counts rank best. Total = five ranks + 500 points per corrective. Lowest total wins. Equal scores share ranks and wins. Incomplete lanes remain provisional.</div></section>
+<section class="panel trends"><div class="section-head"><div><span class="step">03</span><h2>Wipers, week by week</h2></div><span class="pill">Accepted ÷ offered</span></div><p class="muted chart-note">Every representative’s weekly Wiper rate, with the same 23% referral goal and green/red performance colors used in Coaching Gaps. Monthly rates use total accepted ÷ total offered. Weeks use their publication date.</p><div id="charts" class="chart-grid"></div></section>
+</section>
+<footer>Verification All Star <span>Built for a fair, clear monthly view.</span></footer>
+</main>
+</body></html>
