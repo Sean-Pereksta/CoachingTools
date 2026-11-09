@@ -441,8 +441,9 @@
   }
   function cacheCurrentRecord(type, record) {
     if (!record) { currentData.delete(type); return; }
-    const pointer = currentPointers.get(type) || record;
-    const key = `${pointer.datasetId || record.id || ''}:${Number(pointer.version || record.version) || 0}`;
+    // A read can finish after an upload replaces the pointer. Tag the payload
+    // with its own identity so an older read can never masquerade as new data.
+    const key = `${record.id || record.datasetId || ''}:${Number(record.version) || 0}`;
     currentData.set(type, { key, record });
   }
   async function refreshPointers() {
@@ -809,8 +810,16 @@
     try {
       const storedRecord = await idbRequest(db.transaction(DATASET_STORE, 'readonly').objectStore(DATASET_STORE).get(pointer.datasetId));
       const record = await materializeDatasetRecord(db, storedRecord);
+      const current = currentPointers.get(datasetType);
+      if (!current || `${current.datasetId || ''}:${Number(current.version) || 0}` !== cacheKey) return getCurrent(datasetType, options);
       if (record) cacheCurrentRecord(datasetType, record);
       return options && options.includeRecord ? record || null : record && record.data || null;
+    } catch (error) {
+      // Weekly replacement may remove old chunks while a background read is
+      // in flight. Retry the committed current version rather than that file.
+      const current = currentPointers.get(datasetType);
+      if (!current || `${current.datasetId || ''}:${Number(current.version) || 0}` !== cacheKey) return getCurrent(datasetType, options);
+      throw error;
     } finally {
       db.close();
       if (diagnostics) diagnostics.end(`${datasetType} IndexedDB read`);
@@ -1326,7 +1335,18 @@
   }
   function relayExternalMessage(message) {
     if (!message || !message.type || !message.detail) return;
-    if (message.type === EVENT_NAME) emitLocal(EVENT_NAME, { ...message.detail, relayed: true });
+    if (message.type === EVENT_NAME) {
+      // Other windows commit to the same database. Refresh metadata before
+      // subscribers inspect versions or reuse a prefetched payload.
+      readyPromise.then(() => refreshPointers()).then(() => {
+        for (const [type, cached] of currentData) {
+          if (String(cached.key).startsWith('pending:')) continue;
+          const pointer = currentPointers.get(type);
+          if (!pointer || cached.key !== `${pointer.datasetId || ''}:${Number(pointer.version) || 0}`) currentData.delete(type);
+        }
+        emitLocal(EVENT_NAME, { ...message.detail, relayed: true });
+      }).catch(error => console.warn('[CoachToolsData] Could not refresh shared data metadata.', error));
+    }
     if (message.type === SCOPE_EVENT_NAME) emitLocal(SCOPE_EVENT_NAME, { ...message.detail, relayed: true });
   }
   root.addEventListener('storage', event => {

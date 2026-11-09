@@ -342,6 +342,8 @@
         getMany: (types, options) => progressive('getMany', types, options),
         getManyProgressive: (types, options) => progressive('getManyProgressive', types, options),
         loadForApp: (app, options) => progressive('loadForApp', app, options),
+        prefetch: (...args) => owner.prefetch(...args),
+        canPrefetch: (...args) => owner.canPrefetch(...args),
         streamRows: (...args) => owner.streamRows(...args),
         peek: (...args) => owner.peek(...args),
         getVersion: (...args) => owner.getVersion(...args),
@@ -354,7 +356,7 @@
     }
   } catch (_) {}
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const cache = new Map();
   const pendingReads = new Map();
   const trackedVersions = new Map();
@@ -430,40 +432,40 @@
     await ready();
     throwIfAborted(options && options.signal);
     const datasetType = canonical(type);
-    let version = data.getDatasetVersion(datasetType);
-    let key = versionKey(version);
-    const cached = cache.get(datasetType);
-    if (cached && cached.key === key && !(options && options.force)) {
-      return options && options.includeRecord ? cached.record : cached.record && cached.record.data || null;
-    }
-    if (!version) {
-      const migrated = await readRecord(datasetType);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const version = data.getDatasetVersion(datasetType);
+      const key = versionKey(version);
+      const cached = cache.get(datasetType);
+      if (cached && cached.key === key && !(options && options.force)) {
+        return options && options.includeRecord ? cached.record : cached.record && cached.record.data || null;
+      }
+      const record = await readRecord(datasetType);
       throwIfAborted(options && options.signal);
-      version = data.getDatasetVersion(datasetType);
-      key = versionKey(version);
-      if (!migrated) {
+      const currentVersion = data.getDatasetVersion(datasetType);
+      const currentKey = versionKey(currentVersion);
+      // Imports can commit while an IndexedDB read is in flight. Never label
+      // the previous record with the replacement's identity.
+      if (version && key !== currentKey) {
+        cache.delete(datasetType);
+        continue;
+      }
+      if (!record) {
         cache.delete(datasetType);
         trackedVersions.delete(datasetType);
         return null;
       }
-      if (!version) version = { datasetId: migrated.id || `legacy:${datasetType}`, version: migrated.version || 0, fingerprint: migrated.fingerprint || '' };
-      key = versionKey(version);
-      cache.set(datasetType, { key, record: migrated });
-      trackedVersions.set(datasetType, key);
-      return options && options.includeRecord ? migrated : migrated.data || null;
+      // A pointer can appear during an explicit legacy migration. Its record
+      // must match that pointer before it can enter the shared memory cache.
+      if (currentVersion && currentVersion.datasetId && record.id !== currentVersion.datasetId) {
+        cache.delete(datasetType);
+        continue;
+      }
+      const recordKey = currentKey || versionKey({ datasetId: record.id || `legacy:${datasetType}`, version: record.version || 0, fingerprint: record.fingerprint || '' });
+      cache.set(datasetType, { key: recordKey, record });
+      trackedVersions.set(datasetType, recordKey);
+      return options && options.includeRecord ? record : record.data || null;
     }
-    const record = await readRecord(datasetType);
-    throwIfAborted(options && options.signal);
-    const currentVersion = data.getDatasetVersion(datasetType);
-    const currentKey = versionKey(currentVersion);
-    if (!record) {
-      cache.delete(datasetType);
-      trackedVersions.delete(datasetType);
-      return null;
-    }
-    cache.set(datasetType, { key: currentKey, record });
-    trackedVersions.set(datasetType, currentKey);
-    return options && options.includeRecord ? record : record.data || null;
+    throw new Error('Shared data changed while loading. Please retry the application.');
   }
 
   async function getManyProgressive(types, options) {
@@ -548,9 +550,90 @@
     });
   }
 
+  function canPrefetch(type, scope) {
+    const datasetType = canonical(type);
+    if (!getVersion(datasetType)) return false;
+    const selected = scope === undefined && storage && storage.getScope ? storage.getScope() : scope;
+    if (!selected || !selected.mode || selected.mode === 'all') return true;
+    const normalize = value => String(value || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+    const selectedMode = normalize(selected.mode);
+    const narrowModes = ['coach', 'representative', 'team', 'department', 'coordinator'];
+    if (!narrowModes.includes(selectedMode)) return false;
+    const statuses = storage && storage.getDatasetStatus ? storage.getDatasetStatus() : [];
+    const status = statuses.find(item => canonical(item.datasetType || item.id) === datasetType);
+    const stored = status && status.scopeSnapshot;
+    const storedMode = normalize(stored && stored.mode || status && status.scopeMode);
+    if (!stored || !narrowModes.includes(storedMode)) return false;
+    const diagnostics = status.scopeMatchDiagnostics || {};
+    if (diagnostics.peopleFilterFallback || (diagnostics.uploadPeopleSelection && diagnostics.uploadPeopleSelection.includesAllRows) || stored.includesAllRows) return false;
+    const coachNames = value => {
+      const explicit = [...(value.coaches || []), ...(value.coachKeys || [])];
+      return [...new Set((explicit.length ? explicit : value.mode === 'coach' ? [value.label] : []).map(normalize).filter(Boolean))];
+    };
+    const selectedNames = coachNames(selected);
+    // Per-source chooser values can differ from the authoritative master
+    // snapshot. Check that physical population before trusting its scope hash.
+    const physicalSelections = [];
+    if (diagnostics.sourceScoped) physicalSelections.push(diagnostics.selectedSourceValues);
+    if (stored.sourceSelections && Object.prototype.hasOwnProperty.call(stored.sourceSelections, datasetType)) physicalSelections.push(stored.sourceSelections[datasetType]);
+    if (diagnostics.uploadPeopleSelection && diagnostics.uploadPeopleSelection.mode === 'selected') physicalSelections.push(diagnostics.uploadPeopleSelection.names);
+    const allowedNames = selectedMode === 'representative' ? (selected.representatives || [selected.label]).map(normalize).filter(Boolean) : selectedNames;
+    for (const names of physicalSelections) {
+      const physicalNames = Array.isArray(names) ? names.map(normalize).filter(Boolean) : [];
+      if (!physicalNames.length || !allowedNames.length || !physicalNames.every(name => allowedNames.includes(name))) return false;
+    }
+    const coachIds = value => [...new Set([...(value.coachPersonIds || []), ...(value.coachIds || []), value.mode === 'coach' ? value.personId : ''].filter(Boolean))];
+    const selectedIds = coachIds(selected), storedIds = coachIds(stored);
+    if (selectedIds.length && storedIds.some(id => !selectedIds.includes(id))) return false;
+    const storedCoaches = (stored.coaches || []).map(normalize).filter(Boolean);
+    if (selectedNames.length && storedCoaches.some(name => !selectedNames.includes(name))) return false;
+    if (selectedMode === 'coach' && ((!selectedIds.length && storedIds.length > 1) || (!selectedNames.length && storedCoaches.length > 1))) return false;
+    const storedHash = stored.scopeHash || status.scopeHash;
+    if (selected.scopeHash && storedHash && selected.scopeHash === storedHash) return true;
+    if (selectedMode === storedMode && selected.personId && stored.personId === selected.personId) return true;
+    // A representative selection must never warm a complete coach population,
+    // even when both snapshots also contain that representative's coach ID.
+    if (selectedMode === 'representative') return false;
+    if (selectedMode === storedMode && ['team', 'department', 'coordinator'].includes(selectedMode) && normalize(selected[selectedMode]) && normalize(selected[selectedMode]) === normalize(stored[storedMode])) return true;
+    if (selectedIds.length || storedIds.length) return Boolean(selectedIds.length && storedIds.length && storedIds.every(id => selectedIds.includes(id)));
+    const storedNames = coachNames(stored);
+    if (selectedNames.length || storedNames.length) return Boolean(selectedNames.length && storedNames.length && storedNames.every(name => selectedNames.includes(name)));
+    return false;
+  }
+
+  async function prefetch(types, options) {
+    await ready();
+    const requested = normalizeRequested(types);
+    const result = { ready: [], skipped: [], failed: [] };
+    for (const item of requested) {
+      throwIfAborted(options && options.signal);
+      await yieldToBrowser(options && options.priority || 'low');
+      throwIfAborted(options && options.signal);
+      // Background warming only reads committed data. Normal get() retains
+      // responsibility for any legacy migration requested by an application.
+      if (!canPrefetch(item.type, options && options.scope)) {
+        result.skipped.push(item.type);
+        continue;
+      }
+      try {
+        const value = await get(item.type, options);
+        (value == null ? result.skipped : result.ready).push(item.type);
+      } catch (error) {
+        if ((error && error.name === 'AbortError') || (options && options.signal && options.signal.aborted)) throw error;
+        result.failed.push({ type: item.type, error });
+      }
+    }
+    return result;
+  }
+
   function peek(type, options) {
-    const cached = cache.get(canonical(type));
+    const datasetType = canonical(type);
+    const cached = cache.get(datasetType);
     if (!cached) return null;
+    if (cached.key !== versionKey(getVersion(datasetType))) {
+      cache.delete(datasetType);
+      return null;
+    }
     return options && options.includeRecord ? cached.record : cached.record && cached.record.data || null;
   }
 
@@ -578,7 +661,7 @@
   }
 
   root.CoachToolsAppData = Object.freeze({
-    VERSION, ready, get, getMany, getManyProgressive, loadForApp, streamRows, peek, getVersion, subscribe,
+    VERSION, ready, get, getMany, getManyProgressive, loadForApp, prefetch, canPrefetch, streamRows, peek, getVersion, subscribe,
     getScope: () => storage && storage.getScope ? storage.getScope() : null,
     subscribeScope: callback => data && data.subscribeScope ? data.subscribeScope(callback) : () => {},
     invalidate(type) { if (type) cache.delete(canonical(type)); else cache.clear(); }

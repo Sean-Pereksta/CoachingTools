@@ -37,6 +37,10 @@
   const APP_LOAD_TIMEOUT_MS = 12000;
   const ICON_PRELOAD_CONCURRENCY = 4;
   const ICON_PRELOAD_TIMEOUT_MS = 5000;
+  const DATA_PREFETCH_MAX_BYTES = 24 * 1024 * 1024;
+  const DATA_PREFETCH_MAX_ROWS = 60000;
+  const DATA_PREFETCH_SOURCE_MAX_BYTES = 8 * 1024 * 1024;
+  const DATA_PREFETCH_SOURCE_MAX_ROWS = 25000;
   const FILTERS = Object.freeze(['All', 'Favorites', 'Core', 'People', 'Data', 'Coaching', 'Performance', 'Quality', 'General Apps', 'Other', 'Needs Data']);
   const elements = {};
   const openWindows = new Map();
@@ -65,7 +69,9 @@
     pendingRestoreActiveId: '',
     firstAppOpened: false,
     firstAppOpenStarted: false,
-    storageCheckLabel: ''
+    storageCheckLabel: '',
+    dataPrefetchPromise: null,
+    dataPrefetchController: null
   };
 
   function $(id) { return document.getElementById(id); }
@@ -295,6 +301,76 @@
   function datasetTotal(statuses) {
     const list = Array.isArray(statuses) ? statuses : currentDatasetStatuses();
     return list.length || importer && importer.DATASET_ORDER && importer.DATASET_ORDER.length || 8;
+  }
+
+  function backgroundDataPlan() {
+    const adapter = root.CoachToolsAppData;
+    const statuses = currentDatasetStatuses();
+    const byType = new Map(statuses.map(item => [item.id || item.datasetType, item]));
+    const preferredApps = [state.pendingRestoreActiveId, ...state.recent, ...state.favorites]
+      .map(id => byId.get(id)).filter(Boolean);
+    const ordered = [...preferredApps.flatMap(app => app.data || []), ...byType.keys()];
+    const selected = [];
+    const cached = statuses.filter(item => adapter && adapter.peek(item.id || item.datasetType) != null);
+    let totalBytes = cached.reduce((total, item) => total + (Number(item.bytes) || 0), 0);
+    let totalRows = cached.reduce((total, item) => total + (Number(item.rowCount) || 0), 0);
+    for (const type of new Set(ordered)) {
+      const status = byType.get(type);
+      if (!status || !status.ready || adapter && adapter.peek(type) != null) continue;
+      if (adapter && adapter.canPrefetch && !adapter.canPrefetch(type)) continue;
+      const bytes = Math.max(0, Number(status.bytes) || 0);
+      const rows = Math.max(0, Number(status.rowCount) || 0);
+      // Workbook file sizes understate decoded memory; cap rows as well as bytes.
+      if ((!bytes && !rows) || bytes > DATA_PREFETCH_SOURCE_MAX_BYTES || rows > DATA_PREFETCH_SOURCE_MAX_ROWS) continue;
+      if (totalBytes + bytes > DATA_PREFETCH_MAX_BYTES || totalRows + rows > DATA_PREFETCH_MAX_ROWS) continue;
+      selected.push(type);
+      totalBytes += bytes;
+      totalRows += rows;
+    }
+    return selected;
+  }
+
+  function prefetchAppData(app) {
+    const adapter = root.CoachToolsAppData;
+    if (!adapter || typeof adapter.prefetch !== 'function') return;
+    const controller = typeof root.AbortController === 'function' ? new root.AbortController() : null;
+    // Start reading while the browser loads the app's scripts; never delay navigation.
+    adapter.prefetch(app.data || [], { priority: 'normal', signal: controller && controller.signal }).catch(() => {});
+    return controller;
+  }
+
+  function startBackgroundDataPrefetch() {
+    const adapter = root.CoachToolsAppData;
+    if (!adapter || typeof adapter.prefetch !== 'function') return Promise.resolve(false);
+    if (state.dataPrefetchPromise) return state.dataPrefetchPromise;
+    const controller = typeof root.AbortController === 'function' ? new root.AbortController() : null;
+    state.dataPrefetchController = controller;
+    state.dataPrefetchPromise = (async () => {
+      await yieldLowPriority();
+      for (const type of backgroundDataPlan()) {
+        if (controller && controller.signal.aborted) break;
+        // Foreground opening and source synchronization get the next disk turn.
+        if (state.autoScanRunning || Array.from(openWindows.values()).some(item => !item.deferred && !item.loaded && !item.minimized)) break;
+        // Foreground loads can change cache capacity while a source is reading.
+        if (!backgroundDataPlan().includes(type)) continue;
+        await adapter.prefetch([type], { signal: controller && controller.signal });
+      }
+      return true;
+    })().catch(() => false).finally(() => {
+      state.dataPrefetchPromise = null;
+      state.dataPrefetchController = null;
+    });
+    return state.dataPrefetchPromise;
+  }
+
+  function restartScopedDataPrefetch() {
+    if (state.dataPrefetchController) state.dataPrefetchController.abort();
+    for (const windowState of openWindows.values()) {
+      if (windowState.dataPrefetchController) windowState.dataPrefetchController.abort();
+      if (!windowState.deferred) windowState.dataPrefetchController = prefetchAppData(windowState.app);
+    }
+    const pending = state.dataPrefetchPromise || Promise.resolve();
+    pending.then(startBackgroundDataPrefetch).catch(() => {});
   }
 
   function dismissStartupSplash() {
@@ -551,6 +627,7 @@
       if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end('First app shell visible', { appId: windowState.app.id, success: Boolean(success) });
     }
     windowState.resolveReady(Boolean(success));
+    if (success) root.setTimeout(startBackgroundDataPrefetch, 250);
   }
 
   function showUnavailable(windowState) {
@@ -702,6 +779,7 @@
       root.CoachToolsDiagnostics.start('First app shell visible', { appId: app.id });
     }
     if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.start(`First useful app render · ${app.id}`, { appId: app.id });
+    windowState.dataPrefetchController = prefetchAppData(app);
     iframe.src = app.file;
     renderTaskbar();
     persistOpenWindows();
@@ -802,6 +880,7 @@
 
   function finalizeWindowClose(id, windowState) {
     if (!windowState || windowState.closeFinalized) return;
+    if (windowState.dataPrefetchController) windowState.dataPrefetchController.abort();
     windowState.closeFinalized = true;
     clearTimeout(windowState.closeDeadlineTimer);
     clearTimeout(windowState.closeReleaseTimer);
@@ -1731,10 +1810,12 @@
     });
     root.addEventListener('coachtools:data-updated', event => {
       renderDataStatus();
+      root.setTimeout(startBackgroundDataPrefetch, 250);
       for (const windowState of openWindows.values()) try { windowState.iframe.contentWindow.postMessage({ type: 'coachtools:data-updated', detail: event.detail || {} }, '*'); } catch (_) {}
     });
     root.addEventListener('coachtools:scope-updated', event => {
       renderDataStatus();
+      restartScopedDataPrefetch();
       for (const windowState of openWindows.values()) try { windowState.iframe.contentWindow.postMessage({ type: 'coachtools:scope-updated', detail: event.detail || {} }, '*'); } catch (_) {}
     });
     root.addEventListener('coachtools:identity-updated', () => { refreshGlobalScope(); renderDataStatus(); });
@@ -1858,6 +1939,9 @@
     dismissStartupSplash();
     if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.end('Desktop boot', { readyDatasets: readyCount });
 
+    // Data preparation is independent of the splash and never opens hidden tools.
+    root.setTimeout(startBackgroundDataPrefetch, 900);
+
     root.setTimeout(async () => {
       if (root.CoachToolsDiagnostics) root.CoachToolsDiagnostics.start('People registry initialization');
       try { await refreshGlobalScope(); }
@@ -1874,6 +1958,7 @@
         state.startupScanActive = false;
         state.storageCheckLabel = state.lastScan && state.lastScan.summary || '';
         renderDataStatus();
+        startBackgroundDataPrefetch();
       }
       if (state.pendingStageFiles.length) showToast('Some storage files need review. Open Data Manager to place them safely.', 6500);
     }, 220);

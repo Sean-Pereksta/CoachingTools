@@ -169,6 +169,12 @@ matches are review candidates and must not be silently merged.
 
 ### Shared-folder synchronization
 
+After desktop visibility, committed shared datasets may also be prefetched into
+the version-checked memory cache within byte and row workload limits. Opening a
+tool overlaps its declared data reads with document loading. This does not change
+the import, scope, or persistence contract. See
+[automatic data preparation](startup-data-prefetch.md) for scheduling and limits.
+
 Files under `storage/` are synchronized source material. Each browser keeps its
 own IndexedDB cache; IndexedDB is never treated as a OneDrive-shared database.
 After the desktop is visible, startup requests only the `/api/storage` listing
