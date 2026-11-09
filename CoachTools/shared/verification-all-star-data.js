@@ -203,7 +203,7 @@
       if (current?.data && current === metadata) {
         const packs = current.data.workbook?.data || {};
         chunks = (async function* () { for (const [sheetName, sheet] of Object.entries(packs)) yield {sheetName, rowStart: 0, rows: sheet.aoa || [], metadata}; })();
-      } else chunks = api.streamRows(type, {datasetId: metadata.id || metadata.datasetId, scope: {mode: 'all'}});
+      } else chunks = api.streamRows(type, {datasetId: metadata.id || metadata.datasetId});
       const layouts = new Map();
       for await (const chunk of chunks) {
         if (!layouts.has(chunk.sheetName) || chunk.rowStart === 0) {
@@ -227,10 +227,31 @@
     }
     return result;
   }
+  async function scopeRoster(reps, options) {
+    const api = options?.appData || root.CoachToolsAppData, data = options?.data || root.CoachToolsData;
+    const scope = api?.getScope?.() || root.CoachToolsStorage?.getScope?.() || {mode:'all'};
+    const scopeLabel = scope.label || (scope.mode && scope.mode !== 'all' ? (scope.coaches || scope.representatives || []).join(', ') || scope.mode : 'All people');
+    if (!scope.mode || scope.mode === 'all') return {reps,scopeApplied:false,scopeLabel};
+    if (!data?.filterDataset) return {reps:[],scopeApplied:true,scopeLabel};
+    const dataset = {workbook:{sheets:['Roster'],data:{Roster:{aoa:[['Representative','Coach','RosterIndex'],...reps.map((rep,index)=>[rep.name,rep.coach,index])]}}}};
+    const filtered = await data.filterDataset(dataset,'weeklyReferral',scope);
+    const indexes = new Set((filtered?.workbook?.data?.Roster?.aoa || []).slice(1).map(row=>Number(row[2])));
+    return {reps:reps.filter((_,index)=>indexes.has(index)),scopeApplied:true,scopeLabel};
+  }
+  function filterWarningsForRoster(warnings, reps, scopeApplied) {
+    if (!scopeApplied) return warnings || [];
+    const allowed = new Set((reps || []).map(rep=>nameKey(rep.name)));
+    return (warnings || []).filter(warning=>{
+      const text = String(warning), named = /(?:conflicting coaches in phone data|conflicting activity values) for (.+)\.$/i.exec(text) || /^(.+) appears in more than one lane;/i.exec(text);
+      return !named || allowed.has(nameKey(named[1]));
+    });
+  }
   async function loadMonth(month, reps, options) {
     const api = options?.appData || root.CoachToolsAppData, data = options?.data || root.CoachToolsData;
     if (!api) throw new Error('Shared CoachTools data is unavailable. Open this app from CoachTools.');
     await api.ready();
+    const roster = await scopeRoster(reps, options);
+    reps = roster.reps;
     const keys = new Set(reps.map(rep => nameKey(rep.name))), types = ['weeklyReferral', 'weeklyRetail', 'qa', 'checklist'];
     const results = await Promise.allSettled(types.map(type => readType(type, api, data, keys, month)));
     const sources = {}, diagnostics = [], rows = {};
@@ -247,6 +268,10 @@
     if (sources.checklist.available && !sources.checklist.correctivesAvailable) diagnostics.push('The checklist source has no Corrective column; corrective counts remain unavailable.');
     const result = aggregate({month, reps, weekly: rows.weeklyReferral, retail: rows.weeklyRetail, qa: rows.qa, checklist: rows.checklist, sources, diagnostics, uploads: options?.uploads || []});
     result.diagnostics.push(`Wiper coverage: ${result.weeks.length} publication date(s) available for the monthly roster in ${month}. Weeks are included by their publication date.`);
+    if (roster.scopeApplied) result.diagnostics.push('The monthly roster and report are limited to the selected CoachTools scope.');
+    result.reps = reps;
+    result.scopeApplied = roster.scopeApplied;
+    result.scopeLabel = roster.scopeLabel;
     return result;
   }
   function parseWiperRows(rows, options) {
@@ -315,7 +340,7 @@
     return {...parseWiperRows(rows, {...options, fileName: file.name}), fileName: file.name, sheets, selectedSheet};
   }
 
-  const api = {VERSION: '1.0.0', nameKey, dayKey, parseRows, aggregate, loadMonth, parseWiperRows, parseWiperUpload};
+  const api = {VERSION: '1.0.0', nameKey, dayKey, parseRows, aggregate, scopeRoster, filterWarningsForRoster, loadMonth, parseWiperRows, parseWiperUpload};
   root.VerificationAllStarData = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

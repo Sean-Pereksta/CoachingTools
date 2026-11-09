@@ -208,19 +208,21 @@
   }
 
   async function loadHistory(type,limit){
-    if(!root.CoachToolsData || typeof root.CoachToolsData.getHistory!=='function') return [];
-    try{return await root.CoachToolsData.getHistory(type,{activeOnly:true,limit:limit||13});}catch(_){return [];}
+    if(!root.CoachToolsAppData || typeof root.CoachToolsAppData.getHistory!=='function') return [];
+    try{return await root.CoachToolsAppData.getHistory(type,{activeOnly:true,limit:limit||13});}catch(error){if(error&&error.name==='AbortError')throw error;return [];}
   }
 
   async function loadContext(options){
     await ready();
+    const scopeKey=root.CoachToolsAppData.getScopeKey();
     const types=options&&options.types||['weeklyRetail','weeklyReferral','qa','documentedCoaching','checklist'];
     const historyTypes=(!options||options.history!==false)?types.filter(type=>/^weekly|^monthly/.test(type)):[];
     const [records,people,historyRows]=await Promise.all([
       root.CoachToolsAppData.getMany(types,{includeRecord:true,continueOnError:true,progressUi:false,appId:'coaching-intelligence'}),
-      root.CoachToolsIdentity&&root.CoachToolsIdentity.getAllPeople?root.CoachToolsIdentity.getAllPeople():Promise.resolve([]),
+      root.CoachToolsIdentity&&root.CoachToolsIdentity.getAllPeople?Promise.resolve(root.CoachToolsIdentity.getAllPeople()).then(people=>root.CoachToolsAppData.filterPeople(people)):Promise.resolve([]),
       Promise.all(historyTypes.map(type=>loadHistory(type,13)))
     ]);
+    if(scopeKey!==root.CoachToolsAppData.getScopeKey()){const error=new Error('The selected scope changed while coaching data was loading.');error.name='AbortError';throw error;}
     const resolve=resolverFor(people), histories={};
     historyTypes.forEach((type,index)=>{histories[type]=historyRows[index]||[];});
     const context={records:records||{},histories,people,resolve,scope:currentScope()};
@@ -432,7 +434,8 @@
     const identityVersion=Number(root.CoachToolsIdentity&&root.CoachToolsIdentity.getIdentityVersion&&root.CoachToolsIdentity.getIdentityVersion())||0;
     const kpi=root.CoachToolsCoachingAlignment&&root.CoachToolsCoachingAlignment.kpiCoverageThreshold?root.CoachToolsCoachingAlignment.kpiCoverageThreshold():.5;
     const quality=root.CoachToolsCoachingAlignment&&root.CoachToolsCoachingAlignment.qualityCoverageThreshold?root.CoachToolsCoachingAlignment.qualityCoverageThreshold():.25;
-    return `${kind}|${versions}|identity:${identityVersion}|coverage:${kpi}:${quality}|${scope.mode||'all'}:${scope.personId||scope.label||''}`;
+    const scopeKey=root.CoachToolsAppData&&root.CoachToolsAppData.getScopeKey?root.CoachToolsAppData.getScopeKey():`${scope.mode||'all'}:${scope.personId||scope.label||''}`;
+    return `${kind}|${versions}|identity:${identityVersion}|coverage:${kpi}:${quality}|${scopeKey}`;
   }
   async function commandCenter(options){
     const key=cacheKey('command'),existing=cache.get(key); if(existing&&Date.now()-existing.at<CACHE_MS)return existing.value;

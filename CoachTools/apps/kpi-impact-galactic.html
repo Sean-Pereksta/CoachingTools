@@ -7,11 +7,11 @@
 <meta name="coachtools-name" content="KPI Impact" />
 <meta name="coachtools-description" content="Measure KPI movement and the coaching associated with performance change." />
 <meta name="coachtools-category" content="Performance" />
-<meta name="coachtools-icon" content="icons/kpi-impact.png" />
+<meta name="coachtools-icon" content="icons/horizon/kpi-impact.png" />
 <meta name="coachtools-data" content="weeklyRetail, weeklyReferral, documentedCoaching" />
-<title>KPI Impact</title>
+<title>KPI Impact · Horizon</title>
 <style>
-html,body{height:100%;margin:0;overflow:hidden;background:#07101f}iframe{width:100%;height:100%;border:0;display:block;background:#fff}
+html,body{height:100%;margin:0;overflow:hidden;background:#10383c}iframe{width:100%;height:100%;border:0;display:block;background:#fff}
 </style>
 </head>
 <body>
@@ -19,7 +19,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:#07101f}iframe{width:1
 <script>
 (() => {
   const frame = document.getElementById('kpiFrame');
-  const ENHANCEMENT_VERSION = '2026.08.25.1';
+  const ENHANCEMENT_VERSION = '2026.11.09.horizon';
 
   frame.addEventListener('load', () => {
     const w = frame.contentWindow;
@@ -29,40 +29,8 @@ html,body{height:100%;margin:0;overflow:hidden;background:#07101f}iframe{width:1
 
     const style = d.createElement('style');
     style.textContent = `
-      html[data-kpi-theme="galactic"]{
-        --bg:#060b19;--surface:#0b1328;--surface-2:#101a35;--surface-3:#162044;
-        --ink:#f5f7ff;--ink-2:#d7dcff;--muted:#909ac8;--line:#29345f;--line-strong:#43518a;
-        --accent:#a855f7;--accent-dark:#7c3aed;--accent-soft:#24163d;
-        --good:#39e58c;--good-soft:#0c2b25;--bad:#ff5f7f;--bad-soft:#351522;
-        --warn:#f7c85c;--warn-soft:#332812;--info:#54c7ff;--info-soft:#102b43;
-        --shadow-xs:0 1px 2px rgba(0,0,0,.26);--shadow-sm:0 10px 28px rgba(0,0,0,.32);--shadow-md:0 20px 55px rgba(0,0,0,.46)
-      }
-      html[data-kpi-theme="galactic"] body{background:radial-gradient(circle at 18% 8%,rgba(124,58,237,.22),transparent 28%),radial-gradient(circle at 82% 18%,rgba(14,165,233,.12),transparent 24%),linear-gradient(180deg,#050915,#091126 62%,#060a17);color:var(--ink)}
-      html[data-kpi-theme="galactic"] body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.34;background-image:radial-gradient(circle,rgba(255,255,255,.78) 0 1px,transparent 1.2px),radial-gradient(circle,rgba(137,180,255,.65) 0 1px,transparent 1.2px);background-size:43px 43px,71px 71px;background-position:3px 8px,19px 31px}
-      html[data-kpi-theme="galactic"] .app,html[data-kpi-theme="galactic"] header#topbar,html[data-kpi-theme="galactic"] .content{position:relative;z-index:1}
-      html[data-kpi-theme="galactic"] header#topbar{background:rgba(7,12,29,.94);border-color:var(--line);box-shadow:0 10px 32px rgba(0,0,0,.38)}
-      html[data-kpi-theme="galactic"] .brandMark{background:linear-gradient(135deg,#7137da,#af54ff 55%,#27c9ff);box-shadow:0 0 26px rgba(168,85,247,.34)}
-      html[data-kpi-theme="galactic"] main.workspace,html[data-kpi-theme="galactic"] .summaryCard,html[data-kpi-theme="galactic"] .viewTabs,html[data-kpi-theme="galactic"] .tabPanel,html[data-kpi-theme="galactic"] .card,html[data-kpi-theme="galactic"] .box,html[data-kpi-theme="galactic"] .heatmapWrap,html[data-kpi-theme="galactic"] .heatmapMeta,html[data-kpi-theme="galactic"] .heatmapTable th,html[data-kpi-theme="galactic"] .heatmapTable td,html[data-kpi-theme="galactic"] .heatmapStub,html[data-kpi-theme="galactic"] .modalCard,html[data-kpi-theme="galactic"] aside.side.filterDrawer{background:var(--surface);color:var(--ink);border-color:var(--line)}
-      html[data-kpi-theme="galactic"] .tabPanel{background:rgba(7,13,29,.82)}
-      html[data-kpi-theme="galactic"] .viewTabs,html[data-kpi-theme="galactic"] .summaryStrip{background:var(--line)}
-      html[data-kpi-theme="galactic"] .summaryCard{background:linear-gradient(180deg,#101932,#0b1328)}
-      html[data-kpi-theme="galactic"] .controlGroup,html[data-kpi-theme="galactic"] .pill,html[data-kpi-theme="galactic"] .btn,html[data-kpi-theme="galactic"] .quickFilter,html[data-kpi-theme="galactic"] .repSearch,html[data-kpi-theme="galactic"] select,html[data-kpi-theme="galactic"] input{background:var(--surface-2);color:var(--ink);border-color:var(--line)}
-      html[data-kpi-theme="galactic"] .viewTab.active,html[data-kpi-theme="galactic"] .quickFilter.active{background:linear-gradient(135deg,#6d28d9,#9d3cf0);color:white;box-shadow:0 0 20px rgba(168,85,247,.24)}
-      html[data-kpi-theme="galactic"] .heatmapMetaCard{background:linear-gradient(145deg,#111b38,#0c142a);border-color:#344174;box-shadow:inset 0 1px rgba(255,255,255,.025)}
-      html[data-kpi-theme="galactic"] .heatmapMetaCard.kpiDrillCard{cursor:pointer;transition:.14s ease}
-      html[data-kpi-theme="galactic"] .heatmapMetaCard.kpiDrillCard:hover{border-color:#9e64f5;box-shadow:0 0 20px rgba(139,92,246,.18)}
-      html[data-kpi-theme="galactic"] .heatmapTable thead th,html[data-kpi-theme="galactic"] .heatmapTable thead .heatmapStub{background:#0e1730}
-      html[data-kpi-theme="galactic"] .heatCell.strong{background:#0c2d27}.heatCell.info{background:#302813}.heatCell.partial{background:#321a2c}.heatCell.weak{background:#351521}.heatCell.na{background:#11182b}
-      html[data-kpi-theme="galactic"] .heatCell.coached{background-image:repeating-linear-gradient(135deg,rgba(84,199,255,.12) 0 7px,transparent 7px 14px)}
-      html[data-kpi-theme="galactic"] .heatmapStub.summary{background:#231b35}html[data-kpi-theme="galactic"] .heatmapStub.attention{background:#281424}
-      html[data-kpi-theme="galactic"] .attentionSection{background:linear-gradient(135deg,#241a31,#11172c);border-color:#5f407d}
-      html[data-kpi-theme="galactic"] .repCard{background:linear-gradient(145deg,#0f1933,#0a1125);border-color:#2c3968}
-      html[data-kpi-theme="galactic"] .barWrap{background:#202a48}
-      html[data-kpi-theme="galactic"] .modalOverlay{background:rgba(1,4,13,.72)}
-      html[data-kpi-theme="galactic"] .drawerHead{background:rgba(8,14,31,.96)}
-      html[data-kpi-theme="galactic"] ::-webkit-scrollbar-thumb{background:#3b4775!important}
       .kpiThemeToggle{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
-      .kpiThemeDot{width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,#9555ff,#38cfff);box-shadow:0 0 12px rgba(149,85,255,.7)}
+      .kpiThemeDot{width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,#70b2a5,#edc88e);box-shadow:0 0 0 3px rgba(149,185,151,.09)}
       .kpiOutcomeStrip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 14px}
       .kpiOutcomeCard{border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:9px 10px}.kpiOutcomeCard .k{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:900}.kpiOutcomeCard .v{font-size:15px;font-weight:950;margin-top:4px}.kpiOutcomeCard .s{font-size:9px;color:var(--muted);font-weight:750;margin-top:3px}
       .kpiImpactChart{margin-top:12px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);padding:12px;overflow:auto}.kpiImpactChart svg{display:block;width:100%;min-width:560px;height:auto}.kpiImpactChartTitle{font-size:12px;font-weight:950;margin-bottom:2px}.kpiImpactChartSub{font-size:9px;color:var(--muted);font-weight:750;margin-bottom:8px}
@@ -74,8 +42,8 @@ html,body{height:100%;margin:0;overflow:hidden;background:#07101f}iframe{width:1
 
     const patch = d.createElement('script');
     patch.textContent = `(() => {
-      if (window.__KPI_GALACTIC_PATCHED__) return;
-      window.__KPI_GALACTIC_PATCHED__ = true;
+      if (window.__KPI_HORIZON_PATCHED__) return;
+      window.__KPI_HORIZON_PATCHED__ = true;
       const THEME_KEY='kpiImpact.theme.v1';
       let __enhancedHeatmapModel=null;
 
@@ -94,19 +62,19 @@ html,body{height:100%;margin:0;overflow:hidden;background:#07101f}iframe{width:1
         return p?.weekLabel || dateLabelFromWeekKey(p?.weekKey);
       }
       function applyTheme(theme){
-        const t=theme==='galactic'?'galactic':'light';
+        const t=theme==='light'?'light':'horizon';
         document.documentElement.dataset.kpiTheme=t;
         localStorage.setItem(THEME_KEY,t);
         const b=document.getElementById('kpiThemeToggle');
-        if(b) b.innerHTML='<span class="kpiThemeDot"></span>'+(t==='galactic'?'Galactic':'Light');
+        if(b) b.innerHTML='<span class="kpiThemeDot"></span>'+(t==='horizon'?'Horizon':'Light');
       }
       function addThemeToggle(){
         if(document.getElementById('kpiThemeToggle')) return;
         const actions=document.querySelector('.commandActions'); if(!actions) return;
         const b=document.createElement('button');b.type='button';b.id='kpiThemeToggle';b.className='btn kpiThemeToggle';b.title='Switch visual theme without recalculating KPI data';
-        b.addEventListener('click',()=>applyTheme(document.documentElement.dataset.kpiTheme==='galactic'?'light':'galactic'));
+        b.addEventListener('click',()=>applyTheme(document.documentElement.dataset.kpiTheme==='horizon'?'light':'horizon'));
         actions.insertBefore(b,actions.firstChild);
-        applyTheme(localStorage.getItem(THEME_KEY)||'light');
+        applyTheme(localStorage.getItem(THEME_KEY)||'horizon');
       }
 
       looksLikeCoachingRow=function(obj){
@@ -205,7 +173,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:#07101f}iframe{width:1
       renderAll=function(){originalRenderAll();const hint=document.getElementById('contextHint');if(hint)hint.textContent=hint.textContent.replace(/(\\d{4}-W\\d{2})/g,m=>dateLabelFromWeekKey(m));};
 
       addThemeToggle();
-      applyTheme(localStorage.getItem(THEME_KEY)||'light');
+      applyTheme(localStorage.getItem(THEME_KEY)||'horizon');
       setTimeout(()=>{try{refreshFromCache()}catch(e){console.error('[KPI Impact enhancement] refresh failed',e)}},0);
     })();`;
     d.body.appendChild(patch);

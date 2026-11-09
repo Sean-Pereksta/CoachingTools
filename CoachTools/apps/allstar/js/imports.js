@@ -833,6 +833,55 @@ function invalidateAllStarCentralBatch(changedDatasets,options={}){
   selectiveResearchInvalidation({reason:'central CoachTools batch',source:sources.join(','),silent:true});
   return {sources,teamsChanged};
 }
+function allStarGlobalScopeKey(){
+  return window.CoachToolsData?.getScopeKey?.()||'all';
+}
+function allStarGlobalRowIdentity(row){
+  return [row?._rep||row?._rawRep||row?.Representative||row?.['Agent Name']||row?.['Associate Name']||row?.Name||row?.displayName||row?.representative||row?.rep||'',
+    row?._team||row?.Coach||row?.coach||row?.Team||row?.team||row?.Team_Name||row?.['Team Name']||row?.['Coach Assigned']||row?.['Job Coach']||row?.['CSR Team/Coach']||''];
+}
+function allStarGlobalNameKey(value){
+  if(window.CoachToolsIdentity?.normalizeName)return window.CoachToolsIdentity.normalizeName(value);
+  let name=String(value||'').normalize('NFKC').trim().toLowerCase().replace(/[‘’]/g,"'").replace(/[‐‑–—]/g,'-').replace(/\s+/g,' ');
+  const parts=name.split(',').map(part=>part.trim());
+  return parts.length===2&&parts.every(Boolean)?parts[1]+' '+parts[0]:name;
+}
+function allStarGlobalRowVisible(row){
+  const key=allStarGlobalScopeKey();
+  if(key==='all')return true;
+  const view=state.globalScopeView;
+  if(!view||view.key!==key)return false;
+  return window.CoachToolsData.rowMatchesScope(allStarGlobalRowIdentity(row),['Representative','Coach'],'',view.context);
+}
+const allStarScopedRowsCache=new WeakMap();
+function filterAllStarRowsForGlobalScope(rows){
+  if(allStarGlobalScopeKey()==='all')return rows||[];
+  if(!Array.isArray(rows))return[];
+  const view=state.globalScopeView,key=allStarGlobalScopeKey(),version=state.versions?.data||0,cache=allStarScopedRowsCache.get(rows);
+  if(cache&&cache.view===view&&cache.key===key&&cache.version===version&&cache.length===rows.length)return cache.rows;
+  const filtered=rows.filter(allStarGlobalRowVisible);
+  allStarScopedRowsCache.set(rows,{view,key,version,length:rows.length,rows:filtered});
+  return filtered;
+}
+async function prepareAllStarGlobalScope(){
+  const api=window.CoachToolsData,key=allStarGlobalScopeKey();
+  if(!api?.resolveReadScope){state.globalScopeView=null;return false;}
+  const context=await api.resolveReadScope(undefined,'qa');
+  // Cached All-Star Control files can contain the authoritative local roster even
+  // before that roster has been imported into the suite's shared datasets.
+  const rows=[...(state.data.retail.controlRoster||[]),...(state.data.referral.controlRoster||[]),...allSourceKeys().flatMap(source=>getRowsUnscoped(source)||[])];
+  for(const row of rows){
+    const pair=allStarGlobalRowIdentity(row);
+    if(context.active&&pair[0]&&pair[1]&&api.rowMatchesScope(pair,['Representative','Coach'],'',context))context.rosterKeys.add(allStarGlobalNameKey(pair[0]));
+  }
+  if(key!==allStarGlobalScopeKey())return false;
+  state.globalScopeView={key,context};
+  state.rosterIndex=null;state.teamIndexCache=null;state._controlRosterCache=null;
+  if(state.dataIndex)state.dataIndex.dirty=true;
+  state.repSuggestionCache=new Map();state.repCandidateCache=new Map();
+  rebuildTeams({mutateRows:false});
+  return context.active;
+}
 function readAllStarCentralRecord(datasetType){
   let sharedAdapter=null;
   try{
@@ -841,9 +890,11 @@ function readAllStarCentralRecord(datasetType){
     // Standalone file frames can have an opaque parent origin.
   }
   if(sharedAdapter&&typeof sharedAdapter.get==='function'&&typeof window.structuredClone==='function'){
-    // All-Star retains raw worksheet arrays in its editable local workbook.
-    // Keep those arrays independent from the desktop cache shared by siblings.
-    return Promise.resolve(sharedAdapter.get(datasetType,{includeRecord:true})).then(record=>record==null?record:window.structuredClone(record));
+    // All-Star keeps an editable management copy of the complete source. Read
+    // the parent prefetch cache without narrowing its backing worksheet arrays;
+    // getRowsRaw and the Qualtrics bridge apply the current view scope later.
+    // Clone before editing so sibling apps keep their shared cached record.
+    return Promise.resolve(sharedAdapter.get(datasetType,{includeRecord:true,unscoped:true})).then(record=>record==null?record:window.structuredClone(record));
   }
   return window.CoachToolsData.getCurrent(datasetType,{includeRecord:true});
 }
@@ -856,6 +907,9 @@ async function syncAllStarFromCoachToolsData(options={}){
   const active=()=>!state.lifecycle?.closing && syncGeneration===state.centralSyncGeneration && lifecycleGeneration===Number(state.lifecycle?.generation||0);
   const job=options.job||null;
   await window.CoachToolsData.ready();
+  const previousViewScopeKey=state.globalScopeView?.key;
+  await prepareAllStarGlobalScope();
+  const viewScopeChanged=previousViewScopeKey!==state.globalScopeView?.key;
   const onlyDatasets=Array.isArray(options.onlyDatasets)?new Set(options.onlyDatasets):null;
   const mappings=[
     ['weeklyRetail',(file,wb,common)=>loadDatedStatsFile('weeklyRetail',file,{workbook:wb,...common})],
@@ -890,6 +944,7 @@ async function syncAllStarFromCoachToolsData(options={}){
   if(!changed.length){
     try{ localStorage.setItem(ALLSTAR_SYNC_KEY,JSON.stringify(nextSync)); }catch(_){}
     const diagnostics={centralCompared:compared,centralRefreshed:0,cachedSourcesReused:reused,indexedDbWrites:0,changedSources:[]}; state.startup.diagnostics={...(state.startup.diagnostics||{}),...diagnostics};
+    if(viewScopeChanged&&options.render!==false)renderAllStarAfterDataBatch({sourcesChanged:allSourceKeys(),teamsChanged:true,reason:'CoachTools scope changed'});
     return {changed:false,changedDatasets:[],...diagnostics};
   }
   if(job) setAllStarStartupPhase(job,70,90,'Refreshing changed shared sources…');
@@ -928,6 +983,7 @@ async function syncAllStarFromCoachToolsData(options={}){
     }
     if(!active()) throw Object.assign(new Error('Central synchronization cancelled.'),{cancelled:true});
     if(typeof applyRememberedCoachCorrections==='function') await applyRememberedCoachCorrections({sources:applied.flatMap(allStarSourcesForDataset)});
+    await prepareAllStarGlobalScope();
     const invalidation=invalidateAllStarCentralBatch(applied,{deferTeamRebuild:!!job||!!options.deferTeamRebuild});
     const categorizable=applied.some(type=>['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist','compCoaching'].includes(type));
     if(categorizable){
@@ -1884,7 +1940,7 @@ function controlRosterRows(){
   return [
     ...(state.data.retail.controlRoster||[]),
     ...(state.data.referral.controlRoster||[])
-  ].map(r=>{
+  ].filter(allStarGlobalRowVisible).map(r=>{
     const sourceArea=r.sourceArea||r.source||(/referral/i.test(r._sourceKey||'')?'referral':'retail');
     const rep=cleanName(r.displayName||r.originalName||r._rep||r.representative||r.Representative||'');
     const team=canonicalCoachName(r._team||r.team||r.Team||'');
@@ -1895,7 +1951,7 @@ function controlRosterRows(){
 }
 function controlRosterSignature(){
   const rows=[...(state.data.retail.controlRoster||[]),...(state.data.referral.controlRoster||[])];
-  return [rows.length,rows.slice(0,5).map(r=>`${r.representative||r._rep}|${r.team||r._team}|${r.rowNumber||''}`).join(';'),rows.slice(-5).map(r=>`${r.representative||r._rep}|${r.team||r._team}|${r.rowNumber||''}`).join(';')].join('|');
+  return [allStarGlobalScopeKey(),rows.length,rows.slice(0,5).map(r=>`${r.representative||r._rep}|${r.team||r._team}|${r.rowNumber||''}`).join(';'),rows.slice(-5).map(r=>`${r.representative||r._rep}|${r.team||r._team}|${r.rowNumber||''}`).join(';')].join('|');
 }
 function hasTrustedControlRoster(){ return trustedRosterMaps().byRep.size>0; }
 function conflictId(type,key){ return `${type}|${key}`; }
@@ -1931,19 +1987,7 @@ function rebuildTeams(options={}){
   const usingRoster=trusted.byRep.size>0;
   trusted.teams.forEach(team=>addTeamNameUnique(teams,team));
   trusted.byRep.forEach((rec,key)=>state.repTeams.set(key,rec.team));
-  const allRows=[
-    ...state.data.retail.sv2,
-    ...state.data.referral.sv2,
-    ...state.data.retail.wiper,
-    ...state.data.referral.wiper,
-    ...(state.categorized.nondated.rows||[]),
-    ...(state.categorized.dated.rows||[]),
-    ...state.data.qa.rows,
-    ...state.data.checklist.rows,
-    ...state.data.documented_coaching.rows,
-    ...state.data.comp_calls.rows,
-    ...(state.customSources||[]).flatMap(c=>c.rows||[])
-  ];
+  const allRows=allSourceKeys().filter(source=>!TEAM_TOTAL_SOURCE_KEYS.includes(source)).flatMap(source=>getRowsRaw(source)||[]);
   const addTrustedRowTeam=(r)=>{
     if(rowSkipsTeamBuild(r)) return;
     if(usingRoster) return;

@@ -544,9 +544,15 @@
   async function loadProfile(personId) {
     if (!root.CoachToolsData || !root.CoachToolsAppData || !root.CoachToolsIdentity) throw new Error('CoachTools shared data is unavailable.');
     await Promise.all([root.CoachToolsAppData.ready(), root.CoachToolsIdentity.ready()]);
-    const people = await root.CoachToolsIdentity.getAllPeople(), historyRecords = {};
+    const scopeKey = root.CoachToolsAppData.getScopeKey();
+    const people = await root.CoachToolsAppData.filterPeople(await root.CoachToolsIdentity.getAllPeople()), historyRecords = {};
     const records = await root.CoachToolsAppData.getMany(['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'qa', 'documentedCoaching', 'checklist'], { includeRecord: true });
-    for (const type of ['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'qa']) historyRecords[type] = await root.CoachToolsData.getHistory(type, { activeOnly: true, limit: 13 });
+    for (const type of ['weeklyRetail', 'weeklyReferral', 'monthlyRetail', 'monthlyReferral', 'qa']) historyRecords[type] = await root.CoachToolsAppData.getHistory(type, { activeOnly: true, limit: 13 });
+    if (scopeKey !== root.CoachToolsAppData.getScopeKey()) {
+      const error = new Error('The selected scope changed while the profile was loading.');
+      error.name = 'AbortError';
+      throw error;
+    }
     const prepared = prepareCurrent(people, records), historyIndex = createHistoryIndex(people);
     for (const [type, rows] of Object.entries(historyRecords)) for (const record of rows || []) addHistoryRecord(historyIndex, type, record);
     return buildProfile(personId, people, records, historyRecords, prepared, historyIndex);

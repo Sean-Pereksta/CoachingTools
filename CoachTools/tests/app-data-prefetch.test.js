@@ -24,6 +24,14 @@ function harness(options = {}) {
       DATASET_TYPES: Object.keys(versions),
       ready: async () => true,
       getDatasetVersion: type => versions[type] || null,
+      async filterDataset(dataset, type, selected) {
+        if (options.filterDataset) return options.filterDataset(dataset, type, selected);
+        // Scalar fixtures exercise cache identity only. Person fixtures below
+        // retain a real projection boundary instead of bypassing scoped get().
+        if (!Array.isArray(dataset && dataset.rows)) return dataset;
+        const names = new Set([...(selected.coaches || []), ...(selected.coachKeys || []), selected.label || ''].map(value => String(value).trim().toLowerCase()));
+        return { ...dataset, rows: dataset.rows.filter(row => names.has(String(row.coach || '').trim().toLowerCase())) };
+      },
       async getCurrent(type) {
         stats.reads += 1;
         stats.activeReads += 1;
@@ -145,9 +153,27 @@ function deferred() {
     await started.promise;
     h.scope.current = { mode: 'coach', coaches: ['Coach B'] };
     release.resolve();
-    const result = await warming;
-    assert.deepStrictEqual(Array.from(result.skipped), ['documentedCoaching']);
-    assert.strictEqual(h.stats.reads, 1, 'The next queued source must recheck the active scope after a selection change.');
+    await assert.rejects(warming, error => error.name === 'AbortError');
+    assert.strictEqual(h.stats.reads, 1, 'Changing scope aborts the whole former warm-up before its next queued source.');
+    assert.strictEqual(h.adapter.peek('qa'), null, 'The cancelled former scope must not publish a warm cache entry.');
+  }
+
+  {
+    const h = harness();
+    h.records.qa = { ...h.records.qa, data: { rows: [{name:'A Rep',coach:'Coach A'},{name:'B Rep',coach:'Coach B'}] } };
+    h.scope.current = { mode:'coach',label:'Coach A',coaches:['Coach A'] };
+    h.statuses.qa.scopeMode = 'coach';
+    h.statuses.qa.scopeSnapshot = { mode:'coach',coaches:['Coach A'] };
+    const warmed = await h.adapter.prefetch(['qa']);
+    assert.deepStrictEqual(Array.from(warmed.ready), ['qa']);
+    assert.deepStrictEqual(Array.from(h.adapter.peek('qa').rows, row=>row.name), ['A Rep']);
+    h.scope.current = { mode:'coach',label:'Coach B',coaches:['Coach B'] };
+    assert.strictEqual(h.adapter.peek('qa'), null, 'A ready Coach A projection cannot satisfy a Coach B read.');
+    const second = await h.adapter.get('qa');
+    assert.deepStrictEqual(Array.from(second.rows,row=>row.name), ['B Rep']);
+    h.scope.current = { mode:'all',label:'All people' };
+    assert.deepStrictEqual(Array.from((await h.adapter.get('qa')).rows,row=>row.name), ['A Rep','B Rep']);
+    assert.strictEqual(h.records.qa.data.rows.length,2,'Scoped warming and switching never alter the source population.');
   }
 
   {

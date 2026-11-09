@@ -30,7 +30,7 @@ document.dispatchEvent(new window.Event('DOMContentLoaded'));
 const folder = () => grid.querySelector('[data-folder-id="all-star-tools"]');
 const folderGrid = document.querySelector('[data-folder-grid="all-star-tools"]');
 assert.ok(folder(), 'The home page shows the All Star Tools folder.');
-assert.match(folder().textContent, /\(2\) All Star Tools/);
+assert.match(folder().textContent, /All Star Tools2 tools/);
 assert.deepEqual([...folderGrid.querySelectorAll('[data-app-id]')].map(n => n.dataset.appId), ['allstar', 'verification-all-star']);
 assert.equal(grid.querySelector('[data-app-id="allstar"]'), null, 'All-Star Report moves into the folder.');
 assert.ok(grid.querySelector('[data-app-id="weekly-data"]'), 'Unrelated home-page tools stay in place.');
@@ -44,10 +44,10 @@ assert.ok(document.querySelector('dialog[data-folder-id="all-star-tools"]').hasA
 // the matching tool reachable and correctly update its visible count.
 grid.replaceChildren(tile('verification-all-star'));
 observers[0].callback();
-assert.match(folder().textContent, /\(1\) All Star Tools/);
+assert.match(folder().textContent, /All Star Tools1 tools/);
 assert.deepEqual([...folderGrid.querySelectorAll('[data-app-id]')].map(n => n.dataset.appId), ['verification-all-star']);
 for (const icon of ['all-star-tools.png', 'verification-all-star.png']) {
-  const bytes = fs.readFileSync(path.join(__dirname, '../icons', icon));
-  assert.equal(bytes.subarray(1, 4).toString(), 'PNG', `${icon} is a bundled PNG asset.`);
+  const content = fs.readFileSync(path.join(__dirname, '../icons/horizon', icon));
+  assert.equal(content.subarray(1,4).toString(), 'PNG', `${icon} is a bundled PNG asset.`);
 }
 console.log('All Star Tools folder navigation tests passed.');

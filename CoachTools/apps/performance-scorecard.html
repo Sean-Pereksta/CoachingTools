@@ -8,7 +8,7 @@
 <meta name="coachtools-name" content="Performance Scorecard" />
 <meta name="coachtools-description" content="Fast team scorecards with configurable KPIs, coaching, checklist stats, and representative performance briefs." />
 <meta name="coachtools-category" content="Performance" />
-<meta name="coachtools-icon" content="icons/default-app.png" />
+<meta name="coachtools-icon" content="icons/horizon/performance-scorecard.png" />
 <meta name="coachtools-initials" content="PS" />
 <meta name="coachtools-keywords" content="scorecard, team, representative, kpi, appointment, wiper, qa, call quality, coaching, checklist, profile" />
 <meta name="coachtools-data" content="weeklyRetail, weeklyReferral, qa, documentedCoaching, checklist" />
@@ -432,7 +432,7 @@ async function loadRecordTypes(types,step,startPct,endPct,labels={}){
   return result;
 }
 async function loadData(){
-  loadPrefs();loadingStep(0,5,'Loading identity registry…');await nextPaint();await CoachToolsIdentity.ready();state.people=(await CoachToolsIdentity.getAllPeople()).filter(p=>p.role==='representative'||p.role==='coach');state.byId=new Map(state.people.map(p=>[p.personId,p]));rebuildPeopleNameIndex();
+  loadPrefs();loadingStep(0,5,'Loading identity registry…');await nextPaint();await CoachToolsIdentity.ready();state.people=(await CoachToolsAppData.filterPeople(await CoachToolsIdentity.getAllPeople())).filter(p=>p.role==='representative'||p.role==='coach');state.byId=new Map(state.people.map(p=>[p.personId,p]));rebuildPeopleNameIndex();
   state.records=await loadRecordTypes(['weeklyRetail','weeklyReferral'],1,18,36,{weeklyRetail:'Loading current Retail performance…',weeklyReferral:'Loading current Referral performance…'});
   loadingStep(1,39,'Indexing current performance…');await nextPaint();indexCurrentScope();await nextPaint();
   Object.assign(state.records,await loadRecordTypes(['qa','documentedCoaching','checklist'],2,44,61,{qa:'Loading QA activity…',documentedCoaching:'Loading documented coaching…',checklist:'Loading checklist activity…'}));
@@ -441,7 +441,7 @@ async function loadData(){
   loadingStep(2,70,'Indexing checklist activity…');await nextPaint();indexChecklist(state.records.checklist);await nextPaint();
   state.topicSuggestions=[...new Set([...state.coachingByRep.values()].flat().flatMap(x=>x.topics||[]).map(clean).filter(Boolean))].sort();state.checklistSuggestions=[...new Set([...state.checklistByRep.values()].flat().map(x=>clean(x.incident)).filter(Boolean))].sort();
   loadingStep(3,74,'Loading weekly history…');await nextPaint();
-  for(const type of ['weeklyRetail','weeklyReferral']){loadingStep(3,type==='weeklyRetail'?76:84,type==='weeklyRetail'?'Loading Retail history…':'Loading Referral history…');await nextPaint();try{state.histories[type]=window.CoachToolsData?.getHistory?await CoachToolsData.getHistory(type,{activeOnly:true,limit:HISTORY_SCAN_LIMIT}):[]}catch(e){console.warn('[Performance Scorecard] history load failed',type,e);state.histories[type]=[]}}
+  for(const type of ['weeklyRetail','weeklyReferral']){loadingStep(3,type==='weeklyRetail'?76:84,type==='weeklyRetail'?'Loading Retail history…':'Loading Referral history…');await nextPaint();try{state.histories[type]=window.CoachToolsAppData?.getHistory?await CoachToolsAppData.getHistory(type,{activeOnly:true,limit:HISTORY_SCAN_LIMIT}):[]}catch(e){console.warn('[Performance Scorecard] history load failed',type,e);state.histories[type]=[]}}
   loadingStep(3,89,'Indexing source reporting dates…');await nextPaint();buildWeeklyIndex();await nextPaint();
   resetCalcCache();loadingStep(4,92,'Building team scorecard…');await nextPaint();populateFilters();syncMainWindowUi();syncConfigUi();render();$('loading').classList.add('hide');
 }

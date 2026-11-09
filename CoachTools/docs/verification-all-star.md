@@ -21,7 +21,7 @@ The **Phone Data** sheet supplies coach names using Team_Name (column C fallback
 - **Attendance:** count of monthly checklist items containing Absence or Tardy in the incident/item or description. Each item counts once.
 - **Correctives:** count of monthly checklist items whose corrective field contains Final, Written, or Verbal, including fields containing additional words. Each matching item counts once, and adds 500 penalty points.
 
-Checklist incident dates take precedence, with Created On as a fallback when the incident date column is absent. Shared data is read across retained import history, independent of the current desktop people filter. A source previously imported with a restricted scope can only supply the people it contains.
+Checklist incident dates take precedence, with Created On as a fallback when the incident date column is absent. Shared data is read across retained import history within the current Horizon data view. The monthly roster, warnings, and export also follow that view. A source previously imported with a restricted scope can only supply the people it contains.
 
 ## Rankings and completeness
 

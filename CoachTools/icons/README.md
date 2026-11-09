@@ -1,23 +1,9 @@
-# CoachTools icons
+# Horizon icons
 
-Place square PNG artwork here using these exact filenames. CoachTools preloads them on startup and reuses the same cached artwork across desktop cards, the taskbar, menus, and dialogs.
+The active icon family lives in `horizon/`: 29 individual **512 × 512 PNGs** for all applications, folders, and desktop controls, including Update Data, Clean Upload, and Feedback. These are optimized copies of high-resolution, individually image-generated raster artwork. Home and Start intentionally share the Horizon emblem. The suite loads the PNGs from the app manifest, folder configuration, and desktop control map.
 
-```text
-allstar.png
-weekly-data.png
-coaching-gaps.png
-coach-timeline.png
-kpi-impact.png
-qa-scores.png
-audit-checklist.png
-coachtools-home.png
-shared-data.png
-backup-restore.png
-settings.png
-all-apps.png
-default-app.png
-```
+The design uses sculpted petrol-teal glass tiles, dimensional brushed champagne-gold objects, refined graphite bevels, and amber sunrise lighting. Every icon is self-contained and available offline. Icons are preloaded during startup and reused by desktop cards, favorites, the taskbar, menus, and dialogs. The original generated brand lockup is installed separately at `graphics/horizon-logo.png` for the top-left header.
 
-The first seven filenames are normalized to their matching application IDs, so a stale manifest entry cannot point a built-in app at the wrong image. The remaining files provide desktop, shared-data, backup/restore, settings, All Apps, and future-app artwork. If a configured icon is unavailable, CoachTools tries `default-app.png` and then keeps the built-in initials or symbol fallback visible; a broken-image indicator is never shown.
+The PNGs at the root of this directory are compatibility copies using established filenames. `coachtools-galaxy.ico` and `coachtools-galaxy.png` retain their filenames for Windows launcher compatibility and now contain the Horizon mark. Wallpaper and loading artwork remain in `graphics/`.
 
-`coachtools-home.png` is the branded graphic used by both the taskbar Start button and the top-left CoachTools button. The desktop wallpaper is separate and must be named `graphics/background.png`.
+Exact generation prompts and provenance are in `horizon/artwork-prompts.json`. `build/install-horizon-artwork.js` packages approved PNG originals; it does not render vectors or synthesize graphics in code. The previous vector generators have been retired.

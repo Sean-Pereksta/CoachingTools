@@ -101,7 +101,7 @@ async function run() {
   assert(storageScript.includes('getPeopleByIds(ids)'), 'Scope-aware streams should expand canonical identities through the memory registry.');
   assert(appDataScript.includes('streamRows(type, options)'), 'Applications should receive the shared streaming API through CoachToolsAppData.');
 
-  const stageFileBody = weeklyDataHtml.match(/async function stageFile[\s\S]*?\n}\nfunction registryScope/)?.[0] || '';
+  const stageFileBody = weeklyDataHtml.match(/async function stageFile[\s\S]*?\r?\n}\r?\nfunction registryScope/)?.[0] || '';
   assert(stageFileBody.includes("status:'staged'"), 'Data Manager files should stop at the staged state before scope selection.');
   assert(!stageFileBody.includes('getScope'), 'Clean Upload staging must not resolve or apply the previous scope.');
   assert(!stageFileBody.includes('importDataset'), 'Clean Upload staging must not write before the user chooses a scope.');

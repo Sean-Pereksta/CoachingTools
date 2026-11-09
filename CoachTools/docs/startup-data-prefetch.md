@@ -29,9 +29,15 @@ scoped Clean Upload provides that smaller persisted input.
 Cache entries are checked against the committed dataset identity. Replacements
 and removals invalidate old entries, including uploads that finish during a
 background read. External-window updates refresh metadata before notifying
-subscribers. Existing saved scopes and import validation still apply.
+subscribers. Report cache entries also include the active data view; a read
+started for an earlier selection cannot publish after a scope change. Existing
+saved scopes and import validation still apply.
 
 All-Star can reuse the desktop cache when refreshing its central shared sources.
+This is an intentional unscoped management copy of the complete stored source,
+cloned before All-Star edits it. Report rows and exports still apply the active
+coach view, so opening first for one coach does not remove another coach's rows
+from the backing source when the view changes.
 Its separate saved source-cache restoration, calculations, and rendering still
 run through its existing startup pipeline. Standalone tools retain their local
 storage fallback; browsers with opaque file-frame origins cannot share the
@@ -41,8 +47,4 @@ Run `npm run test:prefetch` and `npm run test:myone` for the cache, scheduling,
 upload-race, bridge, and import regressions. Timing improvements depend on the
 datasets and browser. No production speed percentage has been measured.
 
-The broader `npm run test:desktop` currently stops at the staged-file assertion
-in `performance-data-layer.test.js:105`. The same failure was reproduced with
-unchanged main at `7306c02`; the test's function-body pattern does not match the
-current staged-upload source formatting. The focused prefetch, import, scope,
-storage, and All-Star lifecycle checks pass. No live-browser timing run was made.
+The data-layer staged-upload contract check accepts Windows line endings.

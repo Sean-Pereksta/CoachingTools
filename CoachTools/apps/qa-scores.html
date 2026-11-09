@@ -8,7 +8,7 @@
 <meta name="coachtools-name" content="QA Scores" />
 <meta name="coachtools-description" content="Review QA performance, reviewer alignment, and Call Quality coaching." />
 <meta name="coachtools-category" content="Quality" />
-<meta name="coachtools-icon" content="icons/qa-scores.png" />
+<meta name="coachtools-icon" content="icons/horizon/qa-scores.png" />
 <meta name="coachtools-initials" content="QA" />
 <meta name="coachtools-keywords" content="qa, quality, monitor, reviewer, coaching" />
 <meta name="coachtools-data" content="qa, documentedCoaching" />
@@ -599,6 +599,7 @@
   .comparisonQuickGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:10px 0}.comparisonQuickCard{border:1px solid var(--border);border-radius:14px;padding:12px;background:#fff}.comparisonQuickCard.statusBad{border-left:3px solid var(--danger)}.comparisonQuickCard.statusWarn{border-left:3px solid var(--warning)}.comparisonQuickCard.statusGood{border-left:3px solid var(--success)}.comparisonQuickHead{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:11px;font-weight:780}.comparisonSides{display:grid;grid-template-columns:1fr 1px 1fr;gap:10px;align-items:center;margin-top:11px}.comparisonSides>span{display:grid}.comparisonSides>span:last-child{text-align:right}.comparisonSides small{font-size:9px;color:#7d848e;font-weight:720}.comparisonSides strong{font-size:20px;letter-spacing:-.03em;margin-top:2px}.comparisonSides i{height:30px;background:#eceef1}.comparisonTableDetails{margin-top:10px}.comparisonTableDetails>.summaryTblWrap{border:0;border-radius:0}.comparisonTableDetails>summary{padding:10px 12px}
   @media(max-width:800px){.comparisonQuickGrid{grid-template-columns:1fr}}
 </style>
+<link rel="stylesheet" href="../shared/horizon-qa-scores.css">
 </head>
 <body>
 
@@ -606,16 +607,19 @@
   <div class="appHeader compactHeader">
     <div class="commandTop">
       <div class="brandBlock compactBrand">
+        <img class="horizonQaIcon" src="../icons/horizon/qa-scores.png" alt="" width="58" height="58">
+        <div class="horizonQaBrandCopy">
         <div class="eyebrow">Quality Intelligence</div>
         <h1>QA Scores</h1>
         <div id="scopePill" class="scopeLine">—</div>
+        </div>
       </div>
       <div class="headerActions commandActions">
         <button class="btn reviewerBtn" id="reviewersBtn" type="button" aria-label="Choose included QA reviewers">
-          <span class="uiIcon" aria-hidden="true">◉</span> Reviewers <span class="countBubble" id="reviewersBtnCount">0</span>
+          <img class="horizonQaButtonIcon" src="../icons/horizon/people-profiles.png" alt="" width="26" height="26"> Reviewers <span class="countBubble" id="reviewersBtnCount">0</span>
         </button>
         <button class="btn" id="optionsBtn" type="button">
-          <span class="uiIcon" aria-hidden="true">⚙</span> Data &amp; Settings
+          <img class="horizonQaButtonIcon" src="../icons/horizon/settings.png" alt="" width="26" height="26"> Data &amp; Settings
         </button>
       </div>
     </div>

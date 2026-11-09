@@ -55,10 +55,10 @@ const expectedIconFiles = [
   'default-app.png'
 ];
 for (const icon of expectedIconFiles) {
-  assert(desktopScript.includes(`icons/${icon}`), `Desktop should reference exact icon filename ${icon}.`);
+  assert(desktopScript.includes(`icons/horizon/${icon}`), `Desktop should reference exact icon filename ${icon}.`);
 }
 for (const icon of expectedIconFiles.slice(0, 11)) {
-  assert(fs.existsSync(path.join(root, 'icons', icon)), `Uploaded icon should be available at icons/${icon}.`);
+  assert(fs.existsSync(path.join(root, 'icons', 'horizon', icon)), `Uploaded icon should be available at icons/${icon}.`);
 }
 assert(desktopScript.includes('appendImageWithFallback'), 'Desktop icons should retain a safe default/initials fallback chain.');
 assert(desktopScript.includes('preloadDesktopAssets'), 'The startup splash should run one centralized desktop icon preload.');
