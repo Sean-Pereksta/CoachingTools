@@ -26,6 +26,13 @@ Use `CoachToolsAppData.get(type)`, `getMany(types)`, `streamRows(type, options)`
 database stores directly. Current pointers never duplicate the source data;
 they reference one canonical record in `coachtoolsDatasets`.
 
+Application reads intersect the selected global view with any narrower request.
+The adapter's view cache includes dataset identity and scope; changing coaches
+invalidates old views. An intentional source-management copy may use
+`CoachToolsAppData.get(type, { includeRecord: true, unscoped: true })`, as the
+All-Star central-source bridge does before cloning its editable record. Report
+consumers must retain the scoped default.
+
 `CoachToolsData.ready()` initializes current pointers and metadata only. Full
 dataset records are read on demand and cached in memory by dataset ID/version.
 Large consumers should prefer `streamRows()`; it reads one stored chunk at a
@@ -168,6 +175,12 @@ and known-alias matches can resolve automatically. Partial or last-name-only
 matches are review candidates and must not be silently merged.
 
 ### Shared-folder synchronization
+
+After desktop visibility, committed shared datasets may also be prefetched into
+the version-checked memory cache within byte and row workload limits. Opening a
+tool overlaps its declared data reads with document loading. This does not change
+the import, scope, or persistence contract. See
+[automatic data preparation](startup-data-prefetch.md) for scheduling and limits.
 
 Files under `storage/` are synchronized source material. Each browser keeps its
 own IndexedDB cache; IndexedDB is never treated as a OneDrive-shared database.
