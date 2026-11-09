@@ -1,0 +1,202 @@
+/* Compact Horizon styling for the Coaching Gaps working controls. */
+body {
+  --horizon-petrol: #102f31;
+  --horizon-teal: #176c68;
+  --horizon-gold: #b68742;
+  --horizon-blue: #376e9c;
+  --horizon-ivory: #f6e8d1;
+}
+
+#topBar {
+  min-height: 76px;
+  padding: 10px 18px;
+  gap: 16px;
+  align-items: center;
+  background: linear-gradient(110deg, #0b2528 0%, #173b3b 67%, #214741 100%);
+  border-bottom: 1px solid #bd965c;
+  box-shadow: 0 5px 18px #0928291a;
+  color: var(--horizon-ivory);
+}
+#topBar .topIdentity { gap: 9px; min-width: 194px; }
+#topBar .brandMark {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  background: none;
+  border-radius: 12px;
+  box-shadow: none;
+}
+#topBar .brandMark img { display: block; width: 48px; height: 48px; object-fit: contain; }
+#topBar .brandTitle { color: #fff4e2; font-size: 15px; font-weight: 750; letter-spacing: -.02em; }
+#topBar .brandSub { color: #d9bc8d; font-size: 9px; font-weight: 650; letter-spacing: .055em; margin-top: 5px; }
+#topBar .topControls { align-items: flex-end; flex-wrap: wrap; gap: 8px; }
+#topBar .topControls > .modeSegment { flex: 0 0 auto; margin-bottom: 1px; }
+#topBar .topControl { align-items: stretch; }
+#topBar .topControl > span { color: #c1d0c9; font-size: 9px; font-weight: 700; letter-spacing: .1em; }
+#topBar .topControl select,
+#topBar .topControl input {
+  height: 35px;
+  min-width: 0;
+  border-color: #b0c6bd;
+  border-radius: 8px;
+  background: #f6faf6;
+  color: #153d3c;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: inset 0 1px 2px #0a2b2510;
+}
+#topBar .topControls #teamSelLabel { min-width: 165px; flex-basis: 180px; max-width: 245px; }
+#topBar .topControls .kpiTopControl { min-width: 180px; flex-basis: 205px; max-width: 260px; }
+#topBar .topControls .dateRangeControl { min-width: 264px; flex-basis: 280px; }
+#topBar .modeSegment { border-color: #56736b; background: #061f2380; border-radius: 9px; }
+#topBar .modeBtn { color: #d8e2dc; padding: 7px 10px; font-size: 11px; font-weight: 700; }
+#topBar .modeBtn.active { color: #173a39; background: #eed4a9; box-shadow: 0 2px 5px #03181740; }
+#topBar .headerActions { gap: 6px; align-self: flex-end; padding-bottom: 1px; flex-wrap: wrap; }
+#topBar .headerActions .btn,
+#topBar .headerActions .iconBtn,
+#topBar #panelChevron {
+  height: 35px;
+  min-height: 35px;
+  border: 1px solid #71877b;
+  border-radius: 8px;
+  background: #193b3d;
+  color: #f4e7d0;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: none;
+}
+#topBar #panelChevron { width: auto; min-width: 88px; padding: 0 9px; gap: 7px; }
+#topBar .headerActions .btn { padding-inline: 10px; }
+#topBar .headerActions .iconBtn { width: 33px; font-size: 16px; }
+#topBar .filterCountBadge { background: #ecd2a5; color: #153a38; min-width: 18px; height: 18px; }
+#topBar .headerActions button:hover { background: #2c514d; border-color: #d6b17b; }
+#topBar button:focus-visible,
+#topBar input:focus-visible,
+#topBar select:focus-visible { outline: 2px solid #f3c77d; outline-offset: 3px; }
+
+#presetStrip {
+  top: 76px;
+  gap: 7px;
+  padding: 8px 18px;
+  background: #f4f6f1f5;
+  border-bottom-color: #d5dfd7;
+  box-shadow: 0 2px 7px #1d443d05;
+}
+#presetStrip .presetLabel { color: #536e65; font-size: 9px; letter-spacing: .1em; }
+#presetStrip .presetBtn {
+  --focus-color: #56756b;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-color: #ccd9d1;
+  padding: 6px 11px;
+  color: #274f48;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 750;
+}
+#presetStrip .presetBtn::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--focus-color); }
+#presetStrip [data-preset="cash"] { --focus-color: #a57938; background: #fbf6eb; }
+#presetStrip [data-preset="callQuality"] { --focus-color: #376e9c; background: #edf4fb; }
+#presetStrip [data-preset="wipers"] { --focus-color: #17756c; background: #eaf5f1; }
+#presetStrip .presetBtn.active { color: #153d37; border-color: var(--focus-color); box-shadow: 0 0 0 2px #1d706112; }
+#presetStrip .compactTabs { padding: 3px; border-color: #d0ddd4; background: #e8eee8; }
+#presetStrip .compactTab { padding: 6px 10px; color: #546b63; font-size: 11px; font-weight: 700; }
+#presetStrip .compactTab.active { color: #f9edd7; background: #214e48; box-shadow: 0 2px 4px #122f2820; }
+#presetStrip .presetCoverage { border-left-color: #cedbd2; }
+#presetStrip .presetCoverage > span { color: #526d62; }
+#activeReportFilters { background: #f8faf7; border-bottom-color: #dbe3dc; padding: 8px 18px; }
+#activeReportFilters:empty { display: none; }
+#activeReportFilters .activeFilterChip { background: #eaf4ef; color: #24594e; border-color: #b8d4c6; font-size: 11px; }
+
+#scopeRibbon { background: #fff; border-color: #d5e0d9; padding: 5px; gap: 5px; box-shadow: 0 3px 12px #183c3006; }
+#scopeRibbon .scopeCell { border: 0; border-radius: 9px; padding: 9px 10px; background: #f4f7f2; }
+#scopeRibbon .scopeCell:nth-child(2) { background: #edf4fa; }
+#scopeRibbon .scopeCell:nth-child(3) { background: #fbf5e9; }
+#scopeRibbon .scopeCell:nth-child(4) { background: #edf6f0; }
+#scopeRibbon .scopeK { color: #526b62; font-size: 9px; font-weight: 750; letter-spacing: .075em; }
+#scopeRibbon .scopeV { color: #284e46; font-size: 11px; }
+#scopeRibbon .scopeV strong { color: #143b35; }
+#scopeRibbon .scopeCell:nth-child(2) .scopeK { color: #386b90; }
+#scopeRibbon .scopeCell:nth-child(3) .scopeK { color: #8a642e; }
+#scopeRibbon .activePresetBadge { color: #265f51; border: 1px solid #c8ddcd; background: #f8fcf6; }
+
+#coachReportCard { border-color: #d4ded7; padding: 12px; }
+#coachReportCard .grade {
+  position: relative;
+  overflow: hidden;
+  border-color: #2f5d52;
+  background: linear-gradient(125deg, #163d3c, #24574c);
+  color: #fcf3e3;
+  padding: 13px 14px;
+}
+#coachReportCard .grade::after { content: ''; position: absolute; width: 78px; height: 78px; right: -17px; bottom: -16px; background: url('../icons/horizon/coaching-gaps.png') center/contain no-repeat; opacity: .1; pointer-events: none; }
+#coachReportCard .grade .left,
+#coachReportCard .grade .badge { position: relative; z-index: 1; }
+#coachReportCard .grade .title { color: #dfc294; font-size: 10px; letter-spacing: .065em; text-transform: uppercase; font-weight: 700; }
+#coachReportCard .grade .score { color: #fff8ed; font-size: 26px; line-height: 1.2; letter-spacing: -.04em; }
+#coachReportCard #coachSub { color: #cfdfd5; font-size: 10px; font-weight: 600; line-height: 1.5; }
+#coachReportCard .grade .badge { color: #f5d6a7; background: #163b3280; border-color: #99a285; border-radius: 10px; white-space: nowrap; font-size: 12px; padding: 8px 9px; }
+#coachReportCard .summaryMetrics { gap: 8px; min-width: 520px; grid-template-columns: repeat(4, minmax(0,1fr)); }
+#coachReportCard .summaryMetrics .stat { --metric-accent: #a87b3b; border-color: #e3d9c7; border-top: 3px solid var(--metric-accent); background: linear-gradient(135deg,#fff,#fbf6eb); padding: 10px 11px; border-radius: 11px; }
+#coachReportCard .summaryMetrics .stat:nth-child(2) { --metric-accent: #447ca2; border-color: #d1dfea; border-top-color: var(--metric-accent); background: linear-gradient(135deg,#fff,#edf4fa); }
+#coachReportCard .summaryMetrics .stat:nth-child(3) { --metric-accent: #24786d; border-color: #cedfd5; border-top-color: var(--metric-accent); background: linear-gradient(135deg,#fff,#ecf6f0); }
+#coachReportCard .summaryMetrics .stat:nth-child(4) { --metric-accent: #687c70; border-color: #d6dfd4; border-top-color: var(--metric-accent); background: linear-gradient(135deg,#fff,#f0f4ed); }
+#coachReportCard .summaryMetrics .stat .k { color: #536b64; font-size: 10px; font-weight: 750; line-height: 1.35; }
+#coachReportCard .summaryMetrics .stat .v { color: #193e39; font-size: 24px; font-weight: 800; line-height: 1.15; }
+#coachReportCard .summaryMetrics .stat .s { color: #5f716a; font-size: 10px; line-height: 1.4; font-weight: 600; }
+#coachReportCard .metricDetails { border-color: #e0e5de; background: #fbfcf9; padding-block: 8px; }
+#coachReportCard .metricDetails > summary { color: #4d655b; font-size: 11px; }
+#gapCard { border-color: #e4d7c7; border-top: 3px solid #b18951; }
+#gapCard .gapBoxTitle { color: #73552f; }
+
+#topPanel .controlGrid { border-color: #b8cdc1; background: #f4f7f1; }
+#topPanel .filterDrawerHead { border-bottom-color: #cbd9cd; }
+#topPanel .filterDrawerTitle { color: #204d43; }
+#topPanel .filterStateCard { border-color: #cbded0; background: #eaf3ec; }
+#topPanel .filterPanel { border-color: #d4dfd5; }
+#topPanel .filterPanelTitle { color: #285c50; }
+#topPanel .filterPanel:nth-of-type(2) .filterPanelTitle { color: #8a6737; }
+#topPanel .filterPanel .btn.primary { background: #276d5f; border-color: #276d5f; }
+
+@media (max-width: 1460px) {
+  #topBar { align-items: flex-start; flex-wrap: wrap; }
+  #topBar .topIdentity { min-width: auto; }
+  #topBar .topControls { flex-basis: 100%; width: 100%; }
+  #presetStrip { position: relative; top: auto; flex-wrap: wrap; overflow: visible; }
+  #presetStrip .viewTabs { margin-left: auto; }
+}
+@media (max-width: 1000px) {
+  #coachReportCard .summaryMetrics { min-width: min(100%,520px); }
+  #scopeRibbon { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 700px) {
+  #topBar { position: relative; top: auto; padding: 10px 12px; gap: 10px; }
+  #topBar .brandSub { display: block; }
+  #topBar .topControls { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+  #topBar .topControls > .modeSegment { grid-column: 1/-1; justify-self: start; margin: 0; }
+  #topBar .topControls .topControl,
+  #topBar .topControls #teamSelLabel,
+  #topBar .topControls .kpiTopControl,
+  #topBar .topControls .dateRangeControl { min-width: 0; max-width: none; width: 100%; }
+  #topBar .topControls .dateRangeControl,
+  #topBar .headerActions { grid-column: 1/-1; }
+  #topBar .headerActions { margin: 0; justify-content: flex-start; }
+  #presetStrip { padding: 9px 12px; }
+  #presetStrip .presetSpacer { display: none; }
+  #presetStrip .viewTabs { width: 100%; margin: 1px 0 0; flex-wrap: wrap; }
+  #presetStrip .viewTabs .compactTab { flex: 1 1 auto; padding-inline: 8px; }
+  #activeReportFilters { padding-inline: 12px; }
+  #scopeRibbon .scopeV { white-space: normal; overflow-wrap: anywhere; }
+  #coachReportCard .grade { min-width: 0 !important; flex-basis: 100% !important; }
+  #coachReportCard .summaryMetrics { min-width: 0; flex-basis: 100%; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  #gapCard #gapSortSel { min-width: 0 !important; max-width: 100%; }
+  #gapCard > .row > label { flex-wrap: wrap; min-width: 0; }
+}
+@media (max-width: 430px) {
+  #scopeRibbon { grid-template-columns: minmax(0,1fr); }
+  #topBar .headerActions .btn { padding-inline: 8px; }
+  #topBar #panelChevron { min-width: 82px; }
+  #coachReportCard .summaryMetrics .stat { padding: 9px; }
+  #coachReportCard .summaryMetrics .stat .v { font-size: 22px; }
+}

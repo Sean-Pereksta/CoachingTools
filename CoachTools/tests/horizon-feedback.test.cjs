@@ -1,0 +1,54 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const vm=require('node:vm');
+const {parseHTML}=require('linkedom');
+const root=path.resolve(__dirname,'..');
+const script=fs.readFileSync(path.join(root,'shared/horizon-feedback.js'),'utf8');
+function environment(url=''){
+  const {window,document}=parseHTML(fs.readFileSync(path.join(root,'index.html'),'utf8'));
+  let focusReturns=0;
+  const trigger=document.querySelector('[data-horizon-feedback]');
+  trigger.focus=()=>{focusReturns++;};
+  const source=script.replace("const FEEDBACK_FORM_URL = '';",`const FEEDBACK_FORM_URL = ${JSON.stringify(url)};`);
+  vm.runInNewContext(source,{window,document,URL});
+  const click=node=>node.dispatchEvent(new window.Event('click',{bubbles:true}));
+  return{window,document,trigger,click,focusReturns:()=>focusReturns};
+}
+const pending=environment();
+assert.equal(pending.window.HorizonFeedback.configured,false);
+assert.equal(pending.document.getElementById('horizonFeedbackDialog'),null,'Feedback loads only after the action is opened.');
+pending.click(pending.trigger);
+const dialog=pending.document.getElementById('horizonFeedbackDialog');
+const frame=dialog.querySelector('iframe');
+assert.ok(dialog.hasAttribute('open'));
+assert.equal(frame.title,'Horizon Microsoft feedback form');
+assert.match(frame.srcdoc,/Microsoft feedback form will appear here/);
+assert.equal(frame.getAttribute('src'),null,'The pending state makes no external request.');
+assert.equal(dialog.querySelector('footer a').hidden,true);
+assert.equal(dialog.getAttribute('aria-labelledby'),'horizonFeedbackTitle');
+pending.click(dialog.querySelector('.horizon-feedback-close'));
+assert.equal(dialog.hasAttribute('open'),false);
+assert.equal(pending.focusReturns(),1,'Closing restores focus to the action.');
+// Exercise the native-dialog path as well as the portable fallback used above.
+dialog.showModal=()=>dialog.setAttribute('open','');
+dialog.close=()=>{dialog.removeAttribute('open');dialog.dispatchEvent(new pending.window.Event('close'));};
+pending.click(pending.trigger);
+assert.equal(dialog.querySelector('iframe'),frame,'Reopening keeps the existing form instance.');
+const escape=new pending.window.Event('keydown',{bubbles:true,cancelable:true});escape.key='Escape';
+pending.document.dispatchEvent(escape);
+assert.equal(dialog.hasAttribute('open'),false);
+assert.equal(pending.focusReturns(),2);
+
+const url='https://forms.office.com/Pages/ResponsePage.aspx?id=feedback-fixture&embed=true';
+const configured=environment(url);
+assert.equal(configured.window.HorizonFeedback.configured,true);
+assert.equal(configured.document.querySelector('iframe'),null);
+configured.click(configured.trigger);
+const ready=configured.document.getElementById('horizonFeedbackDialog');
+assert.equal(ready.querySelector('iframe').src,url);
+assert.equal(ready.querySelector('footer a').href,url,'A new-tab fallback remains available if embedding is blocked.');
+assert.match(ready.querySelector('footer a').getAttribute('rel'),/noopener/);
+for(const invalid of ['javascript:alert(1)','https://example.com/feedback'])assert.equal(environment(invalid).window.HorizonFeedback.configured,false,'Only supported HTTPS Microsoft Forms URLs are embedded.');
+console.log('Horizon feedback placeholder, lazy embed, close/Escape/focus, and configuration tests passed.');

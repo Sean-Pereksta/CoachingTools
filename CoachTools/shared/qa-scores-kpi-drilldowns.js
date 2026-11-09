@@ -116,7 +116,7 @@
     style.textContent = `
       #kpiGrid .kpiCard[data-qa-kpi]{cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
       #kpiGrid .kpiCard[data-qa-kpi]:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(18,24,35,.09);border-color:#c5cad2}
-      #kpiGrid .kpiCard[data-qa-kpi]:focus-visible{outline:3px solid rgba(109,40,217,.24);outline-offset:2px;border-color:#8b5cf6}
+      #kpiGrid .kpiCard[data-qa-kpi]:focus-visible{outline:3px solid rgba(197,151,79,.42);outline-offset:2px;border-color:#b88a46}
       #kpiGrid .kpiCard[data-qa-kpi]::after{content:'↗';position:absolute;right:10px;top:8px;font-size:11px;font-weight:900;color:#9aa1ac;opacity:.78}
       .qaThemeToggle{display:inline-flex;align-items:center;gap:3px;padding:3px;border:1px solid var(--border,#e3e6eb);border-radius:999px;background:var(--surface-2,#f7f8fa)}
       .qaThemeToggle button{border:0;background:transparent;border-radius:999px;padding:6px 9px;font-size:11px;font-weight:850;cursor:pointer;color:var(--text-2,#5d6470)}
@@ -133,56 +133,7 @@
       #qaKpiDrilldownOverlay .qaStatusBadge.yellow{background:rgba(245,158,11,.14);color:#8b5700;border-color:rgba(245,158,11,.28)}
       #qaKpiDrilldownOverlay .qaStatusBadge.neutral{background:#f3f4f6;color:#5d6470}
 
-      body.qaGalactic{
-        --bg:#080512;--card:#120b25;--ink:#f8f5ff;--muted:#b8aad5;--line:rgba(195,150,255,.22);--accent:#a855f7;
-        --good:#37f6c4;--bad:#ff5470;--warn:#ffca5c;--shadow:0 16px 40px rgba(0,0,0,.34);
-        --surface:#120b25;--surface-2:#0d091b;--surface-3:#1c1234;--text:#f8f5ff;--text-2:#b8aad5;--border:rgba(195,150,255,.22);
-        --brand:#c084fc;--brand-dark:#8b5cf6;--success:#37f6c4;--warning:#ffca5c;--danger:#ff5470;
-        background:
-          radial-gradient(circle at 14% 9%,rgba(147,51,234,.24),transparent 28%),
-          radial-gradient(circle at 82% 14%,rgba(59,130,246,.18),transparent 26%),
-          radial-gradient(circle at 52% 90%,rgba(217,70,239,.12),transparent 30%),
-          #080512;color:#f8f5ff;
-      }
-      body.qaGalactic::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;opacity:.35;background-image:radial-gradient(circle,rgba(255,255,255,.8) 0 1px,transparent 1.3px);background-size:47px 47px}
-      body.qaGalactic .commandHeader{background:rgba(9,5,20,.94);border-color:rgba(195,150,255,.22);box-shadow:0 8px 28px rgba(0,0,0,.26)}
-      body.qaGalactic .compactBrand .eyebrow,body.qaGalactic .sectionEyebrow{color:#d8b4fe}
-      body.qaGalactic .compactBrand h1,body.qaGalactic h2,body.qaGalactic .pTitle{color:#fff}
-      body.qaGalactic .compactBrand .scopeLine,body.qaGalactic .sectionTitleRow p,body.qaGalactic .repSectionHead p,body.qaGalactic .pSub,body.qaGalactic .summaryHead .sub{color:#b8aad5}
-      body.qaGalactic .btn,body.qaGalactic select,body.qaGalactic input,body.qaGalactic .commandControl,body.qaGalactic .commandSearch,body.qaGalactic .tabBar,body.qaGalactic .filterPopover{background:#10091f;color:#f8f5ff;border-color:rgba(195,150,255,.25)}
-      body.qaGalactic .btn:hover{border-color:#c084fc;box-shadow:0 0 18px rgba(168,85,247,.18)}
-      body.qaGalactic .btn.primary{background:linear-gradient(135deg,#7c3aed,#c026d3);border-color:#c084fc;color:#fff}
-      body.qaGalactic .qaThemeToggle{background:#0c0718;border-color:rgba(195,150,255,.28)}
-      body.qaGalactic .qaThemeToggle button{color:#cfc1e8}
-      body.qaGalactic .qaThemeToggle button[aria-pressed="true"]{background:linear-gradient(135deg,#7c3aed,#c026d3);color:#fff;box-shadow:0 0 18px rgba(192,38,211,.3)}
-      body.qaGalactic .viewTab{color:#cfc1e8}
-      body.qaGalactic .viewTab:hover{background:#1a102f}
-      body.qaGalactic .viewTab.active,body.qaGalactic .viewTab.active:hover{background:linear-gradient(135deg,#7c3aed,#a21caf);color:#fff}
-      body.qaGalactic .card,body.qaGalactic .sectionShell,body.qaGalactic .secondaryDetails,body.qaGalactic .kpiCard,body.qaGalactic .repCard,body.qaGalactic .actionQueue,body.qaGalactic .weeklyFilterBar,body.qaGalactic .box,body.qaGalactic .panel,body.qaGalactic .summaryTbl,body.qaGalactic table,body.qaGalactic .weeklyTableWrap,body.qaGalactic .summaryTblWrap,body.qaGalactic .tblWrap{background:rgba(18,11,37,.96);color:#f8f5ff;border-color:rgba(195,150,255,.20);box-shadow:0 10px 30px rgba(0,0,0,.22)}
-      body.qaGalactic .kpiCard{background:linear-gradient(145deg,rgba(25,14,52,.98),rgba(12,8,29,.98))}
-      body.qaGalactic #kpiGrid .kpiCard[data-qa-kpi]:hover{border-color:#d8b4fe;box-shadow:0 0 0 1px rgba(216,180,254,.2),0 0 24px rgba(168,85,247,.22),0 16px 34px rgba(0,0,0,.32)}
-      body.qaGalactic #kpiGrid .kpiCard[data-qa-kpi]::after{color:#e9d5ff}
-      body.qaGalactic .kpiLabel{color:#bca7db}body.qaGalactic .kpiValue{color:#fff}body.qaGalactic .kpiSub{color:#a996c9}
-      body.qaGalactic .kpiCard:before{background:#8b5cf6}body.qaGalactic .kpiCard.good:before,body.qaGalactic .kpiCard.midgood:before{background:#37f6c4}body.qaGalactic .kpiCard.warn:before{background:#ffca5c}body.qaGalactic .kpiCard.bad:before{background:#ff5470}
-      body.qaGalactic .attentionStrip,body.qaGalactic .actionItem{background:#10091f;color:#f8f5ff;border-color:rgba(195,150,255,.16)}
-      body.qaGalactic .actionItem:hover{background:#1a1030}body.qaGalactic .actionMain small,body.qaGalactic .actionScore small{color:#a996c9}
-      body.qaGalactic .repCard{background:linear-gradient(145deg,rgba(21,13,43,.98),rgba(13,8,29,.98))}
-      body.qaGalactic .repMeta,body.qaGalactic .legendItem,body.qaGalactic label{color:#b8aad5}
-      body.qaGalactic .sparkWrap,body.qaGalactic .chartWrap{background:rgba(255,255,255,.055);border-color:rgba(195,150,255,.18)}
-      body.qaGalactic canvas.spark{filter:invert(.82) hue-rotate(210deg) saturate(1.65) brightness(1.25)}
-      body.qaGalactic .pill,body.qaGalactic .mini,body.qaGalactic .coachFlag,body.qaGalactic .reviewerChip{background:#170e2c;color:#efe9ff;border-color:rgba(195,150,255,.20)}
-      body.qaGalactic .notice,body.qaGalactic .coItem{background:#10091f;color:#d7cbea;border-color:rgba(195,150,255,.22)}
-      body.qaGalactic .pHead{background:linear-gradient(180deg,rgba(124,58,237,.20),rgba(18,11,37,0));border-color:rgba(195,150,255,.20)}
-      body.qaGalactic .overlay{background:rgba(3,1,9,.72);backdrop-filter:blur(5px)}
-      body.qaGalactic thead th,body.qaGalactic .summaryTbl thead th{background:#180e30!important;color:#f4edff!important;border-color:rgba(195,150,255,.18)}
-      body.qaGalactic tbody td{border-color:rgba(195,150,255,.12);color:#eee8f9}
-      body.qaGalactic tbody tr:hover td,body.qaGalactic .summaryTbl tbody tr:hover td{background:#1a1030!important}
-      body.qaGalactic .secondaryDetails>summary{background:#10091f;color:#d8cbea;border-color:rgba(195,150,255,.18)}
-      body.qaGalactic .ratingBadge,body.qaGalactic .factorPill{border-color:rgba(195,150,255,.20)}
-      body.qaGalactic .trendFlat,body.qaGalactic .diffNeutral{color:#f8f5ff}
-      body.qaGalactic #qaKpiDrilldownOverlay .qaDrillRowRed td{background:rgba(255,84,112,.13)!important}
-      body.qaGalactic #qaKpiDrilldownOverlay .qaDrillRowYellow td{background:rgba(255,202,92,.13)!important}
-      body.qaGalactic #qaKpiDrilldownOverlay .qaStatusBadge.neutral{background:#1b1133;color:#cdbfe5}
+      /* QA Horizon color styling lives in horizon-qa-scores.css. */
       @media(max-width:760px){.qaThemeToggle{order:3}.qaThemeToggle button{padding:6px 8px}.commandActions{flex-wrap:wrap!important}}
     `;
     document.head.appendChild(style);
@@ -198,7 +149,7 @@
     wrap.setAttribute('aria-label', 'QA Scores color theme');
     wrap.innerHTML = `
       <button type="button" data-qa-theme="light" aria-pressed="false">Light</button>
-      <button type="button" data-qa-theme="galactic" aria-pressed="false">Galactic</button>`;
+      <button type="button" data-qa-theme="galactic" aria-pressed="false">Horizon</button>`;
     actions.insertBefore(wrap, actions.firstChild);
     wrap.addEventListener('click', event => {
       const button = event.target.closest('[data-qa-theme]');

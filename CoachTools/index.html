@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="shared/coachtools-folders.css">
   <link rel="stylesheet" href="shared/coachtools-desktop-polish.css">
   <link rel="stylesheet" href="shared/coachtools-horizon.css">
+  <link rel="stylesheet" href="shared/horizon-feedback.css">
   <script src="shared/coachtools-dependencies.js" defer></script>
   <script src="shared/coachtools-performance.js" defer></script>
   <script src="shared/coachtools-sync.js" defer></script>
@@ -35,6 +36,7 @@
   <script src="shared/coachtools-folders.js" defer></script>
   <script src="shared/coachtools-desktop-polish.js" defer></script>
   <script src="shared/coachtools-horizon.js" defer></script>
+  <script src="shared/horizon-feedback.js" defer></script>
 </head>
 <body>
   <section id="startupSplash" class="startup-splash" role="status" aria-live="polite" aria-label="Starting CoachTools">
@@ -51,8 +53,8 @@
 
   <main id="desktop" class="desktop-shell">
     <header class="command-bar">
-      <button class="suite-mark" type="button" data-action="about" aria-label="About CoachTools"><span class="system-icon" data-system-icon="coachtools-home" data-icon-fallback="✦"></span></button>
-      <div class="suite-name"><strong>HORIZON</strong><small>MyOne 3.0 · Coaching workspace</small></div>
+      <button class="suite-mark horizon-logo-button" type="button" data-action="about" aria-label="About Horizon"><img class="horizon-brand-image" src="graphics/horizon-logo.png" alt="Horizon — MyOne 3.0"></button>
+      <div class="suite-name sr-only"><strong>HORIZON</strong><small>MyOne 3.0 · Coaching workspace</small></div>
       <label class="search-box">
         <span aria-hidden="true">⌕</span>
         <span class="sr-only">Search applications</span>
@@ -64,18 +66,18 @@
       </button>
       <button class="command-more" type="button" data-action="diagnostics" aria-label="Open diagnostics" title="Diagnostics"><span class="system-icon small" data-system-icon="settings" data-icon-fallback="•••"></span></button>
       <div class="horizon-data-actions" aria-label="Import and update data">
-        <button class="command-button horizon-update" type="button" data-action="update-data"><span aria-hidden="true">↻</span><span><strong>Update Data</strong><small>Refresh your saved sources</small></span></button>
-        <button class="command-button horizon-clean" type="button" data-action="clean-upload-data"><span aria-hidden="true">＋</span><span><strong>Clean Upload</strong><small>Choose a fresh set of files</small></span></button>
+        <button class="command-button horizon-update" type="button" data-action="update-data" title="Refresh your saved data sources"><img src="icons/horizon/update-data.png" alt="" aria-hidden="true"><strong>Update Data</strong></button>
+        <button class="command-button horizon-clean" type="button" data-action="clean-upload-data" title="Choose a fresh set of source files"><img src="icons/horizon/clean-upload.png" alt="" aria-hidden="true"><strong>Clean Upload</strong></button>
       </div>
     </header>
 
     <section class="desktop-surface" aria-labelledby="desktopTitle">
       <div class="workspace-summary">
       <section class="scope-card" aria-label="Active data scope">
-        <div class="scope-card-heading"><span class="scope-symbol" aria-hidden="true">◎</span><div><p class="eyebrow">YOUR DATA VIEW</p><button id="scopeTrigger" class="scope-trigger" type="button" aria-haspopup="dialog" aria-controls="scopePicker"><strong id="activeScopeName">All people</strong><span aria-hidden="true">⌄</span></button></div></div>
+        <div class="scope-card-heading"><span class="scope-symbol" aria-hidden="true"><img src="icons/horizon/people-profiles.png" alt=""></span><div><p class="eyebrow">YOUR DATA VIEW</p><button id="scopeTrigger" class="scope-trigger" type="button" aria-haspopup="dialog" aria-controls="scopePicker"><strong id="activeScopeName">All people</strong></button></div></div>
         <p id="activeScopeDetail" class="scope-detail">Choose a coach to focus connected reports on that coach’s team.</p>
         <button id="clearScope" class="scope-clear" type="button" hidden>Show all people</button>
-        <button id="changeScope" class="scope-change" type="button" aria-label="Change data view">Change →</button>
+        <button id="changeScope" class="scope-change" type="button" aria-label="Change data view"><img src="icons/horizon/settings.png" alt="" aria-hidden="true"><span>Change</span></button>
         <label class="sr-only" for="globalScopeSelect">Global CoachTools scope</label><select id="globalScopeSelect" class="sr-only" aria-label="Global CoachTools scope" tabindex="-1"><option value="all:">All people</option></select>
       </section>
       <section id="favoritesSection" class="favorites-card" aria-labelledby="favoritesHeading"><div class="favorites-heading"><h2 id="favoritesHeading">Favorites</h2><button id="editFavorites" type="button">Edit favorites</button></div><div id="favoriteTools" class="favorite-tools"></div><p id="favoritesEmpty" hidden>Keep your most-used tools here. Choose Edit favorites to get started.</p></section>
@@ -123,6 +125,7 @@
   <footer id="taskbar" class="taskbar">
     <button id="startButton" class="start-button" type="button" aria-expanded="false" aria-controls="startMenu"><span class="system-icon taskbar-size" data-system-icon="start" data-icon-fallback="✦"></span><span>Start</span></button>
     <div id="taskbarOpen" class="taskbar-open" aria-label="Open applications"></div>
+    <button class="horizon-feedback-trigger" type="button" data-horizon-feedback aria-haspopup="dialog" aria-controls="horizonFeedbackDialog" aria-label="Submit feedback" title="Submit feedback"><img src="icons/horizon/submit-feedback.png" alt="" aria-hidden="true" width="29" height="29"><span>Submit feedback</span></button>
     <button class="taskbar-data" type="button" data-action="toggle-data-panel" title="Data readiness"><span class="system-icon small" data-system-icon="shared-data" data-icon-fallback="◫"></span><span class="status-dot"></span><span id="taskbarReadyCount">0/8</span></button>
     <time id="taskbarClock" class="taskbar-clock"></time>
   </footer>

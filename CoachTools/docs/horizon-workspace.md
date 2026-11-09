@@ -1,10 +1,16 @@
 # Horizon workspace and shared data views
 
-The Horizon home page uses sunrise artwork, deep teal surfaces, champagne glyphs, and amber accents. Every app, folder, and desktop control has its own bundled **512 × 512 PNG**. Editable icon masters are retained alongside the PNGs in `icons/horizon/`; the UI loads the PNG files. Windows launcher artwork uses the same Horizon mark.
+The Horizon home page uses sunrise artwork, deep teal surfaces, dimensional champagne-gold objects, and amber accents. Its PNG family is genuine high-resolution image-generated raster artwork, packaged as **512 × 512 PNGs** for the UI. Home and Start share the new mountain/sunrise emblem; the top-left header uses the separately generated Horizon brand lockup. Windows launcher artwork uses the same new emblem. The former line-art vector assets and generators are retired.
 
-**Update Data** and **Clean Upload** stay visible on the home page at desktop and phone widths. Update Data refreshes remembered sources; Clean Upload starts a fresh file selection. The established import and storage workflows remain responsible for saving source data.
+**Update Data** and **Clean Upload** stay visible on the home page at desktop and phone widths, each with its own generated PNG artwork. Update Data refreshes remembered sources; Clean Upload starts a fresh file selection. The established import and storage workflows remain responsible for saving source data.
 
 The middle of the home page has two compact panels: the current data view on the left and editable favorites on the right. Tools and folders open with one click, including remembered minimized apps. Search finds tools by name, description, and keywords. The full tools grid sits directly below the two panels.
+
+Folder dialogs show the sunrise landscape through translucent surfaces and tool cards. The current-view panel uses the people PNG and its Change button uses the settings PNG; the former stray letter/glyph is removed. Taskbar app artwork has independent dimensions of 30 px on desktop and 27 px on phones, so it does not inherit the larger desktop-tile sizes.
+
+The small Feedback action on the right of the taskbar opens a branded modal for Microsoft Forms. Until the real form link is configured, it shows a clear connection placeholder and does not submit responses.
+
+Coaching Gaps, KPI Impact, and QA Scores use coordinated compact petrol-teal command ribbons, generated app artwork, ivory and amber accents, and teal/blue/gold filter and summary surfaces. Their existing report controls, charts, dates, exports, and calculations remain intact. KPI Impact's wrapper keeps its coaching enhancements without the former purple Galactic styling. QA's Horizon theme retains the existing stored theme value and restores earlier preferences; its Light/Horizon buttons and keyboard-accessible metric drilldowns remain available.
 
 ## Choose a coach once
 
@@ -25,6 +31,6 @@ The Dynamics Contact Center Checklist opens a separate external system and clear
 - `getScopeKey()` identifies the current view for derived caches; `subscribe()` also notifies consumers when scope changes.
 - `CoachToolsData.resolveReadScope`, `rowMatchesScope`, `filterDataset`, and `filterPeople` support consumers with uploaded or separately cached data.
 
-Run `npm run test:horizon` for data-isolation, cross-app, roster-switch, PNG, picker, favorites, and deferred-window tests.
+Run `npm run test:horizon` for data-isolation, cross-app, roster-switch, PNG, picker, favorites, deferred-window, and QA theme-compatibility tests.
 
-To regenerate icon masters, run `node build/generate-horizon-icons.js`. Render PNGs with `node build/rasterize-horizon-icons.js` in a development environment with `sharp`, or pass `--sharp-module` with its installed path. The shipped app needs no image-rendering dependency. `generate-horizon-icons.js --install` installs PNG metadata and refreshes the app manifest after the images exist.
+The exact built-in image-generation prompts are stored in `icons/horizon/artwork-prompts.json`. To package approved replacement PNG originals, run `node build/install-horizon-artwork.js --source-directory <originals-directory>` in a development environment with `sharp`, or pass `--sharp-module` with its installed path. The shipped app needs no image-rendering dependency. The installer validates the complete set, optimizes real raster files, installs the logo lockup, and refreshes compatibility PNG/ICO copies; it does not render SVGs.
