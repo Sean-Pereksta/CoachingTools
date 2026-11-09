@@ -833,6 +833,20 @@ function invalidateAllStarCentralBatch(changedDatasets,options={}){
   selectiveResearchInvalidation({reason:'central CoachTools batch',source:sources.join(','),silent:true});
   return {sources,teamsChanged};
 }
+function readAllStarCentralRecord(datasetType){
+  let sharedAdapter=null;
+  try{
+    if(window.parent&&window.parent!==window) sharedAdapter=window.parent.CoachToolsAppData;
+  }catch(_){
+    // Standalone file frames can have an opaque parent origin.
+  }
+  if(sharedAdapter&&typeof sharedAdapter.get==='function'&&typeof window.structuredClone==='function'){
+    // All-Star retains raw worksheet arrays in its editable local workbook.
+    // Keep those arrays independent from the desktop cache shared by siblings.
+    return Promise.resolve(sharedAdapter.get(datasetType,{includeRecord:true})).then(record=>record==null?record:window.structuredClone(record));
+  }
+  return window.CoachToolsData.getCurrent(datasetType,{includeRecord:true});
+}
 async function syncAllStarFromCoachToolsData(options={}){
   if(state.reportingDataClearing || (state.reportingDataCleared && !options.forceSharedReload)) return {changed:false,cleared:true};
   if(state.activeImportJob || state.coachRenameActive || state.centralSyncStageActive) return {changed:false,busy:true};
@@ -887,7 +901,7 @@ async function syncAllStarFromCoachToolsData(options={}){
       const change=changed[index], mapping=mappings.find(([type])=>type===change.datasetType), loader=mapping&&mapping[1];
       if(applied.includes(change.datasetType))continue;
       if(state.startup?.running && typeof setAllStarStartupDiagnosticPhase==='function') setAllStarStartupDiagnosticPhase(`${change.datasetType} IndexedDB read`,change.datasetType);
-      const record=await window.CoachToolsData.getCurrent(change.datasetType,{includeRecord:true});
+      const record=await readAllStarCentralRecord(change.datasetType);
       if(!record?.data?.workbook?.sheets?.length || !loader) continue;
       if(job) updateAllStarStartupProgress(job,`Refreshing ${change.datasetType}…`,70+Math.round(18*(index/Math.max(1,changed.length))));
       const wb=directWorkbookFromCoachToolsDataset(record.data);
@@ -899,7 +913,7 @@ async function syncAllStarFromCoachToolsData(options={}){
           applied.push(change.datasetType,peerType);nextSync[change.datasetType]=change.identity;nextSync[peerType]=allStarCentralSyncIdentity(window.CoachToolsData.getDatasetVersion(peerType)||{});
           continue;
         }
-        const peer=await window.CoachToolsData.getCurrent(peerType,{includeRecord:true});
+        const peer=await readAllStarCentralRecord(peerType);
         if(JSON.stringify(peer?.data?.meta?.monthlyBundle)!==JSON.stringify(wb.__monthlyBundle))throw new Error('Both monthly areas must finish saving the same reviewed master bundle before All-Star can apply it. Previous monthly data was kept.');
         applyMonthlyBundleInStage(wb.__monthlyBundle,area,wb.__monthlySelection,{coordinated:true});
         applyMonthlyBundleInStage(peer.data.meta.monthlyBundle,peerArea,peer.data.meta.monthlySelection||null,{coordinated:true});
