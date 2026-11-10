@@ -32,11 +32,12 @@
       <div class="section-heading"><span class="step">1</span><div><h2 id="uploadTitle">Drop your evaluation report</h2><p>We match the headers, calculate interaction duration, and download the old version.</p></div></div>
       <input id="sourceFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" aria-label="Choose a QA evaluation report" hidden>
       <button id="dropZone" class="drop-zone" type="button"><img src="../icons/horizon/qa-eval-builder.png" alt="" width="88" height="88"><strong>Drop a file here, or click to choose</strong><span>Excel (.xlsx, .xls), CSV, or TSV</span></button>
+      <div class="report-date"><label for="reportDate">Report date<input id="reportDate" type="date" aria-describedby="dateHint" disabled></label><p id="dateHint">A filename such as 11.10.26 or 11-10-26 sets this date automatically.</p></div>
       <div id="status" class="status" role="status" aria-live="polite">Ready for your report.</div>
       <div id="sheetChoice" class="sheet-choice" hidden><label for="sourceSheet">This workbook has more than one evaluation table. Choose one:</label><select id="sourceSheet"><option value="">Choose a table</option></select></div>
     </section>
     <section id="result" class="result-panel" aria-labelledby="resultTitle" hidden>
-      <div class="result-heading"><div><p class="eyebrow">Original 90 day layout</p><h2 id="resultTitle">Your file is ready</h2><p id="sourceDetail"></p></div><button id="downloadBtn" class="primary" type="button">Download Excel again</button></div>
+      <div class="result-heading"><div><p class="eyebrow">Original 90 day layout</p><h2 id="resultTitle">Your file is ready</h2><p id="sourceDetail"></p><p id="outputFilename"></p></div><button id="downloadBtn" class="primary" type="button" disabled>Download Excel again</button></div>
       <div class="stats"><div><strong id="rowCount">0</strong><span>evaluations</span></div><div><strong>19</strong><span>original columns</span></div><div><strong>E1</strong><span>first header</span></div><div><strong id="durationCount">0</strong><span>durations calculated</span></div></div>
       <div id="warnings" class="warnings" hidden><h3>Check these rows</h3><p>Every evaluation is retained. A duration stays blank when its start or end time cannot be used.</p><ul id="warningList"></ul><p id="warningMore" hidden></p></div>
       <details class="preview"><summary>Preview the exported layout <span id="previewCount"></span></summary><div class="table-scroll"><table id="previewTable" aria-label="Original format preview"></table></div></details>
