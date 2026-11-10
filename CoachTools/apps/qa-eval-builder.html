@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="coachtools-app" content="true">
+  <meta name="coachtools-id" content="qa-eval-builder">
+  <meta name="coachtools-name" content="90 Day Eval Builder">
+  <meta name="coachtools-description" content="Drop a QA evaluation report to export the original 90 day layout, with headers in column E and calculated interaction duration.">
+  <meta name="coachtools-category" content="Data Building">
+  <meta name="coachtools-icon" content="icons/horizon/qa-eval-builder.png">
+  <meta name="coachtools-initials" content="90D">
+  <meta name="coachtools-keywords" content="90 day, QA, evaluations, builder, convert, legacy, format, csv, xlsx, export">
+  <meta name="coachtools-order" content="105">
+  <meta name="coachtools-version" content="1.0">
+  <meta name="coachtools-preload" content="false">
+  <title>90 Day Eval Builder</title>
+  <link rel="stylesheet" href="../shared/qa-eval-builder.css">
+  <script defer src="../vendor/xlsx.full.min.js"></script>
+  <script defer src="../shared/qa-eval-builder-core.js"></script>
+  <script defer src="../shared/qa-eval-builder.js"></script>
+  <script defer src="../shared/coachtools-shell.js"></script>
+</head>
+<body>
+  <header class="command-header">
+    <div class="brand"><img src="../icons/horizon/qa-eval-builder.png" alt="" width="68" height="68"><div><p class="eyebrow">Horizon / Data Building</p><h1>90 Day Eval Builder</h1><p class="subtitle">Your new report, in the original format.</p></div></div>
+    <span class="local-note">Files stay on this computer</span>
+  </header>
+  <main>
+    <section class="upload-panel" aria-labelledby="uploadTitle">
+      <div class="section-heading"><span class="step">1</span><div><h2 id="uploadTitle">Drop your evaluation report</h2><p>We match the headers, calculate interaction duration, and download the old version.</p></div></div>
+      <input id="sourceFile" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" aria-label="Choose a QA evaluation report" hidden>
+      <button id="dropZone" class="drop-zone" type="button"><img src="../icons/horizon/qa-eval-builder.png" alt="" width="88" height="88"><strong>Drop a file here, or click to choose</strong><span>Excel (.xlsx, .xls), CSV, or TSV</span></button>
+      <div id="status" class="status" role="status" aria-live="polite">Ready for your report.</div>
+      <div id="sheetChoice" class="sheet-choice" hidden><label for="sourceSheet">This workbook has more than one evaluation table. Choose one:</label><select id="sourceSheet"><option value="">Choose a table</option></select></div>
+    </section>
+    <section id="result" class="result-panel" aria-labelledby="resultTitle" hidden>
+      <div class="result-heading"><div><p class="eyebrow">Original 90 day layout</p><h2 id="resultTitle">Your file is ready</h2><p id="sourceDetail"></p></div><button id="downloadBtn" class="primary" type="button">Download Excel again</button></div>
+      <div class="stats"><div><strong id="rowCount">0</strong><span>evaluations</span></div><div><strong>19</strong><span>original columns</span></div><div><strong>E1</strong><span>first header</span></div><div><strong id="durationCount">0</strong><span>durations calculated</span></div></div>
+      <div id="warnings" class="warnings" hidden><h3>Check these rows</h3><p>Every evaluation is retained. A duration stays blank when its start or end time cannot be used.</p><ul id="warningList"></ul><p id="warningMore" hidden></p></div>
+      <details class="preview"><summary>Preview the exported layout <span id="previewCount"></span></summary><div class="table-scroll"><table id="previewTable" aria-label="Original format preview"></table></div></details>
+      <p class="download-help">If your browser did not start the download, use the download button above.</p>
+    </section>
+    <section class="format-panel" aria-labelledby="formatTitle"><div class="section-heading"><span class="step">2</span><div><h2 id="formatTitle">Ready for your existing workflow</h2><p>The export uses the original 19 headers in their original order, with columns A–D left blank.</p></div></div><div class="format-grid"><div><h3>Headers matched automatically</h3><p>Conversation ID becomes Conversationid. Date Hire becomes Hire Date. Queue Name becomes Queue.</p></div><div><h3>Times and scores carried across</h3><p>Score becomes Score %. Eastern date and time values keep their original clock times.</p></div><div><h3>Duration calculated for you</h3><p>Conversation end minus conversation start, written as hours:minutes:seconds.</p></div></div><p class="format-note">Employee ID, Queue ID, Adj Score, and Non-Performance are left out of the export to keep the original layout.</p></section>
+  </main>
+</body>
+</html>

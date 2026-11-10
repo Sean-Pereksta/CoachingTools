@@ -60,6 +60,7 @@ Use **Scan Storage Folder** from the Start menu, data-readiness panel, or top co
 
 ## Included applications
 
+- Data Building folder: Weekly Data Builder and [90 Day Eval Builder](docs/90-day-eval-builder.md)
 - All-Star Report
 - Data Manager
 - People Profiles

@@ -4,6 +4,7 @@ const F=[
 {id:'all-star-tools',name:'All Star Tools',icon:'icons/horizon/all-star-tools.png',members:['allstar','verification-all-star'],description:'All-Star Report and Verification All Star'},
 {id:'coach-analytics-tools',name:'Coach Analytics Tools',icon:'icons/horizon/coach-analytics-tools.png',members:['coaching-gaps','kpi-impact','qa-scores'],description:'Coaching Gaps, KPI Impact, and QA Scores'},
 {id:'general-apps',name:'General Apps',icon:'icons/horizon/general-apps.png',members:['coach-timeline','audit-checklist'],description:'Coach Timeline and Audit / Checklist'},
+{id:'data-building',name:'Data Building',icon:'icons/horizon/data-building.png',members:['weekly-data-builder','qa-eval-builder'],description:'Weekly Data Builder and 90 Day Eval Builder'},
 {id:'under-construction',name:'Under Construction',icon:'icons/horizon/under-construction.png',members:['people-profiles','coaching-command-center'],description:'People Profiles and Coaching Command Center'}
 ];
 const enabled=new Set((((root.COACHTOOLS_MANIFEST||{}).apps)||[]).filter(a=>a&&a.enabled!==false).map(a=>a.id));
