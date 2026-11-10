@@ -8,7 +8,7 @@ const folderSource = fs.readFileSync(path.join(root, 'shared/coachtools-folders.
 const folderIcons = [...folderSource.matchAll(/icon:'([^']+)'/g)].map(m => m[1]);
 const systems = ['coachtools-home', 'start', 'shared-data', 'backup-restore', 'settings', 'all-apps', 'default-app', 'update-data', 'clean-upload', 'submit-feedback'];
 const paths = new Set([...manifest.apps.map(a => a.icon), ...folderIcons, ...systems.map(id => `icons/horizon/${id}.png`)]);
-assert.equal(paths.size, 29, 'All app, folder, system, data-action, and feedback roles have Horizon artwork.');
+assert.equal(paths.size, 31, 'All app, folder, system, data-action, and feedback roles have Horizon artwork.');
 for (const file of paths) {
   assert.match(file, /^icons\/horizon\/[\w-]+\.png$/);
   const png = fs.readFileSync(path.join(root, file));
@@ -28,4 +28,4 @@ assert.equal(logo.subarray(1,4).toString(),'PNG');
 assert.ok(logo.readUInt32BE(16)>logo.readUInt32BE(20)*2,'The brand lockup is a wide logo image.');
 assert.match(home,/horizon-update[\s\S]*?icons\/horizon\/update-data\.png/);
 assert.match(home,/horizon-clean[\s\S]*?icons\/horizon\/clean-upload\.png/);
-console.log('Horizon icon family contract tests passed (29 roles).');
+console.log('Horizon icon family contract tests passed (31 roles).');

@@ -408,7 +408,7 @@ window.COACHTOOLS_MANIFEST = {
       "file": "apps/weekly-data-builder.html",
       "icon": "icons/horizon/weekly-data-builder.png",
       "initials": "WDB",
-      "category": "General Apps",
+      "category": "Data Building",
       "keywords": [
         "weekly",
         "data",
@@ -428,6 +428,34 @@ window.COACHTOOLS_MANIFEST = {
       "preload": false,
       "order": 100,
       "version": "1.1",
+      "enabled": true
+    },
+    {
+      "id": "qa-eval-builder",
+      "name": "90 Day Eval Builder",
+      "description": "Drop a QA evaluation report to export the original 90 day layout, with headers in column E and calculated interaction duration.",
+      "file": "apps/qa-eval-builder.html",
+      "icon": "icons/horizon/qa-eval-builder.png",
+      "initials": "90D",
+      "category": "Data Building",
+      "keywords": [
+        "90 day",
+        "QA",
+        "evaluations",
+        "builder",
+        "convert",
+        "legacy",
+        "format",
+        "csv",
+        "xlsx",
+        "export"
+      ],
+      "data": [],
+      "favorite": false,
+      "featured": false,
+      "preload": false,
+      "order": 105,
+      "version": "1.0",
       "enabled": true
     }
   ]
