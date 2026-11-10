@@ -55,6 +55,23 @@ test('90-day evaluations are filtered by month and unique evaluation ID', () => 
   assert.equal(result.metrics['alex example'].qaCount,2);
 });
 
+test('Genesys evaluation IDs keep separate scores on one conversation while replacing an updated evaluation', () => {
+  const header = ['Conversationid','Genesys Evaluation ID','Agent Name','Interaction Start Time','Score %'];
+  const original = parse('qa',[header,
+    ['conversation-one','evaluation-one','Alex Example','10/3/2026','80%'],
+    ['conversation-one','evaluation-two','Alex Example','10/3/2026','100%']
+  ],{id:'original',importedAt:'2026-10-04'});
+  const updated = parse('qa',[header,
+    ['conversation-one','evaluation-one','Alex Example','10/3/2026','90%']
+  ],{id:'updated',importedAt:'2026-10-05'});
+  const first = data.aggregate({month:'2026-10',reps,qa:original,sources});
+  assert.equal(first.metrics['alex example'].qaCount,2);
+  assert.equal(first.metrics['alex example'].quality,.9);
+  const result = data.aggregate({month:'2026-10',reps,qa:original.concat(updated),sources});
+  assert.equal(result.metrics['alex example'].qaCount,2);
+  assert.equal(result.metrics['alex example'].quality,.95);
+});
+
 test('checklist counts attendance once per matching item and corrective substring once per item', () => {
   const checklist = parse('checklist',[checklistHeader,
     ['Alex Example','10/1/2026','Absence / Tardy','Both terms','Final Written Warning','item-one'],
@@ -133,7 +150,7 @@ test('Retail fallback covers missing Referral weeks and Referral takes precedenc
   assert.equal(result.metrics['alex example'].offered,20);
 });
 
-test('known missing weeks block completeness; unrelated uploads cannot create expected weeks', () => {
+test('known missing weeks are reported per person; unrelated uploads cannot create expected weeks', () => {
   const weekly = parse('weeklyReferral',[weeklyHeader,['10/7/2026','A','Alex Example',2,10],['10/14/2026','A','Alex Example',3,10],['10/7/2026','A','Jordan Sample',3,10]]);
   const uploads = [{fileName:'extra.csv',rows:parse('weeklyReferral',[weeklyHeader,['10/21/2026','A','Unrelated Person',9,10],['11/4/2026','A','Alex Example',9,10]])}];
   const result = data.aggregate({month:'2026-10',reps,weekly,sources,uploads});
@@ -141,6 +158,40 @@ test('known missing weeks block completeness; unrelated uploads cannot create ex
   assert.match(result.metrics['jordan sample'].issues.join(' '),/Missing Wiper data for 1/);
   assert.match(result.diagnostics.join(' '),/outside the monthly lane roster/);
   assert.match(result.diagnostics.join(' '),/outside 2026-10/);
+});
+
+test('monthly data ranks complete people in all five lanes without filling missing performance with zeros', () => {
+  const core = require('../shared/verification-all-star-core.js');
+  const roster = [], weekly = [weeklyHeader], qa = [qaHeader], lane3Values = {};
+  for (let lane = 1; lane <= 5; lane++) {
+    for (const kind of ['Eligible', 'Missing Quality', 'Missing Wipers', 'Missing VAPH']) {
+      const name = kind + ' Lane ' + lane;
+      roster.push({name, key:core.nameKey(name), coach:'Coach ' + lane, lane, vaph:kind === 'Missing VAPH' ? null : kind === 'Eligible' ? 0 : 100});
+      if (lane === 3 && kind !== 'Missing VAPH') lane3Values[core.nameKey(name)] = kind === 'Eligible' ? 0 : 100;
+      if (kind !== 'Missing Wipers') weekly.push(['10/7/2026','Coach ' + lane,name,kind === 'Eligible' ? 0 : 9,10]);
+      if (kind !== 'Missing Quality') qa.push([name,'10/8/2026',kind === 'Eligible' ? '0%' : '99%',name + '-evaluation']);
+    }
+  }
+  const monthly = data.aggregate({month:'2026-10',reps:roster,weekly:parse('weeklyReferral',weekly),qa:parse('qa',qa),sources});
+  const report = core.buildReport({month:'2026-10',reps:roster,lane3Values,metrics:monthly.metrics});
+  assert.equal(report.rankedRows.length,5);
+  assert.equal(report.excludedRows.length,15);
+  assert.equal(report.winners.length,5);
+  assert.ok(report.lanes.every(lane => lane.ready && lane.winners.length === 1));
+  for (const winner of report.winners) {
+    assert.match(winner.name,/^Eligible Lane/);
+    assert.equal(winner.wipers,0,'A measured zero Wiper rate is valid, unlike a missing source.');
+    assert.equal(winner.quality,0,'A scored zero is valid, unlike no evaluations.');
+    assert.equal(winner.vaph,0,'A measured zero VAPH is valid.');
+    assert.equal(winner.total,5);
+    assert.deepEqual(Object.values(winner.ranks),[1,1,1,1,1]);
+  }
+  for (const excluded of report.excludedRows) {
+    assert.equal(excluded.total,null);
+    assert.equal(excluded.laneRank,null);
+    assert.ok(Object.values(excluded.ranks).every(rank => rank === null));
+    assert.ok(excluded.exclusionReasons.length);
+  }
 });
 
 test('undated attendance or corrective items remain unavailable instead of becoming zero', () => {

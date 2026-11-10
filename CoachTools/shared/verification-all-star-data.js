@@ -55,7 +55,7 @@
     incident: ['incident', 'incidenttype', 'incidentcategory', 'checklistitem', 'item', 'type'],
     description: ['description', 'details', 'notes', 'summary', 'desc', 'action'],
     corrective: ['corrective', 'correctives', 'correctiveaction', 'correctiveactions', 'correctivelevel', 'correctivetype', 'correctiveactionlevel', 'disciplinaryaction'],
-    qaId: ['evaluationid', 'evalid', 'evaluationidentifier', 'interactionid', 'conversationid', 'contactid', 'id'],
+    qaId: ['genesysevaluationid', 'evaluationid', 'evalid', 'evaluationidentifier', 'interactionid', 'conversationid', 'contactid', 'id'],
     itemId: ['itemid', 'checklistid', 'incidentid', 'recordid', 'id']
   };
   function field(header, names) {
@@ -295,7 +295,7 @@
     // Duplicate names under different coaches cannot be assigned safely to a single roster entry.
     const duplicates = new Map();
     normalized.forEach(row => { if (duplicates.has(row.key)) { row.invalid = true; duplicates.get(row.key).invalid = true; } else duplicates.set(row.key, row); });
-    if ([...duplicates.values()].some(row => row.invalid)) diagnostics.push('Some Wiper count or name conflicts need review before winners can be finalized.');
+    if ([...duplicates.values()].some(row => row.invalid)) diagnostics.push('Representatives with Wiper count or name conflicts are excluded from rankings; other eligible representatives can still win.');
     return {rows: [...duplicates.values()], periods, selectedPeriod, requiresSelection: false, diagnostics};
   }
   async function parseWiperUpload(file, options) {

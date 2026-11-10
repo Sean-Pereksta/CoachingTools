@@ -23,7 +23,7 @@
     "test:scorecard": "node --test tests/performance-scorecard*.test.js",
     "test:scorecard:browser": "node tests/performance-scorecard-source-sharing.browser.cjs",
     "test:allstar:data-management": "node apps/allstar/tests/import-worker.test.js && node apps/allstar/tests/package-import-lifecycle.test.js && node apps/allstar/tests/clear-data-persistence.test.js && node apps/allstar/tests/coach-name-management.test.js && node apps/allstar/tests/workspace-navigation.test.js && node apps/allstar/tests/data-summary-performance.test.js && node apps/allstar/tests/qualtrics-coach-rename.test.js",
-    "test:verification-allstar": "node --test tests/verification-all-star.test.js tests/verification-all-star-data.test.js tests/all-star-folder.test.cjs",
+    "test:verification-allstar": "node --test tests/verification-all-star.test.js tests/verification-all-star-data.test.js tests/verification-all-star-ui.test.cjs tests/all-star-folder.test.cjs",
     "test:horizon": "node --test tests/horizon-icons.test.cjs tests/horizon-workspace.test.cjs tests/app-data-global-scope.test.js tests/cross-app-global-scope.test.js && node tests/people-tools-scope.test.cjs && node tests/qa-horizon-theme.test.cjs && node tests/horizon-feedback.test.cjs",
     "test:qa-eval-builder": "node --test tests/qa-eval-builder.test.cjs tests/qa-eval-builder-ui.test.cjs tests/data-building-folder.test.cjs"
   },

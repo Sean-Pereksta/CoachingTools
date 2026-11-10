@@ -4,7 +4,7 @@ Open **All Star Tools → Verification All Star** on the CoachTools desktop. The
 
 1. Upload the monthly verification workbook and the separate Lane 3 workbook.
 2. Select the report month. The app defaults to the previous calendar month and selects the corresponding Lane 3 tab when it can match its month name or abbreviation. You can choose a different tab.
-3. Run the report. Review any data coverage notes, then export the full Excel report.
+3. Run the report. The file controls collapse so lane winners and full rankings appear on the front page. Each winner shows their points and performance measures. Expand the file controls to change inputs, or review excluded representatives separately before exporting.
 
 ## Workbook mapping
 
@@ -23,13 +23,15 @@ The **Phone Data** sheet supplies coach names using Team_Name (column C fallback
 
 Checklist incident dates take precedence, with Created On as a fallback when the incident date column is absent. Shared data is read across retained import history within the current Horizon data view. The monthly roster, warnings, and export also follow that view. A source previously imported with a restricted scope can only supply the people it contains.
 
-## Rankings and completeness
+## Rankings and eligibility
 
-All five measures receive a competition rank within each lane. Highest Wipers, VAPH, and Call Quality rank best; lowest attendance and corrective counts rank best. Ties share ranks (1, 1, 3).
+Only eligible representatives enter rankings. Anyone missing Call Quality, Wipers, or VAPH is excluded from every measure's rank, total points, and lane winner selection. Attendance and corrective counts must also be available to calculate the existing five-measure score. Conflicting records, duplicate roster membership, and missing known Wiper weeks exclude the affected person and show a specific reason in the review notes.
+
+All five measures receive a competition rank within the eligible cohort in each lane. Highest Wipers, VAPH, and Call Quality rank best; lowest attendance and corrective counts rank best. Ties share ranks (1, 1, 3). Excluded representatives never change other people's ranks.
 
 **Total points = Wiper rank + VAPH rank + Call Quality rank + attendance rank + corrective rank + 500 × corrective count.** Lowest total wins the lane. Exact total ties share the win.
 
-Missing metrics, invalid/conflicting data, duplicate membership across lanes, and missing known Wiper weeks keep a lane provisional. No winner is announced for an incomplete lane. Zero offered is an unavailable Wiper rate. An absent checklist source does not imply zero incidents; a recognized source with no matching records does.
+An excluded person does not mark the whole file or lane incomplete. Each lane with at least one eligible representative declares its lowest-total winner; exact ties retain all joint winners. A lane with no eligible representative says so instead of awarding a win using missing statistics. Measured zero values remain valid. Zero offered is an unavailable Wiper rate. An absent checklist source does not imply zero incidents; a recognized source with no matching records does.
 
 The app can identify missing weeks already present elsewhere in the loaded roster; it cannot infer an entirely absent weekly source. Confirm the displayed weekly coverage against your monthly reporting calendar. Boundary weeks belong to the month of their publication date.
 
@@ -41,6 +43,6 @@ These additions remain in memory in the current tab. Use Weekly Data Builder to 
 
 ## Output
 
-The Excel download includes Full Rankings, Lane Winners, Weekly Wipers, and Sources and Notes. It includes the report month, lane, representative, coach, raw counts and measures, every measure's rank, lane rank, corrective penalties, total points, winner status, and missing-data notes. The export always includes the full population even when the on-screen table is filtered.
+The Excel download separates ranked representatives from excluded people and their reasons. Full Rankings and Lane Winners include the report month, lane, representative, coach, actual counts and measures, every measure's rank, lane rank, corrective penalties, total points, and winner status. Weekly Wipers and Sources and Notes retain the supporting detail. The export includes every lane and eligible representative even when the on-screen table is filtered.
 
 Run `npm run test:verification-allstar` for parser, ranking, shared-storage, upload, and desktop-folder tests.
