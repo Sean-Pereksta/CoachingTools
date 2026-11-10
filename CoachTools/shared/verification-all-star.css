@@ -56,3 +56,23 @@
 .eligibility-review td:last-child,.eligibility-review th:last-child{text-align:right}
 .eligibility-review .reason-count-note{font-size:11px;padding-top:11px;padding-bottom:5px}
 @media(max-width:700px){.active-settings{flex-direction:column}.settings-actions{flex-direction:row;justify-content:space-between}.scoring-settings{padding:14px}.measure-options{display:grid;grid-template-columns:1fr}.eligibility-options{gap:15px}.week-option{align-items:start}.week-option input{margin-top:2px;flex-shrink:0}}
+.lane-editor{display:flex;align-items:end;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.lane-editor>label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:650}
+.lane-editor button{font-size:12px}
+.scoring-presets>span{font-size:11px;color:var(--muted);align-self:center}
+.measure-options{display:block;overflow:auto}
+.measure-options table{white-space:normal;max-width:800px}
+.measure-options th,.measure-options td{padding:9px 13px;position:static}
+.measure-options tbody th{font-size:12px;letter-spacing:0;background:transparent;color:var(--ink);font-weight:500;border:0;border-bottom:1px solid var(--line)}
+.measure-options td{text-align:center}
+.measure-options input{display:inline-block;cursor:pointer}
+.active-settings>div:first-child{flex:1;min-width:0}
+.active-settings table{font-size:11px;white-space:normal}
+.active-settings th,.active-settings td{padding:9px 12px;vertical-align:top;position:static}
+.active-settings td{min-width:130px}
+.active-settings td small{line-height:1.5}
+.last-place-note{font-size:10px;line-height:1.5;color:#79633c;margin-bottom:12px}
+.score small{white-space:normal;max-width:240px;line-height:1.5}
+.eligibility-review td:nth-child(2){white-space:normal;min-width:230px}
+@media(max-width:700px){.measure-options{display:block}.lane-editor>button{width:100%}.scoring-presets{flex-wrap:wrap}.active-settings{padding:14px}.active-settings .table-wrap{max-height:350px}}
+.eligibility-review td:first-child{min-width:0;white-space:nowrap;width:55px}

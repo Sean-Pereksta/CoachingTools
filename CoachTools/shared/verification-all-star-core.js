@@ -165,22 +165,43 @@
   ].map(Object.freeze));
   const DEFAULT_MEASURES = ['wipers','vaph','quality'];
   const fieldLabels = Object.fromEntries(MEASURES.map(measure => [measure.id,measure.label]));
-  function normalizeSettings(settings) {
-    settings = settings == null ? {} : settings;
-    if (typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Choose valid ranking settings.');
-    const supplied = Object.prototype.hasOwnProperty.call(settings,'measures');
-    const requested = supplied ? settings.measures : DEFAULT_MEASURES;
-    if (!Array.isArray(requested) || !requested.length) throw new Error('Select at least one ranking measure.');
+  function measureList(requested, allowEmpty) {
+    if (!Array.isArray(requested) || (!allowEmpty && !requested.length)) throw new Error('Select at least one ranking measure.');
     const ids = requested.map(value => clean(value).toLowerCase());
     if (ids.some(id => !MEASURES.some(measure => measure.id === id))) throw new Error('Choose ranking measures from Wipers, VAPH, Call Quality, Attendance, and Correctives.');
+    return MEASURES.filter(measure => ids.includes(measure.id)).map(measure => measure.id);
+  }
+  function normalizeLaneSettings(settings) {
+    settings = settings == null ? {} : settings;
+    if (typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Choose valid lane ranking settings.');
+    const legacy = Object.prototype.hasOwnProperty.call(settings,'measures') ? measureList(settings.measures,false) : DEFAULT_MEASURES;
+    const requiredMeasures = measureList(Object.prototype.hasOwnProperty.call(settings,'requiredMeasures') ? settings.requiredMeasures : legacy,true);
+    const rankedMeasures = measureList(Object.prototype.hasOwnProperty.call(settings,'rankedMeasures') ? settings.rankedMeasures : legacy,false);
     const penalty = settings.correctivePenalty === undefined ? 500 : number(settings.correctivePenalty);
     if (penalty == null || penalty < 0) throw new Error('Corrective penalty must be a nonnegative number.');
     if (settings.requireAllWiperWeeks !== undefined && typeof settings.requireAllWiperWeeks !== 'boolean') throw new Error('The Wiper week requirement must be on or off.');
-    return {measures:MEASURES.filter(measure => ids.includes(measure.id)).map(measure => measure.id),
-      requireAllWiperWeeks:settings.requireAllWiperWeeks === true,correctivePenalty:penalty};
+    if (settings.missingRankedPolicy !== undefined && settings.missingRankedPolicy !== 'last') throw new Error('Unavailable ranked measures must receive last-place points.');
+    return {requiredMeasures,rankedMeasures,requireAllWiperWeeks:settings.requireAllWiperWeeks === true,correctivePenalty:penalty,missingRankedPolicy:'last'};
+  }
+  function normalizeSettings(settings) {
+    settings = settings == null ? {} : settings;
+    if (typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Choose valid ranking settings.');
+    const hasLanes = Object.prototype.hasOwnProperty.call(settings,'lanes');
+    if (hasLanes && (!settings.lanes || typeof settings.lanes !== 'object' || Array.isArray(settings.lanes))) throw new Error('Choose valid settings for lanes 1 through 5.');
+    if (hasLanes && Object.keys(settings.lanes).some(lane => !/^[1-5]$/.test(lane))) throw new Error('Choose a lane from 1 through 5.');
+    return {lanes:Object.fromEntries([1,2,3,4,5].map(lane => {
+      try { return [String(lane),normalizeLaneSettings(hasLanes ? settings.lanes[lane] : settings)]; }
+      catch (error) { throw new Error('Lane ' + lane + ': ' + error.message); }
+    }))};
+  }
+  function getLaneSettings(settings, lane) {
+    if (!/^[1-5]$/.test(String(lane))) throw new Error('Choose a lane from 1 through 5.');
+    if (settings && Object.prototype.hasOwnProperty.call(settings,'lanes') && (!settings.lanes || typeof settings.lanes !== 'object' || Array.isArray(settings.lanes))) throw new Error('Choose valid settings for lanes 1 through 5.');
+    return normalizeLaneSettings(settings && Object.prototype.hasOwnProperty.call(settings,'lanes') ? settings.lanes[lane] : settings);
   }
   function issueMetric(value, message) {
-    const aliases = {wiper:'wipers',wipers:'wipers',vaph:'vaph',activity:'vaph',quality:'quality',qa:'quality',evaluation:'quality',evaluations:'quality',callquality:'quality',attendance:'attendance',corrective:'correctives',correctives:'correctives',checklist:'checklist'};
+    const aliases = {wiper:'wipers',wipers:'wipers',vaph:'vaph',activity:'vaph',quality:'quality',qa:'quality',evaluation:'quality',evaluations:'quality',callquality:'quality',attendance:'attendance',corrective:'correctives',correctives:'correctives',checklist:'checklist',identity:'identity',source:'source'};
+    if (/identity|duplicate (?:representative|person|name)|ambiguous (?:representative|name)/i.test(message)) return 'identity';
     if (aliases[headerKey(value)]) return aliases[headerKey(value)];
     if (/\bwiper|\baccepted\b|\boffered\b/i.test(message)) return 'wipers';
     if (/\bvaph\b|activity per|cases per hr/i.test(message)) return 'vaph';
@@ -196,28 +217,41 @@
     const value = typeof issue === 'string' ? {message:issue,blocking:true} : issue;
     if (typeof value !== 'object') return null;
     const message = clean(value.message) || 'Missing or conflicting source data.';
-    const metric = issueMetric(value.metric,message);
+    const metric = /identity/.test(clean(value.code)) ? 'identity' : issueMetric(value.metric,message);
     const missingWeeks = value.code === 'missing-wiper-weeks' || (/missing.*wiper.*week|wiper.*missing.*week/i.test(message));
     const code = missingWeeks ? 'missing-wiper-weeks' : clean(value.code) || 'source-issue';
     return {code,metric:missingWeeks ? 'wipers' : metric,message,
       blocking:value.blocking !== false && value.severity !== 'warning' && value.severity !== 'info'};
   }
   function evaluateEligibility(row, settings, duplicate) {
-    const selected = new Set(settings.measures), details = [], dataWarnings = [];
-    const missing = settings.measures.filter(field => row[field] == null);
+    const required = new Set(settings.requiredMeasures), ranked = new Set(settings.rankedMeasures), details = [], dataWarnings = [];
+    const missing = settings.requiredMeasures.filter(field => row[field] == null);
+    const missingRanked = new Set(settings.rankedMeasures.filter(field => row[field] == null));
     missing.forEach(field => details.push({code:'missing-' + field,metric:field,message:'Missing or invalid ' + fieldLabels[field] + '.'}));
     for (const issue of row.issueDetails) {
-      const relevant = issue.metric === 'source' || selected.has(issue.metric) || (issue.metric === 'checklist' && (selected.has('attendance') || selected.has('correctives')));
-      if (!relevant) continue;
+      const affected = issue.metric === 'checklist' ? ['attendance','correctives'] : [issue.metric];
+      const requiredSource = affected.some(field => required.has(field));
+      const rankedFields = affected.filter(field => ranked.has(field));
+      const identitySource = issue.metric === 'source' || issue.metric === 'identity';
+      if (!identitySource && !requiredSource && !rankedFields.length) continue;
       const detail = {code:issue.code,metric:issue.metric,message:issue.message};
-      const blocking = issue.code === 'missing-wiper-weeks' ? settings.requireAllWiperWeeks : issue.blocking;
-      (blocking ? details : dataWarnings).push(detail);
+      if (issue.code === 'missing-wiper-weeks') {
+        (required.has('wipers') && settings.requireAllWiperWeeks ? details : dataWarnings).push(detail);
+      } else if (issue.blocking && (identitySource || requiredSource)) details.push(detail);
+      else {
+        dataWarnings.push(detail);
+        if (issue.blocking) rankedFields.forEach(field => missingRanked.add(field));
+      }
     }
+    settings.rankedMeasures.filter(field => row[field] == null && !required.has(field)).forEach(field => dataWarnings.push({
+      code:'missing-ranked-' + field,metric:field,message:'Missing or invalid ' + fieldLabels[field] + '; assigned joint last-place points.'
+    }));
     const provisional = details.length > 0;
     if (duplicate) details.push({code:'duplicate-identity',metric:'identity',message:'Duplicate representative in the monthly roster; resolve the duplicate before ranking.'});
     const unique = values => [...new Map(values.map(value => [value.code + '|' + value.metric + '|' + value.message,value])).values()];
     const exclusionDetails = unique(details);
-    return {missing,provisional,eligible:!exclusionDetails.length,exclusionDetails,exclusionReasons:exclusionDetails.map(detail => detail.message),dataWarnings:unique(dataWarnings)};
+    return {missing,missingRankedMeasures:settings.rankedMeasures.filter(field => missingRanked.has(field)),provisional,eligible:!exclusionDetails.length,
+      exclusionDetails,exclusionReasons:exclusionDetails.map(detail => detail.message),dataWarnings:unique(dataWarnings)};
   }
   function summarizeExclusions(rows) {
     const reasons = new Map();
@@ -233,7 +267,7 @@
   }
   function buildReport(options) {
     const {reps = [], lane3Values = {}, metrics = {}, month = ''} = options || {};
-    const settings = normalizeSettings(options && options.settings), rankFields = settings.measures;
+    const settings = normalizeSettings(options && options.settings);
     const normalizedMetrics = new Map(Object.entries(metrics instanceof Map ? Object.fromEntries(metrics) : metrics).map(([key,value]) => [normalizeName(key), value]));
     const lane3 = new Map(Object.entries(lane3Values instanceof Map ? Object.fromEntries(lane3Values) : lane3Values).map(([key,value]) => [normalizeName(key), value]));
     const warnings = [], rows = reps.map(rep => {
@@ -248,28 +282,38 @@
         quality:quality != null && quality >= 0 && quality <= 1 ? quality : null, qaCount:number(metric.qaCount),
         attendance:attendance != null && attendance >= 0 && Number.isInteger(attendance) ? attendance : null,
         correctives:correctives != null && correctives >= 0 && Number.isInteger(correctives) ? correctives : null,
-        weeklyWipers:metric.weeklyWipers || [], issues, issueDetails:issues, ranks:Object.fromEntries(MEASURES.map(measure => [measure.id,null])), total:null, penalty:null, laneRank:null, winner:false};
-      result.penalty = !rankFields.includes('correctives') ? 0 : result.correctives == null ? null : result.correctives * settings.correctivePenalty;
+        weeklyWipers:metric.weeklyWipers || [], issues, issueDetails:issues, laneSettings:getLaneSettings(settings,Number(rep.lane)),
+        ranks:Object.fromEntries(MEASURES.map(measure => [measure.id,null])), total:null, penalty:null, missingPenaltyAdjustment:0,laneRank:null, winner:false};
       if (!result.coach) warnings.push(result.name + ': coach was not found in Phone Data.');
       return result;
     });
     const keyCounts = new Map();
     rows.forEach(row => keyCounts.set(row.key, (keyCounts.get(row.key) || 0) + 1));
     rows.forEach(row => {
-      Object.assign(row,evaluateEligibility(row,settings,keyCounts.get(row.key) > 1));
+      Object.assign(row,evaluateEligibility(row,row.laneSettings,keyCounts.get(row.key) > 1));
+      row.penalty = !row.laneSettings.rankedMeasures.includes('correctives') ? 0 : row.missingRankedMeasures.includes('correctives') ? null : row.correctives * row.laneSettings.correctivePenalty;
     });
     const lanes = [];
     for (let lane = 1; lane <= 5; lane++) {
+      const laneSettings = getLaneSettings(settings,lane), rankFields = laneSettings.rankedMeasures;
       const members = rows.filter(row => row.lane === lane);
       const eligible = members.filter(row => row.eligible);
       const excluded = members.filter(row => !row.eligible).sort((a,b) => a.name.localeCompare(b.name));
       for (const field of rankFields) {
         const descending = ['wipers','vaph','quality'].includes(field);
-        const ranked = eligible.slice().sort((a,b) => descending ? b[field] - a[field] : a[field] - b[field]);
+        const ranked = eligible.filter(row => !row.missingRankedMeasures.includes(field)).sort((a,b) => descending ? b[field] - a[field] : a[field] - b[field]);
         let rank = 0, last;
         ranked.forEach((row,index) => { if (index === 0 || row[field] !== last) rank = index + 1; row.ranks[field] = rank; last = row[field]; });
+        eligible.filter(row => row.missingRankedMeasures.includes(field)).forEach(row => { row.ranks[field] = ranked.length + 1; });
       }
-      eligible.forEach(row => { row.total = rankFields.reduce((sum,field) => sum + row.ranks[field], 0) + row.penalty; });
+      const maximumCorrectivePenalty = rankFields.includes('correctives') ? Math.max(0,...eligible.filter(row => row.penalty != null).map(row => row.penalty)) : 0;
+      eligible.forEach(row => {
+        // An unavailable optional corrective count receives both last-place rank
+        // points and the highest known eligible penalty in this lane. It must
+        // not gain an advantage by avoiding a known corrective penalty.
+        row.missingPenaltyAdjustment = rankFields.includes('correctives') && row.missingRankedMeasures.includes('correctives') ? maximumCorrectivePenalty : 0;
+        row.total = rankFields.reduce((sum,field) => sum + row.ranks[field], 0) + (row.penalty || 0) + row.missingPenaltyAdjustment;
+      });
       const ready = eligible.length > 0;
       members.forEach(row => { row.laneProvisional = !ready; });
       if (excluded.length) warnings.push('Lane ' + lane + ': ' + excluded.length + ' representative' + (excluded.length === 1 ? ' is' : 's are') + ' excluded from rankings because of missing or conflicting data.');
@@ -282,19 +326,23 @@
         row.laneRank = laneRank; lastTotal = row.total;
         row.winner = row.total === lowest;
       });
-      lanes.push({lane, ready, provisional:!ready, count:members.length, eligibleCount:eligible.length, excludedCount:excluded.length,
+      const threeSettings = normalizeLaneSettings(), strictSettings = normalizeLaneSettings({measures:MEASURES.map(measure => measure.id),requireAllWiperWeeks:true});
+      const eligibleCount = comparison => members.filter(row => evaluateEligibility(row,comparison,keyCounts.get(row.key) > 1).eligible).length;
+      const threeMetricEligible = eligibleCount(threeSettings), strictEligible = eligibleCount(strictSettings);
+      lanes.push({lane, settings:laneSettings, ready, provisional:!ready, count:members.length, eligibleCount:eligible.length, excludedCount:excluded.length,
+        exclusionSummary:summarizeExclusions(excluded),
+        eligibilityComparison:{currentEligible:eligible.length,threeMetricEligible,strictEligible,recoveredByThreeMetrics:threeMetricEligible - strictEligible},
         winners:ordered.filter(row => row.winner), rankedRows:ordered, excludedRows:excluded, rows:[...ordered,...excluded]});
     }
     const rankedRows = lanes.flatMap(lane => lane.rankedRows), excludedRows = lanes.flatMap(lane => lane.excludedRows);
-    const threeSettings = normalizeSettings(), strictSettings = normalizeSettings({measures:MEASURES.map(measure => measure.id),requireAllWiperWeeks:true});
-    const eligibleCount = comparison => rows.filter(row => evaluateEligibility(row,comparison,keyCounts.get(row.key) > 1).eligible).length;
-    const threeMetricEligible = eligibleCount(threeSettings), strictEligible = eligibleCount(strictSettings);
+    const threeMetricEligible = lanes.reduce((sum,lane) => sum + lane.eligibilityComparison.threeMetricEligible,0);
+    const strictEligible = lanes.reduce((sum,lane) => sum + lane.eligibilityComparison.strictEligible,0);
     return {month, settings, rows:lanes.flatMap(lane => lane.rows), rankedRows, excludedRows, lanes, winners:rankedRows.filter(row => row.winner), warnings,
       exclusionSummary:summarizeExclusions(excludedRows),
       eligibilityComparison:{currentEligible:rankedRows.length,threeMetricEligible,strictEligible,recoveredByThreeMetrics:threeMetricEligible - strictEligible},
       stats:{totalRows:rows.length,eligibleRows:rankedRows.length,excludedRows:excludedRows.length,readyLanes:lanes.filter(lane => lane.ready).length}};
   }
-  const api = {MEASURES,normalizeSettings,normalizeName, nameKey:normalizeName, previousMonth, selectMonthSheet, workbookSheets, parseMonthly, parseLane3, buildReport};
+  const api = {MEASURES,normalizeSettings,normalizeLaneSettings,getLaneSettings,normalizeName, nameKey:normalizeName, previousMonth, selectMonthSheet, workbookSheets, parseMonthly, parseLane3, buildReport};
   root.VerificationAllStarCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

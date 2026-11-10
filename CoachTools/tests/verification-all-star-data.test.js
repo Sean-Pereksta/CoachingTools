@@ -229,6 +229,44 @@ test('typed source issues identify the affected measure for configurable eligibi
   assert.equal(details.length,monthly.metrics['alex example'].issues.length);
 });
 
+test('lane-specific required and ranked measures stay separate through monthly data aggregation', () => {
+  const core = require('../shared/verification-all-star-core.js');
+  const roster = [1,2,3].flatMap(lane => ['First','Second'].map((label,index) => ({name:'Lane '+lane+' '+label,lane,coach:'Example Coach',vaph:lane===3?999:20-index*10})));
+  const weekly = parse('weeklyReferral',[weeklyHeader,
+    ['10/7/2026','Example Coach','Lane 1 First',4,10],['10/7/2026','Example Coach','Lane 1 Second',3,10],
+    ['10/7/2026','Example Coach','Lane 2 First',5,10]
+  ]);
+  const qa = parse('qa',[qaHeader,
+    ['Lane 1 First','10/8/2026','90%','evaluation-one'],
+    ...[2,3].flatMap(lane=>['First','Second'].map(label=>['Lane '+lane+' '+label,'10/8/2026','95%','evaluation-'+lane+'-'+label]))
+  ]);
+  const monthly = data.aggregate({month:'2026-10',reps:roster,weekly,qa});
+  const report = core.buildReport({month:'2026-10',reps:roster,metrics:monthly.metrics,settings:{lanes:{
+    '1':{requiredMeasures:['wipers'],rankedMeasures:['quality','vaph']},
+    '2':{requiredMeasures:['quality'],rankedMeasures:['wipers']},
+    '3':{requiredMeasures:['quality'],rankedMeasures:['vaph']}
+  }}});
+  assert.equal(report.excludedRows.length,0);
+  assert.equal(report.rankedRows.length,6);
+  const find = name => report.rows.find(row=>row.name===name);
+  const first = find('Lane 1 First'), second = find('Lane 1 Second');
+  assert.equal(first.ranks.wipers,null,'A required-only measure supplies no points.');
+  assert.equal(first.total,2);
+  assert.equal(second.quality,null,'Missing optional scored source values stay blank.');
+  assert.equal(second.ranks.quality,2,'The missing optional score receives last-place points.');
+  assert.equal(second.total,4);
+  assert.equal(find('Lane 2 Second').ranks.wipers,2);
+  assert.equal(find('Lane 2 Second').quality,.95);
+  assert.equal(find('Lane 2 Second').ranks.quality,null);
+  for(const label of ['First','Second']) {
+    const row=find('Lane 3 '+label);
+    assert.equal(row.vaph,null,'Lane 3 does not substitute monthly VAPH for the separate source.');
+    assert.equal(row.ranks.vaph,1,'No observed optional scores means a joint last-place rank.');
+    assert.equal(row.total,1);
+    assert.equal(row.winner,true);
+  }
+});
+
 test('undated attendance or corrective items remain unavailable instead of becoming zero', () => {
   const checklist = parse('checklist',[checklistHeader,['Alex Example','invalid date','Absence','','Written Warning','undated']]);
   const result = data.aggregate({month:'2026-10',reps,checklist,sources});
