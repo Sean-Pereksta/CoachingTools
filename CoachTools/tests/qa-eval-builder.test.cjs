@@ -232,3 +232,37 @@ test('actual formula workbooks use saved date/score results and report an absent
   assert.equal(missing.stats.rows, 1); assert.equal(value(missing, 0, 'Score %'), '');
   assert.ok(missing.warnings.some(warning => /Score % has a formula without a saved result/.test(warning)));
 });
+
+test('report dates are read from dotted and dashed filenames with two- or four-digit years', () => {
+  const cases = [
+    ['All Evaluations 11.10.26.xlsx', '2026-11-10'],
+    ['All Evaluations - Last 90 days - updated 11-10-26.xlsx', '2026-11-10'],
+    ['Report 1.2.26.csv', '2026-01-02'], ['Report_01-02-2026.xls', '2026-01-02'],
+    ['Report_12.31.2026.csv', '2026-12-31'], ['Report 01-01-00.xlsx', '2000-01-01'],
+    ['Report 11-10-99.xlsx', '2099-11-10'], ['Report 2026-11-10.xlsx', '2026-11-10']
+  ];
+  for (const [name, expected] of cases) assert.equal(Builder.reportDateFromFilename(name), expected, name);
+});
+
+test('filename report dates reject impossible days, invalid leap dates, and digit substrings', () => {
+  for (const name of ['Report.xlsx', '', '11.31.26.xlsx', '04-31-2026.xlsx', '02.29.26.xlsx', '02-29-1900.xlsx', '00-10-26.xlsx', '13-01-26.xlsx', '11-00-26.xlsx', '111-10-26.xlsx', '11-100-26.xlsx', '11-10-261.xlsx', '11-10-20260.xlsx', '2026-02-30.xlsx', '11.10-26.xlsx']) {
+    assert.equal(Builder.reportDateFromFilename(name), '', name);
+  }
+  assert.equal(Builder.reportDateFromFilename(null), '');
+  assert.equal(Builder.reportDateFromFilename('Leap 02.29.24.xlsx'), '2024-02-29');
+  assert.equal(Builder.reportDateFromFilename('Leap 02-29-2000.xlsx'), '2000-02-29');
+});
+
+test('multiple distinct filename dates require a manual date, while repeated same dates agree', () => {
+  assert.equal(Builder.reportDateFromFilename('11.10.26 - 11-11-26.xlsx'), '');
+  assert.equal(Builder.reportDateFromFilename('12.31.26 - 01.01.27.xlsx'), '');
+  assert.equal(Builder.reportDateFromFilename('11.10.26 - 11-10-2026.xlsx'), '2026-11-10');
+  assert.equal(Builder.reportDateFromFilename('2026-01-02-27.xlsx'), '', 'overlapping valid date interpretations are ambiguous');
+});
+
+test('export names use the exact agreed name and validate the selected calendar date', () => {
+  assert.equal(Builder.exportFilename('2026-11-10'), 'All Evaluations - Last 90 days - updated 11-10-26.xlsx');
+  assert.equal(Builder.exportFilename('2027-01-02'), 'All Evaluations - Last 90 days - updated 01-02-27.xlsx');
+  assert.equal(Builder.exportFilename('2024-02-29'), 'All Evaluations - Last 90 days - updated 02-29-24.xlsx');
+  for (const date of ['', null, '2026-2-03', '2026-02-29', '1900-02-29', '2026-04-31', '0000-01-01', '2026-00-01', '11-10-26']) assert.throws(() => Builder.exportFilename(date), /Choose a valid report date/, String(date));
+});

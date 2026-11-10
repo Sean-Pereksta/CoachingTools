@@ -6,6 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 const { parseHTML } = require('linkedom');
+const core = require('../shared/qa-eval-builder-core.js');
 
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'apps/qa-eval-builder.html'), 'utf8');
@@ -72,6 +73,8 @@ function harness() {
     }
   };
   window.QAEvalBuilder = {
+    reportDateFromFilename: core.reportDateFromFilename,
+    exportFilename: core.exportFilename,
     decodeText(buffer) { decodes.push(buffer); return new TextDecoder().decode(buffer); },
     discoverSources(book) { return book.sources; },
     convertWorkbook(book, xlsx, selection) {
@@ -105,7 +108,11 @@ function harness() {
     select.value = value;
     select.dispatchEvent(new window.Event('change'));
   }
-  return { window, document, get, input, drop, choose, writes, reads, conversions, decodes,
+  function changeDate(value) {
+    get('reportDate').value = value;
+    get('reportDate').dispatchEvent(new window.Event('change'));
+  }
+  return { window, document, get, input, drop, choose, changeDate, writes, reads, conversions, decodes,
     parseAs(data, book) { parsedInputs.set(data, book); },
     failDownloads(error) { writeError = error; } };
 }
@@ -120,7 +127,7 @@ test('file picker converts one table, previews it, and downloads automatically',
   h.get('sourceFile').click = () => { pickerOpens++; };
   h.get('dropZone').click();
   assert.equal(pickerOpens, 1);
-  h.input(file('new-evaluations.xlsx', bytes));
+  h.input(file('new-evaluations-11.10.26.xlsx', bytes));
   await settle();
 
   assert.equal(h.get('result').hidden, false);
@@ -128,10 +135,13 @@ test('file picker converts one table, previews it, and downloads automatically',
   assert.equal(h.get('sheetChoice').hidden, true);
   assert.equal(h.get('rowCount').textContent, '1');
   assert.equal(h.get('durationCount').textContent, '1');
-  assert.match(h.get('sourceDetail').textContent, /new-evaluations\.xlsx/);
+  assert.match(h.get('sourceDetail').textContent, /new-evaluations-11\.10\.26\.xlsx/);
+  assert.equal(h.get('reportDate').value, '2026-11-10');
+  assert.ok(h.get('dateHint').textContent, 'The detected date is explained next to its field.');
   assert.equal(h.writes.length, 1);
   assert.equal(h.writes[0].book, book.results.Evaluations.workbook);
-  assert.match(h.writes[0].filename, /\.xlsx$/);
+  assert.equal(h.writes[0].filename, 'All Evaluations - Last 90 days - updated 11-10-26.xlsx');
+  assert.ok(h.get('outputFilename').textContent.includes(h.writes[0].filename), 'The preview shows the filename that is downloaded.');
   assert.equal(h.decodes.length, 0, 'Binary Excel workbooks are not passed through text decoding.');
   assert.equal(h.reads[0].buffer, bytes, 'The workbook parser receives the original binary bytes.');
   assert.equal(h.reads[0].options.type, 'array');
@@ -151,7 +161,7 @@ test('a dropped report with row notes waits for manual download', async () => {
   const csvText = 'Agent Name,Score\n"José 李",90';
   const bytes = new TextEncoder().encode(csvText).buffer;
   h.parseAs(csvText, book);
-  h.drop([file('qa.csv', bytes)]);
+  h.drop([file('QA11-10-26.csv', bytes)]);
   await settle();
   assert.equal(h.get('result').hidden, false);
   assert.equal(h.get('warnings').hidden, false);
@@ -167,6 +177,8 @@ test('a dropped report with row notes waits for manual download', async () => {
   h.get('downloadBtn').click();
   assert.equal(h.writes.length, 1);
   assert.equal(h.writes[0].book, book.results['QA Export'].workbook);
+  assert.equal(h.writes[0].filename, 'All Evaluations - Last 90 days - updated 11-10-26.xlsx');
+  assert.equal(h.get('reportDate').value, '2026-11-10');
 });
 
 test('multiple valid tables require a choice before conversion or download', async () => {
@@ -176,7 +188,7 @@ test('multiple valid tables require a choice before conversion or download', asy
     { sheetName: 'Current QA', headerRow: 3, valid: true },
     { sheetName: 'Previous QA', headerRow: 5, valid: true }
   ] });
-  h.input(file('qa.xlsx', book));
+  h.input(file('qa-11-10-26.xlsx', book));
   await settle();
   assert.equal(h.get('sheetChoice').hidden, false);
   assert.equal(h.get('result').hidden, true);
@@ -201,7 +213,7 @@ test('multiple valid tables require a choice before conversion or download', asy
 
 test('invalid replacements clear the previous preview and downloadable workbook', async () => {
   const h = harness();
-  h.input(file('valid.xlsx', workbook()));
+  h.input(file('valid-11.10.26.xlsx', workbook()));
   await settle();
   assert.equal(h.writes.length, 1);
 
@@ -211,6 +223,7 @@ test('invalid replacements clear the previous preview and downloadable workbook'
   assert.equal(invalidFileRead, false);
   assert.equal(h.get('result').hidden, true);
   assert.equal(h.get('previewTable').children.length, 0);
+  assert.equal(h.get('downloadBtn').disabled, true);
   assert.equal(h.get('status').classList.contains('error'), true);
   h.get('downloadBtn').click();
   assert.equal(h.writes.length, 1);
@@ -232,7 +245,7 @@ test('invalid replacements clear the previous preview and downloadable workbook'
 
 test('dropping multiple reports clears the previous result without converting either file', async () => {
   const h = harness();
-  h.drop([file('valid.xlsx', workbook())]);
+  h.drop([file('valid-11.10.26.xlsx', workbook())]);
   await settle();
   const reads = h.reads.length;
   h.drop([file('first.xlsx', workbook()), file('second.xlsx', workbook())]);
@@ -248,12 +261,15 @@ test('dropping multiple reports clears the previous result without converting ei
 test('a slow earlier upload cannot replace or download over the newer report', async () => {
   const h = harness(), pending = deferred();
   const oldBook = workbook('Old QA'), newBook = workbook('Latest QA');
-  h.input({ name: 'old.xlsx', arrayBuffer: () => pending.promise });
+  h.input({ name: 'old-10.31.26.xlsx', arrayBuffer: () => pending.promise });
   assert.equal(h.get('dropZone').disabled, true);
-  h.drop([file('latest.xlsx', newBook)]);
+  h.drop([file('latest-11-10-26.xlsx', newBook)]);
   await settle();
   assert.equal(h.writes.length, 1);
   assert.equal(h.writes[0].book, newBook.results['Latest QA'].workbook);
+  assert.equal(h.writes[0].filename, 'All Evaluations - Last 90 days - updated 11-10-26.xlsx');
+  h.changeDate('2026-11-12');
+  assert.equal(h.writes.length, 1, 'Changing the date does not download the workbook again.');
   const status = h.get('status').textContent;
   pending.resolve(oldBook);
   await settle();
@@ -261,10 +277,12 @@ test('a slow earlier upload cannot replace or download over the newer report', a
   assert.equal(h.conversions.length, 1);
   assert.equal(h.writes.length, 1);
   assert.equal(h.get('status').textContent, status);
-  assert.match(h.get('sourceDetail').textContent, /latest\.xlsx.*Latest QA/);
+  assert.match(h.get('sourceDetail').textContent, /latest-11-10-26\.xlsx.*Latest QA/);
+  assert.equal(h.get('reportDate').value, '2026-11-12', 'A late read cannot overwrite the current date choice.');
   assert.equal(h.get('dropZone').disabled, false);
   h.get('downloadBtn').click();
   assert.equal(h.writes[1].book, newBook.results['Latest QA'].workbook);
+  assert.equal(h.writes[1].filename, 'All Evaluations - Last 90 days - updated 11-12-26.xlsx');
 });
 
 test('rejecting a stale read does not erase the newer result or error state', async () => {
@@ -285,7 +303,7 @@ test('rejecting a stale read does not erase the newer result or error state', as
 test('a failed browser download leaves the converted workbook available for retry', async () => {
   const h = harness(), book = workbook();
   h.failDownloads(new Error('Download blocked.'));
-  h.input(file('qa.xlsx', book));
+  h.input(file('qa-11-10-26.xlsx', book));
   await settle();
   assert.equal(h.get('result').hidden, false);
   assert.equal(h.get('status').classList.contains('error'), true);
@@ -295,4 +313,70 @@ test('a failed browser download leaves the converted workbook available for retr
   assert.equal(h.writes.length, 1);
   assert.equal(h.writes[0].book, book.results.Evaluations.workbook);
   assert.equal(h.get('status').classList.contains('success'), true);
+});
+
+test('a missing or ambiguous filename date keeps the preview and waits for a manual date', async t => {
+  for (const name of ['evaluations.xlsx', 'qa-11.10.26-and-11-09-26.xlsx']) {
+    await t.test(name, async () => {
+      const h = harness(), book = workbook();
+      h.input(file(name, book));
+      await settle();
+      assert.equal(h.get('result').hidden, false, 'Date selection does not prevent reviewing converted rows.');
+      assert.equal(h.get('reportDate').value, '');
+      assert.equal(h.get('downloadBtn').disabled, true);
+      assert.equal(h.writes.length, 0, 'An unknown date never silently becomes today or a guessed date.');
+      h.get('downloadBtn').click();
+      assert.equal(h.writes.length, 0);
+
+      h.changeDate('2026-11-09');
+      assert.equal(h.get('downloadBtn').disabled, false);
+      assert.equal(h.writes.length, 0, 'Choosing a date enables a deliberate download.');
+      h.get('downloadBtn').click();
+      assert.equal(h.writes.length, 1);
+      assert.equal(h.writes[0].filename, 'All Evaluations - Last 90 days - updated 11-09-26.xlsx');
+      assert.equal(h.writes[0].book, book.results.Evaluations.workbook);
+    });
+  }
+});
+
+test('changing or clearing the date updates the next download without reconverting', async () => {
+  const h = harness(), book = workbook();
+  h.input(file('QA11-10-26.xlsx', book));
+  await settle();
+  assert.equal(h.writes.length, 1);
+  h.changeDate('2026-12-01');
+  assert.equal(h.writes.length, 1);
+  assert.ok(h.get('outputFilename').textContent.includes('All Evaluations - Last 90 days - updated 12-01-26.xlsx'));
+  assert.equal(h.conversions.length, 1, 'A filename date change does not alter the converted evaluation data.');
+  h.get('downloadBtn').click();
+  assert.equal(h.writes[1].filename, 'All Evaluations - Last 90 days - updated 12-01-26.xlsx');
+  assert.equal(h.writes[1].book, h.writes[0].book);
+
+  h.changeDate('');
+  assert.equal(h.get('downloadBtn').disabled, true);
+  h.get('downloadBtn').click();
+  assert.equal(h.writes.length, 2, 'Clearing the date blocks a download using the previous date.');
+});
+
+test('a new upload resets a prior date choice before allowing another export', async () => {
+  const h = harness(), pending = deferred();
+  h.input(file('qa-11-10-26.xlsx', workbook('First QA')));
+  await settle();
+  h.changeDate('2026-12-01');
+  h.input({ name: 'undated-evaluations.xlsx', arrayBuffer: () => pending.promise });
+  assert.equal(h.get('reportDate').value, '', 'The previous manual date does not carry into another source file.');
+  assert.equal(h.get('downloadBtn').disabled, true);
+  assert.equal(h.get('result').hidden, true);
+  pending.resolve(workbook('Second QA'));
+  await settle();
+  assert.equal(h.get('result').hidden, false);
+  assert.equal(h.get('reportDate').value, '');
+  assert.equal(h.get('downloadBtn').disabled, true);
+  assert.equal(h.writes.length, 1);
+
+  h.input(file('qa-11.11.26.xlsx', workbook('Third QA')));
+  await settle();
+  assert.equal(h.get('reportDate').value, '2026-11-11');
+  assert.equal(h.writes.length, 2);
+  assert.equal(h.writes[1].filename, 'All Evaluations - Last 90 days - updated 11-11-26.xlsx');
 });

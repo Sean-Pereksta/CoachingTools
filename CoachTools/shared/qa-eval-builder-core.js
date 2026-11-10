@@ -24,6 +24,32 @@
   const empty = cell => !cell || cell.t === 'z' || cell.v == null || (typeof cell.v === 'string' && !cell.v.trim());
   const pad = value => String(value).padStart(2, '0');
 
+  function validCalendarDate(year, month, day) {
+    if (!Number.isInteger(year) || year < 1 || year > 9999 || !Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(day) || day < 1) return false;
+    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    return day <= [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  }
+
+  function reportDateFromFilename(name) {
+    const text = typeof name === 'string' ? name : '', found = new Set();
+    const add = (year, month, day) => {
+      if (validCalendarDate(year, month, day)) found.add(String(year).padStart(4, '0') + '-' + pad(month) + '-' + pad(day));
+    };
+    // Lookaheads also examine overlapping date-shaped text rather than picking
+    // whichever valid interpretation happens to appear first in the filename.
+    for (const match of text.matchAll(/(?=(?:^|[^0-9])(\d{1,2})([.-])(\d{1,2})\2(\d{4}|\d{2})(?=$|[^0-9]))/g)) {
+      add(match[4].length === 2 ? 2000 + +match[4] : +match[4], +match[1], +match[3]);
+    }
+    for (const match of text.matchAll(/(?=(?:^|[^0-9])(\d{4})-(\d{1,2})-(\d{1,2})(?=$|[^0-9]))/g)) add(+match[1], +match[2], +match[3]);
+    return found.size === 1 ? [...found][0] : '';
+  }
+
+  function exportFilename(isoDate) {
+    const match = typeof isoDate === 'string' && /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+    if (!match || !validCalendarDate(+match[1], +match[2], +match[3])) throw new Error('Choose a valid report date before downloading. Use YYYY-MM-DD.');
+    return 'All Evaluations - Last 90 days - updated ' + match[2] + '-' + match[3] + '-' + match[1].slice(-2) + '.xlsx';
+  }
+
   function decodeText(buffer) {
     const bytes = ArrayBuffer.isView(buffer) ? new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength) : new Uint8Array(buffer);
     let encoding = 'utf-8', offset = 0;
@@ -231,5 +257,5 @@
     return { workbook, rows, headers: [...headers], sourceSheet: source.sheetName, headerRow: source.headerRow, warnings, stats };
   }
 
-  return Object.freeze({ headers, normalize, decodeText, discoverSources, convertWorkbook });
+  return Object.freeze({ headers, normalize, reportDateFromFilename, exportFilename, decodeText, discoverSources, convertWorkbook });
 });
