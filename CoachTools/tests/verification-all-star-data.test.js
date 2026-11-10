@@ -173,7 +173,7 @@ test('monthly data ranks complete people in all five lanes without filling missi
     }
   }
   const monthly = data.aggregate({month:'2026-10',reps:roster,weekly:parse('weeklyReferral',weekly),qa:parse('qa',qa),sources});
-  const report = core.buildReport({month:'2026-10',reps:roster,lane3Values,metrics:monthly.metrics});
+  const report = core.buildReport({month:'2026-10',reps:roster,lane3Values,metrics:monthly.metrics,settings:{measures:['wipers','vaph','quality','attendance','correctives'],requireAllWiperWeeks:true}});
   assert.equal(report.rankedRows.length,5);
   assert.equal(report.excludedRows.length,15);
   assert.equal(report.winners.length,5);
@@ -192,6 +192,41 @@ test('monthly data ranks complete people in all five lanes without filling missi
     assert.ok(Object.values(excluded.ranks).every(rank => rank === null));
     assert.ok(excluded.exclusionReasons.length);
   }
+});
+
+test('three-metric defaults retain 279 people despite missing checklist sources and incomplete weekly coverage', () => {
+  const core = require('../shared/verification-all-star-core.js');
+  const roster = [], weekly = [weeklyHeader], qa = [qaHeader], lane3Values = {};
+  for (let index = 0; index < 279; index++) {
+    const name = 'Example Representative ' + index, lane = index % 5 + 1;
+    roster.push({name,key:core.nameKey(name),coach:'Example Coach',lane,vaph:10});
+    if (lane === 3) lane3Values[core.nameKey(name)] = 10;
+    weekly.push(['10/7/2026','Example Coach',name,4,10]);
+    qa.push([name,'10/8/2026','95%','evaluation-' + index]);
+  }
+  weekly.push(['10/14/2026','Example Coach',roster[0].name,4,10]);
+  const monthly = data.aggregate({month:'2026-10',reps:roster,weekly:parse('weeklyReferral',weekly),qa:parse('qa',qa)});
+  const report = core.buildReport({month:'2026-10',reps:roster,lane3Values,metrics:monthly.metrics});
+  assert.equal(report.rankedRows.length,279);
+  assert.equal(report.excludedRows.length,0);
+  assert.equal(report.eligibilityComparison.strictEligible,0);
+  assert.equal(report.eligibilityComparison.threeMetricEligible,279);
+  assert.equal(report.eligibilityComparison.recoveredByThreeMetrics,279);
+  assert.ok(report.lanes.every(lane => lane.ready));
+  assert.equal(monthly.metrics[roster[0].key].attendance,null,'Unavailable source values remain unknown.');
+  assert.equal(monthly.metrics[roster[0].key].correctives,null);
+  assert.ok(monthly.metrics[roster[1].key].issueDetails.some(issue => issue.code === 'missing-wiper-weeks' && issue.metric === 'wipers'));
+  assert.ok(report.rankedRows.every(row => row.ranks.attendance === null && row.ranks.correctives === null && row.penalty === 0));
+});
+
+test('typed source issues identify the affected measure for configurable eligibility', () => {
+  const monthly = data.aggregate({month:'2026-10',reps});
+  const details = monthly.metrics['alex example'].issueDetails;
+  assert.ok(details.some(issue => issue.code === 'missing-wipers' && issue.metric === 'wipers'));
+  assert.ok(details.some(issue => issue.code === 'missing-quality' && issue.metric === 'quality'));
+  assert.ok(details.some(issue => issue.code === 'attendance-source' && issue.metric === 'attendance'));
+  assert.ok(details.some(issue => issue.code === 'correctives-source' && issue.metric === 'correctives'));
+  assert.equal(details.length,monthly.metrics['alex example'].issues.length);
 });
 
 test('undated attendance or corrective items remain unavailable instead of becoming zero', () => {

@@ -167,7 +167,8 @@
     const checklist = uniqueChecklist.filter(row => row.date.startsWith(month));
     const metrics = Object.create(null), weeks = [...new Set(weekly.map(row => row.date))].sort();
     for (const rep of input.reps || []) {
-      const key = nameKey(rep.name), issues = [];
+      const key = nameKey(rep.name), issues = [], issueDetails = [];
+      const addIssue = (code, metric, message) => { issues.push(message); issueDetails.push({code, metric, message, blocking:true}); };
       const wipers = weekly.filter(row => row.key === key), allEvaluations = qa.filter(row => row.key === key), evaluations = allEvaluations.filter(row => row.quality != null), items = checklist.filter(row => row.key === key);
       const invalid = wipers.some(row => row.invalid) || undatedWeekly.some(row => row.key === key);
       const accepted = wipers.length && !invalid ? wipers.reduce((sum, row) => sum + row.accepted, 0) : null;
@@ -177,14 +178,15 @@
       const quality = !undatedQA && evaluations.length && evaluations.length === allEvaluations.length ? evaluations.reduce((sum, row) => sum + row.quality, 0) / evaluations.length : null;
       const attendance = sources.checklist?.attendanceAvailable && !undatedItems.some(row => row.attendance) ? items.filter(row => row.attendance).length : null;
       const correctives = sources.checklist?.correctivesAvailable && !undatedItems.some(row => row.isCorrective) ? items.filter(row => row.isCorrective).length : null;
-      if (accepted == null) issues.push(invalid ? 'Wiper counts need review' : 'No Wiper data for this month');
-      else if (!offered) issues.push('No Wipers offered; rate is unavailable');
-      if (wipers.length && weeks.some(week => !wipers.some(row => row.date === week))) issues.push(`Missing Wiper data for ${weeks.filter(week => !wipers.some(row => row.date === week)).length} available week(s)`);
-      if (quality == null) issues.push(undatedQA ? 'Evaluation dates need review' : allEvaluations.length ? 'Evaluation scores need review' : 'No scored evaluations for this month');
-      if (attendance == null && !undatedItems.some(row => row.attendance)) issues.push('Attendance source columns unavailable');
-      if (correctives == null && !undatedItems.some(row => row.isCorrective)) issues.push('Corrective source column unavailable');
-      if (undatedItems.some(row => row.attendance || row.isCorrective)) issues.push('Checklist item dates need review');
-      metrics[key] = {accepted, offered, wiperRate: offered > 0 ? accepted / offered : null, quality, qaCount: evaluations.length, attendance, correctives, issues,
+      if (accepted == null) addIssue(invalid ? 'invalid-wipers' : 'missing-wipers', 'wipers', invalid ? 'Wiper counts need review' : 'No Wiper data for this month');
+      else if (!offered) addIssue('zero-wiper-offers', 'wipers', 'No Wipers offered; rate is unavailable');
+      if (wipers.length && weeks.some(week => !wipers.some(row => row.date === week))) addIssue('missing-wiper-weeks', 'wipers', `Missing Wiper data for ${weeks.filter(week => !wipers.some(row => row.date === week)).length} available week(s)`);
+      if (quality == null) addIssue(undatedQA ? 'invalid-quality-dates' : allEvaluations.length ? 'invalid-quality' : 'missing-quality', 'quality', undatedQA ? 'Evaluation dates need review' : allEvaluations.length ? 'Evaluation scores need review' : 'No scored evaluations for this month');
+      if (attendance == null && !undatedItems.some(row => row.attendance)) addIssue('attendance-source', 'attendance', 'Attendance source columns unavailable');
+      if (correctives == null && !undatedItems.some(row => row.isCorrective)) addIssue('correctives-source', 'correctives', 'Corrective source column unavailable');
+      if (undatedItems.some(row => row.attendance)) addIssue('invalid-attendance-dates', 'attendance', 'Checklist attendance dates need review');
+      if (undatedItems.some(row => row.isCorrective)) addIssue('invalid-correctives-dates', 'correctives', 'Checklist corrective dates need review');
+      metrics[key] = {accepted, offered, wiperRate: offered > 0 ? accepted / offered : null, quality, qaCount: evaluations.length, attendance, correctives, issues, issueDetails,
         weeklyWipers: wipers.map(row => ({week: row.date, accepted: row.accepted, offered: row.offered, rate: !row.invalid && row.offered > 0 ? row.accepted / row.offered : null})).sort((a, b) => a.week.localeCompare(b.week))};
     }
     return {metrics, diagnostics: [...new Set(diagnostics)], sources, weeks};
