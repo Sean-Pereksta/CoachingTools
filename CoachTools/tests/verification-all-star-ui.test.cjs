@@ -60,8 +60,8 @@ function sourceBooks(data) {
   return { monthly, lane3 };
 }
 
-function createHarness(data = fixture()) {
-  const { window, document } = parseHTML(html), writes = [], charts = [], books = sourceBooks(data);
+function createHarness(data = fixture(), options = {}) {
+  const { window, document } = parseHTML(html), writes = [], charts = [], loads = [], books = sourceBooks(data), storage = options.storage || new Map();
   const get = id => document.getElementById(id);
   for (const detail of document.querySelectorAll('details')) Object.defineProperty(detail, 'open', {
     get: () => detail.hasAttribute('open'),
@@ -80,28 +80,45 @@ function createHarness(data = fixture()) {
     return option;
   }
   window.XLSX = { ...XLSX, read: book => book, writeFile: (book, filename) => writes.push({ book, filename }) };
+  window.localStorage = options.blockStorage ? { getItem() { throw Error('Unavailable'); }, setItem() { throw Error('Unavailable'); } } : {
+    getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value))
+  };
   window.VerificationAllStarCore = core;
   window.VerificationAllStarData = {
-    loadMonth: async () => ({ reps: data.reps, metrics: data.metrics, weeks: ['2026-10-04'], diagnostics: [], scopeLabel: 'All people' }),
+    loadMonth: async (month, reps, loadOptions) => { loads.push({ month, reps, options: loadOptions }); return { reps: data.reps, metrics: data.metrics, weeks: ['2026-10-04'], diagnostics: [], scopeLabel: 'All people' }; },
     filterWarningsForRoster: warnings => warnings
   };
   window.Chart = function Chart(canvas, config) { this.canvas = canvas; this.config = config; this.destroyed = false; this.destroy = () => { this.destroyed = true; }; charts.push(this); };
   window.setTimeout = callback => { queueMicrotask(callback); return 0; };
+  const asyncUploadHandlers = new Map(), wiperInput = get('wiper-file'), addWiperListener = wiperInput.addEventListener.bind(wiperInput);
+  wiperInput.addEventListener = (type, handler, ...args) => { if (type === 'change') asyncUploadHandlers.set(type, handler); addWiperListener(type, handler, ...args); };
   vm.runInNewContext(script, { window, document, Option });
   function change(id, value, type = 'change') { get(id).value = value; get(id).dispatchEvent(new window.Event(type)); }
   async function upload(id, book, name) {
     Object.defineProperty(get(id), 'files', { configurable: true, value: [{ name, arrayBuffer: async () => book }] });
-    get(id).dispatchEvent(new window.Event('change')); await settle();
+    const input = get(id);
+    // linkedom clears event.target after dispatch; await the registered async
+    // upload handler with the stable target supplied by a browser event.
+    if (id === 'wiper-file') await asyncUploadHandlers.get('change')({ target: input });
+    else input.dispatchEvent(new window.Event('change'));
+    await settle();
   }
-  async function run() {
+  async function run({ skipLane3 = false } = {}) {
     change('report-month', '2026-10');
     await upload('monthly-file', books.monthly, 'Verification October.xlsx');
-    await upload('lane3-file', books.lane3, 'Lane 3 Monthly.xlsx');
-    assert.equal(get('run-report').disabled, false, 'Both workbooks and the matched month tab enable the report.');
+    if (!skipLane3) await upload('lane3-file', books.lane3, 'Lane 3 Monthly.xlsx');
+    assert.equal(get('run-report').disabled, false, 'The roster and sources required by the selected measures enable the report.');
     get('run-report').click(); await settle();
     assert.equal(get('results').hidden, false, get('status').textContent);
   }
-  return { window, document, get, writes, charts, data, run, change };
+  function settings(value) {
+    if (value.measures) core.MEASURES.forEach(measure => { get('measure-' + measure.id).checked = value.measures.includes(measure.id); });
+    if (value.requireAllWiperWeeks !== undefined) get('require-all-wiper-weeks').checked = value.requireAllWiperWeeks;
+    if (value.correctivePenalty !== undefined) get('corrective-penalty').value = String(value.correctivePenalty);
+    get('measure-wipers').dispatchEvent(new window.Event('change'));
+  }
+  async function rerun() { get('run-report').click(); await settle(); assert.equal(get('results').hidden, false, get('status').textContent); }
+  return { window, document, get, writes, charts, loads, data, books, run, rerun, change, settings, upload, storage };
 }
 
 function sheetRows(book, name) { return XLSX.utils.sheet_to_json(book.Sheets[name], { defval: null, raw: true }); }
@@ -109,6 +126,7 @@ function standingNames(h) { return [...h.get('standings').querySelectorAll('.rep
 
 test('the report foregrounds eligible standings and each lane winner with their own stats', async () => {
   const h = createHarness();
+  h.get('preset-all').click();
   assert.equal(h.get('report-setup').open, true);
   await h.run();
   assert.equal(h.get('report-setup').open, false, 'Completed report settings collapse so the results lead.');
@@ -154,7 +172,7 @@ test('the report foregrounds eligible standings and each lane winner with their 
 });
 
 test('filters keep excluded names out of standings while exports retain the full eligible cohort', async () => {
-  const h = createHarness(); await h.run();
+  const h = createHarness(); h.get('preset-all').click(); await h.run();
   h.change('lane-filter', '3');
   assert.deepEqual(standingNames(h), ['Lane 3 Leader', 'Lane 3 Peer']);
   assert.equal(h.charts.filter(chart => !chart.destroyed).length, 2);
@@ -219,6 +237,147 @@ test('an entirely excluded roster exports no partial standings or false lane win
   assert.equal(sheetRows(h.writes[0].book, 'Full Rankings').length, 0);
   assert.equal(sheetRows(h.writes[0].book, 'Lane Winners').length, 0);
   assert.equal(sheetRows(h.writes[0].book, 'Excluded').length, 26);
+});
+
+test('performance defaults retain valid performance despite unknown checklist counts and Wiper week gaps', async () => {
+  const data = fixture(), metric = data.metrics['Lane 1 Leader'];
+  metric.attendance = null; metric.correctives = null;
+  metric.issues = [{ code: 'missing-wiper-weeks', metric: 'wipers', message: 'Missing Wiper data for 2 of 4 available weeks.', blocking: true }];
+  const h = createHarness(data);
+  for (const measure of core.MEASURES) assert.equal(h.get('measure-' + measure.id).checked, ['wipers', 'vaph', 'quality'].includes(measure.id));
+  assert.equal(h.get('require-all-wiper-weeks').checked, false);
+  assert.equal(h.get('corrective-penalty').disabled, true);
+  await h.run();
+  assert.ok(standingNames(h).includes('Lane 1 Leader'));
+  const leader = [...h.get('standings').querySelectorAll('tr')].find(row => row.querySelector('.rep-name')?.firstChild.textContent === 'Lane 1 Leader');
+  assert.equal(leader.querySelector('.score').textContent, '3');
+  assert.match(leader.children[6].textContent, /—not scored/);
+  assert.match(leader.children[7].textContent, /—not scored/);
+  assert.doesNotMatch(h.get('active-formula').textContent, /Attendance|Correctives|500/);
+  assert.match(h.get('active-measures').textContent, /Wipers, VAPH, Call Quality/);
+  assert.match(h.get('active-coverage').textContent, /missing weeks do not exclude/);
+  assert.match(h.get('review-list').textContent, /Missing Wiper data for 2 of 4 available weeks.*informational/);
+  assert.match(h.get('eligibility-period').textContent, /October 2026/);
+  assert.match(h.get('eligibility-comparison').textContent, /Performance only includes 1 more/);
+  const reasons = [...h.get('reason-counts').querySelectorAll('tr')];
+  assert.equal(reasons.find(row => /Call Quality/.test(row.textContent)).lastChild.textContent, '5');
+  assert.ok(!reasons.some(row => /Missing Wiper weeks/.test(row.textContent)), 'Optional week gaps are not counted as exclusion reasons.');
+  h.get('export-report').click();
+  const saved = XLSX.read(XLSX.write(h.writes[0].book, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
+  const exported = sheetRows(saved, 'Full Rankings').find(row => row.Representative === 'Lane 1 Leader');
+  assert.equal(exported['Total Points'], 3);
+  assert.equal(exported['Attendance Count'], null);
+  assert.equal(exported['Corrective Count'], null);
+  assert.equal(exported['Attendance Rank'], null);
+  assert.equal(exported['Corrective Rank'], null);
+  assert.equal(exported['Corrective Penalty'], 0);
+  const settings = new Map(sheetRows(saved, 'Settings').map(row => [row.Setting, row.Value]));
+  assert.equal(settings.get('Scored measure IDs'), 'wipers, vaph, quality');
+  assert.equal(settings.get('Every available Wiper week required'), false);
+  assert.equal(settings.get('Corrective penalty applied'), false);
+  assert.ok(sheetRows(saved, 'Eligibility Review').some(row => row['Review Type'] === 'Informational' && row.Representative === 'Lane 1 Leader'));
+
+  h.get('preset-all').click();
+  assert.equal(h.get('results').hidden, true, 'Changed eligibility options invalidate the displayed report.');
+  assert.equal(h.get('export-report').disabled, true);
+  h.get('export-report').click(); assert.equal(h.writes.length, 1, 'An old report cannot be exported after changing its options.');
+  h.settings({ requireAllWiperWeeks: true }); await h.rerun();
+  assert.ok(!standingNames(h).includes('Lane 1 Leader'));
+  assert.match(h.get('excluded-list').textContent, /Missing or invalid attendance/i);
+  assert.match(h.get('reason-counts').textContent, /Missing Wiper weeks/);
+  assert.match(h.get('eligibility-overview').textContent, /counts (?:can )?overlap/i);
+  const reasonTotal = [...h.get('reason-counts').querySelectorAll('tr')].reduce((sum, row) => sum + Number(row.lastChild.textContent), 0);
+  assert.ok(reasonTotal > 17, 'Overlapping reasons are reported individually rather than presented as mutually exclusive counts.');
+  h.get('export-report').click();
+  const review = sheetRows(h.writes[1].book, 'Eligibility Review');
+  assert.equal(review.find(row => row['Review Type'] === 'Reason count' && row.Code === 'missing-wiper-weeks').People, 1);
+  assert.ok(review.some(row => row['Review Type'] === 'Excluded person' && row.Representative === 'Lane 1 Leader' && row.Code === 'missing-attendance'));
+  h.get('preset-performance').click(); await h.rerun();
+  assert.equal(h.get('require-all-wiper-weeks').checked, false);
+  assert.ok(standingNames(h).includes('Lane 1 Leader'));
+});
+
+test('custom selected measures and corrective points persist and reproduce the exported calculation', async () => {
+  const storage = new Map(), h = createHarness(fixture(), { storage });
+  h.settings({ measures: ['quality', 'correctives'], correctivePenalty: 25 });
+  assert.equal(h.get('corrective-penalty').disabled, false);
+  assert.equal(h.get('require-all-wiper-weeks').disabled, true);
+  await h.run();
+  assert.ok(standingNames(h).includes('Lane 2 No Wipers'), 'Missing an unselected measure does not exclude the representative.');
+  assert.ok(standingNames(h).includes('Lane 2 No VAPH'));
+  assert.match(h.get('active-formula').textContent, /Call Quality rank \+ Correctives rank \+ 25 × corrective count/);
+  h.get('export-report').click();
+  const saved = XLSX.read(XLSX.write(h.writes[0].book, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
+  for (const row of sheetRows(saved, 'Full Rankings')) {
+    assert.equal(row['Wiper Rank'], null);
+    assert.equal(row['VAPH Rank'], null);
+    assert.equal(row['Attendance Rank'], null);
+    assert.equal(row['Corrective Penalty'], row['Corrective Count'] * 25);
+    assert.equal(row['Total Points'], row['Call Quality Rank'] + row['Corrective Rank'] + row['Corrective Penalty']);
+  }
+  const exportedSettings = new Map(sheetRows(saved, 'Settings').map(row => [row.Setting, row.Value]));
+  assert.deepEqual(JSON.parse(exportedSettings.get('Settings JSON')), { measures: ['quality', 'correctives'], requireAllWiperWeeks: false, correctivePenalty: 25 });
+  const restored = createHarness(fixture(), { storage });
+  assert.equal(restored.get('measure-quality').checked, true);
+  assert.equal(restored.get('measure-correctives').checked, true);
+  assert.equal(restored.get('measure-wipers').checked, false);
+  assert.equal(restored.get('corrective-penalty').value, '25');
+  h.settings({ measures: [] });
+  assert.equal(h.get('run-report').disabled, true);
+  assert.equal(h.get('settings-error').hidden, false);
+  assert.match(h.get('settings-error').textContent, /at least one/i);
+  const stillValid = createHarness(fixture(), { storage });
+  assert.equal(stillValid.get('measure-quality').checked, true, 'An empty selection does not replace the last valid saved settings.');
+});
+
+test('older preferences and unavailable browser storage keep the tolerant performance defaults', async () => {
+  const storage = new Map([['verificationAllStar.settings.v1', JSON.stringify({ measures: core.MEASURES.map(measure => measure.id), requireAllWiperWeeks: true })]]);
+  const h = createHarness(fixture(), { storage });
+  assert.equal(h.get('measure-attendance').checked, false);
+  assert.equal(h.get('measure-correctives').checked, false);
+  assert.equal(h.get('require-all-wiper-weeks').checked, false);
+  const blocked = createHarness(fixture(), { blockStorage: true });
+  blocked.settings({ measures: ['wipers', 'quality'] });
+  await blocked.run();
+  assert.match(blocked.get('active-measures').textContent, /Wipers, Call Quality/);
+  assert.equal(blocked.get('results').hidden, false);
+});
+
+test('an invalid corrective penalty blocks only when Correctives is selected', async () => {
+  const h = createHarness(); h.get('preset-all').click(); await h.run();
+  h.settings({ correctivePenalty: -1 });
+  assert.equal(h.get('run-report').disabled, true);
+  assert.equal(h.get('settings-error').hidden, false);
+  h.settings({ measures: ['wipers', 'vaph', 'quality'] });
+  assert.equal(h.get('corrective-penalty').disabled, true);
+  assert.equal(h.get('run-report').disabled, false, 'An inactive negative penalty does not block performance scoring.');
+  await h.rerun();
+  assert.doesNotMatch(h.get('active-formula').textContent, /corrective|500|-1/i);
+  h.get('export-report').click();
+  assert.ok(sheetRows(h.writes[0].book, 'Full Rankings').every(row => row['Corrective Penalty'] === 0));
+  h.settings({ measures: ['wipers', 'vaph', 'quality', 'correctives'] });
+  assert.equal(h.get('corrective-penalty').value, '-1');
+  assert.equal(h.get('run-report').disabled, true, 'Reactivating Correctives requires correcting its invalid penalty.');
+  h.settings({ correctivePenalty: 0 });
+  assert.equal(h.get('run-report').disabled, false);
+});
+
+test('quality-only scoring needs neither Lane 3 nor a valid optional Wiper addition', async () => {
+  const h = createHarness(); h.settings({ measures: ['quality'] });
+  h.window.VerificationAllStarData.parseWiperUpload = async () => { throw Error('Unreadable Wiper report.'); };
+  await h.upload('wiper-file', {}, 'bad-wipers.csv');
+  await h.run({ skipLane3: true });
+  assert.equal(h.get('lane3-sheet').disabled, true);
+  assert.ok(standingNames(h).includes('Lane 3 Leader'), 'The monthly roster is enough when VAPH is not scored.');
+  assert.equal(h.loads.at(-1).options.uploads.length, 0, 'Inactive failed Wiper additions are not sent to the data reader.');
+  assert.match(h.get('active-measures').textContent, /Call Quality/);
+  h.settings({ measures: ['quality', 'vaph'] });
+  assert.equal(h.get('run-report').disabled, true, 'Selecting VAPH requires the Lane 3 workbook and month tab.');
+  await h.upload('lane3-file', h.books.lane3, 'Lane 3 Monthly.xlsx');
+  assert.equal(h.get('run-report').disabled, false);
+  await h.rerun();
+  h.settings({ measures: ['quality', 'vaph', 'wipers'] });
+  assert.equal(h.get('run-report').disabled, true, 'Selecting Wipers requires resolving its retained failed addition.');
 });
 
 module.exports = { createHarness, fixture };

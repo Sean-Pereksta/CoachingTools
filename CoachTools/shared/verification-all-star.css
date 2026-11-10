@@ -25,3 +25,34 @@
 .review .excluded-list ul{max-height:none;overflow:visible;margin-top:4px}
 @media(max-width:900px){.winner-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.winner-grid{grid-template-columns:1fr}.setup>summary .pill{display:none}.winner-stats{display:grid;grid-template-columns:1fr 1fr;column-gap:16px}.winner-stats>div:last-child{grid-column:1/-1}}
+.scoring-settings{margin:22px 0 0;border:1px solid var(--line);border-radius:10px;padding:17px 20px}
+.scoring-settings legend{padding:0 7px;font-size:13px;font-weight:700;color:var(--ink)}
+.scoring-settings>p{font-size:12px;color:var(--muted)}
+.scoring-presets{display:flex;gap:8px;margin:13px 0}
+.scoring-presets button{font-size:12px;padding:7px 12px}
+.scoring-presets button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:white}
+.measure-options{display:flex;flex-wrap:wrap;gap:12px 22px}
+.measure-options label,.week-option{display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer}
+.measure-options input,.week-option input{min-height:0;width:16px;height:16px;padding:0;margin:0;accent-color:var(--accent)}
+.eligibility-options{display:flex;align-items:center;gap:24px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:13px;margin-top:15px}
+.penalty-option{display:flex;align-items:center;gap:10px;font-size:12px}
+.penalty-option input{width:100px;font-size:12px;min-height:36px;padding:6px 9px}
+.penalty-option input:disabled{background:var(--soft);color:var(--muted)}
+.scoring-settings .settings-help{margin-top:12px;font-size:11px}
+.scoring-settings .settings-preview{margin-top:10px;font-size:12px;color:var(--ink)}
+.scoring-settings .settings-error{color:var(--red);margin-top:10px}
+.active-settings{padding:18px 21px;margin-bottom:20px;display:flex;justify-content:space-between;gap:20px}
+.active-settings h3{font-size:15px;margin-bottom:7px}
+.active-settings p{font-size:12px;color:var(--muted);margin-top:4px}
+.active-settings #active-formula{color:var(--ink)}
+.settings-actions{display:flex;flex-direction:column;gap:9px;align-items:center;flex-shrink:0}
+.settings-actions button,.settings-actions a{font-size:12px}
+.settings-actions a{color:var(--accent)}
+.eligibility-review{padding:21px 0 0;margin-bottom:20px;overflow:hidden}
+.eligibility-review>.section-head,.eligibility-review>p{margin:0 21px 10px}
+.eligibility-review>p{font-size:12px;color:var(--muted)}
+.eligibility-review .table-wrap{margin-top:16px;max-height:340px}
+.eligibility-review td:first-child{white-space:normal;min-width:230px}
+.eligibility-review td:last-child,.eligibility-review th:last-child{text-align:right}
+.eligibility-review .reason-count-note{font-size:11px;padding-top:11px;padding-bottom:5px}
+@media(max-width:700px){.active-settings{flex-direction:column}.settings-actions{flex-direction:row;justify-content:space-between}.scoring-settings{padding:14px}.measure-options{display:grid;grid-template-columns:1fr}.eligibility-options{gap:15px}.week-option{align-items:start}.week-option input{margin-top:2px;flex-shrink:0}}

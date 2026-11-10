@@ -58,7 +58,8 @@
   }
   const isNameLabel = value => /^(name|names|fullname|staff|staffname|employee|employeename|employeefullname|representative|representativename|rep|repname|agent|agentname)$/.test(headerKey(value));
   const isTotal = value => /^(totals?|grandtotals?)$/.test(headerKey(value));
-  const isPerson = value => clean(value) && /[a-z\u00c0-\uffff]/i.test(clean(value)) && !isNameLabel(value) && !isTotal(value);
+  const isMetricLabel = value => /%/.test(clean(value)) || /^(acw|acwtime|acwtimepercall|aftercallwork|aftercallworktime|aht|averagehandletime|avghandletime|handletime|talktime|averagetalktime|holdtime|averageholdtime|staffedtime|totalstaffedtime|staffedhours|totalstaffedhours|loggedintime|occupancy|utilization|servicelevel|answer(ed)?calls|callsanswered|callshandled|totalcalls|abandonedcalls|totalverifications|verificationactivity|verificationactivityperstaffedtime|avgcasesperhrsalesforce|vaph|wipers|callquality|attendances?|correctives)$/.test(headerKey(value));
+  const isPerson = value => clean(value) && /[a-z\u00c0-\uffff]/i.test(clean(value)) && !isNameLabel(value) && !isTotal(value) && !isMetricLabel(value);
   function parseMonthly(workbook, XLSX) {
     const sheets = workbookSheets(workbook, XLSX), reps = [], warnings = [];
     const laneNames = Object.keys(sheets);
@@ -116,6 +117,9 @@
       const seen = new Set();
       for (let rowIndex = 5; rowIndex < rosterEnd; rowIndex++) {
         const name = clean((rows[rowIndex] || [])[namesColumn]);
+        // The authoritative roster ends at its own section boundary. Summary
+        // labels between that roster and the activity table are not people.
+        if ((seen.size && (isTotal(name) || isNameLabel(name))) || isMetricLabel(name)) break;
         if (!isPerson(name)) continue;
         const key = normalizeName(name);
         if (seen.has(key)) continue;
@@ -154,11 +158,82 @@
     }
     return {values, warnings};
   }
+  const MEASURES = Object.freeze([
+    {id:'wipers',label:'Wipers',descending:true}, {id:'vaph',label:'VAPH',descending:true},
+    {id:'quality',label:'Call Quality',descending:true}, {id:'attendance',label:'Attendance',descending:false},
+    {id:'correctives',label:'Correctives',descending:false}
+  ].map(Object.freeze));
+  const DEFAULT_MEASURES = ['wipers','vaph','quality'];
+  const fieldLabels = Object.fromEntries(MEASURES.map(measure => [measure.id,measure.label]));
+  function normalizeSettings(settings) {
+    settings = settings == null ? {} : settings;
+    if (typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Choose valid ranking settings.');
+    const supplied = Object.prototype.hasOwnProperty.call(settings,'measures');
+    const requested = supplied ? settings.measures : DEFAULT_MEASURES;
+    if (!Array.isArray(requested) || !requested.length) throw new Error('Select at least one ranking measure.');
+    const ids = requested.map(value => clean(value).toLowerCase());
+    if (ids.some(id => !MEASURES.some(measure => measure.id === id))) throw new Error('Choose ranking measures from Wipers, VAPH, Call Quality, Attendance, and Correctives.');
+    const penalty = settings.correctivePenalty === undefined ? 500 : number(settings.correctivePenalty);
+    if (penalty == null || penalty < 0) throw new Error('Corrective penalty must be a nonnegative number.');
+    if (settings.requireAllWiperWeeks !== undefined && typeof settings.requireAllWiperWeeks !== 'boolean') throw new Error('The Wiper week requirement must be on or off.');
+    return {measures:MEASURES.filter(measure => ids.includes(measure.id)).map(measure => measure.id),
+      requireAllWiperWeeks:settings.requireAllWiperWeeks === true,correctivePenalty:penalty};
+  }
+  function issueMetric(value, message) {
+    const aliases = {wiper:'wipers',wipers:'wipers',vaph:'vaph',activity:'vaph',quality:'quality',qa:'quality',evaluation:'quality',evaluations:'quality',callquality:'quality',attendance:'attendance',corrective:'correctives',correctives:'correctives',checklist:'checklist'};
+    if (aliases[headerKey(value)]) return aliases[headerKey(value)];
+    if (/\bwiper|\baccepted\b|\boffered\b/i.test(message)) return 'wipers';
+    if (/\bvaph\b|activity per|cases per hr/i.test(message)) return 'vaph';
+    if (/\bqa\b|evaluat|call quality|quality score/i.test(message)) return 'quality';
+    if (/checklist/i.test(message)) return 'checklist';
+    if (/attendance/i.test(message) && /corrective/i.test(message)) return 'checklist';
+    if (/attendance/i.test(message)) return 'attendance';
+    if (/corrective/i.test(message)) return 'correctives';
+    return 'source';
+  }
+  function normalizeIssue(issue) {
+    if (!issue) return null;
+    const value = typeof issue === 'string' ? {message:issue,blocking:true} : issue;
+    if (typeof value !== 'object') return null;
+    const message = clean(value.message) || 'Missing or conflicting source data.';
+    const metric = issueMetric(value.metric,message);
+    const missingWeeks = value.code === 'missing-wiper-weeks' || (/missing.*wiper.*week|wiper.*missing.*week/i.test(message));
+    const code = missingWeeks ? 'missing-wiper-weeks' : clean(value.code) || 'source-issue';
+    return {code,metric:missingWeeks ? 'wipers' : metric,message,
+      blocking:value.blocking !== false && value.severity !== 'warning' && value.severity !== 'info'};
+  }
+  function evaluateEligibility(row, settings, duplicate) {
+    const selected = new Set(settings.measures), details = [], dataWarnings = [];
+    const missing = settings.measures.filter(field => row[field] == null);
+    missing.forEach(field => details.push({code:'missing-' + field,metric:field,message:'Missing or invalid ' + fieldLabels[field] + '.'}));
+    for (const issue of row.issueDetails) {
+      const relevant = issue.metric === 'source' || selected.has(issue.metric) || (issue.metric === 'checklist' && (selected.has('attendance') || selected.has('correctives')));
+      if (!relevant) continue;
+      const detail = {code:issue.code,metric:issue.metric,message:issue.message};
+      const blocking = issue.code === 'missing-wiper-weeks' ? settings.requireAllWiperWeeks : issue.blocking;
+      (blocking ? details : dataWarnings).push(detail);
+    }
+    const provisional = details.length > 0;
+    if (duplicate) details.push({code:'duplicate-identity',metric:'identity',message:'Duplicate representative in the monthly roster; resolve the duplicate before ranking.'});
+    const unique = values => [...new Map(values.map(value => [value.code + '|' + value.metric + '|' + value.message,value])).values()];
+    const exclusionDetails = unique(details);
+    return {missing,provisional,eligible:!exclusionDetails.length,exclusionDetails,exclusionReasons:exclusionDetails.map(detail => detail.message),dataWarnings:unique(dataWarnings)};
+  }
+  function summarizeExclusions(rows) {
+    const reasons = new Map();
+    for (const row of rows) for (const detail of row.exclusionDetails) {
+      const key = detail.code + '|' + detail.metric;
+      if (!reasons.has(key)) {
+        const label = detail.code === 'missing-wiper-weeks' ? 'Missing Wiper weeks' : detail.code === 'duplicate-identity' ? 'Duplicate representative identity' : detail.message;
+        reasons.set(key,{code:detail.code,metric:detail.metric,label,people:new Set()});
+      }
+      reasons.get(key).people.add(row.key);
+    }
+    return [...reasons.values()].map(({people,...reason}) => ({...reason,count:people.size})).sort((a,b) => b.count - a.count || a.label.localeCompare(b.label));
+  }
   function buildReport(options) {
     const {reps = [], lane3Values = {}, metrics = {}, month = ''} = options || {};
-    const rankFields = ['wipers','vaph','quality','attendance','correctives'];
-    const fieldLabels = {wipers:'Wipers',vaph:'VAPH',quality:'Call Quality',attendance:'attendance',correctives:'correctives'};
-    const blocksRanking = issue => issue && issue.blocking !== false && issue.severity !== 'warning' && issue.severity !== 'info';
+    const settings = normalizeSettings(options && options.settings), rankFields = settings.measures;
     const normalizedMetrics = new Map(Object.entries(metrics instanceof Map ? Object.fromEntries(metrics) : metrics).map(([key,value]) => [normalizeName(key), value]));
     const lane3 = new Map(Object.entries(lane3Values instanceof Map ? Object.fromEntries(lane3Values) : lane3Values).map(([key,value]) => [normalizeName(key), value]));
     const warnings = [], rows = reps.map(rep => {
@@ -167,27 +242,21 @@
       const wipers = accepted != null && accepted >= 0 && offered != null && offered > 0 && accepted <= offered ? accepted / offered : null;
       const rawVaph = Number(rep.lane) === 3 ? lane3.get(key) : rep.vaph;
       const vaph = number(rawVaph), quality = number(metric.quality), attendance = number(metric.attendance), correctives = number(metric.correctives);
-      const issues = (Array.isArray(metric.issues) ? metric.issues : metric.issues ? [metric.issues] : []).map(issue => typeof issue === 'string' ? {message:issue,blocking:true} : issue);
+      const rawIssues = Array.isArray(metric.issueDetails) ? metric.issueDetails : Array.isArray(metric.issues) ? metric.issues : metric.issues ? [metric.issues] : [];
+      const issues = rawIssues.map(normalizeIssue).filter(Boolean);
       const result = {...rep, key, lane:Number(rep.lane), accepted, offered, wipers, wiperRate:wipers, vaph:vaph != null && vaph >= 0 ? vaph : null,
         quality:quality != null && quality >= 0 && quality <= 1 ? quality : null, qaCount:number(metric.qaCount),
         attendance:attendance != null && attendance >= 0 && Number.isInteger(attendance) ? attendance : null,
         correctives:correctives != null && correctives >= 0 && Number.isInteger(correctives) ? correctives : null,
-        weeklyWipers:metric.weeklyWipers || [], issues, ranks:Object.fromEntries(rankFields.map(field => [field,null])), total:null, penalty:null, laneRank:null, winner:false};
-      result.penalty = result.correctives == null ? null : result.correctives * 500;
-      result.missing = rankFields.filter(field => result[field] == null);
-      result.provisional = result.missing.length > 0 || issues.some(blocksRanking);
+        weeklyWipers:metric.weeklyWipers || [], issues, issueDetails:issues, ranks:Object.fromEntries(MEASURES.map(measure => [measure.id,null])), total:null, penalty:null, laneRank:null, winner:false};
+      result.penalty = !rankFields.includes('correctives') ? 0 : result.correctives == null ? null : result.correctives * settings.correctivePenalty;
       if (!result.coach) warnings.push(result.name + ': coach was not found in Phone Data.');
       return result;
     });
     const keyCounts = new Map();
     rows.forEach(row => keyCounts.set(row.key, (keyCounts.get(row.key) || 0) + 1));
     rows.forEach(row => {
-      row.exclusionReasons = [
-        ...row.missing.map(field => 'Missing or invalid ' + fieldLabels[field] + '.'),
-        ...row.issues.filter(blocksRanking).map(issue => clean(issue.message) || 'Missing or conflicting source data.'),
-        ...(keyCounts.get(row.key) > 1 ? ['Duplicate representative in the monthly roster; resolve the duplicate before ranking.'] : [])
-      ];
-      row.eligible = row.exclusionReasons.length === 0;
+      Object.assign(row,evaluateEligibility(row,settings,keyCounts.get(row.key) > 1));
     });
     const lanes = [];
     for (let lane = 1; lane <= 5; lane++) {
@@ -217,10 +286,15 @@
         winners:ordered.filter(row => row.winner), rankedRows:ordered, excludedRows:excluded, rows:[...ordered,...excluded]});
     }
     const rankedRows = lanes.flatMap(lane => lane.rankedRows), excludedRows = lanes.flatMap(lane => lane.excludedRows);
-    return {month, rows:lanes.flatMap(lane => lane.rows), rankedRows, excludedRows, lanes, winners:rankedRows.filter(row => row.winner), warnings,
+    const threeSettings = normalizeSettings(), strictSettings = normalizeSettings({measures:MEASURES.map(measure => measure.id),requireAllWiperWeeks:true});
+    const eligibleCount = comparison => rows.filter(row => evaluateEligibility(row,comparison,keyCounts.get(row.key) > 1).eligible).length;
+    const threeMetricEligible = eligibleCount(threeSettings), strictEligible = eligibleCount(strictSettings);
+    return {month, settings, rows:lanes.flatMap(lane => lane.rows), rankedRows, excludedRows, lanes, winners:rankedRows.filter(row => row.winner), warnings,
+      exclusionSummary:summarizeExclusions(excludedRows),
+      eligibilityComparison:{currentEligible:rankedRows.length,threeMetricEligible,strictEligible,recoveredByThreeMetrics:threeMetricEligible - strictEligible},
       stats:{totalRows:rows.length,eligibleRows:rankedRows.length,excludedRows:excludedRows.length,readyLanes:lanes.filter(lane => lane.ready).length}};
   }
-  const api = {normalizeName, nameKey:normalizeName, previousMonth, selectMonthSheet, workbookSheets, parseMonthly, parseLane3, buildReport};
+  const api = {MEASURES,normalizeSettings,normalizeName, nameKey:normalizeName, previousMonth, selectMonthSheet, workbookSheets, parseMonthly, parseLane3, buildReport};
   root.VerificationAllStarCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
