@@ -100,16 +100,24 @@ test('exact ties share competition ranks and winner status', () => {
   assert.ok(report.winners.every(r => r.total === 5 && r.laneRank === 1));
   assert.equal(report.rows.find(r => r.name === 'Alex Demo').ranks.wipers,3);
 });
-test('missing data and zero offered block the whole lane winner, without awarding false zero scores', () => {
+test('missing data and zero offered exclude that representative while complete peers still win', () => {
   const report = core.buildReport({reps:[rep('River Example'),rep('Morgan Sample')],metrics:{
     'river example':metric(), 'morgan sample':metric(0,0,null,null,null)
   }});
   const missing = report.rows.find(r => r.name === 'Morgan Sample');
   assert.deepEqual(missing.missing,['wipers','quality','attendance','correctives']);
   assert.equal(missing.total,null);
-  assert.equal(report.winners.length,0);
-  assert.equal(report.lanes[0].ready,false);
-  assert.ok(report.rows.every(row => row.laneProvisional));
+  assert.equal(missing.eligible,false);
+  assert.deepEqual(missing.ranks,{wipers:null,vaph:null,quality:null,attendance:null,correctives:null});
+  assert.equal(missing.laneRank,null);
+  assert.equal(report.winners.length,1);
+  assert.equal(report.winners[0].name,'River Example');
+  assert.equal(report.winners[0].total,5);
+  assert.equal(report.lanes[0].ready,true);
+  assert.equal(report.lanes[0].provisional,false);
+  assert.ok(report.rows.every(row => !row.laneProvisional));
+  assert.deepEqual(report.rankedRows.map(row => row.name),['River Example']);
+  assert.deepEqual(report.excludedRows.map(row => row.name),['Morgan Sample']);
   assert.equal(report.rows.find(row => row.name === 'River Example').provisional,false);
 });
 test('duplicate names across lanes require roster review before winners', () => {
@@ -137,4 +145,112 @@ test('blocking source issues suppress winners while informational diagnostics do
   assert.equal(blocked.winners.length,0);
   const informative = core.buildReport({reps:[rep('River Example')],metrics:{'river example':{...metric(),issues:[{message:'One week has no offers.',severity:'info'}]}}});
   assert.equal(informative.winners.length,1);
+});
+
+for (const missingField of ['quality','wipers','vaph','attendance','correctives']) {
+  test('a representative missing ' + missingField + ' cannot distort any eligible metric rank or summed total', () => {
+    const completeReps = [rep('Complete First',1,20),rep('Complete Second',1,10)];
+    const completeMetrics = {'complete first':metric(60,100,.9,1,1),'complete second':metric(40,100,.8,2,2)};
+    const baseline = core.buildReport({reps:completeReps,metrics:completeMetrics});
+    const partialRep = rep('Partial Best',1,999), partialMetric = metric(100,100,1,0,0);
+    if (missingField === 'vaph') partialRep.vaph = null;
+    else if (missingField === 'wipers') partialMetric.accepted = null;
+    else partialMetric[missingField] = null;
+    const report = core.buildReport({reps:[...completeReps,partialRep],metrics:{...completeMetrics,'partial best':partialMetric}});
+    assert.deepEqual(report.rankedRows.map(row => ({name:row.name,ranks:row.ranks,total:row.total,laneRank:row.laneRank,winner:row.winner})),
+      baseline.rankedRows.map(row => ({name:row.name,ranks:row.ranks,total:row.total,laneRank:row.laneRank,winner:row.winner})));
+    const excluded = report.excludedRows[0];
+    assert.equal(excluded.name,'Partial Best'); assert.equal(excluded.eligible,false);
+    assert.deepEqual(excluded.missing,[missingField]);
+    assert.ok(excluded.exclusionReasons.length > 0);
+    assert.ok(Object.values(excluded.ranks).every(rank => rank === null));
+    assert.equal(excluded.total,null); assert.equal(excluded.laneRank,null); assert.equal(excluded.winner,false);
+    assert.equal(report.lanes[0].ready,true); assert.equal(report.lanes[0].provisional,false);
+  });
+}
+
+test('all five lanes publish eligible winners and totals despite incomplete roster members', () => {
+  const reps = [], metrics = {}, lane3Values = {};
+  for (let lane = 1; lane <= 5; lane++) {
+    const complete = rep('Complete Lane ' + lane,lane,10), partial = rep('Partial Lane ' + lane,lane,999);
+    reps.push(complete,partial);
+    metrics[complete.key] = metric(); metrics[partial.key] = metric(100,100,null,0,0);
+    if (lane === 3) { lane3Values[complete.key] = 10; lane3Values[partial.key] = 999; }
+  }
+  const report = core.buildReport({reps,metrics,lane3Values});
+  assert.equal(report.rows.length,10); assert.equal(report.winners.length,5);
+  assert.equal(report.rankedRows.length,5); assert.equal(report.excludedRows.length,5);
+  assert.deepEqual(report.stats,{totalRows:10,eligibleRows:5,excludedRows:5,readyLanes:5});
+  assert.ok(report.winners.every(row => row.total === 5 && row.laneRank === 1 && row.eligible && !row.laneProvisional));
+  for (const lane of report.lanes) {
+    assert.equal(lane.ready,true); assert.equal(lane.provisional,false);
+    assert.equal(lane.count,2); assert.equal(lane.eligibleCount,1); assert.equal(lane.excludedCount,1);
+    assert.equal(lane.rankedRows.length,1); assert.equal(lane.excludedRows.length,1); assert.equal(lane.winners.length,1);
+  }
+  assert.ok(report.warnings.every(warning => !/pending|no eligible representatives/.test(warning)));
+});
+
+test('duplicate roster names are excluded without blocking unrelated winners in either lane', () => {
+  const report = core.buildReport({reps:[rep('Duplicate Example',1,999),rep('Duplicate Example',2,999),rep('Unique One',1,1),rep('Unique Two',2,1)],metrics:{
+    'duplicate example':metric(100,100,1,0,0),'unique one':metric(),'unique two':metric()
+  }});
+  assert.deepEqual(report.winners.map(row => row.name),['Unique One','Unique Two']);
+  assert.ok(report.winners.every(row => row.total === 5));
+  assert.equal(report.excludedRows.length,2);
+  assert.ok(report.excludedRows.every(row => !row.eligible && row.total === null && row.laneRank === null && !row.winner));
+  assert.ok(report.excludedRows.every(row => Object.values(row.ranks).every(rank => rank === null)));
+  assert.ok(report.excludedRows.every(row => row.exclusionReasons.some(reason => /Duplicate representative/.test(reason))));
+  assert.equal(report.lanes[0].ready,true); assert.equal(report.lanes[1].ready,true);
+});
+
+test('a conflicting source record is excluded before metric ranks and does not block its complete peer', () => {
+  const report = core.buildReport({reps:[rep('Complete Example',1,1),rep('Conflicting Best',1,999)],metrics:{
+    'complete example':metric(1,100,.5,5,1),
+    'conflicting best':{...metric(100,100,1,0,0),issues:[{message:'Two uploaded sources disagree.',severity:'error'}]}
+  }});
+  assert.equal(report.winners.length,1); assert.equal(report.winners[0].name,'Complete Example');
+  assert.deepEqual(report.winners[0].ranks,{wipers:1,vaph:1,quality:1,attendance:1,correctives:1});
+  assert.equal(report.winners[0].total,505);
+  assert.deepEqual(report.excludedRows[0].exclusionReasons,['Two uploaded sources disagree.']);
+  assert.ok(Object.values(report.excludedRows[0].ranks).every(rank => rank === null));
+});
+
+test('zero-valued observed statistics remain eligible, while unknown attendance and correctives stay unknown', () => {
+  const report = core.buildReport({reps:[rep('Observed Zero',1,0),rep('Unknown Counts',1,999)],metrics:{
+    'observed zero':metric(0,10,0,0,0), 'unknown counts':{accepted:10,offered:10,quality:1}
+  }});
+  const zero = report.rankedRows[0], unknown = report.excludedRows[0];
+  assert.equal(zero.name,'Observed Zero'); assert.equal(zero.wipers,0); assert.equal(zero.vaph,0); assert.equal(zero.quality,0);
+  assert.equal(zero.attendance,0); assert.equal(zero.correctives,0); assert.equal(zero.total,5); assert.equal(zero.winner,true);
+  assert.deepEqual(unknown.missing,['attendance','correctives']);
+  assert.equal(unknown.attendance,null); assert.equal(unknown.correctives,null); assert.equal(unknown.penalty,null); assert.equal(unknown.total,null);
+});
+
+test('a lane without an eligible cohort has no ranks, total, or winner', () => {
+  const report = core.buildReport({reps:[rep('Missing Quality'),rep('Missing Wipers')],metrics:{
+    'missing quality':metric(1,100,null),'missing wipers':metric(0,0,.99)
+  }});
+  assert.equal(report.rankedRows.length,0); assert.equal(report.excludedRows.length,2); assert.equal(report.winners.length,0);
+  assert.equal(report.lanes[0].ready,false); assert.equal(report.lanes[0].provisional,true);
+  assert.ok(report.rows.every(row => row.total === null && row.laneRank === null && !row.winner));
+  assert.ok(report.rows.every(row => Object.values(row.ranks).every(rank => rank === null)));
+  assert.equal(report.stats.readyLanes,0);
+});
+
+test('excluded high performers cannot change a complete-cohort tie or competition rank gaps', () => {
+  const report = core.buildReport({reps:[rep('Tied One'),rep('Tied Two'),rep('Third Place',1,1),rep('Excluded Best',1,999)],metrics:{
+    'tied one':metric(), 'tied two':metric(), 'third place':metric(1,100,.5,3,0), 'excluded best':metric(100,100,1,null,0)
+  }});
+  assert.equal(report.winners.length,2);
+  assert.ok(report.winners.every(row => row.total === 5 && row.laneRank === 1));
+  assert.deepEqual(report.rankedRows.find(row => row.name === 'Third Place').ranks,{wipers:3,vaph:3,quality:3,attendance:3,correctives:1});
+  assert.equal(report.excludedRows[0].total,null);
+});
+
+test('warning, informational, and explicitly nonblocking source notes allow complete representatives to rank', () => {
+  for (const issue of [{message:'Source note',severity:'warning'}, {message:'Source note',severity:'info'}, {message:'Source note',severity:'error',blocking:false}]) {
+    const report = core.buildReport({reps:[rep('Complete Example')],metrics:{'complete example':{...metric(),issues:[issue]}}});
+    assert.equal(report.rankedRows.length,1); assert.equal(report.excludedRows.length,0); assert.equal(report.winners.length,1);
+    assert.equal(report.winners[0].total,5); assert.deepEqual(report.winners[0].exclusionReasons,[]);
+  }
 });

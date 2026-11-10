@@ -156,6 +156,9 @@
   }
   function buildReport(options) {
     const {reps = [], lane3Values = {}, metrics = {}, month = ''} = options || {};
+    const rankFields = ['wipers','vaph','quality','attendance','correctives'];
+    const fieldLabels = {wipers:'Wipers',vaph:'VAPH',quality:'Call Quality',attendance:'attendance',correctives:'correctives'};
+    const blocksRanking = issue => issue && issue.blocking !== false && issue.severity !== 'warning' && issue.severity !== 'info';
     const normalizedMetrics = new Map(Object.entries(metrics instanceof Map ? Object.fromEntries(metrics) : metrics).map(([key,value]) => [normalizeName(key), value]));
     const lane3 = new Map(Object.entries(lane3Values instanceof Map ? Object.fromEntries(lane3Values) : lane3Values).map(([key,value]) => [normalizeName(key), value]));
     const warnings = [], rows = reps.map(rep => {
@@ -169,40 +172,53 @@
         quality:quality != null && quality >= 0 && quality <= 1 ? quality : null, qaCount:number(metric.qaCount),
         attendance:attendance != null && attendance >= 0 && Number.isInteger(attendance) ? attendance : null,
         correctives:correctives != null && correctives >= 0 && Number.isInteger(correctives) ? correctives : null,
-        weeklyWipers:metric.weeklyWipers || [], issues, ranks:{}, total:null, penalty:null, winner:false};
+        weeklyWipers:metric.weeklyWipers || [], issues, ranks:Object.fromEntries(rankFields.map(field => [field,null])), total:null, penalty:null, laneRank:null, winner:false};
       result.penalty = result.correctives == null ? null : result.correctives * 500;
-      result.missing = ['wipers','vaph','quality','attendance','correctives'].filter(field => result[field] == null);
-      result.provisional = result.missing.length > 0 || issues.some(issue => issue && issue.blocking !== false && issue.severity !== 'warning' && issue.severity !== 'info');
+      result.missing = rankFields.filter(field => result[field] == null);
+      result.provisional = result.missing.length > 0 || issues.some(blocksRanking);
       if (!result.coach) warnings.push(result.name + ': coach was not found in Phone Data.');
       return result;
     });
-    const duplicateKeys = new Set();
-    rows.forEach((row,index) => { if (rows.findIndex(other => other.key === row.key) !== index) duplicateKeys.add(row.key); });
+    const keyCounts = new Map();
+    rows.forEach(row => keyCounts.set(row.key, (keyCounts.get(row.key) || 0) + 1));
+    rows.forEach(row => {
+      row.exclusionReasons = [
+        ...row.missing.map(field => 'Missing or invalid ' + fieldLabels[field] + '.'),
+        ...row.issues.filter(blocksRanking).map(issue => clean(issue.message) || 'Missing or conflicting source data.'),
+        ...(keyCounts.get(row.key) > 1 ? ['Duplicate representative in the monthly roster; resolve the duplicate before ranking.'] : [])
+      ];
+      row.eligible = row.exclusionReasons.length === 0;
+    });
     const lanes = [];
     for (let lane = 1; lane <= 5; lane++) {
       const members = rows.filter(row => row.lane === lane);
-      for (const field of ['wipers','vaph','quality','attendance','correctives']) {
+      const eligible = members.filter(row => row.eligible);
+      const excluded = members.filter(row => !row.eligible).sort((a,b) => a.name.localeCompare(b.name));
+      for (const field of rankFields) {
         const descending = ['wipers','vaph','quality'].includes(field);
-        const ranked = members.filter(row => row[field] != null).sort((a,b) => descending ? b[field] - a[field] : a[field] - b[field]);
+        const ranked = eligible.slice().sort((a,b) => descending ? b[field] - a[field] : a[field] - b[field]);
         let rank = 0, last;
         ranked.forEach((row,index) => { if (index === 0 || row[field] !== last) rank = index + 1; row.ranks[field] = rank; last = row[field]; });
-        members.filter(row => row[field] == null).forEach(row => { row.ranks[field] = null; });
       }
-      members.forEach(row => { if (!row.provisional) row.total = Object.values(row.ranks).reduce((sum,rank) => sum + rank, 0) + row.penalty; });
-      const ready = members.length > 0 && members.every(row => !row.provisional && !duplicateKeys.has(row.key));
+      eligible.forEach(row => { row.total = rankFields.reduce((sum,field) => sum + row.ranks[field], 0) + row.penalty; });
+      const ready = eligible.length > 0;
       members.forEach(row => { row.laneProvisional = !ready; });
-      if (!ready && members.length) warnings.push('Lane ' + lane + ': winner is pending until missing or conflicting data is resolved.');
-      const lowest = ready ? Math.min(...members.map(row => row.total)) : null;
-      const ordered = members.slice().sort((a,b) => (a.total == null ? Infinity : a.total) - (b.total == null ? Infinity : b.total) || a.name.localeCompare(b.name));
+      if (excluded.length) warnings.push('Lane ' + lane + ': ' + excluded.length + ' representative' + (excluded.length === 1 ? ' is' : 's are') + ' excluded from rankings because of missing or conflicting data.');
+      if (!ready && members.length) warnings.push('Lane ' + lane + ': no eligible representatives are available to rank or select a winner.');
+      const lowest = ready ? Math.min(...eligible.map(row => row.total)) : null;
+      const ordered = eligible.slice().sort((a,b) => a.total - b.total || a.name.localeCompare(b.name));
       let laneRank = 0, lastTotal;
       ordered.forEach((row,index) => {
-        if (row.total == null) row.laneRank = null;
-        else { if (index === 0 || row.total !== lastTotal) laneRank = index + 1; row.laneRank = laneRank; lastTotal = row.total; }
-        row.winner = ready && row.total === lowest;
+        if (index === 0 || row.total !== lastTotal) laneRank = index + 1;
+        row.laneRank = laneRank; lastTotal = row.total;
+        row.winner = row.total === lowest;
       });
-      lanes.push({lane, ready, provisional:!ready, count:members.length, winners:members.filter(row => row.winner), rows:ordered});
+      lanes.push({lane, ready, provisional:!ready, count:members.length, eligibleCount:eligible.length, excludedCount:excluded.length,
+        winners:ordered.filter(row => row.winner), rankedRows:ordered, excludedRows:excluded, rows:[...ordered,...excluded]});
     }
-    return {month, rows:lanes.flatMap(lane => lane.rows), lanes, winners:rows.filter(row => row.winner), warnings};
+    const rankedRows = lanes.flatMap(lane => lane.rankedRows), excludedRows = lanes.flatMap(lane => lane.excludedRows);
+    return {month, rows:lanes.flatMap(lane => lane.rows), rankedRows, excludedRows, lanes, winners:rankedRows.filter(row => row.winner), warnings,
+      stats:{totalRows:rows.length,eligibleRows:rankedRows.length,excludedRows:excludedRows.length,readyLanes:lanes.filter(lane => lane.ready).length}};
   }
   const api = {normalizeName, nameKey:normalizeName, previousMonth, selectMonthSheet, workbookSheets, parseMonthly, parseLane3, buildReport};
   root.VerificationAllStarCore = api;
