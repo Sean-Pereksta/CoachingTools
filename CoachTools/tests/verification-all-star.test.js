@@ -258,8 +258,10 @@ test('warning, informational, and explicitly nonblocking source notes allow comp
 });
 
 test('ranking settings default to the three requested performance measures and reject an explicit empty selection', () => {
-  assert.deepEqual(core.normalizeSettings(),{measures:['wipers','vaph','quality'],requireAllWiperWeeks:false,correctivePenalty:500});
-  assert.deepEqual(core.normalizeSettings({measures:['quality','vaph','quality'],correctivePenalty:'125'}),{measures:['vaph','quality'],requireAllWiperWeeks:false,correctivePenalty:125});
+  const defaults = {requiredMeasures:['wipers','vaph','quality'],rankedMeasures:['wipers','vaph','quality'],requireAllWiperWeeks:false,correctivePenalty:500,missingRankedPolicy:'last'};
+  assert.deepEqual(core.normalizeLaneSettings(),defaults);
+  assert.deepEqual(core.normalizeSettings(),{lanes:Object.fromEntries([1,2,3,4,5].map(lane => [String(lane),defaults]))});
+  assert.deepEqual(core.getLaneSettings(core.normalizeSettings({measures:['quality','vaph','quality'],correctivePenalty:'125'}),1),{requiredMeasures:['vaph','quality'],rankedMeasures:['vaph','quality'],requireAllWiperWeeks:false,correctivePenalty:125,missingRankedPolicy:'last'});
   assert.throws(() => core.normalizeSettings({measures:[]}), /at least one/);
   assert.throws(() => core.buildReport({settings:{measures:[]}}), /at least one/);
   assert.throws(() => core.normalizeSettings({measures:['unknown']}), /Choose ranking measures/);
@@ -415,4 +417,157 @@ test('internal roster spacing preserves later genuine names while summary headin
   assert.equal(parsed.reps[1].vaph,14);
   assert.ok(parsed.reps.every(person => person.coach === ''),'a coach directory is not required to recognize roster names');
   assert.ok(parsed.reps.every(person => !/attendance|acw/i.test(person.name)));
+});
+
+test('required qualification and ranked points are independent, with missing optional ranked data placed last', () => {
+  const report = core.buildReport({settings:{requiredMeasures:['quality'],rankedMeasures:['wipers','vaph']},reps:[
+    rep('Complete First',1,10),rep('Complete Best',1,20),rep('Missing Qualification',1,999),rep('Missing Optional Wipers',1,5)
+  ],metrics:{
+    'complete first':metric(30,100,.9),'complete best':metric(40,100,.8),
+    'missing qualification':metric(100,100,null),'missing optional wipers':metric(null,100,.7)
+  }});
+  assert.deepEqual(report.rankedRows.map(person => [person.name,person.total]),[['Complete Best',2],['Complete First',4],['Missing Optional Wipers',6]]);
+  assert.deepEqual(report.excludedRows.map(person => person.name),['Missing Qualification']);
+  const optional = report.rankedRows.find(person => person.name === 'Missing Optional Wipers');
+  assert.deepEqual(optional.missing,[]); assert.deepEqual(optional.missingRankedMeasures,['wipers']); assert.equal(optional.wipers,null);
+  assert.equal(optional.ranks.wipers,3); assert.equal(optional.ranks.quality,null); assert.equal(optional.provisional,false);
+  assert.ok(optional.dataWarnings.some(warning => /last-place/.test(warning.message)));
+});
+
+test('a required measure need not contribute points and its zero observation remains valid', () => {
+  const report = core.buildReport({settings:{requiredMeasures:['attendance'],rankedMeasures:['quality']},reps:[rep('Qualified Best'),rep('Missing Gate'),rep('Qualified Missing Score')],metrics:{
+    'qualified best':metric(0,10,.9,0),'missing gate':metric(0,10,1,null),'qualified missing score':metric(0,10,null,0)
+  }});
+  assert.deepEqual(report.rankedRows.map(person => [person.name,person.total]),[['Qualified Best',1],['Qualified Missing Score',2]]);
+  assert.equal(report.excludedRows[0].name,'Missing Gate');
+  assert.ok(report.rows.every(person => person.ranks.attendance === null));
+});
+
+test('no required measures allows missing optional ranks, with all missing observations sharing rank one', () => {
+  const settings = {requiredMeasures:[],rankedMeasures:['vaph']};
+  const report = core.buildReport({settings,reps:[rep('Observed Zero',1,0),rep('Missing First',1,null),rep('Missing Second',1,null)]});
+  assert.equal(report.rankedRows.length,3); assert.equal(report.excludedRows.length,0);
+  assert.equal(report.rankedRows.find(person => person.name === 'Observed Zero').ranks.vaph,1);
+  assert.ok(report.rankedRows.filter(person => person.vaph === null).every(person => person.ranks.vaph === 2 && person.total === 2));
+  const allMissing = core.buildReport({settings,reps:[rep('Missing First',1,null),rep('Missing Second',1,null)]});
+  assert.equal(allMissing.winners.length,2);
+  assert.ok(allMissing.rankedRows.every(person => person.ranks.vaph === 1 && person.total === 1));
+});
+
+test('joint last-place rank uses the number of known eligible observations, retaining competition tie gaps', () => {
+  const report = core.buildReport({settings:{requiredMeasures:['quality'],rankedMeasures:['wipers']},reps:[rep('Tied First'),rep('Tied Second'),rep('Known Third'),rep('Missing First'),rep('Missing Second'),rep('Excluded Best')],metrics:{
+    'tied first':metric(50,100,.9),'tied second':metric(50,100,.9),'known third':metric(10,100,.9),
+    'missing first':metric(null,100,.9),'missing second':metric(null,100,.9),'excluded best':metric(100,100,null)
+  }});
+  const rank = name => report.rows.find(person => person.name === name).ranks.wipers;
+  assert.equal(rank('Tied First'),1); assert.equal(rank('Tied Second'),1); assert.equal(rank('Known Third'),3);
+  assert.equal(rank('Missing First'),4); assert.equal(rank('Missing Second'),4); assert.equal(rank('Excluded Best'),null);
+  assert.equal(report.winners.length,2);
+});
+
+test('five lanes use independent qualification and scoring policies, including Lane 3 activity override', () => {
+  const settings = {lanes:{
+    '1':{requiredMeasures:['quality'],rankedMeasures:['wipers']},
+    '2':{requiredMeasures:['vaph'],rankedMeasures:['quality']},
+    '3':{requiredMeasures:['quality'],rankedMeasures:['vaph']},
+    '4':{requiredMeasures:[],rankedMeasures:['attendance']},
+    '5':{requiredMeasures:[],rankedMeasures:['correctives'],correctivePenalty:200}
+  }};
+  const report = core.buildReport({settings,reps:[rep('Lane One',1),rep('Lane Two',2),rep('Lane Three',3,999),rep('Lane Four',4,null),rep('Lane Five Missing',5,null),rep('Lane Five Known',5,null)],metrics:{
+    'lane one':{quality:.9},'lane two':{quality:.9},'lane three':{quality:.9},'lane four':{},'lane five missing':{},'lane five known':{correctives:2}
+  }});
+  assert.equal(report.rankedRows.length,6); assert.equal(report.winners.length,5);
+  assert.equal(report.rows.find(person => person.name === 'Lane Three').vaph,null);
+  assert.equal(report.rows.find(person => person.name === 'Lane Three').ranks.vaph,1);
+  assert.equal(report.lanes[4].winners[0].name,'Lane Five Known');
+  assert.equal(report.rows.find(person => person.name === 'Lane Five Known').total,401);
+  assert.equal(report.rows.find(person => person.name === 'Lane Five Missing').total,402);
+  report.lanes.forEach(lane => assert.deepEqual(lane.settings,core.getLaneSettings(settings,lane.lane)));
+});
+
+test('missing optional correctives receive a separate lane-local maximum known penalty adjustment', () => {
+  const report = core.buildReport({settings:{requiredMeasures:['quality'],rankedMeasures:['quality','correctives']},reps:[
+    rep('Known Zero',1),rep('Known Two',1),rep('Unknown Correctives',1),rep('Excluded Ninety Nine',1),rep('Other Lane Seven',2)
+  ],metrics:{
+    'known zero':metric(0,10,.9,0,0),'known two':metric(0,10,.9,0,2),'unknown correctives':metric(0,10,.9,0,null),
+    'excluded ninety nine':metric(0,10,null,0,99),'other lane seven':metric(0,10,.9,0,7)
+  }});
+  const person = name => report.rows.find(row => row.name === name), missing = person('Unknown Correctives');
+  assert.equal(person('Known Zero').total,2); assert.equal(person('Known Two').total,1003);
+  assert.equal(missing.correctives,null); assert.equal(missing.penalty,null); assert.equal(missing.ranks.correctives,3);
+  assert.equal(missing.missingPenaltyAdjustment,1000); assert.equal(missing.total,1004);
+  assert.equal(person('Other Lane Seven').penalty,3500); assert.equal(person('Excluded Ninety Nine').total,null);
+  assert.ok(report.rankedRows.filter(row => row.correctives !== null).every(row => row.missingPenaltyAdjustment === 0));
+});
+
+test('optional ranked source conflicts fall back to last place while required source or identity conflicts exclude', () => {
+  const input = {reps:[rep('Known Quality'),rep('Conflicting Quality')],metrics:{
+    'known quality':{...metric(20,100,.5),issueDetails:[]},
+    'conflicting quality':{...metric(20,100,1),issueDetails:[{code:'invalid-quality',metric:'quality',message:'Quality scores conflict.',blocking:true}]}
+  }};
+  const optional = core.buildReport({...input,settings:{requiredMeasures:['wipers'],rankedMeasures:['quality']}});
+  assert.equal(optional.rankedRows.length,2);
+  const conflicting = optional.rows.find(person => person.name === 'Conflicting Quality');
+  assert.deepEqual(conflicting.missingRankedMeasures,['quality']); assert.equal(conflicting.ranks.quality,2);
+  assert.equal(conflicting.total,2); assert.equal(conflicting.exclusionDetails.length,0); assert.ok(conflicting.dataWarnings.length);
+  const required = core.buildReport({...input,settings:{requiredMeasures:['quality'],rankedMeasures:['wipers']}});
+  assert.equal(required.excludedRows.length,1); assert.equal(required.excludedRows[0].name,'Conflicting Quality');
+  const identity = core.buildReport({settings:{requiredMeasures:[],rankedMeasures:['vaph']},reps:[rep('Conflict')],metrics:{conflict:{issueDetails:[{code:'identity-conflict',metric:'quality',message:'Source identities conflict.',blocking:true}]}}});
+  assert.equal(identity.excludedRows.length,1);
+});
+
+test('strict Wiper week coverage applies only to required Wipers and does not discard valid optional monthly ranks', () => {
+  const input = {reps:[rep('Partial Month')],metrics:{'partial month':{...metric(40,100,.9),issueDetails:[{code:'missing-wiper-weeks',metric:'wipers',message:'Missing Wiper data for 2 available week(s)',blocking:true}]}}};
+  const optional = core.buildReport({...input,settings:{requiredMeasures:['quality'],rankedMeasures:['wipers'],requireAllWiperWeeks:true}});
+  assert.equal(optional.rankedRows.length,1); assert.equal(optional.rankedRows[0].ranks.wipers,1);
+  assert.deepEqual(optional.rankedRows[0].missingRankedMeasures,[]); assert.equal(optional.rankedRows[0].wipers,.4);
+  const required = core.buildReport({...input,settings:{requiredMeasures:['wipers'],rankedMeasures:['quality'],requireAllWiperWeeks:true}});
+  assert.equal(required.excludedRows.length,1); assert.equal(required.excludedRows[0].exclusionDetails[0].code,'missing-wiper-weeks');
+});
+
+test('lane normalization migrates flat settings and persistence copies without cross-lane or input aliases', () => {
+  const legacy = {measures:['quality','vaph'],requireAllWiperWeeks:true,correctivePenalty:125};
+  const migrated = core.normalizeSettings(legacy);
+  for (let lane = 1; lane <= 5; lane++) {
+    assert.deepEqual(migrated.lanes[lane].requiredMeasures,['vaph','quality']);
+    assert.deepEqual(migrated.lanes[lane].rankedMeasures,['vaph','quality']);
+  }
+  const sharedPolicy = {requiredMeasures:[],rankedMeasures:['vaph']};
+  const source = {lanes:{'1':sharedPolicy,'2':sharedPolicy}}, normalized = core.normalizeSettings(source);
+  normalized.lanes[1].requiredMeasures.push('quality'); normalized.lanes[1].rankedMeasures.push('quality');
+  assert.deepEqual(normalized.lanes[2].requiredMeasures,[]); assert.deepEqual(normalized.lanes[2].rankedMeasures,['vaph']);
+  assert.deepEqual(sharedPolicy,{requiredMeasures:[],rankedMeasures:['vaph']});
+  assert.deepEqual(core.normalizeSettings(JSON.parse(JSON.stringify(normalized))),normalized);
+  const copiedLane = core.getLaneSettings(normalized,2); copiedLane.rankedMeasures.push('attendance');
+  assert.deepEqual(normalized.lanes[2].rankedMeasures,['vaph']);
+  const report = core.buildReport({settings:source,reps:[rep('Example')]}), rowPolicy = report.rows[0].laneSettings;
+  rowPolicy.rankedMeasures.push('quality');
+  assert.deepEqual(report.lanes[0].settings.rankedMeasures,['vaph']); assert.deepEqual(report.settings.lanes[1].rankedMeasures,['vaph']);
+});
+
+test('lane policy bounds reject invalid lanes or empty scoring, while an empty qualification gate is supported', () => {
+  assert.deepEqual(core.normalizeLaneSettings({requiredMeasures:[]}).requiredMeasures,[]);
+  assert.throws(() => core.normalizeLaneSettings({rankedMeasures:[]}), /at least one/);
+  assert.throws(() => core.normalizeLaneSettings({requiredMeasures:['invalid']}), /Choose ranking measures/);
+  assert.throws(() => core.normalizeLaneSettings({missingRankedPolicy:'zero'}), /last-place/);
+  assert.throws(() => core.normalizeSettings({lanes:{'6':{}}}), /1 through 5/);
+  assert.throws(() => core.normalizeSettings({lanes:[]}), /lanes 1 through 5/);
+  assert.throws(() => core.normalizeSettings({lanes:{'3':{rankedMeasures:[]}}}), /^Error: Lane 3: .*at least one/);
+  assert.throws(() => core.getLaneSettings({},0), /1 through 5/);
+  assert.throws(() => core.getLaneSettings({},6), /1 through 5/);
+  assert.throws(() => core.getLaneSettings({lanes:null},1), /lanes 1 through 5/);
+});
+
+test('exclusion summaries and eligibility comparisons reflect each lane policy and aggregate globally', () => {
+  const report = core.buildReport({settings:{lanes:{
+    '1':{requiredMeasures:['vaph'],rankedMeasures:['vaph']},'2':{requiredMeasures:['quality'],rankedMeasures:['vaph']}
+  }},reps:[rep('Lane One Missing Quality',1),rep('Lane Two Missing Quality',2)],metrics:{
+    'lane one missing quality':{accepted:1,offered:10},'lane two missing quality':{accepted:1,offered:10}
+  }});
+  assert.equal(report.lanes[0].exclusionSummary.length,0);
+  assert.equal(report.lanes[1].exclusionSummary[0].code,'missing-quality'); assert.equal(report.lanes[1].exclusionSummary[0].count,1);
+  assert.equal(report.exclusionSummary[0].count,1);
+  assert.deepEqual(report.lanes[0].eligibilityComparison,{currentEligible:1,threeMetricEligible:0,strictEligible:0,recoveredByThreeMetrics:0});
+  assert.deepEqual(report.lanes[1].eligibilityComparison,{currentEligible:0,threeMetricEligible:0,strictEligible:0,recoveredByThreeMetrics:0});
+  assert.deepEqual(report.eligibilityComparison,{currentEligible:1,threeMetricEligible:0,strictEligible:0,recoveredByThreeMetrics:0});
 });
