@@ -40,7 +40,8 @@
         white-space: nowrap;
         color: var(--muted);
       }
-      .presetCoverage > span {
+      .presetCoverage > span,
+      .presetRepSearch > span {
         color: var(--muted);
         font-size: 10px;
         font-weight: 850;
@@ -58,6 +59,24 @@
         text-align: center;
         font-size: 12px;
         font-weight: 850;
+      }
+      .presetRepSearch {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        max-width: 100%;
+        color: var(--muted);
+      }
+      .presetRepSearch #repSearch {
+        width: 180px;
+        min-width: 0;
+        height: 32px;
+        padding: 5px 9px;
+        border: 1px solid #dbe3ee;
+        border-radius: 9px;
+        background: #fff;
+        font-size: 12px;
       }
       .coachingTypePrimaryGrid {
         grid-template-columns: minmax(180px, 1fr) auto !important;
@@ -97,13 +116,14 @@
     // then Checklist, then the less-used advanced controls.
     controlGrid.style.gridTemplateColumns = 'minmax(0, 1fr)';
 
-    // Surface KPI coverage in the second toolbar alongside Quick Focus presets.
+    // Keep coverage and representative search together beside Quick Focus presets.
     const coverageLabel = minCoverageInput.closest('label');
+    const searchLabel = document.getElementById('repSearch')?.closest('label');
     const presetSpacer = presetStrip.querySelector('.presetSpacer');
     if (coverageLabel) {
       coverageLabel.classList.remove('topControl', 'topCoverage');
       coverageLabel.classList.add('presetCoverage');
-      if (presetSpacer) presetStrip.insertBefore(coverageLabel, presetSpacer);
+      if (searchLabel || presetSpacer) presetStrip.insertBefore(coverageLabel, searchLabel || presetSpacer);
       else presetStrip.appendChild(coverageLabel);
     }
 
