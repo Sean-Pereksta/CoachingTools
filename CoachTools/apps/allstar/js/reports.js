@@ -1072,7 +1072,7 @@ const RUN_INDEX_SCHEMA_VERSION=2, RUN_INDEX_NORMALIZATION_VERSION=1;
 function runSourceSettingsSignature(source){ const cfg=getSourceSetting(activeModelForImport(),source)||{}; return stableSerialize({skipTeamBuild:!!cfg?.columns?.skipTeamBuild,columns:cfg.columns||{},source:cfg.source||''}); }
 function sourceVersionSignature(source){
   const rows=getRowsRaw(source)||[], headers=getHeaders(source)||[], v=state.versions||{}, cs=isCustomSource(source)?customSource(source):null;
-  return stableSerialize({schema:RUN_INDEX_SCHEMA_VERSION,source,rowsVersion:state.sourceMeta?.[source]?.sourceVersion||state.sourceMeta?.[source]?.version||v.data||0,rowCount:rows.length,headerVersion:headers.join('\u001f'),headerCount:headers.length,settings:runSourceSettingsSignature(source),aliases:v.aliases||0,roster:v.roster||0,teams:v.teams||0,mappings:v.mappings||0,nameColumn:(typeof repColumnForSource==='function'?repColumnForSource(source):''),teamColumn:(typeof teamColumnForSource==='function'?teamColumnForSource(source):''),dateColumn:customDateColumn(source)||sourceDateHeader(source,headers)||'',normalization:RUN_INDEX_NORMALIZATION_VERSION,customUpdated:cs?.updatedAt||cs?.fileName||''});
+  return stableSerialize({schema:RUN_INDEX_SCHEMA_VERSION,source,scope:typeof allStarGlobalScopeKey==='function'?allStarGlobalScopeKey():'all',rowsVersion:state.sourceMeta?.[source]?.sourceVersion||state.sourceMeta?.[source]?.version||v.data||0,rowCount:rows.length,headerVersion:headers.join('\u001f'),headerCount:headers.length,settings:runSourceSettingsSignature(source),aliases:v.aliases||0,roster:v.roster||0,teams:v.teams||0,mappings:v.mappings||0,nameColumn:(typeof repColumnForSource==='function'?repColumnForSource(source):''),teamColumn:(typeof teamColumnForSource==='function'?teamColumnForSource(source):''),dateColumn:customDateColumn(source)||sourceDateHeader(source,headers)||'',normalization:RUN_INDEX_NORMALIZATION_VERSION,customUpdated:cs?.updatedAt||cs?.fileName||''});
 }
 function invalidateRunSourceIndex(source, reason='source changed'){
   if(!source) return;
@@ -1134,18 +1134,25 @@ async function buildRunSourceIndex(source,signature,options={}){
   timings.totalMs=Math.round(performance.now()-totalStart); console.groupCollapsed('[All Star Run Index] source preparation'); console.table([timings]); console.groupEnd(); state.runIndexDiagnostics=[...(state.runIndexDiagnostics||[]),timings].slice(-100); return idx;
 }
 async function ensureRunSourceIndex(source, signature=sourceVersionSignature(source), options={}){
-  runPrepState(); const existing=state.runIndexes.get(source);
-  if(existing?.signature===signature){
+  runPrepState(); const rows=getRowsRaw(source), existing=state.runIndexes.get(source);
+  const stillCurrent=()=>rows===getRowsRaw(source)&&signature===sourceVersionSignature(source);
+  if(existing?.signature===signature && existing.rows===rows){
     state.perfCounters.runIndexCacheHits=(state.perfCounters.runIndexCacheHits||0)+1;
     const timings={source,totalRows:(existing.rows||[]).length,signature,cache:'hit',persistedRestoration:'skipped',groupingMs:0,dateParsingMs:0,sortingMs:0,optionalStructures:Object.keys(existing.optionalStructures||{}).filter(k=>existing.optionalStructures[k]),totalMs:0};
     console.groupCollapsed('[All Star Run Index] source preparation'); console.table([timings]); console.groupEnd();
     if(options.sortedDateRows && !existing.optionalStructures?.sortedDateRows){ await addRunOptionalSortedDateRows(existing); }
+    if(!stillCurrent()) throw new Error('Source or view scope changed during preparation. Run the report again.');
     return existing;
   }
   state.perfCounters.runIndexCacheMisses=(state.perfCounters.runIndexCacheMisses||0)+1;
-  const key=`${source}|${signature}`; const active=state.runPreparationJobs.get(key); if(active) return active.promise;
-  const promise=buildRunSourceIndex(source,signature,options).then(idx=>{ state.runIndexes.set(source,idx); runPrepState().ready.set(source,signature); return idx; }).finally(()=>state.runPreparationJobs.delete(key));
-  state.runPreparationJobs.set(key,{source,signature,promise,startedAt:Date.now(),options}); return promise;
+  const key=`${source}|${signature}`; const active=state.runPreparationJobs.get(key); if(active && active.rows===rows) return active.promise;
+  const promise=buildRunSourceIndex(source,signature,options).then(idx=>{
+    // Sliced preparation can finish after a coach switch or source refresh.
+    // Never republish that obsolete population into the new view's cache.
+    if(!stillCurrent() || idx.rows!==rows || state.runPreparationJobs.get(key)?.promise!==promise) throw new Error('Source or view scope changed during preparation. Run the report again.');
+    state.runIndexes.set(source,idx); runPrepState().ready.set(source,signature); return idx;
+  }).finally(()=>{if(state.runPreparationJobs.get(key)?.promise===promise)state.runPreparationJobs.delete(key);});
+  state.runPreparationJobs.set(key,{source,signature,rows,promise,startedAt:Date.now(),options}); return promise;
 }
 async function addRunOptionalSortedDateRows(idx){
   const t0=performance.now(); idx.dateSortedRows=[]; idx.byRepSortedDate=new Map(); idx.byTeamSortedDate=new Map(); const rows=idx.rows||[], chunk=1600;

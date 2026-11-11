@@ -232,22 +232,37 @@ function wire(){
 
 let coachToolsCentralSyncTimer=0;
 let coachToolsCentralSyncQueue=Promise.resolve(false);
+let pendingAllStarCentralSync=null;
 const ALLSTAR_CENTRAL_DATASETS=new Set(['all','weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist','compCoaching']);
 function queueAllStarCentralSync(reason){
   if(state.lifecycle?.closing) return Promise.resolve({changed:false,cancelled:true});
   const generation=state.lifecycle.generation;
-  coachToolsCentralSyncQueue=coachToolsCentralSyncQueue.catch(error=>{ console.warn('[All-Star] Previous shared data sync failed.',error); return false; }).then(()=>syncAllStarFromCoachToolsData({reason,generation,render:true}));
+  coachToolsCentralSyncQueue=coachToolsCentralSyncQueue.catch(error=>{ console.warn('[All-Star] Previous shared data sync failed.',error); return false; }).then(async()=>{
+    const result=await syncAllStarFromCoachToolsData({reason,generation,render:true});
+    if(result?.busy && !state.lifecycle?.closing) scheduleAllStarCentralSync({reason});
+    return result;
+  });
   return coachToolsCentralSyncQueue;
 }
 function scheduleAllStarCentralSync(detail={}){
-  if(state.coachToolsBatchImportRunning || state.startup?.running || state.lifecycle?.closing) return;
+  if(state.lifecycle?.closing) return;
   const source=detail.source||'all';
   if(!ALLSTAR_CENTRAL_DATASETS.has(source)) return;
+  // Keep the latest notification while hydration or an import owns the data.
+  // In particular, a coach switch during startup must be applied afterwards.
+  pendingAllStarCentralSync={source:'all',reason:detail.reason||'shared IndexedDB update'};
   clearTimeout(coachToolsCentralSyncTimer);
+  if(state.startup?.running) return;
   coachToolsCentralSyncTimer=setTimeout(()=>{
-    if(state.lifecycle?.closing) return;
+    coachToolsCentralSyncTimer=0;
+    if(state.lifecycle?.closing){ pendingAllStarCentralSync=null; return; }
+    if(state.startup?.running) return;
+    if(state.coachToolsBatchImportRunning || state.activeImportJob || state.coachRenameActive || state.reportingDataClearing){
+      scheduleAllStarCentralSync(pendingAllStarCentralSync||{}); return;
+    }
+    const pending=pendingAllStarCentralSync; pendingAllStarCentralSync=null;
     const ready=state.importCacheStartupPromise||Promise.resolve();
-    ready.then(()=>queueAllStarCentralSync('shared IndexedDB update')).catch(error=>console.warn('[All-Star] Shared CoachTools update sync failed',error));
+    ready.then(()=>queueAllStarCentralSync(pending?.reason||'shared IndexedDB update')).catch(error=>console.warn('[All-Star] Shared CoachTools update sync failed',error));
   },350);
 }
 
@@ -306,6 +321,7 @@ function cancelAllStarBackgroundWork(reason='lifecycle cancellation'){
   state.lifecycle.generation++;
   state.centralSyncGeneration++;
   clearTimeout(coachToolsCentralSyncTimer); coachToolsCentralSyncTimer=0;
+  pendingAllStarCentralSync=null;
   if(state.importCacheSaveTimer){ clearTimeout(state.importCacheSaveTimer); state.importCacheSaveTimer=null; }
   if(state.researchWarmToken) state.researchWarmToken.cancelled=true;
   if(state.researchRenderToken) state.researchRenderToken.cancelled=true;
@@ -376,7 +392,16 @@ async function runAllStarStartupPipeline(){
     updateAllStarStartupProgress(job,localLoaded?'CoachingTools data connected.':'Ready for CoachingTools data.',55);
     if(state.lifecycle.closing || generation!==state.lifecycle.generation) return false;
 
-    const reconciliation=await measureAllStarStartupStep('shared data reconciliation',()=>syncAllStarFromCoachToolsData({reason:'startup IndexedDB synchronization',generation,job,render:false,deferTeamRebuild:true,deferIndexes:true,allowLegacyBackfill:false}));
+    let reconciliation;
+    do{
+      reconciliation=await measureAllStarStartupStep('shared data reconciliation',()=>syncAllStarFromCoachToolsData({reason:'startup IndexedDB synchronization',generation,job,render:false,deferTeamRebuild:true,deferIndexes:true,allowLegacyBackfill:false}));
+      if(reconciliation?.cancelled && !state.lifecycle.closing && generation===state.lifecycle.generation){
+        // A scope switch can cancel only the shared-data attempt. Continue the
+        // same hydration job with the latest scope so the loading screen closes.
+        pendingAllStarCentralSync=null;
+        await yieldToBrowser();
+      }
+    }while(reconciliation?.cancelled && !state.lifecycle.closing && generation===state.lifecycle.generation);
     if(reconciliation?.cancelled || state.lifecycle.closing || generation!==state.lifecycle.generation) return false;
     updateAllStarStartupProgress(job,'CoachingTools data ready.',85);
     if(importCacheHasDirty()){
@@ -398,7 +423,10 @@ async function runAllStarStartupPipeline(){
     console.warn('[All-Star] Startup retained the last valid state.',error);
     if(!state.lifecycle.closing){ renderAllStarAfterDataBatch({sourcesChanged:[],reason:'startup recovery',startup:true}); showAllStarStartupFailure(error); }
     return false;
-  }finally{ clearAllStarStartupDiagnosticPhase('finished'); state.startup.running=false; }
+  }finally{
+    clearAllStarStartupDiagnosticPhase('finished'); state.startup.running=false;
+    if(state.startup.completed && pendingAllStarCentralSync && !state.lifecycle.closing) scheduleAllStarCentralSync(pendingAllStarCentralSync);
+  }
 }
 function startAllStar(){
   state.startup.requestCount++;

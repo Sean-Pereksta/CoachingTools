@@ -1095,7 +1095,7 @@ function researchSourceIndexSignature(source){
   const fileName=cs?.fileName || (source.startsWith('retail')?state.data.retail.fileName:source.startsWith('referral')?state.data.referral.fileName:(state.data[source]?.fileName||''));
   const sourceVersion=state.sourceMeta?.[source]?.sourceVersion??state.sourceMeta?.[source]?.version??state.versions?.data??0;
   const importModel=activeModelForImport(); if(!importModel?.sourceSettings?.[source]) getSourceSetting(importModel,source);
-  return [RESEARCH_SOURCE_INDEX_SCHEMA_VERSION,source,sourceVersion,rows.length,headers.join('\u001f'),fileName,state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0,state.versions?.roster||0,stableSerialize({settings:importModel?.sourceSettings?.[source]||null,mapping:state.sourceMappings?.[source]||cs?.mappings||cs?.fieldMappings||null,columns:cs?.columns||null,weeklyConfig:isDatedStatsSource(source)?state.data[source]?.config:null,statsDirectory:typeof weeklyDirectoryRevision==='function'?weeklyDirectoryRevision():0})].join('\u001e');
+  return [RESEARCH_SOURCE_INDEX_SCHEMA_VERSION,source,typeof allStarGlobalScopeKey==='function'?allStarGlobalScopeKey():'all',sourceVersion,rows.length,headers.join('\u001f'),fileName,state.versions?.aliases||0,state.versions?.teams||0,state.versions?.mappings||0,state.versions?.roster||0,stableSerialize({settings:importModel?.sourceSettings?.[source]||null,mapping:state.sourceMappings?.[source]||cs?.mappings||cs?.fieldMappings||null,columns:cs?.columns||null,weeklyConfig:isDatedStatsSource(source)?state.data[source]?.config:null,statsDirectory:typeof weeklyDirectoryRevision==='function'?weeklyDirectoryRevision():0})].join('\u001e');
 }
 async function ensureResearchSourceIndex(source,opts={}){
   if(!source || isDynamicResearchSource(source)) return null;
@@ -1168,13 +1168,15 @@ async function ensureResearchItemsExecutionIndexes(items,opts={}){
   return {sources,sourceDetails,totalRows,timings,totalMs:Math.round(performance.now()-started)};
 }
 function sourceIndex(source){
+  const rows=getRowsRaw(source);
   const global=dataIndexReady()?state.dataIndex.sources[source]:null;
-  if(global && global.rows===getRowsRaw(source) && (!global.signature||global.signature===researchSourceIndexSignature(source))) return global;
+  if(global && global.rows===rows && (!global.signature||global.signature===researchSourceIndexSignature(source))) return global;
   const scoped=state.researchSourceIndexes instanceof Map?state.researchSourceIndexes.get(source):null;
-  if(scoped && scoped.rows===getRowsRaw(source) && scoped.signature===researchSourceIndexSignature(source)) return scoped;
+  if(scoped && scoped.rows===rows && scoped.signature===researchSourceIndexSignature(source)) return scoped;
   const runIdx=state.runIndexes instanceof Map ? state.runIndexes.get(source) : null;
-  if(runIdx) return runIdx;
-  return state.indexes?.[source] || null;
+  if(runIdx && runIdx.rows===rows && runIdx.signature===sourceVersionSignature(source)) return runIdx;
+  const legacy=state.indexes?.[source];
+  return legacy && legacy.rows===rows && (!legacy.signature||legacy.signature===researchSourceIndexSignature(source)) ? legacy : null;
 }
 function cachedRowsForSource(source, opts={}){
   if(!opts || !opts._sourceRowsCache) return getRows(source, opts);

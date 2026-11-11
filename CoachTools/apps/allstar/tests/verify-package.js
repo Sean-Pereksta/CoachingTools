@@ -41,7 +41,8 @@ for(const vendor of ['xlsx.full.min.js','html2pdf.bundle.min.js','jspdf.umd.min.
   try{ if(!match) throw new Error('Bundled script missing'); new Function(match[1]); check('portable vendor parses: '+vendor,true); }
   catch(error){ check('portable vendor parses: '+vendor,false,error.message); }
 }
-check('portable has no first-party file dependency',!/<(?:link[^>]+href|script[^>]+src)="(?:css|js|qualtrics)\//i.test(portable));
+check('portable has no first-party file dependency',!/<(?:link[^>]+href|script[^>]+src)="(?:(?:css|js|qualtrics)\/|\.\.\/\.\.\/(?:shared|vendor)\/)/i.test(portable));
+check('portable bundles the shared scope adapter',portable.includes('data-coachtools-source="shared/coachtools-app-data.js"')&&portable.includes('root.CoachToolsAppData = Object.freeze'));
 check('portable contains final generator',['allstar-clear-data','simpleQualtricsExecutiveMatrixHtml','QualtricsInsights','Organization Opportunity Summary'].every(x=>portable.includes(x)));
 const contracts=['allStarStandaloneModels.v1','allStarResearchItems.v1','allStarImportedDataCache.v1','allStarResearchRenderedResults.v1','allStarResearchMetricsDb.v1','allStarOrgBuilder.v1','allStarRepAliases.v1','allStarRunSettings.v2','allStarPdfOptions.v1','allStarRunPresets.v1','allStarSavedReports.v1','coachingEmailGeneratorDB','coachingEmailGeneratorOrganizationSummary.v1'];
 const code=files.filter(f=>f.startsWith('js/')||f==='qualtrics/generator.html').map(read).join('\n');
