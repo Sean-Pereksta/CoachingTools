@@ -2598,10 +2598,49 @@ function normalizeReadFlag(v){
   return s;
 }
 
+const SHARED_DATA_TYPES = ['weeklyRetail','weeklyReferral','qa','documentedCoaching','checklist'];
+let sharedDockData = Object.create(null);
+let sharedReloadRevision = 0;
+let sharedReloadJob = null;
+let coachingGapsReady = false;
+
 function loadDockObjByKey(key){
   if(!key) return null;
   const match=Object.values(DOCKS).find(item=>item.key===key);
-  return match ? window.CoachToolsAppData?.peek(match.datasetType) || null : null;
+  return match ? sharedDockData[match.datasetType] || null : null;
+}
+
+function applySharedDockData(){
+  const currentTeam=selectedTeam;
+  loadCoachings(); loadStats(); loadChecklist(); loadQA(); buildKpiUI(); rebuildTeamIndex();
+  if(currentTeam&&teams.includes(currentTeam)){selectedTeam=currentTeam;els.teamSel.value=currentTeam;}
+  render();
+}
+
+function refreshSharedDockData(){
+  sharedReloadRevision++;
+  if(sharedReloadJob) return sharedReloadJob;
+  sharedReloadJob=(async()=>{
+    let completed=0;
+    while(completed!==sharedReloadRevision){
+      const revision=sharedReloadRevision;
+      const scopeKey=window.CoachToolsAppData.getScopeKey();
+      try{
+        const loaded=await window.CoachToolsAppData.getMany(SHARED_DATA_TYPES);
+        if(revision!==sharedReloadRevision) continue;
+        // Keep the completed batch for synchronous parsers. Background identity
+        // learning may invalidate the shared peek cache after this handoff.
+        sharedDockData=loaded;
+        completed=revision;
+        if(coachingGapsReady) applySharedDockData();
+      }catch(error){
+        if(revision!==sharedReloadRevision) continue;
+        if(error?.name==='AbortError'&&scopeKey!==window.CoachToolsAppData.getScopeKey()) continue;
+        throw error;
+      }
+    }
+  })().finally(()=>{sharedReloadJob=null;});
+  return sharedReloadJob;
 }
 
 function aoaToRows(aoa){
@@ -9143,7 +9182,19 @@ els.repSearch.addEventListener('input', ()=> render());
 
 /* =================== Boot =================== */
 (async function boot(){
-  await window.CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','qa','documentedCoaching','checklist']);
+  // Subscribe before loading so scope/identity changes during opening are
+  // retained and refreshed by the same serialized loading job.
+  window.CoachToolsAppData.subscribe(SHARED_DATA_TYPES, detail=>{
+    if(detail?.reason==='scope'){
+      sharedDockData=Object.create(null);
+      if(coachingGapsReady) applySharedDockData();
+    }
+    refreshSharedDockData().catch(error=>{
+      console.error('[Coaching Gaps] Shared data refresh failed.',error);
+      els.dockHint.textContent='Data could not refresh. Reopen Coaching Gaps to retry.';
+    });
+  });
+  await refreshSharedDockData();
   mode = els.modeSel.value;
   paintModeButtons();
   paintCoachingActionButtons();
@@ -9186,14 +9237,8 @@ els.repSearch.addEventListener('input', ()=> render());
   const qaHint = qaRows.length ? `${qaRows.length.toLocaleString()} rows` : `not loaded (needed for Call Quality)`;
   els.dockHint.textContent = `Loaded • Stats: ${allRows.length.toLocaleString()} rows • Coachings: ${coachings.length.toLocaleString()} • Checklist: ${checklistRows.length.toLocaleString()} • QA: ${qaHint} • APP_NS: ${APP_NS}`;
 
+  coachingGapsReady=true;
   render();
-  window.CoachToolsAppData.subscribe(['weeklyRetail','weeklyReferral','qa','documentedCoaching','checklist'], async ()=>{
-    await window.CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','qa','documentedCoaching','checklist']);
-    const currentTeam=selectedTeam;
-    loadCoachings(); loadStats(); loadChecklist(); loadQA(); buildKpiUI(); rebuildTeamIndex();
-    if(currentTeam&&teams.includes(currentTeam)){selectedTeam=currentTeam;els.teamSel.value=currentTeam;}
-    render();
-  });
 })().catch(error=>{console.error('[Coaching Gaps] Shared data startup failed.',error);render();});
 </script>
 

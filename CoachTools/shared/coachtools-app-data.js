@@ -308,7 +308,10 @@
         try {
           const target = typeof owner[method] === 'function' ? owner[method] : owner.getMany;
           const result = await target(requested, bridgedOptions);
-          await prepareCoachingGapsCanonicalData(type => owner.peek(type), types, {
+          await prepareCoachingGapsCanonicalData(type => {
+            const value = result[type];
+            return options && options.includeRecord ? value && value.data : value;
+          }, types, {
             appId,
             ui,
             signal: controller ? controller.signal : upstreamSignal
@@ -465,18 +468,24 @@
     return request;
   }
 
-  async function ready() {
+  async function ready(options) {
     if (!data) throw new Error('CoachToolsData is unavailable.');
     await data.ready();
+    // A restricted cache key includes the identity revision. Capture it only
+    // after the initial registry hydration, which advances that revision.
+    const identity = root.CoachToolsIdentity;
+    if (readScope(options).scopes.length && identity && typeof identity.ready === 'function') await identity.ready();
     return true;
   }
 
   async function get(type, options) {
-    await ready();
+    await ready(options);
     throwIfAborted(options && options.signal);
     const datasetType = canonical(type);
-    const snapshot = readScope(options);
+    const initialScope = readScope(options);
     for (let attempt = 0; attempt < 3; attempt += 1) {
+      ensureScopeCurrent(initialScope);
+      const snapshot = readScope(options);
       const version = data.getDatasetVersion(datasetType);
       const key = versionKey(version) + ':' + snapshot.key;
       const cached = cache.get(datasetType);
@@ -508,6 +517,10 @@
       const record = {...raw,data:await filterDataset(raw.data,datasetType,options),readScopeKey:snapshot.key};
       throwIfAborted(options && options.signal);
       ensureScopeCurrent(snapshot);
+      // Resolving a cold/relayed identity registry or learning new assignments
+      // can change membership during filtering. Refilter before publishing;
+      // otherwise the next peek immediately discards this successful read.
+      if (snapshot.key !== readScope(options).key) continue;
       // Filtering may yield while a replacement commits. Retry rather than
       // publishing a scoped view of the previous source under the new identity.
       if (currentKey !== versionKey(data.getDatasetVersion(datasetType))) {
@@ -522,7 +535,8 @@
     throw new Error('Shared data changed while loading. Please retry the application.');
   }
 
-  async function getManyProgressive(types, options) {
+  async function getManyProgressive(types, options, attempt = 0) {
+    await ready(options);
     const scopeSnapshot = readScope(options);
     const requested = normalizeRequested(types);
     const result = {};
@@ -573,6 +587,11 @@
         }
         if (index < requested.length - 1) await yieldToBrowser(options && options.priority);
       }
+      ensureScopeCurrent(scopeSnapshot);
+      if (scopeSnapshot.key !== readScope(options).key) {
+        if (attempt < 3) return await getManyProgressive(types, options, attempt + 1);
+        throw new Error('Shared team assignments changed while loading. Please retry the application.');
+      }
       if (localCoachingGaps) {
         await prepareCoachingGapsCanonicalData(type => result[type] !== undefined ? result[type] : peek(type), requested.map(item => item.type), {
           appId: 'coaching-gaps',
@@ -581,6 +600,10 @@
         });
       }
       ensureScopeCurrent(scopeSnapshot);
+      if (scopeSnapshot.key !== readScope(options).key) {
+        if (attempt < 3) return await getManyProgressive(types, options, attempt + 1);
+        throw new Error('Shared team assignments changed while loading. Please retry the application.');
+      }
       return result;
     } finally {
       if (!firstReady && diagnostics) diagnostics.end(firstTiming, { cancelled: Boolean(options && options.signal && options.signal.aborted) });
@@ -606,7 +629,7 @@
     for await (const chunk of data.streamRows(canonical(type),args)) { ensureScopeCurrent(snapshot); yield chunk; }
   }
   async function getHistory(type, options) {
-    await ready();
+    await ready(options);
     const snapshot = readScope(options);
     const records = await data.getHistory(canonical(type),{...(options || {}),storageRecords:false});
     ensureScopeCurrent(snapshot);
@@ -743,7 +766,16 @@
       cache.clear();
       callback({...(detail || {}),source:'all',reason:'scope',readScopeKey:getScopeKey(),changedTypes:Array.from(requested)});
     }) : () => {};
-    return () => { stopData(); stopScope(); };
+    const identityChanged = event => {
+      if (getScopeKey() === 'all') return;
+      for (const type of requested) cache.delete(type);
+      callback({...(event && event.detail || {}),source:'all',reason:'identity',readScopeKey:getScopeKey(),changedTypes:Array.from(requested)});
+    };
+    if (typeof root.addEventListener === 'function') root.addEventListener('coachtools:identity-updated', identityChanged);
+    return () => {
+      stopData(); stopScope();
+      if (typeof root.removeEventListener === 'function') root.removeEventListener('coachtools:identity-updated', identityChanged);
+    };
   }
 
   root.CoachToolsAppData = Object.freeze({

@@ -910,15 +910,28 @@
       if (!roster) {
         roster = (async () => {
           const included = new Set(rosterKeys), excluded = new Set(), selectedIds = new Set(coachIds);
+          const now = () => root.performance && typeof root.performance.now === 'function' ? root.performance.now() : Date.now();
+          let scanned = 0, sliceStarted = now();
+          const shouldYield = () => ++scanned % 128 === 0 && now() - sliceStarted >= 8;
+          const yieldRoster = async () => {
+            await new Promise(resolve => root.setTimeout(resolve, 0));
+            sliceStarted = now();
+          };
           if (identity) {
             if (typeof identity.resolveName === 'function') for (const name of coachKeys) {
               try { const result = await identity.resolveName(name); if (result && result.person && result.person.role === 'coach' && ['exact','id'].includes(result.confidence)) selectedIds.add(result.person.personId); } catch (_) {}
             }
             if (typeof identity.getRepsForCoach === 'function') for (const id of selectedIds) {
-              try { for (const person of await identity.getRepsForCoach(id)) for (const name of personLookupNames(person)) included.add(name); } catch (_) {}
+              try { for (const person of await identity.getRepsForCoach(id)) {
+                for (const name of personLookupNames(person)) included.add(name);
+                if (shouldYield()) await yieldRoster();
+              } } catch (_) {}
             }
             if (typeof identity.getRepresentatives === 'function') {
-              try { for (const person of await identity.getRepresentatives()) if (person.currentCoachId && !selectedIds.has(person.currentCoachId)) for (const name of personLookupNames(person)) excluded.add(name); } catch (_) {}
+              try { for (const person of await identity.getRepresentatives()) {
+                if (person.currentCoachId && !selectedIds.has(person.currentCoachId)) for (const name of personLookupNames(person)) excluded.add(name);
+                if (shouldYield()) await yieldRoster();
+              } } catch (_) {}
             }
           }
           // Names-only evaluation/checklist exports need the same roster as stats.
@@ -932,6 +945,7 @@
               const header = streamHeaderContext(rows, 0, type);
               const sheetMatches = coachKeys.has(streamNormalize(sheetName));
               for (let index = header.headerRow + 1; index < rows.length; index++) {
+                if (shouldYield()) await yieldRoster();
                 const row = rows[index];
                 const ownsRow = header.coachColumns.length ? header.coachColumns.some(column => coachKeys.has(streamNormalize(row && row[column]))) : sheetMatches;
                 if (!Array.isArray(row) || !ownsRow) continue;
