@@ -2603,6 +2603,8 @@ let sharedDockData = Object.create(null);
 let sharedReloadRevision = 0;
 let sharedReloadJob = null;
 let coachingGapsReady = false;
+let sharedRefreshTimer = null;
+let sharedDataClosed = false;
 
 function loadDockObjByKey(key){
   if(!key) return null;
@@ -2618,15 +2620,17 @@ function applySharedDockData(){
 }
 
 function refreshSharedDockData(){
+  if(sharedDataClosed) return Promise.resolve();
   sharedReloadRevision++;
   if(sharedReloadJob) return sharedReloadJob;
   sharedReloadJob=(async()=>{
     let completed=0;
-    while(completed!==sharedReloadRevision){
+    while(!sharedDataClosed&&completed!==sharedReloadRevision){
       const revision=sharedReloadRevision;
       const scopeKey=window.CoachToolsAppData.getScopeKey();
       try{
-        const loaded=await window.CoachToolsAppData.getMany(SHARED_DATA_TYPES);
+        const loaded=await window.CoachToolsAppData.getMany(SHARED_DATA_TYPES,{progressUi:!coachingGapsReady});
+        if(sharedDataClosed) return;
         if(revision!==sharedReloadRevision) continue;
         // Keep the completed batch for synchronous parsers. Background identity
         // learning may invalidate the shared peek cache after this handoff.
@@ -2634,6 +2638,7 @@ function refreshSharedDockData(){
         completed=revision;
         if(coachingGapsReady) applySharedDockData();
       }catch(error){
+        if(sharedDataClosed) return;
         if(revision!==sharedReloadRevision) continue;
         if(error?.name==='AbortError'&&scopeKey!==window.CoachToolsAppData.getScopeKey()) continue;
         throw error;
@@ -2641,6 +2646,35 @@ function refreshSharedDockData(){
     }
   })().finally(()=>{sharedReloadJob=null;});
   return sharedReloadJob;
+}
+
+function cancelSharedDockRefresh(){
+  sharedDataClosed=true;
+  clearTimeout(sharedRefreshTimer);
+  sharedRefreshTimer=null;
+}
+
+function scheduleSharedDockRefresh(detail){
+  if(sharedDataClosed) return;
+  clearTimeout(sharedRefreshTimer);
+  sharedRefreshTimer=null;
+  const refresh=()=>{
+    sharedRefreshTimer=null;
+    refreshSharedDockData().catch(error=>{
+      if(sharedDataClosed) return;
+      console.error('[Coaching Gaps] Shared data refresh failed.',error);
+      els.dockHint.textContent='Data could not refresh. Reopen Coaching Gaps to retry.';
+    });
+  };
+  if(detail?.reason==='scope'){
+    sharedDockData=Object.create(null);
+    if(coachingGapsReady) applySharedDockData();
+    refresh();
+  }else{
+    // Setup/import learning can deliver many directory notifications. Reload
+    // their completed state once rather than restart preparation per person.
+    sharedRefreshTimer=setTimeout(refresh,120);
+  }
 }
 
 function aoaToRows(aoa){
@@ -9184,16 +9218,8 @@ els.repSearch.addEventListener('input', ()=> render());
 (async function boot(){
   // Subscribe before loading so scope/identity changes during opening are
   // retained and refreshed by the same serialized loading job.
-  window.CoachToolsAppData.subscribe(SHARED_DATA_TYPES, detail=>{
-    if(detail?.reason==='scope'){
-      sharedDockData=Object.create(null);
-      if(coachingGapsReady) applySharedDockData();
-    }
-    refreshSharedDockData().catch(error=>{
-      console.error('[Coaching Gaps] Shared data refresh failed.',error);
-      els.dockHint.textContent='Data could not refresh. Reopen Coaching Gaps to retry.';
-    });
-  });
+  window.CoachToolsAppData.subscribe(SHARED_DATA_TYPES,scheduleSharedDockRefresh);
+  window.addEventListener('pagehide',cancelSharedDockRefresh,{once:true});
   await refreshSharedDockData();
   mode = els.modeSel.value;
   paintModeButtons();

@@ -543,7 +543,7 @@
     const startedAt = Date.now();
     const diagnostics = root.CoachToolsDiagnostics;
     const appId = options && options.appId || documentAppId() || 'application';
-    const localCoachingGaps = documentAppId() === 'coaching-gaps';
+    const localCoachingGaps = appId === 'coaching-gaps';
     const localUi = localCoachingGaps && (!options || options.progressUi !== false)
       ? mountFrameProgress(requested.map(item => item.type), { appId: 'coaching-gaps' })
       : null;
