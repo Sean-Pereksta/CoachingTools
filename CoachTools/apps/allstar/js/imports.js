@@ -779,7 +779,7 @@ function cloneImportDirtyForStage(value){
 function beginAllStarCentralStage(){
   const previous={
     data:state.data, books:state.books, categorized:state.categorized, categorizationPending:state.categorizationPending, categorizationPendingReason:state.categorizationPendingReason, sourceMeta:state.sourceMeta, categorizedFragments:state.categorizedFragments, models:state.models,
-    versions:state.versions, importCacheDirty:state.importCacheDirty, importCacheSaveReasons:state.importCacheSaveReasons,
+    versions:state.versions, globalScopeView:state.globalScopeView, importCacheDirty:state.importCacheDirty, importCacheSaveReasons:state.importCacheSaveReasons,
     dataIndex:state.dataIndex, indexes:state.indexes, teamIndexCache:state.teamIndexCache, rosterIndex:state.rosterIndex,
     repTeams:state.repTeams, teams:state.teams, selectedTeams:state.selectedTeams, teamSelectionInitialized:state.teamSelectionInitialized,
     identityConflicts:state.identityConflicts, _controlRosterCache:state._controlRosterCache, teamDetailsCache:state.teamDetailsCache,
@@ -828,7 +828,7 @@ function invalidateAllStarCentralBatch(changedDatasets,options={}){
   if(changedDatasets.some(type=>type==='monthlyRetail'||type==='monthlyReferral')){ bumpVersion('roster'); invalidateRosterIndex('central monthly source changed'); }
   if(teamsChanged){
     if(options.deferTeamRebuild){ const invalidatedCachedIndex=!!state.teamIndexCache; state.repTeams=new Map(); state.teams=[]; state.teamIndexCache=null; state.startup.diagnostics={...(state.startup.diagnostics||{}),indexesReused:Math.max(0,Number(state.startup.diagnostics?.indexesReused||0)-(invalidatedCachedIndex?1:0)),indexesDeferred:Number(state.startup.diagnostics?.indexesDeferred||0)+1}; }
-    else rebuildTeams({mutateRows:false});
+    else if(!options.skipTeamRebuild) rebuildTeams({mutateRows:false});
   }
   selectiveResearchInvalidation({reason:'central CoachTools batch',source:sources.join(','),silent:true});
   return {sources,teamsChanged};
@@ -846,40 +846,78 @@ function allStarGlobalNameKey(value){
   const parts=name.split(',').map(part=>part.trim());
   return parts.length===2&&parts.every(Boolean)?parts[1]+' '+parts[0]:name;
 }
-function allStarGlobalRowVisible(row){
-  const key=allStarGlobalScopeKey();
-  if(key==='all')return true;
-  const view=state.globalScopeView;
-  if(!view||view.key!==key)return false;
-  return window.CoachToolsData.rowMatchesScope(allStarGlobalRowIdentity(row),['Representative','Coach'],'',view.context);
+const ALLSTAR_SCOPE_IDENTITY_HEADER=Object.freeze({headerRow:0,header:['Representative','Coach'],personColumns:[0],coachColumns:[1]});
+function allStarGlobalScopeMatcher(key=allStarGlobalScopeKey(),view=state.globalScopeView){
+  if(key==='all')return ()=>true;
+  if(!view||view.key!==key)return ()=>false;
+  const api=window.CoachToolsData,context=view.context;
+  // The normalized identity always has the same two columns. Capture the view
+  // once, rather than parsing scope preferences and headers for every row.
+  return row=>api.rowMatchesScope(allStarGlobalRowIdentity(row),ALLSTAR_SCOPE_IDENTITY_HEADER,'',context);
 }
+function allStarGlobalRowVisible(row){ return allStarGlobalScopeMatcher()(row); }
 const allStarScopedRowsCache=new WeakMap();
 function filterAllStarRowsForGlobalScope(rows){
-  if(allStarGlobalScopeKey()==='all')return rows||[];
+  const key=allStarGlobalScopeKey();
+  if(key==='all')return rows||[];
   if(!Array.isArray(rows))return[];
-  const view=state.globalScopeView,key=allStarGlobalScopeKey(),version=state.versions?.data||0,cache=allStarScopedRowsCache.get(rows);
+  const view=state.globalScopeView,version=state.versions?.data||0,cache=allStarScopedRowsCache.get(rows);
   if(cache&&cache.view===view&&cache.key===key&&cache.version===version&&cache.length===rows.length)return cache.rows;
-  const filtered=rows.filter(allStarGlobalRowVisible);
+  const filtered=rows.filter(allStarGlobalScopeMatcher(key,view));
   allStarScopedRowsCache.set(rows,{view,key,version,length:rows.length,rows:filtered});
   return filtered;
 }
-async function prepareAllStarGlobalScope(){
+function invalidateAllStarGlobalScopeIndexes(){
+  state.rosterIndex=null;state.teamIndexCache=null;state._controlRosterCache=null;
+  if(state.dataIndex)state.dataIndex={...state.dataIndex,dirty:true,sources:{}};
+  state.indexes=null;
+  for(const source of allSourceKeys())if(typeof invalidateRunSourceIndex==='function')invalidateRunSourceIndex(source,'CoachTools view scope changed');
+  state.runIndexes=new Map();state.runPreparationJobs=new Map();
+  if(state.runPrep){state.runPrep.generation=(state.runPrep.generation||0)+1;state.runPrep.ready=new Map();state.runPrep.jobs=new Map();state.runPrep.dateRangeCache=new Map();}
+  state.researchSourceIndexes=new Map();
+  for(const job of state.researchSourceIndexJobs?.values?.()||[])if(job.token)job.token.cancelled=true;
+  state.researchSourceIndexJobs=new Map();state.researchBuildingRowMeta=new WeakMap();
+  state.teamDetailsCache?.clear?.();state.repSuggestionCache=new Map();state.repCandidateCache=null;state.quarantineIndexCache=null;
+  if(typeof selectiveResearchInvalidation==='function')selectiveResearchInvalidation({source:allSourceKeys().join(','),teams:true,reason:'CoachTools view scope changed',silent:true});
+}
+async function prepareAllStarGlobalScope(options={}){
   const api=window.CoachToolsData,key=allStarGlobalScopeKey();
   if(!api?.resolveReadScope){state.globalScopeView=null;return false;}
+  const previous=state.globalScopeView,deferTeams=options.deferTeamRebuild||options.deferIndexes;
+  if(key==='all'){
+    if(previous?.key==='all')return false;
+    state.globalScopeView={key,context:{active:false}};
+    if(previous){
+      invalidateAllStarGlobalScopeIndexes();
+      if(deferTeams){state.repTeams=new Map();state.teams=[];}else rebuildTeams({mutateRows:false});
+    }
+    return false;
+  }
+  const inputs=[state.data.retail.controlRoster||[],state.data.referral.controlRoster||[],...allSourceKeys().map(source=>getRowsUnscoped(source)||[])];
+  const v=state.versions||{},identityVersion=window.CoachToolsIdentity?.getIdentityVersion?.()||'';
+  const rosterVersions=['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral'].map(type=>{
+    const value=api.getDatasetVersion?.(type);return value?[value.datasetId,value.version,value.fingerprint].join(':'):'';
+  }).join('|');
+  const signature=[v.data||0,v.roster||0,v.aliases||0,v.teams||0,v.mappings||0,identityVersion,rosterVersions].join('|');
+  if(previous?.key===key&&previous.signature===signature&&previous.inputs?.length===inputs.length&&inputs.every((rows,i)=>previous.inputs[i].rows===rows&&previous.inputs[i].length===rows.length))return previous.context.active;
   const context=await api.resolveReadScope(undefined,'qa');
   // Cached All-Star Control files can contain the authoritative local roster even
   // before that roster has been imported into the suite's shared datasets.
-  const rows=[...(state.data.retail.controlRoster||[]),...(state.data.referral.controlRoster||[]),...allSourceKeys().flatMap(source=>getRowsUnscoped(source)||[])];
-  for(const row of rows){
+  let count=0,sliceStarted=performance.now();
+  if(key!==allStarGlobalScopeKey()||(options.active&&!options.active()))return false;
+  if(context.active)for(const rows of inputs)for(const row of rows){
     const pair=allStarGlobalRowIdentity(row);
-    if(context.active&&pair[0]&&pair[1]&&api.rowMatchesScope(pair,['Representative','Coach'],'',context))context.rosterKeys.add(allStarGlobalNameKey(pair[0]));
+    if(pair[0]&&pair[1]&&api.rowMatchesScope(pair,ALLSTAR_SCOPE_IDENTITY_HEADER,'',context))context.rosterKeys.add(allStarGlobalNameKey(pair[0]));
+    count++;
+    if(count%1200===0||(count%64===0&&performance.now()-sliceStarted>=8)){
+      await yieldToBrowser();sliceStarted=performance.now();
+      if(key!==allStarGlobalScopeKey()||(options.active&&!options.active()))return false;
+    }
   }
   if(key!==allStarGlobalScopeKey())return false;
-  state.globalScopeView={key,context};
-  state.rosterIndex=null;state.teamIndexCache=null;state._controlRosterCache=null;
-  if(state.dataIndex)state.dataIndex.dirty=true;
-  state.repSuggestionCache=new Map();state.repCandidateCache=new Map();
-  rebuildTeams({mutateRows:false});
+  state.globalScopeView={key,context,signature,inputs:inputs.map(rows=>({rows,length:rows.length}))};
+  invalidateAllStarGlobalScopeIndexes();
+  if(deferTeams){state.repTeams=new Map();state.teams=[];}else rebuildTeams({mutateRows:false});
   return context.active;
 }
 function readAllStarCentralRecord(datasetType){
@@ -896,7 +934,7 @@ function readAllStarCentralRecord(datasetType){
     // Clone before editing so sibling apps keep their shared cached record.
     return Promise.resolve(sharedAdapter.get(datasetType,{includeRecord:true,unscoped:true})).then(record=>record==null?record:window.structuredClone(record));
   }
-  return window.CoachToolsData.getCurrent(datasetType,{includeRecord:true});
+  return window.CoachToolsData.getCurrent(datasetType,{includeRecord:true,unscoped:true});
 }
 async function syncAllStarFromCoachToolsData(options={}){
   if(state.reportingDataClearing || (state.reportingDataCleared && !options.forceSharedReload)) return {changed:false,cleared:true};
@@ -907,9 +945,10 @@ async function syncAllStarFromCoachToolsData(options={}){
   const active=()=>!state.lifecycle?.closing && syncGeneration===state.centralSyncGeneration && lifecycleGeneration===Number(state.lifecycle?.generation||0);
   const job=options.job||null;
   await window.CoachToolsData.ready();
-  const previousViewScopeKey=state.globalScopeView?.key;
-  await prepareAllStarGlobalScope();
-  const viewScopeChanged=previousViewScopeKey!==state.globalScopeView?.key;
+  const previousViewScope=state.globalScopeView;
+  await prepareAllStarGlobalScope({deferTeamRebuild:!!job||!!options.deferTeamRebuild,deferIndexes:!!options.deferIndexes,active});
+  if(!active()||(window.CoachToolsData.resolveReadScope&&state.globalScopeView?.key!==allStarGlobalScopeKey()))return {changed:false,cancelled:true};
+  const viewScopeChanged=previousViewScope!==state.globalScopeView;
   const onlyDatasets=Array.isArray(options.onlyDatasets)?new Set(options.onlyDatasets):null;
   const mappings=[
     ['weeklyRetail',(file,wb,common)=>loadDatedStatsFile('weeklyRetail',file,{workbook:wb,...common})],
@@ -933,7 +972,7 @@ async function syncAllStarFromCoachToolsData(options={}){
     if(job) updateAllStarStartupProgress(job,`Comparing ${datasetType}…`,45+Math.round(25*((index+1)/mappings.length)));
     if(!meta) continue;
     const identity=allStarCentralSyncIdentity(meta);
-    const slotReady=allStarSourcesForDataset(datasetType).some(source=>(getRowsRaw(source)||[]).length>0 || state.sourceMeta?.[source]?.status==='ready');
+    const slotReady=allStarSourcesForDataset(datasetType).some(source=>state.sourceMeta?.[source]?.status==='ready' || (getRowsUnscoped(source)||[]).length>0);
     const monthlyArea=datasetType==='monthlyRetail'?'retail':datasetType==='monthlyReferral'?'referral':'';
     const localMonthlyTime=monthlyArea?Date.parse(state.sourceMeta?.[`${monthlyArea}_sv2`]?.lastImportedAt||''):NaN;
     const reviewedMonthlyUpdate=monthlyArea && meta.classificationMethod==='reviewed-monthly-bundle' && !sameAllStarCentralIdentity(synced[datasetType],identity) && (!Number.isFinite(localMonthlyTime)||Date.parse(meta.importedAt)>localMonthlyTime);
@@ -983,8 +1022,10 @@ async function syncAllStarFromCoachToolsData(options={}){
     }
     if(!active()) throw Object.assign(new Error('Central synchronization cancelled.'),{cancelled:true});
     if(typeof applyRememberedCoachCorrections==='function') await applyRememberedCoachCorrections({sources:applied.flatMap(allStarSourcesForDataset)});
-    await prepareAllStarGlobalScope();
-    const invalidation=invalidateAllStarCentralBatch(applied,{deferTeamRebuild:!!job||!!options.deferTeamRebuild});
+    const invalidation=invalidateAllStarCentralBatch(applied,{deferTeamRebuild:!!job||!!options.deferTeamRebuild||!!options.deferIndexes,skipTeamRebuild:true});
+    await prepareAllStarGlobalScope({deferTeamRebuild:true,deferIndexes:!!options.deferIndexes,active});
+    if(!active()||(window.CoachToolsData.resolveReadScope&&state.globalScopeView?.key!==allStarGlobalScopeKey()))throw Object.assign(new Error('View scope changed during central synchronization.'),{cancelled:true});
+    if(!job&&!options.deferTeamRebuild&&!options.deferIndexes)rebuildTeams({mutateRows:false});
     const categorizable=applied.some(type=>['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist','compCoaching'].includes(type));
     if(categorizable){
       if(job) setAllStarStartupPhase(job,90,96,'Source data refreshed — categorization is waiting for the button…');
@@ -1937,10 +1978,10 @@ function normalizeStatRow(row, dept, part, columns={}, headers=[]){
   return out;
 }
 function controlRosterRows(){
-  return [
+  return filterAllStarRowsForGlobalScope([
     ...(state.data.retail.controlRoster||[]),
     ...(state.data.referral.controlRoster||[])
-  ].filter(allStarGlobalRowVisible).map(r=>{
+  ]).map(r=>{
     const sourceArea=r.sourceArea||r.source||(/referral/i.test(r._sourceKey||'')?'referral':'retail');
     const rep=cleanName(r.displayName||r.originalName||r._rep||r.representative||r.Representative||'');
     const team=canonicalCoachName(r._team||r.team||r.Team||'');
