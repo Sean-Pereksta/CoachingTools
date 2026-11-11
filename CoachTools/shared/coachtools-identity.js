@@ -295,6 +295,13 @@
     };
   }
 
+  function samePersonData(left, right) {
+    if (!left || !right) return false;
+    const { updatedAt: leftUpdatedAt, ...before } = left;
+    const { updatedAt: rightUpdatedAt, ...after } = right;
+    return JSON.stringify(before) === JSON.stringify(after);
+  }
+
   function addIndexValue(index, key, personId) {
     const normalized = cleanDisplay(key);
     if (!normalized) return;
@@ -430,12 +437,11 @@
     await putInStore(REVIEW_STORE, value); return value;
   }
 
-  async function upsertObserved(rawName, options) {
+  async function upsertObserved(rawName, options, changedPeople) {
     const original = cleanDisplay(rawName), normalized = normalizeName(original);
     if (!normalized) return null;
     const words = normalized.split(' ').filter(Boolean);
     await ensurePeopleMemory();
-    const all = sortedPeople();
     const matchIds = new Set([...(peopleByNormalizedName.get(normalized) || []), ...(peopleByAlias.get(normalized) || [])]);
     const matches = peopleForIds(matchIds);
     const observedRole = normalizedRole(options && options.role);
@@ -444,7 +450,7 @@
       return null;
     }
     if (!matches.length && words.length < 2 && !(options && options.allowSingleToken)) {
-      await addReview({ type: 'uncertain-name', rawName: original, normalizedName: normalized, source: options && options.source || '', candidates: all.filter(person => person.normalizedName.split(' ').includes(normalized)).map(person => person.personId).slice(0, 12) });
+      await addReview({ type: 'uncertain-name', rawName: original, normalizedName: normalized, source: options && options.source || '', candidates: sortedPeople().filter(person => person.normalizedName.split(' ').includes(normalized)).map(person => person.personId).slice(0, 12) });
       return null;
     }
     if (matches.length > 1) {
@@ -472,7 +478,9 @@
       sourceNames: sourceNamesWith(person, options && options.source || 'unknown', original),
       updatedAt: nowIso()
     });
+    if (samePersonData(matches[0], person)) return clone(matches[0]);
     await putInStore(PEOPLE_STORE, person);
+    if (changedPeople) changedPeople.add(person.personId);
     return person;
   }
 
@@ -711,6 +719,7 @@
       createdAt: current.createdAt,
       updatedAt: nowIso()
     });
+    if (samePersonData(current, next)) return current;
     const conflict = (await getAllPeople()).find(person => person.personId !== personId && person.normalizedName === next.normalizedName);
     if (conflict) throw new Error(`That preferred name already belongs to ${conflict.displayName}. Merge the identities instead.`);
     await putInStore(PEOPLE_STORE, next); emit({ reason: 'person-updated', personId }); return next;
@@ -773,22 +782,26 @@
   async function syncTeamSetup(setup) {
     const value = setup || (() => { try { return JSON.parse(root.localStorage.getItem(SETUP_KEY) || 'null'); } catch (_) { return null; } })();
     const groups = value && value.groups || {};
-    let updated = 0;
-    for (const group of groups.team || []) {
-      for (const member of group.members || []) {
-        const department = /^retail\b/i.test(group.name) ? 'Retail' : /^referral\b/i.test(group.name) ? 'Referral' : '';
-        const person = await upsertObserved(member, { role: 'coach', team: group.name, department, source: 'teamSetup', allowSingleToken: true });
-        if (person) {
-          await updatePerson(person.personId, { team: group.name, currentTeam: group.name, department: department || person.department }); updated += 1;
+    const changedPeople = new Set();
+    let completed = false;
+    try {
+      for (const group of groups.team || []) {
+        for (const member of group.members || []) {
+          const department = /^retail\b/i.test(group.name) ? 'Retail' : /^referral\b/i.test(group.name) ? 'Referral' : '';
+          await upsertObserved(member, { role: 'coach', team: group.name, department, source: 'teamSetup', allowSingleToken: true }, changedPeople);
         }
       }
+      for (const group of groups.coord || []) for (const member of group.members || []) {
+        const resolved = await resolve(member);
+        await upsertObserved(member, { role: resolved.person && resolved.person.role || 'coach', coordinator: group.name, source: 'teamSetup', allowSingleToken: true }, changedPeople);
+      }
+      completed = true;
+      return changedPeople.size;
+    } finally {
+      // Each person commits independently. If a later write fails, consumers
+      // still need the assignments that already committed; preserve the error.
+      if (changedPeople.size) emit({ reason: completed ? 'team-setup-synced' : 'team-setup-partial', updated: changedPeople.size });
     }
-    for (const group of groups.coord || []) for (const member of group.members || []) {
-      const resolved = await resolve(member), person = resolved.person || await upsertObserved(member, { role: 'coach', source: 'teamSetup', allowSingleToken: true });
-      if (person) { await updatePerson(person.personId, { coordinator: group.name }); updated += 1; }
-    }
-    if (updated) emit({ reason: 'team-setup-synced', updated });
-    return updated;
   }
 
   async function getRelationships(personId) {

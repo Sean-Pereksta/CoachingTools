@@ -463,6 +463,13 @@
   async function installIntelligenceSurface() {
     if (!intelligenceApps.has(app.id)) return;
     try {
+      // Hosted Gaps already reads its parent's scoped sources. Reuse that
+      // directory too, rather than starting a second setup/ingestion job.
+      if (!root.CoachToolsIdentity && app.id === 'coaching-gaps') {
+        try {
+          if (root.parent && root.parent !== root && root.parent.CoachToolsIdentity) root.CoachToolsIdentity = root.parent.CoachToolsIdentity;
+        } catch (_) {}
+      }
       if (!root.CoachToolsIdentity) await loadSharedScript('coachtools-identity.js', () => Boolean(root.CoachToolsIdentity));
       if (!root.CoachToolsIntelligence) await loadSharedScript('coachtools-intelligence.js', () => Boolean(root.CoachToolsIntelligence));
       if (!root.CoachToolsIntelligence || root.CoachToolsIntelligence.VERSION !== '1.1.0') {

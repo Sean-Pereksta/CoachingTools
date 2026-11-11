@@ -10,7 +10,7 @@
       if (!api.install(root)) return;
       // Rebuild from raw dates, never shift already-computed week keys or stored reports.
       // This also covers the case where the initial async boot finished before this extension.
-      Promise.resolve(root.CoachToolsAppData.getMany(['weeklyRetail', 'weeklyReferral', 'qa', 'documentedCoaching', 'checklist'])).then(() => {
+      Promise.resolve(root.CoachToolsAppData.getMany(['weeklyRetail', 'weeklyReferral', 'qa', 'documentedCoaching', 'checklist'],{progressUi:false})).then(() => {
         const button = doc.getElementById('loadDocksBtn');
         if (!button) throw new Error('The Coaching Gaps data reload control was not found.');
         button.click();
