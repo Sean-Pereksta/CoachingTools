@@ -377,6 +377,38 @@
     return direct || ({ retail: 'weeklyRetail', referral: 'weeklyReferral', coaching: 'documentedCoaching' })[raw.toLowerCase()] || raw;
   }
 
+  // Keep a few recent views per source. A scope switch can reuse its earlier
+  // record only when both source identity and membership revision still match.
+  function cachedView(type, key) {
+    const views = cache.get(type);
+    const view = views?.get(key);
+    if (view) {
+      views.delete(key);
+      views.set(key, view);
+    }
+    return view;
+  }
+  function rememberView(type, key, record) {
+    const views = cache.get(type) || new Map();
+    views.delete(key);
+    // Keep the current view even when large. Older views share an estimated
+    // 8 MiB budget per dataset, with a maximum of three previous selections.
+    const budget = 8 * 1024 * 1024;
+    let remaining = budget;
+    for (const [olderKey, entry] of [...views].reverse()) {
+      entry.bytes ??= data.storageFormat?.estimatedWorkbookBytes?.(entry.record?.data, budget + 1)
+        ?? (entry.record?.fileSize || 0);
+      if (entry.bytes > remaining) views.delete(olderKey);
+      else remaining -= entry.bytes;
+    }
+    views.set(key, {key, record});
+    while (views.size > 4) views.delete(views.keys().next().value);
+    cache.set(type, views);
+  }
+  function membershipVersion(scope) {
+    const identity = root.CoachToolsIdentity;
+    return identity?.getMembershipVersion?.(scope) ?? identity?.getIdentityVersion?.() ?? '';
+  }
   function versionKey(version) {
     return version ? `${version.datasetId || ''}:${Number(version.version) || 0}:${version.fingerprint || ''}${version.readScopeKey ? ':' + version.readScopeKey : ''}` : '';
   }
@@ -393,7 +425,7 @@
     const requested = options && options.scope;
     const scopes = [active, requested].filter(scope => scope && scope.mode && scope.mode !== 'all');
     const unique = scopes.filter((scope,index) => scopes.findIndex(other => getScopeKey(other) === getScopeKey(scope)) === index);
-    const rosterVersion = unique.length ? ':' + (root.CoachToolsIdentity && root.CoachToolsIdentity.getIdentityVersion ? root.CoachToolsIdentity.getIdentityVersion() : '') + ':' + ['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral'].map(type => versionKey(data && data.getDatasetVersion && data.getDatasetVersion(type))).join('|') : '';
+    const rosterVersion = unique.length ? ':' + unique.map(membershipVersion).join(',') + ':' + ['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral'].map(type => versionKey(data && data.getDatasetVersion && data.getDatasetVersion(type))).join('|') : '';
     return {scopes:unique,key:(unique.map(getScopeKey).join('&') || 'all') + rosterVersion,globalKey:getScopeKey()};
   }
   function ensureScopeCurrent(snapshot) {
@@ -459,10 +491,11 @@
     }).filter(item => item.type && !seen.has(item.type) && seen.add(item.type)).sort((left, right) => left.priority - right.priority || left.index - right.index);
   }
 
-  async function readRecord(datasetType) {
-    const pendingKey = `${datasetType}:${versionKey(data.getDatasetVersion(datasetType)) || 'legacy'}`;
+  async function readRecord(datasetType, snapshot) {
+    const indexed = snapshot.scopes.length && typeof data.getScopedCurrent === 'function';
+    const pendingKey = JSON.stringify([datasetType, versionKey(data.getDatasetVersion(datasetType)), indexed ? snapshot.key : 'raw']);
     if (pendingReads.has(pendingKey)) return pendingReads.get(pendingKey);
-    const request = data.getCurrent(datasetType, { includeRecord: true })
+    const request = (indexed ? data.getScopedCurrent(datasetType, snapshot.scopes[0]) : data.getCurrent(datasetType, { includeRecord: true }))
       .finally(() => pendingReads.delete(pendingKey));
     pendingReads.set(pendingKey, request);
     return request;
@@ -488,11 +521,11 @@
       const snapshot = readScope(options);
       const version = data.getDatasetVersion(datasetType);
       const key = versionKey(version) + ':' + snapshot.key;
-      const cached = cache.get(datasetType);
+      const cached = cachedView(datasetType, key);
       if (cached && cached.key === key && !(options && options.force)) {
         return options && options.includeRecord ? cached.record : cached.record && cached.record.data || null;
       }
-      const raw = await readRecord(datasetType);
+      const raw = await readRecord(datasetType, snapshot);
       throwIfAborted(options && options.signal);
       ensureScopeCurrent(snapshot);
       const currentVersion = data.getDatasetVersion(datasetType);
@@ -514,7 +547,10 @@
         cache.delete(datasetType);
         continue;
       }
-      const record = {...raw,data:await filterDataset(raw.data,datasetType,options),readScopeKey:snapshot.key};
+      let view = raw.data;
+      const remaining = typeof data.getScopedCurrent === 'function' ? snapshot.scopes.slice(1) : snapshot.scopes;
+      for (const scope of remaining) view = await data.filterDataset(view, datasetType, scope);
+      const record = {...raw, data:view, readScopeKey:snapshot.key};
       throwIfAborted(options && options.signal);
       ensureScopeCurrent(snapshot);
       // Resolving a cold/relayed identity registry or learning new assignments
@@ -528,7 +564,7 @@
         continue;
       }
       const recordKey = currentKey || versionKey({ datasetId: raw.id || `legacy:${datasetType}`, version: raw.version || 0, fingerprint: raw.fingerprint || '' });
-      cache.set(datasetType, { key: recordKey + ':' + snapshot.key, record });
+      rememberView(datasetType, recordKey + ':' + snapshot.key, record);
       trackedVersions.set(datasetType, recordKey);
       return options && options.includeRecord ? record : record.data || null;
     }
@@ -631,12 +667,17 @@
   async function getHistory(type, options) {
     await ready(options);
     const snapshot = readScope(options);
-    const records = await data.getHistory(canonical(type),{...(options || {}),storageRecords:false});
+    const indexed = snapshot.scopes.length && typeof data.getScopedCurrent === 'function';
+    const records = await data.getHistory(canonical(type),{...(options || {}),storageRecords:false,readScope:indexed ? snapshot.scopes[0] : null});
     ensureScopeCurrent(snapshot);
     if (options && options.metadataOnly) return records;
     const filtered = [];
     for (const record of records) {
-      filtered.push({...record,data:await filterDataset(record.data,type,options),readScopeKey:snapshot.key});
+      let view = record.data;
+      for (const scope of indexed ? snapshot.scopes.slice(1) : snapshot.scopes) {
+        view = await data.filterDataset(view, canonical(type), scope);
+      }
+      filtered.push({...record, data:view, readScopeKey:snapshot.key});
       ensureScopeCurrent(snapshot);
     }
     return filtered;
@@ -730,12 +771,9 @@
   }
 
   function peek(type, options) {
-    const datasetType = canonical(type), cached = cache.get(datasetType);
+    const datasetType = canonical(type);
+    const cached = cachedView(datasetType, versionKey(data.getDatasetVersion(datasetType)) + ':' + readScope(options).key);
     if (!cached) return null;
-    if (cached.key !== versionKey(data.getDatasetVersion(datasetType)) + ':' + readScope(options).key) {
-      cache.delete(datasetType);
-      return null;
-    }
     return options && options.includeRecord ? cached.record : cached.record && cached.record.data || null;
   }
 
@@ -754,7 +792,7 @@
       const changed = [];
       for (const type of candidates) {
         const next = versionKey(data.getDatasetVersion(type));
-        const previous = trackedVersions.get(type) || cache.get(type) && cache.get(type).key || '';
+        const previous = trackedVersions.get(type) || '';
         if (next === previous && detail && detail.reason !== 'removed' && !rosterChanged) continue;
         cache.delete(type);
         trackedVersions.set(type, next);
@@ -762,13 +800,16 @@
       }
       if (changed.length) callback({ ...(detail || {}), changedTypes: changed });
     });
+    let lastMembership = membershipVersion(storage?.getScope?.());
     const stopScope = data.subscribeScope ? data.subscribeScope(detail => {
-      cache.clear();
+      lastMembership = membershipVersion(storage?.getScope?.());
       callback({...(detail || {}),source:'all',reason:'scope',readScopeKey:getScopeKey(),changedTypes:Array.from(requested)});
     }) : () => {};
     const identityChanged = event => {
       if (getScopeKey() === 'all') return;
-      for (const type of requested) cache.delete(type);
+      const membership = membershipVersion(storage?.getScope?.());
+      if (root.CoachToolsIdentity?.getMembershipVersion && membership === lastMembership) return;
+      lastMembership = membership;
       callback({...(event && event.detail || {}),source:'all',reason:'identity',readScopeKey:getScopeKey(),changedTypes:Array.from(requested)});
     };
     if (typeof root.addEventListener === 'function') root.addEventListener('coachtools:identity-updated', identityChanged);

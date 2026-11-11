@@ -19,6 +19,59 @@
   const repsByCoach = new Map();
   const peopleByTeam = new Map();
   let identityVersion = 0;
+  let membershipVersion = 0, sharedMembershipVersion = 0, lastAnnouncedMembership = 0;
+  const coachMembershipVersions = new Map();
+  function resetMembership() {
+    sharedMembershipVersion = ++membershipVersion;
+    coachMembershipVersions.clear();
+  }
+  function membershipNames(person) {
+    return [...new Set([person.displayName, person.normalizedName, ...(person.aliases || []),
+      ...Object.values(person.sourceNames || {}).flat()].map(normalizeName).filter(Boolean))].sort();
+  }
+  function trackMembership(before, after) {
+    if (!before || !after) { resetMembership(); return; }
+    const sameNames = JSON.stringify(membershipNames(before)) === JSON.stringify(membershipNames(after));
+    if (sameNames && before.role === after.role && before.currentTeam === after.currentTeam &&
+        before.department === after.department && before.coordinator === after.coordinator &&
+        before.normalizedName === after.normalizedName && JSON.stringify(before.aliasKeys) === JSON.stringify(after.aliasKeys)) {
+      if (before.currentCoachId === after.currentCoachId) return;
+      if (before.role === 'representative' && before.currentCoachId && after.currentCoachId) {
+        membershipVersion++;
+        coachMembershipVersions.set(before.currentCoachId, membershipVersion);
+        coachMembershipVersions.set(after.currentCoachId, membershipVersion);
+        return;
+      }
+    }
+    // New/ambiguous aliases and newly claimed names can exclude stale stats
+    // under any coach. Re-evaluate all memberships for those changes.
+    resetMembership();
+  }
+  function getMembershipVersion(scope) {
+    if (scope?.mode !== 'coach') return membershipVersion;
+    const ids = new Set(scope.coachPersonIds || []);
+    if (scope.personId) ids.add(scope.personId);
+    const names = [...(scope.coaches || []), ...(scope.coachKeys || [])];
+    if (!names.length && scope.label) names.push(scope.label);
+    for (const name of names) {
+      const key = normalizeName(name);
+      for (const id of peopleByNormalizedName.get(key) || []) ids.add(id);
+      for (const id of peopleByAlias.get(key) || []) ids.add(id);
+    }
+    // An ID may expand to source spellings that resolve to additional coaches.
+    // Ambiguous names require the conservative directory revision.
+    for (const id of ids) {
+      const person = memoryPeople.get(id);
+      if (!person) continue;
+      for (const name of membershipNames(person)) {
+        for (const other of peopleByNormalizedName.get(name) || []) ids.add(other);
+        for (const other of peopleByAlias.get(name) || []) ids.add(other);
+      }
+    }
+    let latest = sharedMembershipVersion;
+    for (const id of ids) latest = Math.max(latest, coachMembershipVersions.get(id) || 0);
+    return latest;
+  }
   let memoryHydrated = false;
   let memoryHydrationPromise = null;
   let sortedPeopleCache = [];
@@ -221,18 +274,20 @@
 
   async function deleteFromStore(storeName, id) {
     if (databaseUnavailable) {
-      if (storeName === PEOPLE_STORE) { removePersonFromIndexes(memoryPeople.get(id)); memoryPeople.delete(id); sortedPeopleDirty = true; identityVersion += 1; }
+      if (storeName === PEOPLE_STORE) { resetMembership(); removePersonFromIndexes(memoryPeople.get(id)); memoryPeople.delete(id); sortedPeopleDirty = true; identityVersion += 1; }
       else memoryReviews.delete(id);
       return;
     }
     const db = await openDatabase();
     try { const tx = db.transaction(storeName, 'readwrite'); tx.objectStore(storeName).delete(id); await transactionDone(tx); }
     finally { db.close(); }
-    if (storeName === PEOPLE_STORE) { removePersonFromIndexes(memoryPeople.get(id)); memoryPeople.delete(id); sortedPeopleDirty = true; identityVersion += 1; }
+    if (storeName === PEOPLE_STORE) { resetMembership(); removePersonFromIndexes(memoryPeople.get(id)); memoryPeople.delete(id); sortedPeopleDirty = true; identityVersion += 1; }
   }
 
   function emit(detail) {
-    const payload = { updatedAt: nowIso(), identityVersion, ...(detail || {}) };
+    const membershipChanged = membershipVersion !== lastAnnouncedMembership;
+    lastAnnouncedMembership = membershipVersion;
+    const payload = { updatedAt: nowIso(), identityVersion, membershipChanged, ...(detail || {}) };
     try { root.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: payload })); } catch (_) {}
     try { if (root.parent && root.parent !== root) root.parent.postMessage({ type: EVENT_NAME, detail: payload }, '*'); } catch (_) {}
     try { if (channel) channel.postMessage({ type: EVENT_NAME, detail: payload }); } catch (_) {}
@@ -327,8 +382,9 @@
     removeIndexValue(peopleByTeam, normalizeName(person.currentTeam || person.team), person.personId);
   }
 
-  function indexPerson(person) {
+  function indexPerson(person, track = true) {
     const canonical = sanitizePerson(person);
+    if (track) trackMembership(memoryPeople.get(canonical.personId), canonical);
     removePersonFromIndexes(memoryPeople.get(canonical.personId));
     memoryPeople.set(canonical.personId, canonical);
     addIndexValue(peopleByNormalizedName, canonical.normalizedName, canonical.personId);
@@ -356,15 +412,28 @@
   }
 
   function rebuildPeopleIndexes(people) {
+    // A descriptive update from another window still refreshes the directory.
+    // Compare any retained membership before publishing the replacement.
+    if (memoryPeople.size) {
+      const present = new Set();
+      for (const person of people || []) {
+        present.add(person.personId);
+        trackMembership(memoryPeople.get(person.personId), sanitizePerson(person));
+      }
+      if ([...memoryPeople.keys()].some(id => !present.has(id))) resetMembership();
+    } else resetMembership();
     clearPeopleIndexes();
-    for (const person of people || []) indexPerson(person);
+    for (const person of people || []) indexPerson(person, false);
     memoryHydrated = true;
     identityVersion += 1;
     return memoryPeople.size;
   }
 
-  function invalidatePeopleIndexes() {
-    clearPeopleIndexes();
+  function invalidatePeopleIndexes(membershipChanged = true) {
+    if (membershipChanged) {
+      resetMembership();
+      clearPeopleIndexes();
+    }
     memoryHydrated = false;
     memoryHydrationPromise = null;
     identityVersion += 1;
@@ -586,6 +655,7 @@
         sourceNames: sourceNamesWith(current, source, original),
         updatedAt: nowIso()
       });
+      if (matches.length && samePersonData(current, person)) return current;
       if (!matches.length) people.push(person);
       return remember(person);
     };
@@ -864,7 +934,7 @@
 
   if (channel) channel.onmessage = event => {
     if (event.data && event.data.type === EVENT_NAME) {
-      invalidatePeopleIndexes();
+      invalidatePeopleIndexes(event.data.detail?.membershipChanged !== false);
       try { root.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { ...(event.data.detail || {}), relayed: true, identityVersion } })); } catch (_) {}
     }
   };
@@ -895,7 +965,7 @@
     getCoachesByTeam: team => getIndexedPeople(coachesByTeam, normalizeName(team)),
     getRepsForCoach: coachPersonId => getIndexedPeople(repsByCoach, cleanDisplay(coachPersonId)),
     getPeopleForTeam: team => getIndexedPeople(peopleByTeam, normalizeName(team)),
-    getIdentityVersion: () => identityVersion,
+    getIdentityVersion: () => identityVersion, getMembershipVersion,
     addAlias, removeAlias, mergePeople, undoMerge, updatePerson, getRelationships, getReviews,
     learn: upsertObserved, ingestDataset, ingestStoredDataset, queueDatasetIngestion, syncTeamSetup, subscribe,
     _test: Object.freeze({ extractRows, pick, sanitizePerson, upsertObserved, objectsFromStreamChunk })

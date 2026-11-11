@@ -637,6 +637,7 @@
       const tx = db.transaction([DATASET_STORE, DATASET_CHUNK_STORE, CURRENT_STORE, IMPORT_STORE], 'readwrite');
       const writeDatasetStore = tx.objectStore(DATASET_STORE);
       for (const old of replacedRecords) {
+        deleteScopeIndex(tx.objectStore(DATASET_CHUNK_STORE), old.id);
         writeDatasetStore.delete(old.id);
         const cursorRequest=tx.objectStore(DATASET_CHUNK_STORE).index('datasetId').openCursor(old.id);
         cursorRequest.onsuccess=()=>{const cursor=cursorRequest.result;if(cursor){cursor.delete();cursor.continue();}};
@@ -659,8 +660,11 @@
         // in-memory tree on the save path.
         cacheCurrentRecord(datasetType, { ...record, data: storedData.chunked ? data : clone(data) });
       }
+      // Publish the committed pointer before any optional indexing yields.
       persistMetadataSnapshot();
       notifyDataUpdated(datasetType, { reason: samePeriod ? 'replacement' : 'imported', datasetId: id, version });
+      try { await scopeIndex(db, datasetType, id, record, data); }
+      catch (error) { console.warn('[CoachToolsData] Scope index will be retried on demand.', error); }
       return { status: forceSourceReplacement || samePeriod ? 'replacement' : 'imported', dataset: compactMetadata(record), current: shouldBecomeCurrent ? compactMetadata(pointerCandidate) : compactMetadata(current) };
     } finally {
       db.close();
@@ -904,8 +908,8 @@
     const rosterKeys = new Set(scope && scope.mode !== 'representative' ? (scope.representatives || []).map(streamNormalize) : []);
     const excludedPersonKeys = new Set();
     if (scope && scope.mode !== 'representative') {
-      const identityVersion = identity && typeof identity.getIdentityVersion === 'function' ? identity.getIdentityVersion() : '';
-      const rosterKey = getScopeKey(scope) + ':' + identityVersion + ':' + ['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral'].map(type => { const version = getDatasetVersion(type); return version ? version.datasetId + ':' + version.version : ''; }).join('|');
+      const identityVersion = identity?.getMembershipVersion?.(scope) ?? identity?.getIdentityVersion?.() ?? '';
+      const rosterKey = JSON.stringify([getScopeKey(scope), [...coachKeys].sort(), [...coachIds].sort()]) + ':' + identityVersion + ':' + ['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral'].map(type => { const version = getDatasetVersion(type); return version ? version.datasetId + ':' + version.version : ''; }).join('|');
       let roster = scopeRosterCache.get(rosterKey);
       if (!roster) {
         roster = (async () => {
@@ -937,6 +941,14 @@
           // Names-only evaluation/checklist exports need the same roster as stats.
           // Only explicit ownership fields participate; Supervisor/Manager never join a person.
           for (const type of ['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral']) {
+            const indexed = await indexedRoster(type, coachKeys).catch(() => null);
+            if (indexed) {
+              for (const name of indexed) {
+                if (!excluded.has(name)) included.add(name);
+                if (shouldYield()) await yieldRoster();
+              }
+              continue;
+            }
             let raw;
             try { raw = await getCurrent(type); } catch (_) { continue; }
             const sheets = raw && raw.workbook && raw.workbook.data || {};
@@ -955,7 +967,11 @@
           }
           return {included,excluded};
         })();
-        scopeRosterCache.clear();
+        scopeRosterCache.set(rosterKey, roster);
+        if (scopeRosterCache.size > 4) scopeRosterCache.delete(scopeRosterCache.keys().next().value);
+        roster.catch(() => { if (scopeRosterCache.get(rosterKey) === roster) scopeRosterCache.delete(rosterKey); });
+      } else {
+        scopeRosterCache.delete(rosterKey);
         scopeRosterCache.set(rosterKey, roster);
       }
       const membership = await roster;
@@ -977,6 +993,191 @@
       rowFilter: options && typeof options.rowFilter === 'function' ? options.rowFilter : null
     };
   }
+  // The immutable source ID binds these optional postings to the same workbook
+  // as the canonical chunks. Only row addresses and roster names are duplicated.
+  const pendingScopeIndexes = new Map();
+  function scopeIndexKey(id) {
+    const normalizer = root.CoachToolsIdentity?.normalizeName ? 'identity' : 'basic';
+    return 'scope-index-v1:' + normalizer + ':' + id;
+  }
+  function deleteScopeIndex(store, id) {
+    for (const normalizer of ['identity', 'basic']) {
+      const key = 'scope-index-v1:' + normalizer + ':' + id;
+      store.delete(key);
+      // Postings use [manifest key, string token]. Arrays sort after strings
+      // in IndexedDB, so this removes every posting with exactly this prefix.
+      store.delete(idbKeyRange().bound([key], [key, []]));
+    }
+  }
+  async function buildScopeIndex(db, record, source, key) {
+    const sheets = source?.workbook?.data;
+    if (!sheets) return null;
+    const entries = new Map(), descriptors = [];
+    const group = 'scope-index:' + record.id;
+    let firstChunk = 0;
+    function entry(field, name) {
+      const token = field + ':' + name;
+      if (!entries.has(token)) entries.set(token, {id:[key, token], datasetId:group, positions:new Map(), members:new Set()});
+      return entries.get(token);
+    }
+    function addRow(posting, sheet, index) {
+      if (!posting.positions.has(sheet)) posting.positions.set(sheet, []);
+      posting.positions.get(sheet).push(index);
+    }
+    for (const [sheetName, sheet] of Object.entries(sheets)) {
+      const rows = Array.isArray(sheet?.aoa) ? sheet.aoa : [];
+      const header = streamHeaderContext(rows, 0, record.datasetType);
+      descriptors.push({sheetName, header, firstChunk});
+      firstChunk += Math.ceil(rows.length / CHUNK_ROWS);
+      for (let i = header.headerRow + 1; i < rows.length; i++) {
+        if (i && i % 4096 === 0) await new Promise(resolve => root.setTimeout(resolve, 0));
+        const row = rows[i];
+        if (!Array.isArray(row)) continue;
+        const names = new Set(header.personColumns.map(col => streamNormalize(row[col])).filter(Boolean));
+        const owners = header.coachColumns.length
+          ? new Set(header.coachColumns.map(col => streamNormalize(row[col])))
+          : [streamNormalize(sheetName)];
+        for (const name of names) addRow(entry('person', name), sheetName, i);
+        for (const owner of owners) {
+          const posting = entry('coach', owner);
+          addRow(posting, sheetName, i);
+          for (const name of names) posting.members.add(name);
+        }
+      }
+    }
+    if (key !== scopeIndexKey(record.id)) return null;
+    const manifest = {id:key, datasetId:group, descriptors};
+    // Check existence in the same transaction as the derived writes so a
+    // replacement/removal during indexing cannot leave orphaned postings.
+    const tx = db.transaction([DATASET_STORE, DATASET_CHUNK_STORE], 'readwrite');
+    const done = transactionDone(tx);
+    const check = tx.objectStore(DATASET_STORE).getKey(record.id);
+    check.onsuccess = () => {
+      if (!check.result) return;
+      const outlet = tx.objectStore(DATASET_CHUNK_STORE);
+      for (const posting of entries.values()) {
+        if (posting.members.size) outlet.put({id:[key, 'roster:' + posting.id[1].slice(6)], datasetId:group, names:[...posting.members]});
+        outlet.put({id:posting.id, datasetId:group, positions:posting.positions});
+      }
+      outlet.put(manifest);
+    };
+    await done;
+    return check.result ? manifest : null;
+  }
+  async function scopeIndex(db, type, id, sourceRecord, sourceData) {
+    const key = scopeIndexKey(id);
+    const existing = await idbRequest(db.transaction(DATASET_CHUNK_STORE).objectStore(DATASET_CHUNK_STORE).get(key));
+    if (existing) return existing;
+    if (pendingScopeIndexes.has(key)) return pendingScopeIndexes.get(key);
+    const job = (async () => {
+      const record = sourceRecord || await idbRequest(db.transaction(DATASET_STORE).objectStore(DATASET_STORE).get(id));
+      if (!record || record.datasetType !== type) return null;
+      const raw = sourceData || (await materializeDatasetRecord(db, record)).data;
+      try { return await buildScopeIndex(db, record, raw, key); }
+      catch (error) {
+        // A quota-limited browser can always read its committed source normally.
+        if (error?.name !== 'QuotaExceededError' && error?.name !== 'AbortError') throw error;
+        return null;
+      }
+    })().finally(() => pendingScopeIndexes.delete(key));
+    pendingScopeIndexes.set(key, job);
+    return job;
+  }
+  async function readPostings(db, manifest, keys) {
+    if (!keys.size) return [];
+    const outlet = db.transaction(DATASET_CHUNK_STORE).objectStore(DATASET_CHUNK_STORE);
+    return (await Promise.all([...keys].map(key => idbRequest(outlet.get([manifest.id, key]))))).filter(Boolean);
+  }
+  async function indexedRoster(type, coachKeys) {
+    const pointer = currentPointers.get(type);
+    if (!pointer || databaseUnavailable) return null;
+    const db = await openDatabase();
+    try {
+      const manifest = await scopeIndex(db, type, pointer.datasetId);
+      if (!manifest) return null;
+      const postings = await readPostings(db, manifest, new Set([...coachKeys].map(name => 'roster:' + name)));
+      return postings.flatMap(posting => posting.names);
+    } finally { db.close(); }
+  }
+  async function indexedPositions(db, manifest, context) {
+    const keys = new Set();
+    if (context.requirePerson) {
+      for (const name of context.personKeys) keys.add('person:' + name);
+    } else if (context.requireCoach) {
+      for (const name of context.coachKeys) keys.add('coach:' + name);
+      for (const name of context.rosterKeys) keys.add('person:' + name);
+    } else return null;
+    const bySheet = new Map();
+    for (const posting of await readPostings(db, manifest, keys)) {
+      for (const [sheetName, rows] of posting.positions) {
+        if (!bySheet.has(sheetName)) bySheet.set(sheetName, new Set());
+        const positions = bySheet.get(sheetName);
+        for (const row of rows) positions.add(row);
+      }
+    }
+    return bySheet;
+  }
+  async function indexedScopedRecord(db, record, scope, warmData) {
+    const manifest = await scopeIndex(db, record.datasetType, record.id, record, warmData);
+    if (!manifest || !Array.isArray(manifest.descriptors)) return null;
+    const context = await resolveReadScope(scope, record.datasetType);
+    const positions = await indexedPositions(db, manifest, context);
+    if (!positions) return null;
+    const source = warmData || (record.chunked ? record.dataShape : record.data);
+    const filtered = {}, order = source.workbook.sheets || Object.keys(source.workbook.data);
+    const descriptors = new Map(manifest.descriptors.map(item => [item.sheetName, item]));
+    let matched = 0;
+    for (const sheetName of order) {
+      const sheet = source.workbook.data[sheetName] || {};
+      const {merges, ...metadata} = sheet;
+      const descriptor = descriptors.get(sheetName);
+      const rows = [];
+      filtered[sheetName] = {...metadata, aoa:rows};
+      if (!descriptor) continue;
+      const {header, firstChunk} = descriptor;
+      if (header.headerRow >= 0) rows.push(header.header);
+      let lastChunk = -1, chunk;
+      for (const index of [...(positions.get(sheetName) || [])].sort((a, b) => a - b)) {
+        let row;
+        if (record.chunked && !warmData) {
+          const number = firstChunk + Math.floor(index / CHUNK_ROWS);
+          if (number !== lastChunk) {
+            chunk = await idbRequest(db.transaction(DATASET_CHUNK_STORE).objectStore(DATASET_CHUNK_STORE).get(record.id + ':' + String(number).padStart(6, '0')));
+            if (!chunk) throw new Error('Dataset ' + record.datasetType + ' is incomplete (missing chunk ' + number + ').');
+            lastChunk = number;
+          }
+          row = chunk.rows[index - chunk.rowStart];
+        } else row = sheet.aoa[index];
+        if (row?.some(cell => String(cell ?? '').trim()) && rowMatchesScope(row, header, sheetName, context)) {
+          rows.push(row);
+          matched++;
+        }
+      }
+    }
+    const data = {...source, meta:{...source.meta, totalRows:matched, matchedRowCount:matched, readScope:scope, readScopeKey:getScopeKey(scope)},
+      workbook:{...source.workbook, sheets:[...order], data:filtered}};
+    return {...record, data};
+  }
+  async function getScopedCurrent(type, scope) {
+    await readyPromise;
+    const pointer = currentPointers.get(type);
+    if (pointer && !databaseUnavailable) {
+      const db = await openDatabase();
+      try {
+        const cached = currentData.get(type);
+        const warm = cached?.key === pointer.datasetId + ':' + Number(pointer.version) ? cached.record : null;
+        const record = warm || await idbRequest(db.transaction(DATASET_STORE).objectStore(DATASET_STORE).get(pointer.datasetId));
+        if (record?.dataShape?.workbook || record?.data?.workbook) {
+          const scoped = await indexedScopedRecord(db, record, scope, warm?.data);
+          if (scoped) return scoped;
+        }
+      } finally { db.close(); }
+    }
+    const raw = await getCurrent(type, {includeRecord:true});
+    return raw ? {...raw, data:await filterDataset(raw.data, type, scope)} : null;
+  }
+
+
   function streamHeaderContext(rows, rowStart, datasetType) {
     const ownership = new Set((STREAM_OWNERSHIP_HEADERS[datasetType] || []).map(streamNormalize));
     const people = new Set(STREAM_PERSON_HEADERS.map(streamNormalize));
@@ -1097,7 +1298,21 @@
       const metadata = compactMetadata(record);
       const emitChunk = chunk => filterStreamChunk({ ...chunk, datasetType, datasetId: record.id, metadata }, context, sheetContexts, options);
       if (record.chunked) {
+        let needed = null;
+        if (context.active && !options?.includeEmpty && !context.rowFilter) {
+          const manifest = await scopeIndex(db, datasetType, record.id, record);
+          const positions = manifest && await indexedPositions(db, manifest, context);
+          if (positions) {
+            needed = new Set();
+            for (const {sheetName, header, firstChunk} of manifest.descriptors) {
+              sheetContexts.set(sheetName, header);
+              if (header.headerRow >= 0 && options?.includeHeaders !== false) needed.add(firstChunk);
+              for (const row of positions.get(sheetName) || []) needed.add(firstChunk + Math.floor(row / CHUNK_ROWS));
+            }
+          }
+        }
         for (let index = 0; index < Number(record.chunkCount || 0); index += 1) {
+          if (needed && !needed.has(index)) continue;
           throwIfAborted();
           const chunkId = `${record.id}:${String(index).padStart(6, '0')}`;
           const chunk = await idbRequest(db.transaction(DATASET_CHUNK_STORE, 'readonly').objectStore(DATASET_CHUNK_STORE).get(chunkId));
@@ -1141,7 +1356,14 @@
       if (options && options.metadataOnly) return records.map(compactMetadata);
       const materialized = [];
       for (const record of records) {
-        materialized.push(await materializeDatasetRecord(db, record));
+        if (options?.readScope) {
+          const indexed = await indexedScopedRecord(db, record, options.readScope);
+          if (indexed) materialized.push(indexed);
+          else {
+            const raw = await materializeDatasetRecord(db, record);
+            materialized.push({...raw, data:await filterDataset(raw.data, datasetType, options.readScope)});
+          }
+        } else materialized.push(await materializeDatasetRecord(db, record));
         if (record.chunked) await new Promise(resolve => root.setTimeout(resolve, 0));
       }
       return materialized;
@@ -1231,6 +1453,7 @@
     try {
       const tx = db.transaction([DATASET_STORE, DATASET_CHUNK_STORE, CURRENT_STORE, IMPORT_STORE], 'readwrite');
       for (const target of targets) {
+        deleteScopeIndex(tx.objectStore(DATASET_CHUNK_STORE), target.id);
         tx.objectStore(DATASET_STORE).delete(target.id);
         for (let index = 0; index < Number(target.chunkCount || 0); index += 1) tx.objectStore(DATASET_CHUNK_STORE).delete(`${target.id}:${String(index).padStart(6, '0')}`);
       }
@@ -1553,11 +1776,11 @@
   const CoachToolsData = Object.freeze({
     VERSION, DB_NAME, DB_VERSION, DATASET_TYPES, LABELS, EVENT_NAME,
     storageContract: Object.freeze({ dbName: DB_NAME, dbVersion: DB_VERSION, stores: Object.freeze([...ALLSTAR_STORES, DATASET_STORE, DATASET_CHUNK_STORE, CURRENT_STORE, IMPORT_STORE, PEOPLE_STORE, IDENTITY_REVIEW_STORE]) }),
-    storageFormat: Object.freeze({ CHUNK_ROWS, CHUNK_THRESHOLD_BYTES, CHUNK_THRESHOLD_ROWS, createDataSkeleton, splitDataIntoChunks, assembleDataFromChunks }),
+    storageFormat: Object.freeze({ CHUNK_ROWS, CHUNK_THRESHOLD_BYTES, CHUNK_THRESHOLD_ROWS, estimatedWorkbookBytes, createDataSkeleton, splitDataIntoChunks, assembleDataFromChunks }),
     ready: () => readyPromise,
     importDataset: async (type, data, metadata) => { await readyPromise; if (databaseUnavailable) throw new Error('IndexedDB is unavailable.'); const datasetType = canonicalType(type); const result = await putDataset(datasetType, data, metadata); queueIdentityIngestion(datasetType, result, data, metadata); return result; },
     replaceDataset: async (type, data, metadata) => { await readyPromise; const datasetType = canonicalType(type); const result = await putDataset(datasetType, data, { ...(metadata || {}), replace: true }); queueIdentityIngestion(datasetType, result, data, metadata); return result; },
-    getCurrent, streamRows, getHistory, getDatasetVersion, getImportHistory, inspectDataset, removeDataset, resolveUpdateScope,
+    getCurrent, getScopedCurrent, streamRows, getHistory, getDatasetVersion, getImportHistory, inspectDataset, removeDataset, resolveUpdateScope,
     filterDataset, resolveReadScope, rowMatchesScope, filterPeople, getScopeKey,
     getStatus: async () => { await readyPromise; return centralStatus(); },
     getStatusSync: centralStatus,
