@@ -1,0 +1,23 @@
+.impactLayoutControl{display:flex;align-items:center;gap:6px;color:var(--muted,#64748b);font-size:11px;font-weight:750;white-space:nowrap}
+.impactLayoutControl select{min-height:32px;border:1px solid var(--line,#e2e8f0);border-radius:7px;background:var(--surface,#fff);color:var(--ink,#0f172a);padding:5px 8px;font:inherit;cursor:pointer}
+#impactGrid[hidden],#impactTable[hidden]{display:none!important}
+.impactTableWrap{width:100%;max-width:100%;overflow-x:auto;border:1px solid var(--line,#e2e8f0);border-radius:10px;background:var(--surface,#fff)}
+.impactTable{border-collapse:collapse;width:100%;min-width:700px;color:var(--ink,#0f172a);font-size:12px}
+.impactTable caption{text-align:left;padding:11px 13px;color:var(--muted,#64748b);font-size:11px;line-height:1.5;border-bottom:1px solid var(--line,#e2e8f0)}
+.impactTable :is(th,td){padding:11px 13px;border-bottom:1px solid var(--line,#e2e8f0);vertical-align:middle}
+.impactTable thead th{text-align:right;white-space:nowrap;background:var(--surface-2,#f8fafc);font-size:10px;font-weight:850;color:var(--ink-2,#334155)}
+.impactTable thead th:first-child{text-align:left}
+.impactTable tbody tr:last-child :is(th,td){border-bottom:0}
+.impactTable tbody tr:hover{background:var(--surface-2,#f8fafc)}
+.impactTableIdentity{text-align:left;min-width:170px;max-width:310px;font-weight:650}
+.impactTableName{display:block;border:0;background:none;color:var(--accent-dark,#124d54);font:inherit;text-align:left;text-decoration:underline;text-underline-offset:3px;padding:3px 0;cursor:pointer;overflow-wrap:anywhere}
+.impactTableExcludedLabel{display:block;font-size:10px;color:var(--muted,#64748b);font-weight:500;margin-top:2px}
+.impactTableNumber{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.impactTableInclusion{text-align:right}
+.impactTableInclusion input{width:17px;height:17px;margin:0;accent-color:var(--accent-dark,#124d54);cursor:pointer}
+.impactTableDrag{color:var(--bad,#b91c1c);font-weight:750}
+.impactTableLift{color:var(--good,#15803d);font-weight:750}
+.impactTableExcluded{background:var(--surface-2,#f8fafc)}
+.impactTableEmpty{text-align:center;color:var(--muted,#64748b);padding:24px!important}
+.impactTableWrap:focus-visible,.impactLayoutControl select:focus-visible,.impactTableName:focus-visible,.impactTableInclusion input:focus-visible{outline:2px solid var(--accent-dark,#124d54);outline-offset:3px}
+@media(max-width:700px){.impactLayoutControl{flex:0 0 auto}.impactTable :is(th,td){padding:10px}.impactTable caption{padding:10px}.impactTable{min-width:650px}.impactToolbar .sortWrap{max-width:100%}.impactToolbar .sortWrap select{min-width:0;max-width:100%}}

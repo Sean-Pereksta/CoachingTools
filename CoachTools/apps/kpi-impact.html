@@ -13,7 +13,7 @@
 <meta name="coachtools-icon" content="icons/horizon/kpi-impact.png" />
 <meta name="coachtools-initials" content="KI" />
 <meta name="coachtools-keywords" content="kpi, impact, retail, referral, coaching, trend" />
-<meta name="coachtools-data" content="weeklyRetail, weeklyReferral, documentedCoaching" />
+<meta name="coachtools-data" content="weeklyRetail, weeklyReferral, documentedCoaching, checklist" />
 <meta name="coachtools-order" content="50" />
 <meta name="coachtools-version" content="1.0" />
 
@@ -211,6 +211,8 @@ aside.side.filterDrawer.show{transform:translateX(0)}
 @media(max-width:500px){.summaryStrip{grid-template-columns:1fr 1fr}.summaryCard{padding:11px}.summaryValue{font-size:20px}.heatmapMeta{grid-template-columns:1fr}.repInfoGrid{grid-template-columns:1fr 1fr}.sourceToggles{width:100%}}
 </style>
 <link rel="stylesheet" href="../shared/horizon-kpi-impact.css">
+<link rel="stylesheet" href="../shared/kpi-coaching-support.css">
+<link rel="stylesheet" href="../shared/kpi-impact-table.css">
 </head>
 
 <body>
@@ -266,6 +268,7 @@ aside.side.filterDrawer.show{transform:translateX(0)}
     </div>
 
     <div class="commandActions">
+      <button class="btn" id="includeAllTop" type="button" title="Restore every representative in the selected team">Include all</button>
       <button class="btn iconBtn" id="filterDrawerBtn" type="button">☰ Filters</button>
       <button class="btn" id="reloadCache" type="button">Reload Data</button>
       <button class="btn primary" id="exportPdf" type="button">Export Report</button>
@@ -315,8 +318,9 @@ aside.side.filterDrawer.show{transform:translateX(0)}
     </div>
 
     <div class="viewTabs" role="tablist" aria-label="Impact views">
-      <button class="viewTab active" id="mainTabImpacts" type="button" role="tab" aria-selected="true" aria-controls="impactTabPanel">Impact Cards</button>
+      <button class="viewTab active" id="mainTabImpacts" type="button" role="tab" aria-selected="true" aria-controls="impactTabPanel">Team Impact</button>
       <button class="viewTab" id="mainTabTeam" type="button" role="tab" aria-selected="false" aria-controls="teamTabPanel">Team Breakdown · Last 5 Weeks</button>
+      <button class="viewTab" id="mainTabSupport" type="button" role="tab" aria-selected="false" aria-controls="supportTabPanel">Coaching Support</button>
       <span class="muted" id="contextHint">—</span>
     </div>
 
@@ -377,6 +381,7 @@ aside.side.filterDrawer.show{transform:translateX(0)}
         <div class="heatmapScroller" id="heatmapScroller"></div>
       </div>
     </section>
+    <section class="tabPanel" id="supportTabPanel" role="tabpanel" aria-labelledby="mainTabSupport"><div id="coachingSupportWorkspace"></div></section>
   </main>
 </div>
 </div>
@@ -469,6 +474,9 @@ aside.side.filterDrawer.show{transform:translateX(0)}
   </div>
 </div>
 
+<script src="../shared/kpi-coaching-support-core.js"></script>
+<script src="../shared/kpi-coaching-support.js"></script>
+<script src="../shared/kpi-impact-table.js"></script>
 <script>
 function setHeaderH(){
   const hb = document.getElementById('topbar');
@@ -505,6 +513,11 @@ function parseAnyDate(val){
   }
   const s = String(val).trim();
   if(!s) return null;
+  const localDate=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(localDate){
+    const [,year,month,day]=localDate.map(Number), d=new Date(year,month-1,day);
+    return d.getFullYear()===year && d.getMonth()===month-1 && d.getDate()===day ? d : null;
+  }
 
   if(/^\d+(\.\d+)?$/.test(s)){
     const n = Number(s);
@@ -576,7 +589,8 @@ function loadDockObjByKey(key){
   const types={
     'coachtools:indexeddb:weeklyRetail':'weeklyRetail',
     'coachtools:indexeddb:weeklyReferral':'weeklyReferral',
-    'coachtools:indexeddb:documentedCoaching':'documentedCoaching'
+    'coachtools:indexeddb:documentedCoaching':'documentedCoaching',
+    'coachtools:indexeddb:checklist':'checklist'
   };
   return types[key] ? window.CoachToolsAppData?.peek(types[key]) || null : null;
 }
@@ -795,6 +809,8 @@ function canonicalizeDocumentedCoachings(dockObj){
 
       out.push({
         rep,
+        topics:splitTypes(typeMulti),
+        coachingType:String(typeSingle??'').trim(),
         coach: String(coachRaw ?? "").trim(),
         date: d,
         ymd: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`,
@@ -805,6 +821,27 @@ function canonicalizeDocumentedCoachings(dockObj){
     }
   }
   return out;
+}
+
+const supportCorrectiveCache=new WeakMap();
+function canonicalizeSupportCorrectives(dockObj){
+  if(!dockObj || typeof dockObj!=='object') return [];
+  if(supportCorrectiveCache.has(dockObj)) return supportCorrectiveCache.get(dockObj);
+  const events=[];
+  for(const pack of extractRowArrays(dockObj,'')) for(const row of pack.rows){
+    const rep=String(pickField(row,['associatename','associate','representative','representativename','agentname','name','rep','csrname','ssrname'])??'').trim();
+    const correctiveType=String(pickField(row,['corrective','correctivetype','correctiveaction','correctivelevel','discipline','disciplinaryaction'])??'').trim();
+    const createdDate=parseAnyDate(pickField(row,['createdon','created','createdat','createddate','createddatetime','incidentdate','date']));
+    const servedDate=parseAnyDate(pickField(row,['dateserved','serveddate','datecompleted','completedon','dateserviced','addresseddate','resolveddate']));
+    if(!rep || !correctiveType || (!createdDate && !servedDate)) continue;
+    events.push({rep,correctiveType,createdDate,servedDate,date:servedDate||createdDate,
+      coach:String(pickField(row,['coachassigned','jobcoach','coach','sheet','team'])??'').trim(),
+      incident:String(pickField(row,['incident','incidenttype','incidentcategory','type','checklistitem'])??'').trim(),
+      status:String(pickField(row,['actiontaken','action','status'])??'').trim(),
+      desc:String(pickField(row,['description','details','notes','summary'])??'').trim(),source:'checklist'});
+  }
+  supportCorrectiveCache.set(dockObj,events);
+  return events;
 }
 
 /* =========================
@@ -2396,6 +2433,10 @@ function paintRepGrid(rows, teamRate, allNames, maxVal, bottomHalfSet, cardTrend
 
   const search = repSearchTerm.trim().toLowerCase();
   const shown = cardData.filter(r=>quickFilterMatches(r,teamRate)).filter(r=>!search || String(r.rep).toLowerCase().includes(search));
+  window.KpiImpactTable?.render(shown, {
+    onInclude(rep, included){ if(included) excluded.delete(rep); else excluded.add(rep); saveWorkspace(); renderAll(); },
+    onOpen: openRepCoachings
+  });
   if(!shown.length){
     grid.innerHTML = `<div class="emptyState">No representatives match the current filters.</div>`;
     return;
@@ -2485,6 +2526,18 @@ function renderAll(){
   paintTotals(originalAll, base);
   paintTeamSummary(originalAll.rate, base.rate);
   updateRepCount(names.length, excluded.size, visibleNames.length);
+  const includeAllTop = document.getElementById('includeAllTop');
+  includeAllTop.textContent = excluded.size ? `Include all (${excluded.size} excluded)` : 'Include all';
+  includeAllTop.disabled = excluded.size === 0;
+  const includedRepKeys=new Set(base.byRep.map(row=>personKey(row.rep)));
+  window.KpiCoachingSupport?.render({
+    rows:rows.filter(row=>!excluded.has(String(row.Name||'').trim())).map(row=>({rep:String(row.Name||'').trim(),date:row._d,apps:toNum(row[set?.A]),opps:toNum(row[set?.B])})),
+    coachings:coachings.filter(event=>includedRepKeys.has(personKey(event.rep))),
+    correctives:canonicalizeSupportCorrectives(loadDockObjByKey('coachtools:indexeddb:checklist')).filter(event=>includedRepKeys.has(personKey(event.rep))),
+    coachingLoaded:!!loadDockObjByKey('coachtools:indexeddb:documentedCoaching'),checklistLoaded:!!loadDockObjByKey('coachtools:indexeddb:checklist'),
+    metricKey:set ? set.A+'|'+set.B : '',metricLabel:metricGoalConfig(set)?.label || (set ? set.A+' / '+set.B : 'Choose a KPI'),
+    goal:metricGoalConfig(set),coach:selectedSheet,weeks,onOpen:openRepCoachings,
+    sources:[includeRetail ? 'Retail' : '', includeReferral ? 'Referral' : ''].filter(Boolean).join(' + '),excludedCount:excluded.size});
 
   const maxVal = Math.max(
     ...originalAll.byRep.map(r=>Math.max(r.apps||0, r.opps||0)),
@@ -2657,6 +2710,9 @@ function loadCoachings(opts={silent:false}){
   }
   const dock = loadDockObjByKey(key);
   if(!dock){
+    coachings=[];coachingTypes=new Set();enabledTypes=new Set();rebuildCoachingIndex();repaintTypeChips();
+    lastCoachingLoadedKey=null;
+    document.getElementById('coachDockBadge').textContent='Coaching: not loaded';
     if(!silent) alert('Could not read coaching dock from the selected key.');
     return false;
   }
@@ -2673,7 +2729,7 @@ function loadCoachings(opts={silent:false}){
   const coachBadge=document.getElementById('coachDockBadge');
   coachBadge.textContent = `Coaching ready • ${coachings.length.toLocaleString()} records`;
   coachBadge.title = `Loaded from ${key}`;
-  renderAll();
+  if(opts.render!==false) renderAll();
   return true;
 }
 
@@ -2682,10 +2738,8 @@ function autoLoadCoachingsIfPossible(){
   if(!coachingCandidates.length) return;
   if(!coachingKey) return;
 
-  // avoid reloading if already loaded for this key
-  if(coachings.length && lastCoachingLoadedKey === coachingKey) return;
-
-  loadCoachings({ silent:true });
+  // The stable storage key can point to newly imported or cleared records.
+  loadCoachings({ silent:true,render:false });
 }
 
 function shortKey(k){
@@ -2775,27 +2829,37 @@ function refreshFromCache(){
    ========================= */
 
 function setMainTab(which){
-  const impactBtn = document.getElementById('mainTabImpacts');
-  const teamBtn = document.getElementById('mainTabTeam');
-  const impactPanel = document.getElementById('impactTabPanel');
-  const teamPanel = document.getElementById('teamTabPanel');
-  const isTeam = which === 'team';
-  impactBtn?.classList.toggle('active', !isTeam);
-  teamBtn?.classList.toggle('active', isTeam);
-  impactPanel?.classList.toggle('active', !isTeam);
-  teamPanel?.classList.toggle('active', isTeam);
-  impactBtn?.setAttribute('aria-selected', String(!isTeam));
-  teamBtn?.setAttribute('aria-selected', String(isTeam));
-  try{ localStorage.setItem('impactTool.activeTab', isTeam ? 'team' : 'impacts'); }catch(e){}
+  const tabs = [['impacts','mainTabImpacts','impactTabPanel'],['team','mainTabTeam','teamTabPanel'],['support','mainTabSupport','supportTabPanel']];
+  const selected=which==='calculator' ? 'support' : which;
+  const active = tabs.some(t=>t[0]===selected) ? selected : 'support';
+  document.querySelector('main.workspace').dataset.activeView=active;
+  tabs.forEach(([key,buttonId,panelId])=>{
+    const button=document.getElementById(buttonId), selected=key===active;
+    button?.classList.toggle('active',selected);
+    button?.setAttribute('aria-selected',String(selected));
+    if(button) button.tabIndex=selected ? 0 : -1;
+    document.getElementById(panelId)?.classList.toggle('active',selected);
+  });
+  try{ localStorage.setItem('impactTool.activeTab', active); }catch(e){}
 }
 document.getElementById('mainTabImpacts')?.addEventListener('click', ()=> setMainTab('impacts'));
 document.getElementById('mainTabTeam')?.addEventListener('click', ()=> setMainTab('team'));
-try{ setMainTab(localStorage.getItem('impactTool.activeTab') === 'team' ? 'team' : 'impacts'); }catch(e){ setMainTab('impacts'); }
+document.getElementById('mainTabSupport')?.addEventListener('click', ()=> setMainTab('support'));
+document.querySelector('.viewTabs').addEventListener('keydown',event=>{
+  const tabs=[...document.querySelectorAll('.viewTab')], index=tabs.indexOf(event.target);
+  if(index<0 || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+  event.preventDefault();
+  const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
+  tabs[next].click(); tabs[next].focus();
+});
+try{ setMainTab(localStorage.getItem('impactTool.activeTab')); }catch(e){ setMainTab('support'); }
 
 document.getElementById('reloadCache').onclick = ()=>{ refreshFromCache(); saveWorkspace(); };
 document.getElementById('refreshBtn').onclick = ()=> renderAll();
 
-document.getElementById('selectAll').onclick = ()=>{ excluded.clear(); saveWorkspace(); renderAll(); };
+function includeAllRepresentatives(){ excluded.clear(); saveWorkspace(); renderAll(); }
+document.getElementById('selectAll').onclick = includeAllRepresentatives;
+document.getElementById('includeAllTop').onclick = includeAllRepresentatives;
 document.getElementById('clearAll').onclick = ()=>{
   excluded = new Set(getRepNamesInScope());
   saveWorkspace();
@@ -2966,12 +3030,14 @@ document.getElementById('exportPdf').addEventListener('click', async ()=>{
    Boot
    ========================= */
 (async function boot(){
-  await window.CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','documentedCoaching']);
+  await window.CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','documentedCoaching','checklist']);
   restoreStaticWorkspace();
   setHeaderH();
   refreshFromCache(); // refresh also populates coaching keys and auto-loads coachings if possible
-  window.CoachToolsAppData.subscribe(['weeklyRetail','weeklyReferral','documentedCoaching'],async()=>{
-    await window.CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','documentedCoaching']);
+  window.__KPI_IMPACT_READY__ = true;
+  window.dispatchEvent(new CustomEvent('kpi-impact:ready'));
+  window.CoachToolsAppData.subscribe(['weeklyRetail','weeklyReferral','documentedCoaching','checklist'],async()=>{
+    await window.CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','documentedCoaching','checklist']);
     refreshFromCache();
   });
 })().catch(error=>console.error('[KPI Impact] Shared data startup failed.',error));
