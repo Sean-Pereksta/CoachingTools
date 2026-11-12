@@ -211,6 +211,8 @@ aside.side.filterDrawer.show{transform:translateX(0)}
 @media(max-width:500px){.summaryStrip{grid-template-columns:1fr 1fr}.summaryCard{padding:11px}.summaryValue{font-size:20px}.heatmapMeta{grid-template-columns:1fr}.repInfoGrid{grid-template-columns:1fr 1fr}.sourceToggles{width:100%}}
 </style>
 <link rel="stylesheet" href="../shared/horizon-kpi-impact.css">
+<link rel="stylesheet" href="../shared/kpi-coaching-calculator.css">
+<link rel="stylesheet" href="../shared/kpi-impact-table.css">
 </head>
 
 <body>
@@ -266,6 +268,7 @@ aside.side.filterDrawer.show{transform:translateX(0)}
     </div>
 
     <div class="commandActions">
+      <button class="btn" id="includeAllTop" type="button" title="Restore every representative in the selected team">Include all</button>
       <button class="btn iconBtn" id="filterDrawerBtn" type="button">☰ Filters</button>
       <button class="btn" id="reloadCache" type="button">Reload Data</button>
       <button class="btn primary" id="exportPdf" type="button">Export Report</button>
@@ -315,8 +318,9 @@ aside.side.filterDrawer.show{transform:translateX(0)}
     </div>
 
     <div class="viewTabs" role="tablist" aria-label="Impact views">
-      <button class="viewTab active" id="mainTabImpacts" type="button" role="tab" aria-selected="true" aria-controls="impactTabPanel">Impact Cards</button>
+      <button class="viewTab active" id="mainTabImpacts" type="button" role="tab" aria-selected="true" aria-controls="impactTabPanel">Team Impact</button>
       <button class="viewTab" id="mainTabTeam" type="button" role="tab" aria-selected="false" aria-controls="teamTabPanel">Team Breakdown · Last 5 Weeks</button>
+      <button class="viewTab" id="mainTabCalculator" type="button" role="tab" aria-selected="false" aria-controls="calculatorTabPanel">Coaching Calculator</button>
       <span class="muted" id="contextHint">—</span>
     </div>
 
@@ -376,6 +380,17 @@ aside.side.filterDrawer.show{transform:translateX(0)}
         <div class="heatmapMeta" id="heatmapMeta"></div>
         <div class="heatmapScroller" id="heatmapScroller"></div>
       </div>
+    </section>
+    <section class="tabPanel" id="calculatorTabPanel" role="tabpanel" aria-labelledby="mainTabCalculator">
+      <div class="calculatorIntro"><div><h2>Reach a team target</h2><p>See how many extra results your team needs, and where coaching could help.</p></div><span class="chip">Planning scenario</span></div>
+      <p id="calculatorScope" class="calculatorScope"></p>
+      <div class="calculatorSteps">
+        <section class="calculatorStep"><h3><span>1</span> Set your team target</h3><label class="targetLabel" for="teamTargetPercent">Target team rate</label><div class="targetInput"><input id="teamTargetPercent" type="number" min="0" max="100" step="0.1" inputmode="decimal" aria-describedby="calculatorTargetHint" /><span>%</span></div><p id="calculatorTargetHint">Choose a percentage from 0 to 100.</p><button id="calculatorUseGoal" class="btn" type="button">Use KPI goal</button></section>
+        <section class="calculatorStep"><h3><span>2</span> Choose who to coach</h3><p>Tick reps in the table below, or use a quick selection. Selected reps receive the extra results; everyone else keeps their current performance.</p><div class="row"><button id="calculatorBelowTarget" class="btn" type="button">Below target</button><button id="calculatorSelectAll" class="btn" type="button">All included reps</button><button id="calculatorSelectNone" class="btn" type="button">Clear selection</button></div><p id="calculatorSelectionCount"></p></section>
+      </div>
+      <section class="calculatorResults" aria-labelledby="calculatorResultsTitle"><h3 id="calculatorResultsTitle">3. Your coaching plan</h3><div id="calculatorResult" role="status" aria-live="polite" aria-atomic="true"></div></section>
+      <div class="calculatorTableWrap"><table class="calculatorTable"><caption>Choose coaching reps and review their suggested targets</caption><thead><tr><th scope="col">Coach</th><th scope="col">Representative</th><th scope="col">Current rate</th><th scope="col">Current results</th><th scope="col">Extra results</th><th scope="col">Suggested rate</th></tr></thead><tbody id="calculatorRepRows"></tbody></table></div>
+      <p class="calculatorAssumption" id="calculatorAssumption">This scenario keeps opportunity volume fixed and converts existing missed opportunities into results. Extra results are shared by opportunity volume, capped at 100% for each rep. Suggested targets are rounded up to whole results. Actual coaching outcomes may differ.</p>
     </section>
   </main>
 </div>
@@ -469,6 +484,9 @@ aside.side.filterDrawer.show{transform:translateX(0)}
   </div>
 </div>
 
+<script src="../shared/kpi-target-planner.js"></script>
+<script src="../shared/kpi-coaching-calculator.js"></script>
+<script src="../shared/kpi-impact-table.js"></script>
 <script>
 function setHeaderH(){
   const hb = document.getElementById('topbar');
@@ -2396,6 +2414,10 @@ function paintRepGrid(rows, teamRate, allNames, maxVal, bottomHalfSet, cardTrend
 
   const search = repSearchTerm.trim().toLowerCase();
   const shown = cardData.filter(r=>quickFilterMatches(r,teamRate)).filter(r=>!search || String(r.rep).toLowerCase().includes(search));
+  window.KpiImpactTable?.render(shown, {
+    onInclude(rep, included){ if(included) excluded.delete(rep); else excluded.add(rep); saveWorkspace(); renderAll(); },
+    onOpen: openRepCoachings
+  });
   if(!shown.length){
     grid.innerHTML = `<div class="emptyState">No representatives match the current filters.</div>`;
     return;
@@ -2485,6 +2507,11 @@ function renderAll(){
   paintTotals(originalAll, base);
   paintTeamSummary(originalAll.rate, base.rate);
   updateRepCount(names.length, excluded.size, visibleNames.length);
+  const includeAllTop = document.getElementById('includeAllTop');
+  includeAllTop.textContent = excluded.size ? `Include all (${excluded.size} excluded)` : 'Include all';
+  includeAllTop.disabled = excluded.size === 0;
+  window.KpiCoachingCalculator?.render({team:base, set, goal:metricGoalConfig(set), coach:selectedSheet, weeks,
+    sources:[includeRetail ? 'Retail' : '', includeReferral ? 'Referral' : ''].filter(Boolean).join(' + '), excludedCount:excluded.size});
 
   const maxVal = Math.max(
     ...originalAll.byRep.map(r=>Math.max(r.apps||0, r.opps||0)),
@@ -2775,27 +2802,35 @@ function refreshFromCache(){
    ========================= */
 
 function setMainTab(which){
-  const impactBtn = document.getElementById('mainTabImpacts');
-  const teamBtn = document.getElementById('mainTabTeam');
-  const impactPanel = document.getElementById('impactTabPanel');
-  const teamPanel = document.getElementById('teamTabPanel');
-  const isTeam = which === 'team';
-  impactBtn?.classList.toggle('active', !isTeam);
-  teamBtn?.classList.toggle('active', isTeam);
-  impactPanel?.classList.toggle('active', !isTeam);
-  teamPanel?.classList.toggle('active', isTeam);
-  impactBtn?.setAttribute('aria-selected', String(!isTeam));
-  teamBtn?.setAttribute('aria-selected', String(isTeam));
-  try{ localStorage.setItem('impactTool.activeTab', isTeam ? 'team' : 'impacts'); }catch(e){}
+  const tabs = [['impacts','mainTabImpacts','impactTabPanel'],['team','mainTabTeam','teamTabPanel'],['calculator','mainTabCalculator','calculatorTabPanel']];
+  const active = tabs.some(t=>t[0]===which) ? which : 'impacts';
+  tabs.forEach(([key,buttonId,panelId])=>{
+    const button=document.getElementById(buttonId), selected=key===active;
+    button?.classList.toggle('active',selected);
+    button?.setAttribute('aria-selected',String(selected));
+    if(button) button.tabIndex=selected ? 0 : -1;
+    document.getElementById(panelId)?.classList.toggle('active',selected);
+  });
+  try{ localStorage.setItem('impactTool.activeTab', active); }catch(e){}
 }
 document.getElementById('mainTabImpacts')?.addEventListener('click', ()=> setMainTab('impacts'));
 document.getElementById('mainTabTeam')?.addEventListener('click', ()=> setMainTab('team'));
-try{ setMainTab(localStorage.getItem('impactTool.activeTab') === 'team' ? 'team' : 'impacts'); }catch(e){ setMainTab('impacts'); }
+document.getElementById('mainTabCalculator')?.addEventListener('click', ()=> setMainTab('calculator'));
+document.querySelector('.viewTabs').addEventListener('keydown',event=>{
+  const tabs=[...document.querySelectorAll('.viewTab')], index=tabs.indexOf(event.target);
+  if(index<0 || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+  event.preventDefault();
+  const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
+  tabs[next].click(); tabs[next].focus();
+});
+try{ setMainTab(localStorage.getItem('impactTool.activeTab')); }catch(e){ setMainTab('impacts'); }
 
 document.getElementById('reloadCache').onclick = ()=>{ refreshFromCache(); saveWorkspace(); };
 document.getElementById('refreshBtn').onclick = ()=> renderAll();
 
-document.getElementById('selectAll').onclick = ()=>{ excluded.clear(); saveWorkspace(); renderAll(); };
+function includeAllRepresentatives(){ excluded.clear(); saveWorkspace(); renderAll(); }
+document.getElementById('selectAll').onclick = includeAllRepresentatives;
+document.getElementById('includeAllTop').onclick = includeAllRepresentatives;
 document.getElementById('clearAll').onclick = ()=>{
   excluded = new Set(getRepNamesInScope());
   saveWorkspace();
@@ -2970,6 +3005,8 @@ document.getElementById('exportPdf').addEventListener('click', async ()=>{
   restoreStaticWorkspace();
   setHeaderH();
   refreshFromCache(); // refresh also populates coaching keys and auto-loads coachings if possible
+  window.__KPI_IMPACT_READY__ = true;
+  window.dispatchEvent(new CustomEvent('kpi-impact:ready'));
   window.CoachToolsAppData.subscribe(['weeklyRetail','weeklyReferral','documentedCoaching'],async()=>{
     await window.CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','documentedCoaching']);
     refreshFromCache();

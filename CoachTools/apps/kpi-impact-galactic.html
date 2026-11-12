@@ -9,6 +9,7 @@
 <meta name="coachtools-category" content="Performance" />
 <meta name="coachtools-icon" content="icons/horizon/kpi-impact.png" />
 <meta name="coachtools-data" content="weeklyRetail, weeklyReferral, documentedCoaching" />
+<meta name="coachtools-version" content="1.2" />
 <title>KPI Impact · Horizon</title>
 <style>
 html,body{height:100%;margin:0;overflow:hidden;background:#10383c}iframe{width:100%;height:100%;border:0;display:block;background:#fff}
@@ -19,7 +20,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:#10383c}iframe{width:1
 <script>
 (() => {
   const frame = document.getElementById('kpiFrame');
-  const ENHANCEMENT_VERSION = '2026.11.09.horizon';
+  const ENHANCEMENT_VERSION = '2026.11.12.coaching-calculator';
 
   frame.addEventListener('load', () => {
     const w = frame.contentWindow;
@@ -174,7 +175,9 @@ html,body{height:100%;margin:0;overflow:hidden;background:#10383c}iframe{width:1
 
       addThemeToggle();
       applyTheme(localStorage.getItem(THEME_KEY)||'horizon');
-      setTimeout(()=>{try{refreshFromCache()}catch(e){console.error('[KPI Impact enhancement] refresh failed',e)}},0);
+      const refreshEnhancedView=()=>{try{refreshFromCache()}catch(e){console.error('[KPI Impact enhancement] refresh failed',e)}};
+      if(window.__KPI_IMPACT_READY__) setTimeout(refreshEnhancedView,0);
+      else window.addEventListener('kpi-impact:ready',refreshEnhancedView,{once:true});
     })();`;
     d.body.appendChild(patch);
   });

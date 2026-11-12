@@ -26,6 +26,8 @@
     "test:verification-allstar": "node --test tests/verification-all-star.test.js tests/verification-all-star-data.test.js tests/verification-all-star-ui.test.cjs tests/all-star-folder.test.cjs",
     "test:horizon": "node --test tests/horizon-icons.test.cjs tests/horizon-workspace.test.cjs tests/app-data-global-scope.test.js tests/app-data-scope-readiness.test.js tests/scope-roster-work.test.js tests/scoped-index-cache.test.js tests/coaching-gaps-refresh.test.cjs tests/coaching-gaps-reload.test.cjs tests/identity-setup-stability.test.js tests/cross-app-global-scope.test.js && node tests/people-tools-scope.test.cjs && node tests/qa-horizon-theme.test.cjs && node tests/horizon-feedback.test.cjs",
     "test:coaching-gaps:browser": "node tests/coaching-gaps-scope.browser.cjs && node tests/coaching-gaps-reload.browser.cjs",
+    "test:kpi": "node --test tests/kpi-target-planner.test.cjs tests/kpi-impact-table.test.cjs",
+    "test:kpi:browser": "node tests/kpi-impact-calculator.browser.cjs",
     "test:qa-eval-builder": "node --test tests/qa-eval-builder.test.cjs tests/qa-eval-builder-ui.test.cjs tests/data-building-folder.test.cjs"
   },
   "devDependencies": {

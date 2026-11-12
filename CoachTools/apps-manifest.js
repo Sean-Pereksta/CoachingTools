@@ -236,7 +236,7 @@ window.COACHTOOLS_MANIFEST = {
       "featured": false,
       "preload": false,
       "order": 50,
-      "version": "1.1",
+      "version": "1.2",
       "enabled": true
     },
     {
