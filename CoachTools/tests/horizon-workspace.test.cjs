@@ -22,6 +22,22 @@ function workspace(initialScope={mode:'all',label:'All people'}){
  const check=(value,checked=true)=>{const input=[...document.querySelectorAll('.scope-coach-checkbox')].find(input=>input.value===value);assert.ok(input,'Coach checkbox is available: '+value);input.checked=checked;input.dispatchEvent(new window.Event('change'));};
  return {window,document,select,values,check,getScope:()=>scope};
 }
+test('bulk coach selection includes hidden search results and stays pending until applied',()=>{
+ const {document,window,getScope}=workspace();
+ document.getElementById('changeScope').click();
+ const search=document.getElementById('scopeSearch');search.value='Alpha';search.dispatchEvent(new window.Event('input'));
+ document.getElementById('scopeSelectAllCoaches').click();
+ assert.equal(document.getElementById('scopeSelectionCount').textContent,'3 coaches selected');
+ assert.equal(document.querySelector('.scope-coach-checkbox').checked,true);
+ assert.equal(getScope().mode,'all');
+ document.getElementById('scopeUnselectAllCoaches').click();
+ assert.equal(document.getElementById('scopeSelectionCount').textContent,'No coaches selected');
+ assert.equal(document.getElementById('applyCoachScope').disabled,true);
+ search.value='';search.dispatchEvent(new window.Event('input'));
+ assert.equal([...document.querySelectorAll('.scope-coach-checkbox')].filter(input=>input.checked).length,0);
+ document.getElementById('scopeSelectAllCoaches').click();document.getElementById('applyCoachScope').click();
+ assert.deepEqual([...getScope().coaches],['Coach Alpha','Coach Beta','Coach Gamma']);
+});
 test('compact coach search applies the selected scope and can return to all people',()=>{
  const {document,window,getScope,check}=workspace();
  document.getElementById('changeScope').click();
