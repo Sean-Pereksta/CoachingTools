@@ -272,8 +272,15 @@
   }
 
   try {
-    if (root.parent && root.parent !== root && root.parent.CoachToolsAppData) {
-      const owner = root.parent.CoachToolsAppData;
+    // KPI Impact is hosted inside a presentation wrapper. Reuse the nearest
+    // accessible data owner through that wrapper as well as direct iframes.
+    let ancestor = root.parent;
+    while (ancestor && ancestor !== root && !ancestor.CoachToolsAppData) {
+      if (ancestor.parent === ancestor) break;
+      ancestor = ancestor.parent;
+    }
+    if (ancestor && ancestor !== root && ancestor.CoachToolsAppData) {
+      const owner = ancestor.CoachToolsAppData;
       const subscriptions = new Set();
       const activeLoads = new Set();
       const track = unsubscribe => {

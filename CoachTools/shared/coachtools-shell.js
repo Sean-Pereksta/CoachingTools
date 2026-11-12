@@ -313,7 +313,7 @@
       state.cache.set(dockObj, chunks.flat());
     }
 
-    async function prepare(types, ui, signal) {
+    async function prepare(types, ui, signal, result, options) {
       const requested = new Set(types);
       const order = config.order.filter(type => requested.has(type) && config.datasets[type]);
       for (let index = 0; index < order.length; index += 1) {
@@ -323,7 +323,8 @@
         const endPct = 35 + ((index + 1) / order.length) * 58;
         ui.stage(startPct, `Preparing ${definition.label}`, 'Processing stored rows in small batches…');
         await yieldToBrowser();
-        await canonicalizeInChunks(owner.peek(type), definition, ui, startPct, endPct, signal);
+        const value = result[type];
+        await canonicalizeInChunks(options && options.includeRecord ? value && value.data : value, definition, ui, startPct, endPct, signal);
         await yieldToBrowser();
       }
       ui.stage(96, config.finalLabel, config.finalDetail);
@@ -363,8 +364,10 @@
             if (typeof userProgress === 'function') userProgress(detail);
           }
         });
-        if (ui) await prepare(types, ui, signal);
-        else await prepare(types, { stage() {} }, signal);
+        // Prepare the same returned objects handed to the report. Identity
+        // enrichment can invalidate the owner's peek cache during this work.
+        if (ui) await prepare(types, ui, signal, result, options);
+        else await prepare(types, { stage() {} }, signal, result, options);
         return result;
       } finally {
         if (controller) activeLoads.delete(controller);
@@ -463,11 +466,15 @@
   async function installIntelligenceSurface() {
     if (!intelligenceApps.has(app.id)) return;
     try {
-      // Hosted Gaps already reads its parent's scoped sources. Reuse that
-      // directory too, rather than starting a second setup/ingestion job.
-      if (!root.CoachToolsIdentity && app.id === 'coaching-gaps') {
+      // Hosted tools share the desktop directory, including nested app shells.
+      if (!root.CoachToolsIdentity) {
         try {
-          if (root.parent && root.parent !== root && root.parent.CoachToolsIdentity) root.CoachToolsIdentity = root.parent.CoachToolsIdentity;
+          let ancestor = root.parent;
+          while (ancestor && ancestor !== root) {
+            if (ancestor.CoachToolsIdentity) { root.CoachToolsIdentity = ancestor.CoachToolsIdentity; break; }
+            if (ancestor.parent === ancestor) break;
+            ancestor = ancestor.parent;
+          }
         } catch (_) {}
       }
       if (!root.CoachToolsIdentity) await loadSharedScript('coachtools-identity.js', () => Boolean(root.CoachToolsIdentity));

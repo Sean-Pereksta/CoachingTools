@@ -167,14 +167,17 @@
   }
 
   function finishAfterViewBuild() {
+    const finishingPanel = panel;
     setProgress(94, `Building ${appName}`, 'Stored rows are ready. Applying filters, summaries, and timeline views…');
     root.setTimeout(() => {
       const paint = () => {
+        if (panel !== finishingPanel) return;
         setProgress(100, `${appName} ready`, 'Startup data finished loading.');
         root.setTimeout(() => {
-          if (!panel) return;
+          if (!panel || panel !== finishingPanel) return;
           panel.style.opacity = '0';
           root.setTimeout(() => {
+            if (panel !== finishingPanel) return;
             if (panel) panel.remove();
             panel = fill = pct = heading = detail = rowList = null;
             lastPct = 0;
@@ -209,7 +212,26 @@
   }
 
   function versionKey(version) {
-    return version ? `${version.datasetId || ''}:${Number(version.version) || 0}:${version.fingerprint || ''}` : '';
+    return version ? `${version.datasetId || ''}:${Number(version.version) || 0}:${version.fingerprint || ''}:${version.readScopeKey || ''}` : '';
+  }
+
+  function scopeKey() {
+    if (typeof base.getScopeKey === 'function') return base.getScopeKey();
+    const scope = base.getScope && base.getScope();
+    return scope && scope.mode && scope.mode !== 'all' ? JSON.stringify(scope) : 'all';
+  }
+
+  function needsScopedReader(options) {
+    // The shared reader owns roster/identity readiness and intersections between
+    // the desktop selection and a caller's additional scope. Direct IDB reads
+    // are an optimization only for the ordinary All people view.
+    return scopeKey() !== 'all' || Boolean(options && (options.unscoped || options.includeRecord || options.scope && options.scope.mode && options.scope.mode !== 'all'));
+  }
+
+  function ensureCurrent(type, key, expectedScope, signal) {
+    throwIfAborted(signal);
+    if (scopeKey() !== expectedScope) throw abortError();
+    if (versionKey(base.getVersion(type)) !== key) throw new Error(`${labelFor(type)} changed while loading.`);
   }
 
   function ensureSheetState(states, sheetName) {
@@ -285,26 +307,30 @@
   async function loadChunkedType(type, context, options) {
     await base.ready();
     throwIfAborted(options && options.signal);
+    const expectedScope = scopeKey();
+    if (needsScopedReader(options)) return base.get(type, options);
     const version = base.getVersion(type);
     const key = versionKey(version);
     const cached = cache.get(type);
-    if (cached && cached.key === key && !(options && options.force)) {
+    if (cached && cached.key === key && cached.scope === expectedScope && !(options && options.force)) {
       if (context) context.report(1, 'Cached');
       return cached.value;
     }
-    if (pending.has(type) && !(options && options.force)) return pending.get(type);
+    const pendingKey = `${key}:${expectedScope}`;
+    const inFlight = pending.get(type);
+    if (inFlight && inFlight.key === pendingKey && !(options && options.force)) return inFlight.promise;
 
     const request = (async () => {
       if (!version || !version.datasetId) return null;
       const db = await openDatabase();
       try {
         const record = await readStoreRecord(db, DATASET_STORE, version.datasetId);
-        throwIfAborted(options && options.signal);
+        ensureCurrent(type, key, expectedScope, options && options.signal);
         if (!record) return null;
 
         if (!record.chunked || !record.dataShape || Number(record.chunkCount) < 1) {
           const value = record.data || null;
-          cache.set(type, { key, value });
+          cache.set(type, { key, scope: expectedScope, value });
           if (context) context.report(1, 'Loaded');
           return value;
         }
@@ -315,6 +341,7 @@
           throwIfAborted(options && options.signal);
           const chunkId = `${record.id}:${String(index).padStart(6, '0')}`;
           const chunk = await readStoreRecord(db, CHUNK_STORE, chunkId);
+          ensureCurrent(type, key, expectedScope, options && options.signal);
           if (!chunk) throw new Error(`${labelFor(type)} is incomplete (${index} of ${totalChunks} chunks available).`);
           await appendChunkRows(states, chunk, rowFraction => {
             if (context) context.report((index + rowFraction) / totalChunks, `Chunk ${index + 1} of ${totalChunks}`);
@@ -323,24 +350,28 @@
         }
 
         const value = buildDock(record, states);
-        cache.set(type, { key, value });
+        ensureCurrent(type, key, expectedScope, options && options.signal);
+        cache.set(type, { key, scope: expectedScope, value });
         if (context) context.report(1, `${totalChunks} chunks ready`);
         return value;
       } finally {
         db.close();
       }
-    })().finally(() => pending.delete(type));
+    })().finally(() => { if (pending.get(type)?.promise === request) pending.delete(type); });
 
-    pending.set(type, request);
+    pending.set(type, {key: pendingKey, promise: request});
     return request;
   }
 
   async function loadMany(requested, options) {
     const types = normalizeTypes(requested);
-    if (!types.some(type => TARGET_TYPES.has(type))) {
+    await base.ready(options);
+    if (needsScopedReader(options) || !types.some(type => TARGET_TYPES.has(type))) {
       const method = base.getManyProgressive || base.getMany;
       return method.call(base, requested, options);
     }
+
+    const expectedScope = scopeKey();
 
     const controller = typeof root.AbortController === 'function' ? new root.AbortController() : null;
     const upstreamSignal = options && options.signal;
@@ -353,21 +384,29 @@
     }
     const signal = controller ? controller.signal : upstreamSignal;
     const result = {};
-    resetProgress(types);
-    setProgress(2, `Opening ${appName}`, 'Starting chunked IndexedDB loading…');
+    const completedVersions = new Map();
+    const showProgress = !(options && options.progressUi === false);
+    if (showProgress) {
+      resetProgress(types);
+      setProgress(2, `Opening ${appName}`, 'Starting chunked IndexedDB loading…');
+    }
+    const ownPanel = showProgress ? panel : null;
     await yieldToBrowser();
 
     try {
       for (let index = 0; index < types.length; index += 1) {
         const type = types[index];
         throwIfAborted(signal);
-        setTypeStatus(type, 'Loading', 'loading');
+        if (scopeKey() !== expectedScope) throw abortError();
+        if (showProgress) setTypeStatus(type, 'Loading', 'loading');
         const context = {
           report(fraction, statusText) {
             const bounded = Math.max(0, Math.min(1, Number(fraction) || 0));
             const overall = 3 + ((index + bounded) / Math.max(1, types.length)) * 88;
-            setProgress(overall, `Opening ${appName}`, `${labelFor(type)} · ${statusText}`);
-            setTypeStatus(type, bounded >= 1 ? 'Ready' : statusText, bounded >= 1 ? 'ready' : 'loading');
+            if (showProgress) {
+              setProgress(overall, `Opening ${appName}`, `${labelFor(type)} · ${statusText}`);
+              setTypeStatus(type, bounded >= 1 ? 'Ready' : statusText, bounded >= 1 ? 'ready' : 'loading');
+            }
             const progress = { type, label: labelFor(type), index, total: types.length, status: bounded >= 1 ? 'ready' : 'loading', fraction: bounded };
             if (options && typeof options.onProgress === 'function') {
               try { options.onProgress(progress); } catch (_) {}
@@ -379,25 +418,45 @@
         try {
           if (TARGET_TYPES.has(type)) result[type] = await loadChunkedType(type, context, { ...(options || {}), signal });
           else result[type] = await base.get(type, { ...(options || {}), signal });
-          setTypeStatus(type, 'Ready', 'ready');
+          if (showProgress) setTypeStatus(type, 'Ready', 'ready');
         } catch (error) {
           if (error && error.name === 'AbortError') throw error;
-          setTypeStatus(type, 'Compatibility load', 'loading');
+          if (scopeKey() !== expectedScope) throw abortError();
+          if (showProgress) setTypeStatus(type, 'Compatibility load', 'loading');
           try {
             result[type] = await base.get(type, { ...(options || {}), signal, progressUi: false });
-            if (TARGET_TYPES.has(type)) cache.set(type, { key: versionKey(base.getVersion(type)), value: result[type] });
-            setTypeStatus(type, 'Ready', 'ready');
+            // A compatibility result can be scoped or gain a newer source
+            // version while awaiting the shared reader. Leave its cache there.
+            if (showProgress) setTypeStatus(type, 'Ready', 'ready');
           } catch (fallbackError) {
-            setTypeStatus(type, 'Unavailable', 'error');
+            if (fallbackError && fallbackError.name === 'AbortError') throw fallbackError;
+            if (showProgress) setTypeStatus(type, 'Unavailable', 'error');
             if (!(options && options.continueOnError)) throw fallbackError;
             result[type] = null;
           }
         }
+        completedVersions.set(type, versionKey(base.getVersion(type)));
         await yieldToBrowser('low');
       }
 
-      finishAfterViewBuild();
-      return result;
+      throwIfAborted(signal);
+      if (scopeKey() !== expectedScope) throw abortError();
+      let completed = result;
+      if ([...completedVersions].some(([type, key]) => key !== versionKey(base.getVersion(type)))) {
+        const method = base.getManyProgressive || base.getMany;
+        completed = await method.call(base, requested, {...(options || {}), signal, progressUi: false});
+        throwIfAborted(signal);
+        if (scopeKey() !== expectedScope) throw abortError();
+      }
+      if (showProgress) finishAfterViewBuild();
+      return completed;
+    } catch (error) {
+      if (ownPanel && panel === ownPanel) {
+        panel.remove();
+        panel = fill = pct = heading = detail = rowList = null;
+        lastPct = 0;
+      }
+      throw error;
     } finally {
       if (controller) activeControllers.delete(controller);
     }
@@ -416,6 +475,8 @@
     activeControllers.clear();
     pending.clear();
     cache.clear();
+    if (panel) panel.remove();
+    panel = fill = pct = heading = detail = rowList = null;
   }, { once: true });
 
   root.CoachToolsAppData = Object.freeze({
@@ -427,9 +488,16 @@
     loadForApp: (definition, options) => loadMany(definition, options),
     peek(type, options) {
       const cached = cache.get(type);
-      if (TARGET_TYPES.has(type) && cached) return cached.value;
+      if (TARGET_TYPES.has(type) && cached && !needsScopedReader(options) && cached.scope === scopeKey() && cached.key === versionKey(base.getVersion(type))) return cached.value;
       return base.peek(type, options);
     },
+    getScopeKey: (...args) => base.getScopeKey(...args),
+    prefetch: (...args) => base.prefetch(...args),
+    canPrefetch: (...args) => base.canPrefetch(...args),
+    streamRows: (...args) => base.streamRows(...args),
+    getHistory: (...args) => base.getHistory(...args),
+    filterDataset: (...args) => base.filterDataset(...args),
+    filterPeople: (...args) => base.filterPeople(...args),
     getVersion: (...args) => base.getVersion(...args),
     subscribe,
     getScope: (...args) => base.getScope(...args),
