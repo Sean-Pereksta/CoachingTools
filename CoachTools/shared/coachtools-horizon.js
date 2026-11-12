@@ -31,6 +31,7 @@
     const count=selectedCoaches.size;
     $('scopeSelectionCount').textContent=count ? count+' coach'+(count===1?'':'es')+' selected' : 'No coaches selected';
     $('applyCoachScope').disabled=!count;
+    $('scopeUnselectAllCoaches').disabled=!count;
   }
   function renderScopeResults() {
     const query = $('scopeSearch').value.trim().toLowerCase(), type = $('scopeType').value;
@@ -38,6 +39,8 @@
     // changes a checkbox, restore the saved selection by identity each render.
     if(!coachSelectionChanged)resetCoachSelection();
     const available=scopeOptions();
+    $('scopeCoachBulkActions').hidden=type!=='coach' && type!=='all';
+    $('scopeSelectAllCoaches').disabled=!available.some(option=>option.mode==='coach');
     for(const option of available)if(selectedCoaches.has(option.value))selectedCoaches.set(option.value,option);
     for(const option of selectedCoaches.values())if(!available.some(candidate=>candidate.value===option.value))available.push(option);
     const options = available.filter(option => (type === 'all' || option.mode === type) && (!query || option.label.toLowerCase().includes(query)));
@@ -139,6 +142,8 @@
     $('closeScopePicker').addEventListener('click',closePicker);
     $('scopePicker').addEventListener('click',event=>{if(event.target===$('scopePicker'))closePicker();});
     $('scopeSearch').addEventListener('input',renderScopeResults);$('scopeType').addEventListener('change',renderScopeResults);
+    $('scopeSelectAllCoaches').addEventListener('click',()=>{coachSelectionChanged=true;selectedCoaches=new Map(scopeOptions().filter(option=>option.mode==='coach').map(option=>[option.value,option]));renderScopeResults();});
+    $('scopeUnselectAllCoaches').addEventListener('click',()=>{coachSelectionChanged=true;selectedCoaches.clear();renderScopeResults();});
     $('scopeAllPeople').addEventListener('click',()=>chooseScope('all:'));$('clearScope').addEventListener('click',()=>chooseScope('all:'));
     $('applyCoachScope').addEventListener('click',applyCoachScope);
     $('globalScopeSelect').addEventListener('change',()=>{updateScope();renderScopeResults();});
