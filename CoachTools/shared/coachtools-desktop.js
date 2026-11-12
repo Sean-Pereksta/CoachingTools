@@ -541,6 +541,7 @@
 
   function scopeValue(scope) {
     if (!scope || scope.mode === 'all') return 'all:';
+    if (scope.mode === 'team' && !scope.team && scope.coaches?.length > 1) return `coaches:${encodeURIComponent(JSON.stringify({ ids: [...(scope.coachPersonIds || [])].sort(), names: [...scope.coaches].sort() }))}`;
     if ((scope.mode === 'coach' || scope.mode === 'representative') && scope.personId) return `${scope.mode}:${scope.personId}`;
     const value = scope[scope.mode] || (scope.mode === 'coach' ? scope.coaches?.[0] : scope.mode === 'representative' ? scope.representatives?.[0] : '') || scope.label || '';
     return `${scope.mode}:${encodeURIComponent(value)}`;
@@ -563,7 +564,7 @@
     const savedValue = scopeValue(savedScope);
     if (savedScope && savedScope.mode !== 'all' && !options.some(option => option.value === savedValue)) options.push({value:savedValue,label:`Saved ${savedScope.mode}: ${scopeText(savedScope)}`,scope:savedScope});
     state.scopeOptions = new Map(options.map(option => [option.value, option.scope]));
-    elements.globalScopeSelect.replaceChildren(...options.map(option => { const element = document.createElement('option'); element.value = option.value; element.textContent = option.label; return element; }));
+    elements.globalScopeSelect.replaceChildren(...options.map(option => { const element = document.createElement('option'); element.value = option.value; element.textContent = option.label; element.dataset.personId = option.scope.personId || ''; return element; }));
     const current = scopeValue(storage && storage.getScope ? storage.getScope() : null);
     elements.globalScopeSelect.value = state.scopeOptions.has(current) ? current : 'all:';
   }
@@ -596,7 +597,15 @@
     elements.taskbarData.classList.toggle('ready', ready === total && ready > 0);
     elements.scopeLabel.textContent = scopeText(storage && storage.getScope ? storage.getScope() : null);
     if (elements.globalScopeSelect) {
-      const value = scopeValue(storage && storage.getScope ? storage.getScope() : null);
+      const scope = storage && storage.getScope ? storage.getScope() : null;
+      const value = scopeValue(scope);
+      if (!state.scopeOptions.has(value) && scope) {
+        state.scopeOptions.set(value, scope);
+        const option = document.createElement('option');
+        option.value = value; option.textContent = `Saved ${scope.mode}: ${scopeText(scope)}`;
+        option.dataset.personId = scope.personId || '';
+        elements.globalScopeSelect.append(option);
+      }
       if (state.scopeOptions.has(value)) elements.globalScopeSelect.value = value;
     }
     elements.storageAvailability.textContent = state.storageCheckLabel || (location.protocol === 'file:'

@@ -124,3 +124,51 @@ test('explicit narrower requests intersect the selected coach instead of replaci
   for await(const chunk of app.streamRows('qa',{scope:betaScope}))rows.push(...chunk.rows);
   assert.equal(rows.length,1,'only the header survives the empty scope intersection');
 });
+
+test('multiple selected coaches load their combined current and historical data while excluding other coaches and preserving sources',async()=>{
+  const {context,data,storage,app,save,alpha,beta,alphaScope}=await setup();
+  const identity=context.CoachToolsIdentity;
+  const gamma=await identity.learn('Coach Gamma',{role:'coach',team:'Same Team',source:'scope-test'});
+  await identity.learn('Casey Outside',{role:'representative',currentCoachId:gamma.personId,team:'Same Team',source:'scope-test'});
+  await save('weeklyRetail',[['Date','Sheet','Name','Wipers Accepted','Wipers Offered'],
+    ['10/15/2026','Coach Alpha','River Example',5,10],
+    ['10/15/2026','Coach Beta','Morgan Sample',2,10],
+    ['10/15/2026','Coach Gamma','Casey Outside',7,10]],'2026-10-15');
+  for(const period of ['2026-10-15','2026-10-22'])await save('qa',[['Agent Name','Supervisor','Score','Date'],
+    ['River Example','Coach Beta',99,period],
+    ['Morgan Sample','Coach Alpha',80,period],
+    ['Casey Outside','Coach Alpha',75,period]],period);
+  await save('checklist',[['Representative','Supervisor','Incident','Corrective','Date'],
+    ['River Example','Coach Beta','Tardy','Verbal','10/15/2026'],
+    ['Morgan Sample','Coach Alpha','Absence','Final','10/15/2026'],
+    ['Casey Outside','Coach Alpha','Tardy','Verbal','10/15/2026']],'2026-10-15');
+  await save('documentedCoaching',[['Representative','Coach Assigned','Date','Type'],
+    ['River Example','Coach Alpha','10/15/2026','1:1'],
+    ['Morgan Sample','Coach Beta','10/15/2026','1:1'],
+    ['Casey Outside','Coach Gamma','10/15/2026','1:1']],'2026-10-15');
+
+  storage.setScope(alphaScope);
+  await app.get('qa');
+  const scope={mode:'team',label:'2 selected coaches',coaches:['Coach Alpha','Coach Beta'],
+    coachPersonIds:[alpha.personId,beta.personId],personId:'',team:'',department:'',coordinator:''};
+  storage.setScope(scope);
+  assert.equal(app.peek('qa'),null,'changing to a combined scope invalidates the previous single-coach view');
+  assert.equal(data.getScopeKey(scope),data.getScopeKey({...scope,coaches:[...scope.coaches].reverse(),coachPersonIds:[...scope.coachPersonIds].reverse()}));
+  const selectedNames=['River Example','Morgan Sample'];
+  const views=await app.getMany(['weeklyRetail','qa','checklist','documentedCoaching']);
+  for(const type of Object.keys(views)){
+    assert.deepEqual(names(views[type],type==='weeklyRetail'?2:0),selectedNames,type+' includes both selected teams only');
+    assert.equal((await data.getCurrent(type)).workbook.data.Data.aoa.length,4,type+' source remains complete');
+  }
+  const history=await app.getHistory('qa');
+  assert.equal(history.length,4);
+  for(const record of history){
+    assert.deepEqual(names(record.data),selectedNames,'each historical period follows the combined scope');
+    const streamed=[];
+    for await(const chunk of app.streamRows('qa',{datasetId:record.id||record.datasetId}))streamed.push(...chunk.rows);
+    assert.deepEqual(streamed.slice(1).map(row=>row[0]),selectedNames,'streaming retained dataset IDs follows the same union');
+  }
+  assert.equal((await app.get('qa',{unscoped:true})).workbook.data.Data.aoa.length,4);
+  const people=await app.filterPeople(await identity.getAllPeople());
+  assert.deepEqual(Array.from(people,person=>person.displayName).sort(),['Coach Alpha','Coach Beta','Morgan Sample','River Example']);
+});

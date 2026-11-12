@@ -72,6 +72,23 @@ async function rejectedClean(type, incomingRows, scope) {
   }
   console.log('PASS all five chooser sources store only selected coaches, reuse discovery, and preserve source percentages');
 
+  for (const type of Object.keys(headers)) {
+    const incomingRows = [...rows(type), ['Second Coach', 'Second Selected Rep', 0.65]];
+    const incoming = file(type, incomingRows);
+    await clean([incoming], selected(['Chosen Coach', 'Second Coach']));
+    const saved = await current(type), result = saved.data.workbook.data.Data.aoa;
+    assert.deepEqual(plain(result), [incomingRows[0],
+      ['Chosen Coach', 'Selected Rep', type.startsWith('weekly') ? '55%' : 0.55],
+      ['Second Coach', 'Second Selected Rep', type.startsWith('weekly') ? '65%' : 0.65]]);
+    assert.equal(incoming.reads(), 1, 'Multiple coaches reuse the same discovered workbook');
+    assert.equal(saved.scopeMode, 'team');
+    assert.equal(saved.scopedRowCount, 2);
+    assert.equal(saved.scopeMatchDiagnostics.uploadPeopleSelection.includesAllRows, false);
+    assert.deepEqual(plain(context.CoachToolsCleanUploadBaseline.getBaseline().sourceScopes[type].coaches), ['Chosen Coach', 'Second Coach']);
+    assert.equal(incomingRows.length, 83, 'Filtering leaves the original incoming source intact');
+  }
+  console.log('PASS all five chooser sources combine two selected coaches and exclude unselected rows');
+
   // Saved aliases apply before weekly filtering, without forcing a full parse.
   await directory.save({ version: 1, revision: 1, aliases: [{ role: 'coach', from: 'Coach Alias', to: 'Chosen Coach', enabled: true }], links: [] });
   for (const type of ['weeklyRetail', 'weeklyReferral']) {
