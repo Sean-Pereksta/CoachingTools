@@ -84,13 +84,14 @@ const shell=fs.readFileSync(path.join(suite,'shared/coachtools-shell.js'),'utf8'
 const installStart=shell.indexOf('  async function installIntelligenceSurface()');
 const installEnd=shell.indexOf('\n  function scheduleIntelligenceSurface()',installStart);
 assert.ok(installStart>=0&&installEnd>installStart);
-async function installSurface(parentMode){
+async function installSurface(parentMode,appId='coaching-gaps'){
   const loaded=[],mounts=[],identity={ready:async()=>true};
   const root={console,CoachToolsIntelligence:{VERSION:'1.1.0'},CoachToolsInsightUI:{mount:app=>mounts.push(app)}};
   if(parentMode==='hosted')root.parent={CoachToolsIdentity:identity};
+  else if(parentMode==='nested')root.parent={parent:{CoachToolsIdentity:identity}};
   else if(parentMode==='opaque')Object.defineProperty(root,'parent',{get(){throw new Error('cross-origin frame');}});
   else root.parent=root;
-  const context=vm.createContext({root,app:{id:'coaching-gaps'},intelligenceApps:new Set(['coaching-gaps']),
+  const context=vm.createContext({root,app:{id:appId},intelligenceApps:new Set([appId]),
     async loadSharedScript(name,ready){loaded.push(name);if(name==='coachtools-identity.js')root.CoachToolsIdentity=identity;return !ready||ready();}});
   vm.runInContext(shell.slice(installStart,installEnd)+'\nglobalThis.install=installIntelligenceSurface;',context);
   await context.install();return{root,loaded,mounts,identity};
@@ -109,6 +110,17 @@ test('standalone and opaque frames retain their own usable identity fallback',as
     assert.deepEqual(h.loaded,['coachtools-identity.js']);
     assert.equal(h.root.CoachToolsIdentity,h.identity);
     assert.deepEqual(h.mounts,['coaching-gaps']);
+  }
+});
+
+test('hosted KPI, QA and Timeline share the desktop directory through direct and nested shells',async()=>{
+  for(const appId of ['kpi-impact','qa-scores','coach-timeline']){
+    for(const mode of ['hosted','nested']){
+      const h=await installSurface(mode,appId);
+      assert.equal(h.root.CoachToolsIdentity,h.identity);
+      assert.equal(h.loaded.includes('coachtools-identity.js'),false);
+      assert.deepEqual(h.mounts,[appId]);
+    }
   }
 });
 

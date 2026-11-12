@@ -22,6 +22,7 @@
 <script src="../shared/coachtools-monthly-review.js"></script>
 <script src="../shared/coachtools-import.js"></script>
 <script src="../shared/coachtools-shell.js"></script>
+<script src="../shared/coachtools-scoped-loader.js"></script>
 
 <style>
   :root{
@@ -643,7 +644,11 @@
 
 <script>
 (async function(){
-  await window.CoachToolsAppData.getMany(['checklist','documentedCoaching']);
+  const sharedData = window.CoachToolsScopedLoader.create({
+    data:window.CoachToolsAppData,
+    types:['checklist','documentedCoaching'], apply:()=>autoLoadAll(true),
+    onError:error=>console.error('[Audit / Checklist] Shared data refresh failed.',error)
+  });
   const $ = id => document.getElementById(id);
 
   const APP_NS = "myone2";
@@ -1122,7 +1127,7 @@
   function loadDockObjByKey(key){
     if(!key) return null;
     const type=key==='coachtools:indexeddb:checklist'?'checklist':key==='coachtools:indexeddb:documentedCoaching'?'documentedCoaching':'';
-    return type ? window.CoachToolsAppData?.peek(type) || null : null;
+    return type ? sharedData.peek(type) : null;
   }
 
   function aoaToRows(aoa){
@@ -1482,9 +1487,9 @@
 
   function loadChecklistDock(opts={}){
     const key = $("checkKeySel").value;
-    if(!key){ setCheckBadge("bad","No key selected"); return; }
+    if(!key){ S.localRawItems=[]; applyChecklistItems([], {mode:"local"}); setCheckBadge("bad","No key selected"); return; }
     const obj = loadDockObjByKey(key);
-    if(!obj){ setCheckBadge("bad","Key not readable"); return; }
+    if(!obj){ S.localRawItems=[]; applyChecklistItems([], {mode:"local"}); setCheckBadge("bad","Key not readable"); return; }
 
     const items = canonicalizeChecklistSpeedRows(obj);
     S.checkKey = key;
@@ -1650,9 +1655,9 @@
 
   function loadDocumentedCoachings(opts={}){
     const key = $("docKeySel").value;
-    if(!key){ setDocBadge("bad","No key selected"); return; }
+    if(!key){ S.localDocCoachingsAll=[]; applyDocumentedCoachings([], {mode:"local"}); setDocBadge("bad","No key selected"); return; }
     const obj = loadDockObjByKey(key);
-    if(!obj){ setDocBadge("bad","Key not readable"); return; }
+    if(!obj){ S.localDocCoachingsAll=[]; applyDocumentedCoachings([], {mode:"local"}); setDocBadge("bad","Key not readable"); return; }
 
     const coachings = canonicalizeDocumentedCoachings(obj);
     S.docKey = key;
@@ -1766,6 +1771,13 @@
     const st = getSettings();
 
     if(!S.rawItems.length){
+      S.lastCoachSumm=[];
+      S.lastRepSumm=[];
+      S.lastByCoachAfterCut=new Map();
+      S.lastDocScope=[];
+      S.lastDocByCoachKey=new Map();
+      S.lastChecklistCoordSumm=[];
+      S.lastDocCoordSumm=[];
       setStatus("", "Waiting…");
       $("kRows").textContent="—";
       $("kCoaches").textContent="—";
@@ -2803,11 +2815,9 @@
   });
 
   setCoachSummaryExpanded(false);
+  await sharedData.refresh();
   autoLoadAll(true);
-  window.CoachToolsAppData.subscribe(['checklist','documentedCoaching'],async()=>{
-    await window.CoachToolsAppData.getMany(['checklist','documentedCoaching']);
-    autoLoadAll(true);
-  });
+  sharedData.activate();
 })().catch(error=>console.error('[Audit / Checklist] Shared data startup failed.',error));
 </script>
 </body>

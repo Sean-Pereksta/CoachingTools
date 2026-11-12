@@ -24,6 +24,7 @@
 <script src="../shared/coachtools-monthly-review.js"></script>
 <script src="../shared/coachtools-import.js"></script>
 <script src="../shared/coachtools-shell.js"></script>
+<script src="../shared/coachtools-scoped-loader.js"></script>
 
 <style>
   :root{
@@ -1164,10 +1165,16 @@ function normHdr(s){
     .replace(/\s/g,"");
 }
 
+const sharedData = window.CoachToolsScopedLoader.create({
+  data:window.CoachToolsAppData,
+  types:['qa','documentedCoaching'],
+  apply:()=>{buildDockKeyOptions(); buildCoKeyOptions(); loadQA(); loadCoachings(); render();},
+  onError:error=>console.error('[QA Scores] Shared data refresh failed.',error)
+});
 function loadDockObjByKey(key){
   if(!key) return null;
   const type=key==='coachtools:indexeddb:qa'?'qa':key==='coachtools:indexeddb:documentedCoaching'?'documentedCoaching':'';
-  return type ? window.CoachToolsAppData?.peek(type) || null : null;
+  return type ? sharedData.peek(type) : null;
 }
 
 function aoaToRows(aoa){
@@ -4120,7 +4127,7 @@ document.addEventListener('keydown', (e)=>{
 });
 
 (async function boot(){
-  await window.CoachToolsAppData.getMany(['qa','documentedCoaching']);
+  await sharedData.refresh();
   buildDockKeyOptions();
   buildCoKeyOptions();
 
@@ -4155,10 +4162,7 @@ document.addEventListener('keydown', (e)=>{
   document.querySelectorAll('.weeklySortBtn').forEach(btn=>btn.classList.toggle('active', btn.dataset.weeklySort===weeklySortMode));
   setActiveTab(activeTab);
   setSortMode(sortMode || "count");
-  window.CoachToolsAppData.subscribe(['qa','documentedCoaching'],async()=>{
-    await window.CoachToolsAppData.getMany(['qa','documentedCoaching']);
-    buildDockKeyOptions(); buildCoKeyOptions(); loadQA(); loadCoachings(); render();
-  });
+  sharedData.activate();
 })().catch(error=>console.error('[QA Scores] Shared data startup failed.',error));
 </script>
 

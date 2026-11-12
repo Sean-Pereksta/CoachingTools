@@ -29,6 +29,7 @@
 <script src="../shared/coachtools-monthly-review.js"></script>
 <script src="../shared/coachtools-import.js"></script>
 <script src="../shared/coachtools-shell.js"></script>
+<script src="../shared/coachtools-scoped-loader.js"></script>
 
 <style>
 :root{
@@ -287,7 +288,7 @@ aside.side.filterDrawer.show{transform:translateX(0)}
       <div class="summaryCard">
         <div class="summaryLabel">Team Rate</div>
         <div id="origRate" class="summaryValue">—</div>
-        <div class="summarySub"><span id="totApps">—</span> appointments · <span id="totOpps">—</span> opportunities</div>
+        <div class="summarySub"><span id="totApps">—</span> <span id="totAppsLabel">appointments</span> · <span id="totOpps">—</span> <span id="totOppsLabel">opportunities</span></div>
         <span class="hide" id="totAppsDelta">—</span><span class="hide" id="totOppsDelta">—</span>
       </div>
       <div class="summaryCard">
@@ -584,6 +585,11 @@ function toNumber(v){
 function findDockKey(suffix){
   return suffix==='retail' ? 'coachtools:indexeddb:weeklyRetail' : suffix==='referral' ? 'coachtools:indexeddb:weeklyReferral' : null;
 }
+const sharedData = window.CoachToolsScopedLoader.create({
+  data:window.CoachToolsAppData,
+  types:['weeklyRetail','weeklyReferral','documentedCoaching','checklist'], apply:()=>refreshFromCache(),
+  onError:error=>console.error('[KPI Impact] Shared data refresh failed.',error)
+});
 function loadDockObjByKey(key){
   if(!key) return null;
   const types={
@@ -592,7 +598,7 @@ function loadDockObjByKey(key){
     'coachtools:indexeddb:documentedCoaching':'documentedCoaching',
     'coachtools:indexeddb:checklist':'checklist'
   };
-  return types[key] ? window.CoachToolsAppData?.peek(types[key]) || null : null;
+  return types[key] ? sharedData.peek(types[key]) : null;
 }
 function aoaToRows(aoa){
   if(!Array.isArray(aoa) || aoa.length<2) return [];
@@ -680,6 +686,31 @@ function pickField(row, candidates){
     if(real!==undefined) return row[real];
   }
   return undefined;
+}
+function normalizeWiperRows(rows, sourceLabel){
+  // Match count headers exactly so a supplied percentage never becomes a count.
+  const fields = {
+    accepted:['wipersaccepted','wiperaccepted','wipersaccept','wiperaccept'],
+    offered:['wipersoffered','wiperoffered','wipersasked','wiperasked'],
+    count:['wipercount','wiperscount'],
+    jobs:['wiperjobs','wipersjobs','wiperjob','wipersjob']
+  };
+  const keys = Array.from(new Set(rows.flatMap(row=>Object.keys(row))));
+  const find = names => names.map(name=>keys.find(key=>normHdr(key)===name)).find(Boolean);
+  const retail = {A:find(fields.count), B:find(fields.jobs)};
+  const referral = {A:find(fields.accepted), B:find(fields.offered)};
+  const complete = pair => !!(pair.A && pair.B);
+  const opportunities = pair => pair.B ? rows.reduce((sum,row)=>sum+(toNumber(row[pair.B]) || 0),0) : 0;
+  const ordered = sourceLabel==='Referral' ? [referral,retail] : [retail,referral];
+  // Coaching Gaps prefers Retail Count / Jobs and Referral Accepted / Asked,
+  // falling back to the other count pair when the preferred pair has no volume.
+  const pair = ordered.find(candidate=>complete(candidate) && opportunities(candidate)>0) || ordered.find(complete);
+  if(!pair) return rows;
+  for(const row of rows){
+    row['Wipers Accepted'] = toNumber(row[pair.A]);
+    row['Wipers Offered'] = toNumber(row[pair.B]);
+  }
+  return rows;
 }
 function canonicalizeStatsRowsFromDock(dockObj, sourceLabel){
   if(!dockObj) return [];
@@ -1424,6 +1455,9 @@ function buildAutoSets(){
       autoSets.push({label, A, B});
     }
   });
+  if(headers.includes('Wipers Accepted') && headers.includes('Wipers Offered')){
+    autoSets.push({label:'Wiper Rate', A:'Wipers Accepted', B:'Wipers Offered'});
+  }
   const seen=new Set();
   autoSets = autoSets.filter(s=>{
     const k=s.A+'|'+s.B;
@@ -1643,6 +1677,9 @@ function paintTotals(original, current){
 
   totApps.textContent = Number.isFinite(a0) ? a0.toFixed(0) : '—';
   totOpps.textContent = Number.isFinite(b0) ? b0.toFixed(0) : '—';
+  const labels = metricVolumeLabels(effectiveSet());
+  document.getElementById('totAppsLabel').textContent = labels.numerator;
+  document.getElementById('totOppsLabel').textContent = labels.denominator;
   totAppsDelta.textContent = Number.isFinite(da) ? `− ${da.toFixed(0)} removed` : '—';
   totOppsDelta.textContent = Number.isFinite(db) ? `− ${db.toFixed(0)} removed` : '—';
 }
@@ -1767,6 +1804,11 @@ function metricGoalConfig(set){
   if(hay.includes('commercial')) return { key:'commercial', label:'Commercial Appointment Rate', goal:0.85 };
   if(hay.includes('wiper')) return { key:'wiper', label:'Wiper Rate', goal:0.23 };
   return null;
+}
+function metricVolumeLabels(set){
+  return metricGoalConfig(set)?.key==='wiper'
+    ? {numerator:'wipers accepted',denominator:'wipers offered',shortNumerator:'accepted',shortDenominator:'offered'}
+    : {numerator:'appointments',denominator:'opportunities',shortNumerator:'apps',shortDenominator:'opps'};
 }
 function calcPercentile(value, sortedValues){
   if(!Number.isFinite(value) || !Array.isArray(sortedValues) || !sortedValues.length) return null;
@@ -2494,7 +2536,8 @@ function paintRepGrid(rows, teamRate, allNames, maxVal, bottomHalfSet, cardTrend
     const footer=document.createElement('div'); footer.className='cardFooter';
     const xb=document.createElement('label');xb.className='xbox';const cb=document.createElement('input');cb.type='checkbox';cb.checked=!off;const txt=document.createElement('span');txt.textContent=off?'Excluded':'Included';
     cb.onchange=()=>{if(cb.checked)excluded.delete(r.rep);else excluded.add(r.rep);saveWorkspace();renderAll();};xb.appendChild(cb);xb.appendChild(txt);footer.appendChild(xb);
-    const volumes=document.createElement('span');volumes.className='plainTrendLine';volumes.textContent=`${Number.isFinite(r.apps)?r.apps.toFixed(0):'—'} apps · ${Number.isFinite(r.opps)?r.opps.toFixed(0):'—'} opps`;footer.appendChild(volumes);
+    const volumeLabels=metricVolumeLabels(effectiveSet());
+    const volumes=document.createElement('span');volumes.className='plainTrendLine';volumes.textContent=`${Number.isFinite(r.apps)?r.apps.toFixed(0):'—'} ${volumeLabels.shortNumerator} · ${Number.isFinite(r.opps)?r.opps.toFixed(0):'—'} ${volumeLabels.shortDenominator}`;footer.appendChild(volumes);
 
     card.appendChild(top);card.appendChild(metric);card.appendChild(bar);card.appendChild(info);card.appendChild(footer);grid.appendChild(card);
   });
@@ -2761,8 +2804,8 @@ function refreshFromCache(){
   const retailDock = loadDockObjByKey(dockKeyRetail);
   const referralDock = loadDockObjByKey(dockKeyReferral);
 
-  const retailRows = canonicalizeStatsRowsFromDock(retailDock, 'Retail');
-  const referralRows = canonicalizeStatsRowsFromDock(referralDock, 'Referral');
+  const retailRows = normalizeWiperRows(canonicalizeStatsRowsFromDock(retailDock, 'Retail'), 'Retail');
+  const referralRows = normalizeWiperRows(canonicalizeStatsRowsFromDock(referralDock, 'Referral'), 'Referral');
 
   const combinedRaw = [...retailRows, ...referralRows];
   const merged = mergeRetailReferral(combinedRaw, includeRetail, includeReferral);
@@ -3030,16 +3073,13 @@ document.getElementById('exportPdf').addEventListener('click', async ()=>{
    Boot
    ========================= */
 (async function boot(){
-  await window.CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','documentedCoaching','checklist']);
+  await sharedData.refresh();
   restoreStaticWorkspace();
   setHeaderH();
   refreshFromCache(); // refresh also populates coaching keys and auto-loads coachings if possible
   window.__KPI_IMPACT_READY__ = true;
   window.dispatchEvent(new CustomEvent('kpi-impact:ready'));
-  window.CoachToolsAppData.subscribe(['weeklyRetail','weeklyReferral','documentedCoaching','checklist'],async()=>{
-    await window.CoachToolsAppData.getMany(['weeklyRetail','weeklyReferral','documentedCoaching','checklist']);
-    refreshFromCache();
-  });
+  sharedData.activate();
 })().catch(error=>console.error('[KPI Impact] Shared data startup failed.',error));
 </script>
 </body>
