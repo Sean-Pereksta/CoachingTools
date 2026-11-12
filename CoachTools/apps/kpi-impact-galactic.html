@@ -8,8 +8,8 @@
 <meta name="coachtools-description" content="Measure KPI movement and the coaching associated with performance change." />
 <meta name="coachtools-category" content="Performance" />
 <meta name="coachtools-icon" content="icons/horizon/kpi-impact.png" />
-<meta name="coachtools-data" content="weeklyRetail, weeklyReferral, documentedCoaching" />
-<meta name="coachtools-version" content="1.2" />
+<meta name="coachtools-data" content="weeklyRetail, weeklyReferral, documentedCoaching, checklist" />
+<meta name="coachtools-version" content="1.3" />
 <title>KPI Impact · Horizon</title>
 <style>
 html,body{height:100%;margin:0;overflow:hidden;background:#10383c}iframe{width:100%;height:100%;border:0;display:block;background:#fff}
@@ -20,7 +20,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:#10383c}iframe{width:1
 <script>
 (() => {
   const frame = document.getElementById('kpiFrame');
-  const ENHANCEMENT_VERSION = '2026.11.12.coaching-calculator';
+  const ENHANCEMENT_VERSION = '2026.11.12.coaching-support';
 
   frame.addEventListener('load', () => {
     const w = frame.contentWindow;
@@ -94,12 +94,13 @@ html,body{height:100%;margin:0;overflow:hidden;background:#10383c}iframe{width:1
           const dateRaw=pickField(r,['date','dt','day','createdon','created','coachingdate','completeddate','modifiedon']);
           const typeMulti=pickField(r,['coachingtypemulti','coachingtypes','categories','category']);
           const typeSingle=pickField(r,['coachingtype','type','coachingcategory','topic','focusarea']);
+          const actualCoachingType=pickField(r,['coachingtype','type']);
           const coachRaw=pickField(r,['jobcoach','coach','coachname','sheet','team','manager']);
           const descRaw=pickField(r,['description','desc','notes','note','details','summary','coachingnotes','comments','comment']);
           const rep=String(repRaw??'').trim(); const dt=parseAnyDate(dateRaw); if(!rep||!dt) continue;
           let types=Array.from(new Set([...splitTypes(typeMulti),...splitTypes(typeSingle)]));
           if(!types.length) types=['Documented Coaching'];
-          out.push({rep,coach:String(coachRaw??'').trim(),date:dt,ymd:dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'),wk:isoWeekKey(dt),types,desc:String(descRaw??'').trim()});
+          out.push({rep,topics:splitTypes(typeMulti),coachingType:String(actualCoachingType??'').trim(),coach:String(coachRaw??'').trim(),date:dt,ymd:dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'),wk:isoWeekKey(dt),types,desc:String(descRaw??'').trim()});
         }}
         return out;
       };
