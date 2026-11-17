@@ -1,0 +1,67 @@
+#!/usr/bin/env node
+'use strict';
+const assert=require('node:assert/strict');
+const {makeHtml,colors}=require('../qualtrics/executive-email.js');
+
+const png='data:image/png;base64,aGVsbG8=';
+const baseMetrics={eligibleRepCount:4,concernRepCount:3,coachedRepCount:2,eligibleTopicCount:5,concernTopicCount:4,coachingContactCount:6,coachingTopicCount:8,appearanceCount:12,avgCoachingsPerWeek:0.25,coachingsPerAppearance:0.5};
+const coach={...baseMetrics,coach:'Zed <Coach>',records:[{repKey:'one',repName:'Alex & Lee',topic:'Assumptive <language>',appearanceCount:4,coachingCount:0},{repKey:'one',repName:'Alex & Lee',topic:'Closing',appearanceCount:3,coachingCount:1},{repKey:'two',repName:'Taylor',topic:'Closing',appearanceCount:5,coachingCount:0}],missingTopicShares:[{ruleId:'assumptive',topic:'Assumptive <language>',count:1,share:1/3},{ruleId:'closing',topic:'Closing',count:2,share:2/3}],coachedTopicShares:[{ruleId:'assumptive',topic:'Assumptive <language>',count:3,share:0.75},{ruleId:'closing',topic:'Closing',count:1,share:0.25}]};
+const review={settings:{months:3,minAppearances:2,minCoachings:2},window:{startDate:'2026-08-17',endDate:'2026-11-17',weeks:13.3},coachingAvailable:true,diagnostics:{warnings:['One row has no topic <ID>.']},summary:baseMetrics,coaches:[{...coach,coach:'Aaron',concernRepCount:1,records:[],missingTopicShares:[]},coach]};
+let chartCalls=0;
+const html=makeHtml(review,{title:'Executive <history>',reportDate:'2026-11-17',chartImage:(shares,palette)=>{chartCalls++;assert.deepEqual(shares,coach.missingTopicShares);assert.deepEqual(palette,colors);return png;}});
+assert.equal(chartCalls,1,'one small pie is drawn for each coach with missing topic memberships');
+assert.match(html,/<title>Executive &lt;history&gt;<\/title>/);
+assert.match(html,/More than 2 distinct report appearances on the same topic, with fewer than 2 matching coachings/);
+assert.match(html,/2026-08-17 – 2026-11-17 · Last 3 months/);
+assert.match(html,/#1 Zed &lt;Coach&gt;/);
+assert.match(html,/#2 Aaron/);
+assert.ok(html.indexOf('href="#executive-coach-1"')<html.indexOf('id="executive-coach-1"'),'table of contents comes before coach cards');
+assert.match(html,/width="92" height="92"/);
+assert.match(html,/src="data:image\/png;base64,aGVsbG8="/);
+assert.match(html,/1 · 33\.3%/);
+assert.match(html,/2 · 66\.7%/);
+assert.match(html,/Assumptive &lt;language&gt; <strong>75%<\/strong>/);
+assert.match(html,/0\.25/);
+assert.match(html,/0\.50/);
+assert.match(html,/6 contacts · 12 topic appearances/);
+assert.match(html,/Share of concern rep-topic pairs/);
+assert.match(html,/Share of matched coaching-topic records/);
+assert.match(html,/Multi-topic coaching counts once per topic/);
+assert.match(html,/including reps who meet the coaching target/);
+assert.equal((html.match(/Alex &amp; Lee/g)||[]).length,1,'multiple topic concerns share a single concise person row');
+assert.match(html,/Assumptive &lt;language&gt; <strong>4 \/ 0<\/strong><br>Closing <strong>3 \/ 1<\/strong>/);
+assert.match(html,/One row has no topic &lt;ID&gt;/);
+assert.ok(!html.includes('<Coach>')&&!html.includes('<language>'),'source text cannot become markup');
+assert.equal(review.coaches[0].coach,'Aaron','rendering does not mutate analytics order');
+
+for(const badSource of ['https://example.com/chart.png','data:image/svg+xml;base64,PHN2Zz4=','data:image/png;base64,aaa" onerror="alert(1)']){
+ const fallback=makeHtml(review,{chartImage:()=>badSource});
+ assert.ok(!fallback.includes('<img '),'only local PNG payloads may be embedded');
+ assert.match(fallback,/33\.3%/,'the numeric legend completely describes the pie when images are unavailable');
+}
+assert.doesNotThrow(()=>makeHtml(review,{chartImage:()=>{throw new Error('Canvas unavailable');}}));
+const missing=makeHtml({...review,coachingAvailable:false,summary:{...baseMetrics,coachedRepCount:null,coachingContactCount:null,avgCoachingsPerWeek:null,coachingsPerAppearance:null},coaches:[]});
+assert.match(missing,/Load documented coaching data/);
+assert.match(missing,/N\/A/);
+assert.ok(!missing.includes('0.00'),'unavailable coaching metrics are never coerced to zero');
+const unknownMetrics={...baseMetrics,concernRepCount:0,coachedRepCount:null,coachingContactCount:null,avgCoachingsPerWeek:null,coachingsPerAppearance:null};
+const unknownCoach={...coach,...unknownMetrics,records:[],missingTopicShares:[],coachedTopicShares:[]};
+const unknown=makeHtml({...review,coachingAvailable:false,summary:unknownMetrics,coaches:[{...unknownCoach,coach:'Zed'}, {...unknownCoach,coach:'Aaron'}]});
+assert.match(unknown,/Concern reps: N\/A/);
+assert.match(unknown,/Concern status is unknown until matching coaching data is available/);
+assert.match(unknown,/Coach index · alphabetical; coaching coverage is incomplete/);
+assert.ok(!unknown.includes('ranked by unique concern reps')&&!unknown.includes('#1'),'unknown coaching cannot produce a concern ranking');
+assert.ok(unknown.indexOf('>Aaron</a>')<unknown.indexOf('>Zed</a>'),'unknown coaches remain easy to find in alphabetical order');
+assert.ok(!unknown.includes('0 concern reps')&&!unknown.includes('No concern reps'),'unknown coaching cannot claim there are zero concern reps');
+assert.ok(unknown.includes('href="#executive-coach-1"')&&unknown.includes('id="executive-coach-1"'),'unknown coverage preserves functional navigation');
+const partial=makeHtml({...review,summary:{...baseMetrics,coachingContactCount:null},coaches:[{...coach,coachingContactCount:null}]});
+assert.match(partial,/Concern totals and coach ranking cannot be established/);
+assert.match(partial,/Known concern topics only; other topic coverage is unknown/);
+assert.match(partial,/Concern reps: N\/A/);
+assert.match(partial,/Alex &amp; Lee/,'confirmed concern evidence remains visible when another topic is unknown');
+assert.ok(!partial.includes('ranked by unique concern reps'));
+const empty=makeHtml({settings:review.settings,window:review.window,coachingAvailable:true,summary:{eligibleRepCount:0,concernRepCount:0,coachedRepCount:0,coachingContactCount:0,appearanceCount:0,avgCoachingsPerWeek:0,coachingsPerAppearance:0},coaches:[]});
+assert.match(empty,/No representatives have enough dated topic history/);
+assert.match(empty,/report dates and topic\/rule IDs/);
+assert.ok(!empty.includes('executive-coach-1'));
+console.log('PASS executive email: ranked compact coach index/cards, pie images with numeric fallback, cohort metrics, topic shares, escaping, and unavailable-data states');

@@ -182,7 +182,7 @@ for (const supportFile of ['apps/allstar/qualtrics/generator.html']) {
   if (!exists(supportFile)) fail(`Missing support application file: ${supportFile}`);
   else validateInlineScripts(path.join(ROOT, supportFile), fs.readFileSync(path.join(ROOT, supportFile), 'utf8'));
 }
-for (const supportFile of ['apps/allstar/qualtrics/individual-messages.js', 'apps/allstar/qualtrics/individual-ui.js']) {
+for (const supportFile of ['apps/allstar/qualtrics/individual-messages.js', 'apps/allstar/qualtrics/individual-ui.js', 'apps/allstar/qualtrics/executive-email.js']) {
   if (!exists(supportFile)) fail(`Missing support application file: ${supportFile}`);
   else {
     try { new Function(fs.readFileSync(path.join(ROOT, supportFile), 'utf8')); }
