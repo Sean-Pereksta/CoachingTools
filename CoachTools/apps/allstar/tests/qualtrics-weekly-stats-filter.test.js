@@ -169,7 +169,7 @@ async function asynchronousGuards(){
   // A filter change or source replacement during ZIP creation must prevent a stale email download.
   let downloads=0,zipHook=()=>{};
   class TestZip{file(){}async generateAsync(){await Promise.resolve();zipHook();return {};}}
-  Object.assign(context,{window:{JSZip:TestZip},JSZip:TestZip,refreshReportConcernHistory(){},makeEmailHtml:()=>'',makeEml:()=>'',summaryStats:()=>({}),compareAlarmStats:()=>0,sanitizeFile:value=>value,downloadBlob:()=>downloads++});
+  Object.assign(context,{window:{JSZip:TestZip},JSZip:TestZip,allStarBridgeYield:()=>Promise.resolve(),refreshReportConcernHistory(){},makeEmailHtml:()=>'',makeEml:()=>'',summaryStats:()=>({}),compareAlarmStats:()=>0,sanitizeFile:value=>value,downloadBlob:()=>downloads++});
   els.exportMsgExtension={checked:false};
   vm.runInContext(sourceFunction(html,'exportEmails'),context);
   const makeReport=()=>({reportDate:'2026-10-27',flagged:[{repKey:'prior-population'}],byCoach:new Map(),weeklyStatsFilterStale:false});

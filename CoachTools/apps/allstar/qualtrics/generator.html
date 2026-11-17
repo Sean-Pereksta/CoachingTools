@@ -1322,7 +1322,6 @@ function rebuildDerivedMaps(){
   renderCoreChips();
   renderHireDateControls();
   renderUploadReadiness();
-  renderCoachAliasReview();
   renderReportAudienceControls();
   invalidateIndividualScopeIndex('core data, hierarchy, or identity mapping changed');
   markRulePreviewStale('Core data changed. Click Refresh Preview to recalculate representatives.');
@@ -2200,7 +2199,7 @@ async function loadCoaching(file, options={}){
   for(const sh of parsed.sheets){
     for(const row of sh.rows||[]){
       received++;
-      if(options.yieldEvery&&++processed%options.yieldEvery===0) await allStarBridgeYield();
+      if(++processed%Math.max(1,Number(options.yieldEvery)||250)===0) await allStarBridgeYield();
       const rawName=rowVal(row,['Associate Name','Agent Name','Representative Name','Representative','Rep Name','Rep','CSR Name','SSR Name','Name']); if(!String(rawName||'').trim()) continue; withName++;
       const ident=resolveIdentityFromRow(row,rawName);
       const coachingDateRaw=rowVal(row,['Coaching Date','Documented Coaching Date']);
@@ -2231,7 +2230,7 @@ async function loadChecklist(file, options={}){
   const parsed=await readFileAsWorkbookRows(file,'Associate Name'); const out=[]; let processed=0;
   for(const sh of parsed.sheets){
     for(const row of sh.rows||[]){
-      if(options.yieldEvery&&++processed%options.yieldEvery===0) await allStarBridgeYield();
+      if(++processed%Math.max(1,Number(options.yieldEvery)||250)===0) await allStarBridgeYield();
       const rawName=rowVal(row,['Associate Name','Agent Name','Representative','Rep','CSR Name','Name']); if(!String(rawName||'').trim()) continue;
       const ident=resolveIdentityFromRow(row,rawName);
       const date=parseDate(rowVal(row,['Created On','Date','Date Served','Incident Date','Start Time']));
@@ -2264,7 +2263,7 @@ async function loadWeeklyStats(file, options={}){
   const parsed=await readFileAsWorkbookRows(file,'Agent Name'); const out=[]; const dateHeaders=new Set(); let processed=0;
   for(const sh of parsed.sheets){
     for(const row of sh.rows||[]){
-      if(options.yieldEvery&&++processed%options.yieldEvery===0) await allStarBridgeYield();
+      if(++processed%Math.max(1,Number(options.yieldEvery)||250)===0) await allStarBridgeYield();
       const rawName=rowVal(row,['Agent Name','Associate Name','Representative','Rep','CSR Name','Name']); if(!String(rawName||'').trim()) continue;
       const ident=resolveIdentityFromRow(row,rawName);
       const dateHeader=weeklyStatsDateHeader(row);
@@ -2295,7 +2294,7 @@ async function loadQA(file, options={}){
   const parsed=await readFileAsWorkbookRows(file,'Agent Name'); const out=[]; let processed=0;
   for(const sh of parsed.sheets){
     for(const row of sh.rows||[]){
-      if(options.yieldEvery&&++processed%options.yieldEvery===0) await allStarBridgeYield();
+      if(++processed%Math.max(1,Number(options.yieldEvery)||250)===0) await allStarBridgeYield();
       const rawName=rowVal(row,['Agent Name','Agent','Associate Name','Representative','Rep','CSR Name','Name']); if(!String(rawName||'').trim()) continue;
       const ident=resolveIdentityFromRow(row,rawName);
       const date=parseDate(rowVal(row,['Interaction Start Time','Interaction Start','Start Time','Scored Date','Date','Week','Week Start'])) || new Date();
@@ -2320,6 +2319,28 @@ function allStarRowsFile(item,fallbackName,sheetName){
 }
 function allStarBridgeNotify(type,extra={}){ if(window.parent!==window) window.parent.postMessage({type,...extra},'*'); }
 function allStarBridgeYield(){ return new Promise(resolve=>setTimeout(resolve,0)); }
+// Caches live only within a synchronous work slice; edits between slices always
+// get fresh data. Callers receive their own Sets so population additions are safe.
+let reportCalculationCache=null;
+function createReportCalculationCache(){ return {assigned:new Map(),sixWeek:new Map()}; }
+function withReportCalculationCache(callback,cache){
+  if(reportCalculationCache) return callback();
+  reportCalculationCache=cache||createReportCalculationCache();
+  try{ return callback(); }finally{ reportCalculationCache=null; }
+}
+function finishReportSteps(steps){
+  return withReportCalculationCache(()=>{ let step; do{ step=steps.next(); }while(!step.done); return step.value; });
+}
+async function runReportSteps(steps,isCurrent=()=>true){
+  let started=performance.now(), cache=createReportCalculationCache();
+  const checkCurrent=()=>{ if(!isCurrent()){ steps.return(); throw new Error('Report inputs changed. Generate the report again.'); } };
+  checkCurrent();
+  for(;;){
+    const step=withReportCalculationCache(()=>steps.next(),cache);
+    if(step.done) return step.value;
+    if(performance.now()-started>=12){ await allStarBridgeYield(); checkCurrent(); started=performance.now(); cache=createReportCalculationCache(); }
+  }
+}
 function clearConnectedSource(source){
   state.masterRows[source]=[]; state.masterFileNames[source]=''; if(state.uploadRuleSelectionCounts) delete state.uploadRuleSelectionCounts[source];
   if(source==='qa'){ state.qaRows=[]; invalidateHireDateLookupSource('core:qa'); }
@@ -2343,7 +2364,7 @@ async function importAllStarCoreFiles(payload={}){
     if((files.checklist?.rows||[]).length) await loadChecklist(allStarRowsFile(files.checklist,'All-Star Checklist','Checklist'),{deferDerived:true,yieldEvery:1500}); else clearConnectedSource('checklist');
     if(state.allStarCoreImportToken!==token) return; await allStarBridgeYield();
     rebuildDerivedMaps();
-    renderCoreChips(); renderUploadReadiness(); renderOtherRulePicker(); renderStatCountSelectors(currentRule()); renderStatCountRuleChips(); renderReportAudienceControls();
+    renderOtherRulePicker(); renderStatCountSelectors(currentRule()); renderStatCountRuleChips();
     updateStatRuleFieldVisibility(); updateCoachingCorrectiveFieldVisibility(); renderStatRuleChips(); renderCoachingCorrectiveRuleChips();
     markRulePreviewStale('Connected sources are ready. Nothing has been calculated; click Refresh Preview or Generate Report when you choose.');
     const counts={qa:state.qaRows.length,coaching:state.coachingRows.length,checklist:state.checklistRows.length,stats:state.weeklyStatsRows.length};
@@ -2357,7 +2378,7 @@ async function importAllStarWeeklyStats(payload={}){
     allStarBridgeNotify('qualtrics-weekly-progress',{message:`Loading ${payload.statsSource||'selected'} weekly stats on request…`});
     if((item.rows||[]).length) await loadWeeklyStats(allStarRowsFile(item,'All-Star Weekly Stats','Weekly Stats'),{deferDerived:true,yieldEvery:1500}); else clearConnectedSource('weeklyStats');
     await allStarBridgeYield(); rebuildDerivedMaps();
-    renderCoreChips(); renderUploadReadiness(); renderWeeklyColumnSelectors(currentRule()); renderStatCountSelectors(currentRule()); renderStatCountRuleChips();
+    renderWeeklyColumnSelectors(currentRule()); renderStatCountSelectors(currentRule()); renderStatCountRuleChips();
     updateStatRuleFieldVisibility(); updateCoachingCorrectiveFieldVisibility(); renderStatRuleChips(); renderCoachingCorrectiveRuleChips();
     markRulePreviewStale('Weekly Stats loaded manually. Nothing has been calculated; click Refresh Preview or Generate Report when ready.');
     const counts={stats:state.weeklyStatsRows.length}; setStatus(`Loaded ${counts.stats.toLocaleString()} weekly stat rows on request without generating a preview or report.`);
@@ -2631,9 +2652,11 @@ function statRuleWhy(check,config){
   const lookback=config?.dateMode==='fixed' ? `${check.selectedWeekRows||0} dated week row(s) in the fixed range` : `${check.selectedWeekRows||0} of ${check.requestedWeeks||config?.lookbackWeeks||10} requested weekly rows selected (${check.availableWeeks||0} available through the report date)`;
   return `${check.lowWeeks} of ${check.valuedWeeks} valued week(s) below ${goal||config?.goalRaw||'goal'} (${isFinite(check.pctLow)?fmtPct(check.pctLow,1):'N/A'}; ${check.naWeeks} N/A week(s) not counted; ${requirement}) • ${lookback}${sources?` • source: ${sources}`:''}`;
 }
-function buildStatRuleRecords(rule,reportDate){
+function buildStatRuleRecords(rule,reportDate){ return finishReportSteps(buildStatRuleRecordsSteps(rule,reportDate)); }
+function* buildStatRuleRecordsSteps(rule,reportDate){
   const records=[];
   for(const base of knownRepUniverse().values()){
+    yield;
     const check=evaluateStatRuleForRep(base.repKey,rule.statRule,reportDate);
     if(!check.meets) continue;
     const matchingCoachings=matchingCoachingRowsForRule(base.repKey,rule,reportDate);
@@ -2722,9 +2745,11 @@ function buildUpPasses(c,buildUp,reportDate){
   const cfg=buildUpMetricConfig(buildUp); const end=addDays(c.date,-1); const check=evaluateStatRuleForRep(c.key,cfg,end,end); const impactTrend=trendAroundCoaching(c.key,cfg,c.date,reportDate);
   return {passes:check.meets,check,impactTrend};
 }
-function buildCoachingCorrectiveRecords(rule,reportDate){
+function buildCoachingCorrectiveRecords(rule,reportDate){ return finishReportSteps(buildCoachingCorrectiveRecordsSteps(rule,reportDate)); }
+function* buildCoachingCorrectiveRecordsSteps(rule,reportDate){
   const c=rule.coachingCorrective||{}; const {start:from,end}=coachingDateRange(reportDate,c.coachingLookbackWeeks||52); const groups=new Map();
   for(const row of state.coachingRows||[]){
+    yield;
     if(!row.date||row.date<from||row.date>end||!coachingTopicMatches(row,c)) continue;
     const build=buildUpPasses(row,c.buildUp,reportDate); if(!build.passes) continue;
     if(!groups.has(row.key)) groups.set(row.key,[]);
@@ -2732,6 +2757,7 @@ function buildCoachingCorrectiveRecords(rule,reportDate){
   }
   const records=[]; let excludedImproving=0;
   for(const [repK,coachings] of groups){
+    yield;
     if(coachings.length<Math.max(0,Number(c.minCoachingCount||0))) continue;
     const map=state.teamMap.get(repK)||{}; const checklist=checklistRowsForCorrective(repK,c,reportDate); if(c.requireChecklist&&!checklist.length) continue;
     let trend={available:false}, latestImpact={available:false};
@@ -2763,10 +2789,12 @@ function statCountConditionPass(value,config){
   if(op==='notEquals') return a!==b;
   return a===b;
 }
-function buildStatCountRecords(rule,reportDate){
+function buildStatCountRecords(rule,reportDate){ return finishReportSteps(buildStatCountRecordsSteps(rule,reportDate)); }
+function* buildStatCountRecordsSteps(rule,reportDate){
   const c=rule.statCount||{}; const sourceRows=statCountSourceRows(c.source); const range=statCountDateRange(c,reportDate); const counts=new Map(); let scanned=0,matchingRows=0;
   const ensure=(ident,rawName)=>{ const map=state.teamMap.get(ident.key)||{}; if(!counts.has(ident.key)) counts.set(ident.key,{repName:ident.name||displayName(rawName),rawName:displayName(rawName),repKey:ident.key,key:ident.key,coach:map.coach||'Unassigned',team:map.team||'Unassigned',count:0,examples:[]}); return counts.get(ident.key); };
   for(const row of sourceRows||[]){
+    yield;
     if(range.start&&row.date<range.start) continue; if(range.end&&row.date>range.end) continue; scanned++;
     const raw=row.raw||{}; if(!statCountConditionPass(raw[c.conditionHeader],c)) continue;
     const rawName=String((c.nameHeader&&raw[c.nameHeader]!=null?raw[c.nameHeader]:(row.rawName||row.name||''))||'').trim(); if(!rawName) continue;
@@ -2817,7 +2845,8 @@ function knownRepUniverse(){
   for(const arr of Object.values(state.masterRows||{})) for(const r of arr||[]) add(r.rawName||r.name||r.rep,{coach:r.coach,team:r.team});
   return out;
 }
-function buildHeaderCountRecords(rule, sources){
+function buildHeaderCountRecords(rule, sources){ return finishReportSteps(buildHeaderCountRecordsSteps(rule, sources)); }
+function* buildHeaderCountRecordsSteps(rule, sources){
   const threshold=countThreshold(rule);
   const countHeader=rule?.countRule?.nameHeader || rule?.agentHeader || '';
   const counts=new Map(); let scanned=0, countedRows=0;
@@ -2831,6 +2860,7 @@ function buildHeaderCountRecords(rule, sources){
   };
   for(const src of sources||[]){
     for(const raw of src.rows||[]){
+      yield;
       scanned++;
       const rawName=getCountNameFromRow(raw, rule);
       if(!rawName) continue;
@@ -2843,6 +2873,7 @@ function buildHeaderCountRecords(rule, sources){
   }
   if(threshold<=0){
     for(const base of knownRepUniverse().values()){
+      yield;
       if(!counts.has(base.repKey)) counts.set(base.repKey,{...base, sources:new Set(['4 key files']), count:0, sourceRows:[]});
     }
   }
@@ -3296,6 +3327,8 @@ function rowCategoryList(r){ return (r?.categories&&r.categories.length ? r.cate
 function assignedRepSetForCoach(coach, reportDate){
   const {start:from,end:d}=coachingDateRange(reportDate||state.report?.reportDate,5);
   const set=new Set(); const coachKey=coachNameKey(coach);
+  const cacheKey=JSON.stringify([coachKey,+from,+d]), cache=reportCalculationCache?.assigned;
+  if(cache?.has(cacheKey)) return new Set(cache.get(cacheKey));
   const add=(r)=>{
     if(!r?.key || !(r.date>=from && r.date<=d)) return;
     const mapped=state.teamMap.get(r.key) || {};
@@ -3308,6 +3341,7 @@ function assignedRepSetForCoach(coach, reportDate){
   if(!set.size){
     for(const [k,m] of state.teamMap||[]) if(coachNameKey(m.coach)===coachKey) set.add(k);
   }
+  if(cache) cache.set(cacheKey,new Set(set));
   return set;
 }
 function assignedRepSetForRows(rows, reportDate){
@@ -3450,13 +3484,16 @@ coachingTopicMatches=function(row,config){
 };
 const buildCoachingCorrectiveRecordsBeforePhrases=buildCoachingCorrectiveRecords;
 buildCoachingCorrectiveRecords=function(rule,reportDate){
-  const records=buildCoachingCorrectiveRecordsBeforePhrases(rule,reportDate), c=rule.coachingCorrective||{}, topic=ccCoachingPhraseSummary(c);
+  return ccDescribeCoachingCorrectiveRecords(buildCoachingCorrectiveRecordsBeforePhrases(rule,reportDate),rule);
+};
+function ccDescribeCoachingCorrectiveRecords(records,rule){
+  const c=rule.coachingCorrective||{}, topic=ccCoachingPhraseSummary(c);
   for(const rec of records){
     const trendText=c.buildUp?.enabled?' • trend '+trendPlainText(rec.trend,metricLabel(c.buildUp.metric,c.buildUp.customHeader)):'';
     rec.matchedValues=rec.coachings.length+' documented coaching(s) on '+topic+' to '+rec.checklist.length+' matching checklist/corrective item(s) — ratio '+rec.ratioLabel+(c.buildUp?.enabled?' after Build Up filtering':'')+trendText;
   }
   return records;
-};
+}
 const ruleCategoriesBeforeCoachingPhrases=ruleCategories;
 ruleCategories=function(rule){
   if(isCoachingCorrectiveRule(rule)) return [friendlyCategoryLabel(rule.coachingCorrective?.emailCategory||ccCoachingPhraseSummary(rule.coachingCorrective)||rule.title)];
@@ -3631,7 +3668,8 @@ function urgencyPeriodKpiScore(record){
   const teamNeed=teamChecks.length?teamChecks.reduce(function(sum,check){ return sum+check.teamRelativeNeed; },0)/teamChecks.length:.5;
   return {available:true,teamAvailable:teamChecks.length>0,individualNeed:urgencyClamp(individualNeed,0,1),teamNeed:urgencyClamp(teamNeed,0,1),checks:checks};
 }
-function urgencyPreparePeriodKpiContext(records,reportDate,globalLookback){
+function urgencyPreparePeriodKpiContext(records,reportDate,globalLookback){ return finishReportSteps(urgencyPreparePeriodKpiContextSteps(records,reportDate,globalLookback)); }
+function* urgencyPreparePeriodKpiContextSteps(records,reportDate,globalLookback){
   const ruleCache=new Map(), evaluationCache=new Map(), teamGroups=new Map(), benchmarkGroups=new Map(), periodTemplates=new Map();
   const getRule=function(ruleId){
     if(!ruleCache.has(ruleId)) ruleCache.set(ruleId,state.rules.find(function(rule){ return rule.id===ruleId; })||null);
@@ -3642,9 +3680,10 @@ function urgencyPreparePeriodKpiContext(records,reportDate,globalLookback){
     if(!evaluationCache.has(cacheKey)) evaluationCache.set(cacheKey,urgencyPeriodKpiCheck(repKey,config,period));
     return Object.assign({},evaluationCache.get(cacheKey));
   };
-  (records||[]).forEach(function(record){
+  for(const record of records||[]){
+    yield;
     const rule=getRule(record.ruleId);
-    if(!rule){ record.periodKpiChecks=[]; return; }
+    if(!rule){ record.periodKpiChecks=[]; continue; }
     const period=urgencyCoachingPeriod(rule,reportDate,globalLookback), configs=urgencyKpiConfigsForRule(rule);
     const periodKey=[rule.id,ymd(period.start),ymd(period.end)].join('::');
     if(!periodTemplates.has(periodKey)) periodTemplates.set(periodKey,{rule:rule,period:period,configs:configs});
@@ -3653,23 +3692,25 @@ function urgencyPreparePeriodKpiContext(records,reportDate,globalLookback){
     const team=record.coach||record.team||'Unassigned', groupKey=[rule.id,coachNameKey(team),ymd(period.start),ymd(period.end)].join('::');
     if(!teamGroups.has(groupKey)) teamGroups.set(groupKey,{rule:rule,team:team,period:period,configs:configs,records:[]});
     teamGroups.get(groupKey).records.push(record);
-  });
+  }
   periodTemplates.forEach(function(template){
     availableReportCoaches().forEach(function(team){
       const groupKey=[template.rule.id,coachNameKey(team),ymd(template.period.start),ymd(template.period.end)].join('::');
       if(!teamGroups.has(groupKey)) teamGroups.set(groupKey,{rule:template.rule,team:team,period:template.period,configs:template.configs,records:[]});
     });
   });
-  teamGroups.forEach(function(group){
+  for(const group of teamGroups.values()){
+    yield;
     const repKeys=assignedRepSetForCoach(group.team,reportDate);
     group.records.forEach(function(record){ if(record.repKey) repKeys.add(record.repKey); });
-    group.configs.forEach(function(config,index){
+    for(const [index,config] of group.configs.entries()){
       const checks=[];
-      repKeys.forEach(function(repKey){
+      for(const repKey of repKeys){
+        yield;
         const check=evaluate(repKey,group.rule,config,index,group.period);
         if(isFinite(check.avg)&&isFinite(check.goal)&&isFinite(check.signedGoalGap)) checks.push(check);
-      });
-      if(!checks.length) return;
+      }
+      if(!checks.length) continue;
       const summary={
         team:group.team,
         avg:checks.reduce(function(sum,check){ return sum+check.avg; },0)/checks.length,
@@ -3684,8 +3725,8 @@ function urgencyPreparePeriodKpiContext(records,reportDate,globalLookback){
         const check=record.periodKpiChecks?.[index];
         if(check) check.teamSummary=summary;
       });
-    });
-  });
+    }
+  }
   (records||[]).forEach(function(record){
     const rule=getRule(record.ruleId);
     (record.periodKpiChecks||[]).forEach(function(check,index){
@@ -4467,13 +4508,16 @@ function impactAnalyzeNeed(record,rule,reportDate,recentDays){
   const need={id:record.repKey+'::'+rule.id,repKey:record.repKey,representative:record.repName,coach:record.coach||'Unassigned',team:record.team||record.coach||'Unassigned',ruleId:rule.id,ruleTitle:rule.title,topic:impactRuleTopic(rule),assignedStatistic:config?metricLabel(config.metric,config.customHeader):'Not assigned',statSource:config?.impactSource||'',direction:settings.direction,goal:config?impactGoalValue(rule,config):NaN,alignmentGroup:alignmentGroup,recentExactCount:recentExact.length,recentOtherCount:recentOther.length,recentCoachingCount:recentRows.length,latestCoachingDate:recentRows[recentRows.length-1]?.date||null,episodes:episodes,episodeCount:episodes.length,measurableEpisodeCount:measurableEpisodes.length,needDate:needDate,daysToCoaching:daysToCoaching,timelinessCategory:config&&needDate?impactTimeliness(daysToCoaching,!!firstAfterNeed):null,broadGroup:movement.broadGroup,status:movement.status,measurable:!!movement.measurable,preAverage:movement.pre?.value,postAverage:movement.post?.value,preNumerator:movement.pre?.numerator,preDenominator:movement.pre?.denominator,postNumerator:movement.post?.numerator,postDenominator:movement.post?.denominator,currentValue:currentValue,rawChange:movement.rawChange,favorableChange:movement.favorableChange,validPrePeriods:movement.prePeriods||0,validPostPeriods:movement.postPeriods||0,minimumPeriods:settings.minimumPeriods,checklistFollowThrough:episodes.reduce(function(sum,episode){ return sum+(episode.checklistRecords?.length||0); },0),evidence:movement.episode?.matchingEvidence||impactRulePhrases(rule),record:record};
   need.suggestedAction=impactSuggestedAction(need); return need;
 }
-function impactDiagnosticRows(needs,rules,reportDate){
-  const activeRules=rules.filter(function(rule){ return needs.some(function(need){ return need.ruleId===rule.id; }); }), diagnostics=[];
+function impactDiagnosticRows(needs,rules,reportDate){ return finishReportSteps(impactDiagnosticRowsSteps(needs,rules,reportDate)); }
+function* impactDiagnosticRowsSteps(needs,rules,reportDate){
+  const activeRuleIds=new Set(needs.map(need=>need.ruleId)), activeRules=rules.filter(rule=>activeRuleIds.has(rule.id)), diagnostics=[];
   const {end}=coachingDateRange(reportDate,currentCoachLookbackWeeks());
-  (state.coachingRows||[]).filter(function(row){ return row.date&&row.date<=end; }).forEach(function(row){
+  for(const row of state.coachingRows||[]){
+    yield;
+    if(!(row.date&&row.date<=end)) continue;
     const matches=activeRules.filter(function(rule){ return impactRowMatchesRule(row,rule).matches; });
     if(matches.length>1) diagnostics.push({rowId:impactRowId(row),representative:row.name||row.rawName,date:row.date,coach:row.coach||'Unassigned',topics:matches.map(function(rule){ return {id:rule.id,title:rule.title,topic:impactRuleTopic(rule)}; }),record:row});
-  });
+  }
   return diagnostics;
 }
 function impactPreviousHistory(need,reportDate){
@@ -4531,20 +4575,26 @@ function impactTopicSummaries(needs){
     return {ruleId:entry[0],ruleTitle:rows[0]?.ruleTitle||'',topic:rows[0]?.topic||'',assignedStatistic:rows[0]?.assignedStatistic||'Not assigned',activeNeeds:rows.length,exactCoached:profile.exactNeeds,uncoached:profile.noCoachingNeeds,preAverage:preWeighted.length===measurable.length&&preDenominator>0?preNumerator/preDenominator:(pre.length?pre.reduce(function(sum,value){ return sum+value; },0)/pre.length:NaN),postAverage:postWeighted.length===measurable.length&&postDenominator>0?postNumerator/postDenominator:(post.length?post.reduce(function(sum,value){ return sum+value; },0)/post.length:NaN),averageChange:changes.length?changes.reduce(function(sum,value){ return sum+value; },0)/changes.length:NaN,medianChange:impactMedian(changes),positive:profile.movement.positive,neutral:profile.movement.neutral,negative:profile.movement.negative,notMeasurable:profile.movement.notMeasurable,profile:profile,needs:rows};
   }).sort(function(a,b){ return String(a.ruleTitle).localeCompare(String(b.ruleTitle)); });
 }
-function impactBuildAnalysis(){
-  if(!state.report) return null;
-  const reportDate=parseDate(state.report.reportDate)||new Date(), recentDays=impactSaveWorkspaceSettings().recentLookbackDays, sourceRows=state.report.flagged||[], ruleMap=new Map(state.rules.map(function(rule){ return [rule.id,rule]; })), byNeed=new Map();
+function impactBuildAnalysis(){ return finishReportSteps(impactBuildAnalysisSteps()); }
+function* impactBuildAnalysisSteps(){
+  const report=state.report;
+  if(!report) return null;
+  const reportDate=parseDate(report.reportDate)||new Date(), recentDays=impactSaveWorkspaceSettings().recentLookbackDays, sourceRows=report.flagged||[], ruleMap=new Map(state.rules.map(function(rule){ return [rule.id,rule]; })), byNeed=new Map(), firstRecordByNeed=new Map();
   sourceRows.forEach(function(record){
     const key=record.repKey+'::'+record.ruleId;
+    if(!firstRecordByNeed.has(key)) firstRecordByNeed.set(key,record);
     if(!byNeed.has(key)) byNeed.set(key,record);
     else if((record.concernScore||0)>(byNeed.get(key).concernScore||0)) byNeed.set(key,record);
   });
   const needs=[];
-  byNeed.forEach(function(record){ const rule=ruleMap.get(record.ruleId); if(rule) needs.push(impactAnalyzeNeed(record,rule,reportDate,recentDays)); });
-  const transitions=needs.map(function(need){ return impactTransitionForNeed(need,reportDate); }).filter(Boolean), diagnostics=impactDiagnosticRows(needs,[...ruleMap.values()],reportDate), profile=impactProfile(needs), topics=impactTopicSummaries(needs), coaches=[...new Set(needs.map(function(need){ return need.coach; }))].sort(function(a,b){ return String(a).localeCompare(String(b)); });
-  const analysis={reportDate:state.report.reportDate,recentLookbackDays:recentDays,needs:needs,episodes:needs.reduce(function(out,need){ return out.concat(need.episodes||[]); },[]),transitions:transitions,diagnostics:diagnostics,profile:profile,topics:topics,coaches:coaches,actionQueue:impactActionQueue(needs),positiveNeeds:impactPositiveNeeds(needs),builtAt:new Date().toISOString()};
-  state.report.coachingImpact=analysis;
-  needs.forEach(function(need){ const record=sourceRows.find(function(row){ return row.repKey===need.repKey&&row.ruleId===need.ruleId; }); if(record) record.coachingImpact=need; });
+  for(const record of byNeed.values()){ yield; const rule=ruleMap.get(record.ruleId); if(rule) needs.push(impactAnalyzeNeed(record,rule,reportDate,recentDays)); }
+  const transitions=[];
+  for(const need of needs){ yield; const transition=impactTransitionForNeed(need,reportDate); if(transition) transitions.push(transition); }
+  const diagnostics=yield* impactDiagnosticRowsSteps(needs,[...ruleMap.values()],reportDate), profile=impactProfile(needs), topics=impactTopicSummaries(needs), coaches=[...new Set(needs.map(function(need){ return need.coach; }))].sort(function(a,b){ return String(a).localeCompare(String(b)); });
+  const analysis={reportDate:report.reportDate,recentLookbackDays:recentDays,needs:needs,episodes:needs.reduce(function(out,need){ return out.concat(need.episodes||[]); },[]),transitions:transitions,diagnostics:diagnostics,profile:profile,topics:topics,coaches:coaches,actionQueue:impactActionQueue(needs),positiveNeeds:impactPositiveNeeds(needs),builtAt:new Date().toISOString()};
+  if(state.report!==report) return null;
+  report.coachingImpact=analysis;
+  needs.forEach(function(need){ const record=firstRecordByNeed.get(need.repKey+'::'+need.ruleId); if(record) record.coachingImpact=need; });
   return analysis;
 }
 function impactNeedsForRows(rows){
@@ -5239,6 +5289,8 @@ function simpleQualtricsSixWeekMetric(record,entry){
   const unavailable={currentAvailable:false,trendAvailable:false,currentAverage:NaN,priorAverage:NaN,delta:NaN,currentCount:0,priorCount:0};
   if(!record?.repKey||!entry?.config) return unavailable;
   const end=parseDate(state.report?.reportDate)||new Date();
+  const cache=reportCalculationCache?.sixWeek, cacheKey=JSON.stringify([record.repKey,entry.config,+end]);
+  if(cache?.has(cacheKey)) return {...cache.get(cacheKey)};
   const earliest=earliestMetricDate(record.repKey,entry.config,end);
   if(!(earliest instanceof Date)||isNaN(earliest)) return unavailable;
   const points=weeklyStatValues(record.repKey,entry.config,earliest,end).filter(function(point){ return point&&isFinite(Number(point.value)); }).sort(function(a,b){ return String(a.week||'').localeCompare(String(b.week||'')); }).slice(-6);
@@ -5246,7 +5298,9 @@ function simpleQualtricsSixWeekMetric(record,entry){
   const currentAverage=current.length===3?simpleQualtricsAverage(current.map(function(point){ return Number(point.value); })):NaN;
   const priorAverage=prior.length===3?simpleQualtricsAverage(prior.map(function(point){ return Number(point.value); })):NaN;
   const trendAvailable=isFinite(currentAverage)&&isFinite(priorAverage);
-  return {currentAvailable:isFinite(currentAverage),trendAvailable:trendAvailable,currentAverage:currentAverage,priorAverage:priorAverage,delta:trendAvailable?currentAverage-priorAverage:NaN,currentCount:current.length,priorCount:prior.length};
+  const result={currentAvailable:isFinite(currentAverage),trendAvailable:trendAvailable,currentAverage:currentAverage,priorAverage:priorAverage,delta:trendAvailable?currentAverage-priorAverage:NaN,currentCount:current.length,priorCount:prior.length};
+  if(cache) cache.set(cacheKey,result);
+  return {...result};
 }
 function simpleQualtricsAssociatedGroups(source,predicate){
   const groups=new Map();
@@ -5501,6 +5555,11 @@ makeEmailHtml=function(title,rows,isExec){
   const content=isExec?simpleQualtricsOverallStripHtml(rows)+simpleQualtricsExecutiveMatrixHtml(rows)+simpleQualtricsExecutiveCoachTableHtml(rows):simpleQualtricsCoachOverviewHtml(rows)+simpleQualtricsRuleTableHtml(rows)+simpleQualtricsFollowUpHtml(rows);
   return '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:Segoe UI,Arial,sans-serif;color:#0f172a;line-height:1.35}table{max-width:100%}@media(max-width:700px){table{font-size:10px}td,th{padding:5px!important}}@media print{tr{break-inside:avoid;page-break-inside:avoid}}</style></head><body style="margin:0;padding:18px;background:#f8fafc"><div style="max-width:1120px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;padding:18px"><h1 style="margin:0 0 4px;color:#0f172a">'+esc(title)+'</h1><div style="color:#64748b;font-weight:700;margin-bottom:12px">Report date: '+esc(state.report?.reportDate||'')+'</div>'+weeklyStatsFilterNoteHtml()+simpleQualtricsCorrectiveLegendHtml(rows)+content+'</div></body></html>';
 };
+// Reuse team populations and six-week snapshots across sections of one render.
+const renderReportWithoutCalculationCache=renderReport;
+renderReport=function(){ return withReportCalculationCache(()=>renderReportWithoutCalculationCache()); };
+const makeEmailHtmlWithoutCalculationCache=makeEmailHtml;
+makeEmailHtml=function(title,rows,isExec){ return withReportCalculationCache(()=>makeEmailHtmlWithoutCalculationCache(title,rows,isExec)); };
 const simpleQualtricsGenerateReportBefore=generateReport;
 generateReport=async function(){
   await simpleQualtricsGenerateReportBefore();
@@ -5510,6 +5569,7 @@ generateReport=async function(){
 async function generateReport(){
   const weeklyFilterRunSignature=JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value}), weeklyStatsRunIndex=state.indexes?.weeklyByRep, weeklyFilterRunRevision=Number(state.weeklyStatsFilterRevision)||0;
   const coachRenameGeneration=Number(state.allStarCoachRenameGeneration||0);
+  const reportInputsCurrent=()=>coachRenameGeneration===Number(state.allStarCoachRenameGeneration||0)&&weeklyFilterRunRevision===(Number(state.weeklyStatsFilterRevision)||0)&&weeklyFilterRunSignature===JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value})&&weeklyStatsRunIndex===state.indexes?.weeklyByRep;
   const performanceStarted=performance.now(), performanceTimings={}, performanceMark=(label,started)=>{ performanceTimings[label]=performance.now()-started; };
   const rulesById=new Map((state.rules||[]).map(rule=>[rule.id,rule])), ruleByFileId=new Map((state.dashboardFiles||[]).map(file=>[file.id,rulesById.get(file.ruleId)||matchRuleForFile(file.fileName)]));
   const selectedCoreRules=state.rules.filter(r=>isCoreDataRule(r)&&state.selectedOtherRuleIds.has(r.id));
@@ -5527,6 +5587,7 @@ async function generateReport(){
   const audience=currentReportAudience();
   if(audience.scope!=='all'&&!audience.value){ toast(`Choose ${audience.scope==='org'?'an organization':'a coach'} before generating.`); return; }
   const minPeople=audience.minPeople;
+  setProgress(1,'Preparing email data'); await allStarBridgeYield();
   let performanceStageStarted=performance.now(); rebuildCoachAliasIndex(); applyCoachAliasesToRows(); rebuildTeamMapFromCoreData(); applyCoachAliasesToTeamMap(); rebuildHireDateIndex(); performanceMark('Identity and team preparation',performanceStageStarted); await new Promise(resolve=>setTimeout(resolve,0));
   const reps=new Map(); const unmatched=[]; const countGroups=new Map(); setProgress(2,'Applying rules');
   const totalDashboardRows=Math.max(1,(state.dashboardFiles||[]).reduce((sum,file)=>sum+(file.rows?.length||0),0)); let processedDashboardRows=0;
@@ -5567,7 +5628,7 @@ async function generateReport(){
   performanceStageStarted=performance.now();
   let groupIndex=0;
   for(const group of countGroups.values()){
-    const built=buildHeaderCountRecords(group.rule, group.sources);
+    const built=await runReportSteps(buildHeaderCountRecordsSteps(group.rule, group.sources),reportInputsCurrent);
     for(const base of built.records){
       const files=[...base.sources].join(', ');
       const valueSummary=`${group.rule.countRule?.label || 'Rows found'}: ${base.count} in ${built.countHeader || 'selected column'} (minimum ${built.threshold})`;
@@ -5583,17 +5644,17 @@ async function generateReport(){
   for(const rule of selectedCoreRules){
     const reportSetting=reportSettingForRule(rule,state.dashboardFiles.length+coreIndex+1);
     if(isStatRule(rule)){
-      for(const base of buildStatRuleRecords(rule,reportDate)){
+      for(const base of await runReportSteps(buildStatRuleRecordsSteps(rule,reportDate),reportInputsCurrent)){
         const rec=addRepRecord(base.repKey,base.repName,base.coach,base.team,rule,'4 key files',null,base.matchedValues,reportSetting);
         rec.directStatCheck=base.check;
       }
     } else if(isStatCountRule(rule)){
-      for(const base of buildStatCountRecords(rule,reportDate)){
+      for(const base of await runReportSteps(buildStatCountRecordsSteps(rule,reportDate),reportInputsCurrent)){
         const rec=addRepRecord(base.repKey,base.repName,base.coach,base.team,rule,statCountSourceLabel(rule.statCount?.source),null,base.matchedValues,reportSetting);
         rec.statCountMetrics={count:base.count,label:rule.statCount?.label||'Matching rows',source:statCountSourceLabel(rule.statCount?.source),conditionHeader:rule.statCount?.conditionHeader||'',operator:rule.statCount?.operator||'equals',value:rule.statCount?.value||'',minimum:Number(rule.statCount?.minCount||0)};
       }
     } else if(isCoachingCorrectiveRule(rule)){
-      for(const base of buildCoachingCorrectiveRecords(rule,reportDate)){
+      for(const base of ccDescribeCoachingCorrectiveRecords(await runReportSteps(buildCoachingCorrectiveRecordsSteps(rule,reportDate),reportInputsCurrent),rule)){
         const rec=addRepRecord(base.repKey,base.repName,base.coach,base.team,rule,'4 key files',null,base.matchedValues,reportSetting);
         rec.precomputedChecklist={rows:base.checklist,count:base.checklist.length,latest:base.checklist[0]||null};
         rec.specialMetrics={coachingCount:base.coachings.length,checklistCount:base.checklist.length,ratio:base.ratio,ratioLabel:base.ratioLabel,buildUpEnabled:!!rule.coachingCorrective?.buildUp?.enabled,trend:base.trend,coachingImpactTrend:base.coachingImpactTrend,trendLabel:metricLabel(rule.coachingCorrective?.buildUp?.metric,rule.coachingCorrective?.buildUp?.customHeader),connectedStatChecks:base.coachings.map(x=>x.buildUpCheck).filter(Boolean)};
@@ -5608,7 +5669,7 @@ async function generateReport(){
   const hireEligible=collectedFlagged.filter(r=>hireDatePassesReportFilter(r.repKey));
   const weeklyStatsExcluded=hireEligible.filter(r=>!weeklyStatsActivityPasses(r.repKey,reportDate)&&reportAudienceAllowsCoach(r.coach,audience));
   const allFlagged=hireEligible.filter(r=>weeklyStatsActivityPasses(r.repKey,reportDate));
-  urgencyPreparePeriodKpiContext(allFlagged,reportDate,globalLookback);
+  await runReportSteps(urgencyPreparePeriodKpiContextSteps(allFlagged,reportDate,globalLookback),reportInputsCurrent);
   for(let i=0;i<allFlagged.length;i++){
     const rec=allFlagged[i]; const rule=rulesById.get(rec.ruleId); const lookback=globalLookback;
     rec.coached = coachMatch(rec, rule, reportDate, lookback);
@@ -5669,7 +5730,7 @@ async function generateReport(){
   if(weeklyFilterRunRevision!==(Number(state.weeklyStatsFilterRevision)||0)||weeklyFilterRunSignature!==JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value})||weeklyStatsRunIndex!==state.indexes?.weeklyByRep){ markWeeklyStatsFilterResultsStale(); setProgress(null); toast('Weekly Stats, filter settings, or report date changed. Generate the report again.'); return; }
   const report={ runId:uid(), reportDate:ymd(reportDate), generatedAt:new Date().toISOString(), unmatched, flagged, allFlagged:audienceFlagged, byCoach:alarmSortedByCoach, byCoachAll, teamPopulationByCoach, followUpWatchlist:followUpWatchlist.filter(function(item){ return reportAudienceAllowsCoach(item.coach,audience); }), excludedCoaches, minPeople, urgencyCatalog:buildUrgencyCatalog(selectedCoreRules), audience:{...audience,label:reportAudienceLabel(audience)}, audienceExcludedRecords:allFlagged.length-audienceFlagged.length, hireDateFilter:normalizeHireDateSettings(hireCfg), hireDateExcludedRecords:hireDateExcluded.length, hireDateExcludedPeople:new Set(hireDateExcluded.map(r=>r.repKey)).size, weeklyStatsFilter:currentWeeklyStatsFilter(), weeklyStatsExcludedPeople:new Set(weeklyStatsExcluded.map(r=>r.repKey)).size };
   if(coachRenameGeneration!==Number(state.allStarCoachRenameGeneration||0)){setProgress(null);return;}
-  state.report=report; refreshReportConcernHistory(false); performanceStageStarted=performance.now(); impactBuildAnalysis(); performanceMark('Coaching impact',performanceStageStarted); setProgress(96,'Rendering report'); await new Promise(resolve=>setTimeout(resolve,0)); if(coachRenameGeneration!==Number(state.allStarCoachRenameGeneration||0)){setProgress(null);return;} performanceStageStarted=performance.now(); renderReport(); performanceMark('Report render',performanceStageStarted); switchTab('report'); setProgress(null);
+  state.report=report; refreshReportConcernHistory(false); performanceStageStarted=performance.now(); try{ await runReportSteps(impactBuildAnalysisSteps(),()=>state.report===report&&reportInputsCurrent()); }catch(error){ if(state.report===report) report.weeklyStatsFilterStale=true; throw error; } performanceMark('Coaching impact',performanceStageStarted); setProgress(96,'Rendering report'); await new Promise(resolve=>setTimeout(resolve,0)); if(state.report!==report||!reportInputsCurrent()){if(state.report===report) markWeeklyStatsFilterResultsStale();setProgress(null);return;} performanceStageStarted=performance.now(); renderReport(); performanceMark('Report render',performanceStageStarted); switchTab('report'); setProgress(null);
   performanceTimings.Total=performance.now()-performanceStarted; state.reportPerformance={timings:performanceTimings,generatedAt:new Date().toISOString()};
   if(new URLSearchParams(location.search).get('debug')==='1'){ const slowStages=Object.entries(performanceTimings).filter(([label,value])=>label!=='Total'&&value>=1000); console.groupCollapsed('Qualtrics Generate Report Performance'); console.table(performanceTimings); if(slowStages.length) console.warn('Unexpectedly expensive Generate Report stage(s)',Object.fromEntries(slowStages)); console.groupEnd(); }
   setStatus(`Generated ${report.audience.label}: ${flagged.length.toLocaleString()} representative-data-source record(s) identified for review.${report.audienceExcludedRecords?` Audience filter excluded ${report.audienceExcludedRecords.toLocaleString()} record(s).`:''}${hireCfg.filterEnabled?` Hire-date filter excluded ${report.hireDateExcludedPeople.toLocaleString()} representative(s).`:''} ${excludedCoaches.length ? excludedCoaches.length+' team(s) hidden by minimum people filter.' : ''}`);
@@ -6019,18 +6080,26 @@ async function exportEmails(){
   if(!state.report){ toast('Generate a report first.'); return; }
   if(state.report.weeklyStatsFilterStale){ toast('Generate the report again to apply the Weekly Stats filter before downloading.'); return; }
   const report=state.report, filterSignature=JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value});
+  const current=()=>state.report===report&&!report.weeklyStatsFilterStale&&filterSignature===JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value});
+  const pause=async(percent,message)=>{ setProgress(percent,message); await allStarBridgeYield(); if(current()) return true; toast('Report inputs changed. Generate the report again before downloading.'); return false; };
   refreshReportConcernHistory(false);
   if(!window.JSZip){ toast('JSZip is still loading. Try again in a moment.'); return; }
   const ext = els.exportMsgExtension.checked ? 'msg' : 'eml'; const zip=new JSZip();
-  const all=state.report.flagged; zip.file(`Executive_${state.report.reportDate}.${ext}`, makeEml(`Executive - Coaching Opportunity Review - ${state.report.reportDate}`, makeEmailHtml('Executive Coaching Opportunity Review', all, true)));
-  if(els.executiveHistoryInclude?.checked){ const historyEdition=makeExecutiveHistoryEmail(state.report.reportDate); zip.file(`Executive_History_${state.report.reportDate}.eml`,makeEml(`Executive Coaching History Review - ${state.report.reportDate}`,historyEdition.html)); }
-  const coachEmails=[...state.report.byCoach.entries()].map(([coach,rows])=>({coach,rows,...summaryStats(rows)})).sort((a,b)=>compareAlarmStats(a,b) || String(a.coach).localeCompare(String(b.coach)));
-  for(const item of coachEmails){
-    zip.file(`${sanitizeFile(item.coach)}_${state.report.reportDate}.${ext}`, makeEml(`${item.coach} - Coaching Opportunity Review - ${state.report.reportDate}`, makeEmailHtml(`${item.coach} Coaching Opportunity Review`, item.rows)));
-  }
-  const blob=await zip.generateAsync({type:'blob'});
-  if(state.report!==report||report.weeklyStatsFilterStale||filterSignature!==JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value})){ toast('Report inputs changed. Generate the report again before downloading.'); return; }
-  downloadBlob(blob,`coaching_opportunity_emails_${report.reportDate}.zip`);
+  try{
+    if(!await pause(0,'Building executive email')) return;
+    const all=report.flagged; zip.file(`Executive_${report.reportDate}.${ext}`, makeEml(`Executive - Coaching Opportunity Review - ${report.reportDate}`, makeEmailHtml('Executive Coaching Opportunity Review', all, true)));
+    if(els.executiveHistoryInclude?.checked){ if(!await pause(0,'Building executive history email')) return; const historyEdition=makeExecutiveHistoryEmail(report.reportDate); zip.file(`Executive_History_${report.reportDate}.eml`,makeEml(`Executive Coaching History Review - ${report.reportDate}`,historyEdition.html)); }
+    const coachEmails=[...report.byCoach.entries()].map(([coach,rows])=>({coach,rows,...summaryStats(rows)})).sort((a,b)=>compareAlarmStats(a,b) || String(a.coach).localeCompare(String(b.coach)));
+    let completed=0;
+    for(const item of coachEmails){
+      if(!await pause((completed/Math.max(1,coachEmails.length))*90,'Building coach email '+(++completed)+' of '+coachEmails.length)) return;
+      zip.file(`${sanitizeFile(item.coach)}_${report.reportDate}.${ext}`, makeEml(`${item.coach} - Coaching Opportunity Review - ${report.reportDate}`, makeEmailHtml(`${item.coach} Coaching Opportunity Review`, item.rows)));
+    }
+    if(!await pause(90,'Packaging email files')) return;
+    const blob=await zip.generateAsync({type:'blob'},metadata=>setProgress(90+metadata.percent*.1,'Packaging email files'));
+    if(!current()){ toast('Report inputs changed. Generate the report again before downloading.'); return; }
+    downloadBlob(blob,`coaching_opportunity_emails_${report.reportDate}.zip`);
+  }finally{ setProgress(null); }
 }
 function renderEmailWorkflowStatus(){
   const uploads=state.dashboardFiles||[], files=uploads.filter(file=>file.status==='matched'&&file.rows?.length), rules=(state.rules||[]).filter(rule=>isCoreDataRule(rule)&&state.selectedOtherRuleIds?.has(rule.id));
