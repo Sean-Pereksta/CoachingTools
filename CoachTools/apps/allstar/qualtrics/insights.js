@@ -216,5 +216,117 @@
     }
     return {names:[...groups.values()].map(item=>({key:item.key,name:item.name,count:item.explicit??item.count})),skipped};
   }
-  return {canonicalConcernNames,selectDocumentedCoachingDate,descriptionContains,normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,formatDisplayText,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel,normalizeConcernIdentity,normalizeConcernName,summarizeConcernNameCounts,concernReportIdentity,concernRepReportKey,summarizeConcernReportCounts,concernOccurrenceKey,classifyConcernHistory,summarizeConcernHistory};
+  // History-only executive review deliberately does not use the current flagged
+  // population or name-only appearance totals: neither proves a dated topic need.
+  function buildExecutiveHistoryReview(options){
+    const input=options||{}, integer=(value,fallback,min,max)=>Number.isFinite(Number(value))&&String(value??'').trim()!==''?Math.max(min,Math.min(max,Math.floor(Number(value)))):fallback;
+    const settings={months:integer(input.months,3,1,120),minAppearances:integer(input.minAppearances,2,0,1000000),minCoachings:integer(input.minCoachings,1,1,1000000)};
+    function dateValue(value){
+      if(value instanceof Date) return Number.isFinite(value.getTime())?new Date(value):null;
+      if(typeof value!=='string'||!value.trim()) return null;
+      const text=value.trim(), parts=/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(text);
+      if(!parts) return null;
+      const year=Number(parts[1]),month=Number(parts[2])-1,day=Number(parts[3]), calendar=new Date(year,month,day);
+      if(calendar.getFullYear()!==year||calendar.getMonth()!==month||calendar.getDate()!==day) return null;
+      const date=text.length===10?calendar:new Date(text);
+      return Number.isFinite(date.getTime())?date:null;
+    }
+    const dateText=date=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+    const selected=dateValue(input.reportDate);
+    if(!selected) throw new Error('Choose a valid report date for the executive history review.');
+    const end=new Date(selected); end.setHours(23,59,59,999);
+    const start=new Date(selected); start.setHours(0,0,0,0);
+    const selectedDay=start.getDate(); start.setDate(1); start.setMonth(start.getMonth()-settings.months);
+    start.setDate(Math.min(selectedDay,new Date(start.getFullYear(),start.getMonth()+1,0).getDate()));
+    const calendarDays=(Date.UTC(end.getFullYear(),end.getMonth(),end.getDate())-Date.UTC(start.getFullYear(),start.getMonth(),start.getDate()))/86400000+1;
+    const window={start,end,startDate:dateText(start),endDate:dateText(end),weeks:calendarDays/7};
+    const coachingAvailable=input.coachingAvailable===true&&typeof input.matchingCoachings==='function';
+    const diagnostics={invalidHistoryRows:0,outsideWindowRows:0,duplicateHistoryRows:0,missingRuleTopics:0,invalidCoachingRows:0,duplicateCoachingRows:0,unknownCoachingTopics:0,coachingUnavailable:!coachingAvailable,warnings:[]};
+    const rules=new Map((input.rules||[]).filter(Boolean).map(rule=>[normalizeConcernIdentity(rule.id),rule]));
+    const occurrences=new Map();
+    for(const raw of input.history||[]){
+      const row=raw||{}, repK=normalizeConcernIdentity(row.repKey), ruleId=normalizeConcernIdentity(row.ruleId), date=dateValue(row.reportDate);
+      if(!repK||!ruleId||!date){diagnostics.invalidHistoryRows++;continue;}
+      if(date<start||date>end){diagnostics.outsideWindowRows++;continue;}
+      const run=normalizeConcernIdentity(row.runId||row.reportPeriod||dateText(date)),key=`${repK}\u001f${ruleId}\u001f${run}`;
+      if(occurrences.has(key)){diagnostics.duplicateHistoryRows++;continue;}
+      occurrences.set(key,{row,repK,ruleId,date});
+    }
+    const groups=new Map();
+    for(const occurrence of occurrences.values()){
+      const key=`${occurrence.repK}\u001f${occurrence.ruleId}`;
+      if(!groups.has(key))groups.set(key,[]);
+      groups.get(key).push(occurrence);
+    }
+    const eligibleRecords=[],contactKeys=new Map();
+    for(const [key,events] of groups){
+      if(events.length<=settings.minAppearances)continue;
+      events.sort((a,b)=>a.date-b.date);
+      const latest=events[events.length-1], rule=rules.get(latest.ruleId);
+      if(!rule){diagnostics.missingRuleTopics++;continue;}
+      const resolved=typeof input.resolveRep==='function'?(input.resolveRep(latest.repK,latest.row)||{}):{};
+      const record={repKey:latest.repK,repName:String(resolved.repName||latest.row.repName||latest.repK),coach:String(resolved.coach||latest.row.coach||'Unassigned'),team:String(resolved.team||latest.row.team||resolved.coach||latest.row.coach||'Unassigned'),ruleId:String(rule.id),ruleTitle:String(rule.title||latest.row.ruleTitle||rule.id),topic:String(rule.coachingImpact?.topicName||rule.coachingCorrective?.coachingTopic||rule.title||latest.row.ruleTitle||latest.row.coachingTopic||latest.row.category||rule.id),appearanceCount:events.length,firstAppearance:dateText(events[0].date),lastAppearance:dateText(latest.date),coachingCount:null,missingCoachings:null,undercoached:null};
+      const contacts=new Set();
+      if(coachingAvailable){
+        const rows=input.matchingCoachings(latest.repK,rule,window);
+        if(Array.isArray(rows)){
+          for(const coaching of rows){
+            const date=dateValue(coaching?.date);
+            if(!date){diagnostics.invalidCoachingRows++;continue;}
+            if(date<start||date>end)continue;
+            const explicit=coaching.id??coaching.coachingId??coaching.raw?.['Coaching ID']??coaching.raw?.['Document ID'];
+            const identity=explicit!=null&&String(explicit).trim()?`id:${String(explicit).trim()}`:`event:${date.toISOString()}\u001f${normalizeConcernIdentity(coaching.type)}\u001f${normalizeConcernIdentity(coaching.desc)}`;
+            const contactKey=`${latest.repK}\u001f${identity}`;
+            if(contacts.has(contactKey)){diagnostics.duplicateCoachingRows++;continue;}
+            contacts.add(contactKey);
+          }
+          record.coachingCount=contacts.size;
+          record.missingCoachings=Math.max(0,settings.minCoachings-contacts.size);
+          record.undercoached=contacts.size<settings.minCoachings;
+        }else diagnostics.unknownCoachingTopics++;
+      }
+      contactKeys.set(record,contacts);
+      eligibleRecords.push(record);
+    }
+    const compareRecords=(a,b)=>b.appearanceCount-a.appearanceCount||a.repName.localeCompare(b.repName)||a.topic.localeCompare(b.topic);
+    eligibleRecords.sort(compareRecords);
+    const concernRecords=eligibleRecords.filter(record=>record.undercoached===true);
+    function shares(records,kind){
+      const topics=new Map(); let total=0;
+      for(const record of records){
+        const count=kind==='missing'?1:(record.coachingCount||0);
+        if(!count)continue;
+        if(!topics.has(record.ruleId))topics.set(record.ruleId,{ruleId:record.ruleId,topic:record.topic,count:0,share:0});
+        topics.get(record.ruleId).count+=count; total+=count;
+      }
+      return [...topics.values()].map(topic=>({...topic,share:total?topic.count/total:0})).sort((a,b)=>b.count-a.count||a.topic.localeCompare(b.topic)||a.ruleId.localeCompare(b.ruleId));
+    }
+    function metrics(records){
+      const concerns=records.filter(record=>record.undercoached===true), contacts=new Set(),coachedReps=new Set();
+      let appearances=0,coachingTopicCount=0,unknown=false;
+      for(const record of records){
+        appearances+=record.appearanceCount;
+        if(record.coachingCount==null)unknown=true;
+        else {coachingTopicCount+=record.coachingCount;if(record.coachingCount>0)coachedReps.add(record.repKey);}
+        for(const key of contactKeys.get(record)||[])contacts.add(key);
+      }
+      const known=coachingAvailable&&!unknown;
+      return {eligibleRepCount:new Set(records.map(record=>record.repKey)).size,concernRepCount:new Set(concerns.map(record=>record.repKey)).size,coachedRepCount:known?coachedReps.size:null,eligibleTopicCount:records.length,concernTopicCount:concerns.length,coachingContactCount:known?contacts.size:null,coachingTopicCount:known?coachingTopicCount:null,appearanceCount:appearances,avgCoachingsPerWeek:known?contacts.size/window.weeks:null,coachingsPerAppearance:known?(appearances?contacts.size/appearances:0):null,missingTopicShares:shares(concerns,'missing'),coachedTopicShares:known?shares(records,'coached'):[]};
+    }
+    const byCoach=new Map();
+    for(const record of eligibleRecords){
+      const coachKey=normalizeConcernIdentity(record.coach);
+      if(!byCoach.has(coachKey))byCoach.set(coachKey,{coach:record.coach,eligibleRecords:[]});
+      byCoach.get(coachKey).eligibleRecords.push(record);
+    }
+    const coaches=[...byCoach.values()].map(group=>({...group,...metrics(group.eligibleRecords),teams:[...new Set(group.eligibleRecords.map(record=>record.team))].sort(),records:group.eligibleRecords.filter(record=>record.undercoached===true)})).sort((a,b)=>b.concernRepCount-a.concernRepCount||a.coach.localeCompare(b.coach));
+    coaches.forEach((coach,index)=>{coach.rank=index+1;});
+    if(!coachingAvailable)diagnostics.warnings.push('Documented coaching data is unavailable. Coaching counts and missing-coaching classifications are unknown.');
+    if(diagnostics.unknownCoachingTopics)diagnostics.warnings.push(`${diagnostics.unknownCoachingTopics} history topic(s) could not be checked against documented coaching.`);
+    if(diagnostics.invalidHistoryRows)diagnostics.warnings.push(`${diagnostics.invalidHistoryRows} history row(s) lack a valid representative, saved topic ID, or report date. Name-only totals cannot establish a dated topic history.`);
+    if(diagnostics.missingRuleTopics)diagnostics.warnings.push(`${diagnostics.missingRuleTopics} high-history representative/topic group(s) have no current saved rule and could not be checked for matching coaching.`);
+    if(!occurrences.size)diagnostics.warnings.push('No dated, topic-specific history falls inside the selected window. Load detailed history or record completed reports in history.');
+    return {settings,window,coachingAvailable,diagnostics,eligibleRecords,concernRecords,coaches,summary:metrics(eligibleRecords)};
+  }
+  return {buildExecutiveHistoryReview,canonicalConcernNames,selectDocumentedCoachingDate,descriptionContains,normalizeFormatConfig,detectAutoFormat,percentHeader,formatDisplayValue,formatDisplayText,classifyCorrective,scoreOpportunity,opportunityPattern,concentration,evidenceConfidence,trendLabel,normalizeConcernIdentity,normalizeConcernName,summarizeConcernNameCounts,concernReportIdentity,concernRepReportKey,summarizeConcernReportCounts,concernOccurrenceKey,classifyConcernHistory,summarizeConcernHistory};
 });

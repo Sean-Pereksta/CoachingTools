@@ -8,9 +8,18 @@
 <script src="../../../vendor/jszip.min.js"></script>
 <script src="insights.js" onerror="this.onerror=null;this.src='qualtrics/insights.js'"></script>
 <script src="workflow.js"></script>
+<script src="executive-email.js" onerror="this.onerror=null;this.src='qualtrics/executive-email.js'"></script>
 <script src="individual-messages.js" onerror="this.onerror=null;this.src='qualtrics/individual-messages.js'"></script>
 <script src="individual-ui.js" onerror="this.onerror=null;this.src='qualtrics/individual-ui.js'"></script>
 <style>
+#view-report,#view-report>.card,#reportBody{min-width:0}
+#executiveHistoryEdition{min-width:0;max-width:100%}
+#executiveHistoryPreview{max-width:100%;overflow-x:auto}
+#executiveHistoryPreview table{min-width:0;table-layout:fixed}
+#executiveHistoryPreview td,#executiveHistoryPreview th{overflow-wrap:anywhere}
+#executiveHistoryPreview th{color:#0f172a;background:transparent;position:static}
+#reportBody{overflow-x:auto}
+@media(max-width:600px){#executiveHistoryPreview .executive-metrics tr{display:block}#executiveHistoryPreview .executive-metrics tr>td{display:inline-block;width:50%!important;box-sizing:border-box}#executiveHistoryPreview .executive-topic-columns tr{display:block}#executiveHistoryPreview .executive-topic-columns tr>td{display:block;width:100%!important;padding:5px 0!important;border-left:0!important}}
 :root{
   --bg:#f8fafc;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#e5e7eb;--soft:#f1f5f9;
   --accent:#dc2626;--accent2:#991b1b;--good:#16a34a;--warn:#f59e0b;--bad:#dc2626;--blue:#2563eb;
@@ -539,6 +548,18 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
       </section>
       <div class="sub" id="emailHistoryOutputStatus" role="status">! No history loaded — history frequency was not applied</div>
       <div class="row emailPrimaryActions"><button class="btn primary" id="generateReportBtn">Generate Email Files</button><button class="btn" id="reviewReportBtn" type="button">Review Email Output</button><span class="sub">Downloads coach and executive emails in a ZIP. Nothing is sent.</span></div>
+      <details class="emailAdvanced" id="executiveHistoryEdition" open>
+        <summary>Executive history edition</summary>
+        <div class="reportAudienceControls">
+          <label>More than history appearances<input id="executiveHistoryAppearances" type="number" min="0" max="10000" step="1" value="2"></label>
+          <label>In the last months<input id="executiveHistoryMonths" type="number" min="1" max="60" step="1" value="3"></label>
+          <label>Fewer than matching coachings<input id="executiveHistoryCoachings" type="number" min="1" max="10000" step="1" value="2"></label>
+        </div>
+        <div class="sub">Finds repeated concerns on the same saved-rule topic using dated history, even when a person is absent from the current report. Coaching counts use the same period ending on the selected report date. Name-only counts cannot establish a topic or month.</div>
+        <div class="row" style="margin:10px 0"><label style="display:flex;align-items:center;gap:7px;text-transform:none"><input id="executiveHistoryInclude" type="checkbox" style="width:auto" checked> Include this edition in the email ZIP</label><button class="btn" id="reviewExecutiveHistoryBtn" type="button">Review Executive History</button><button class="btn blue" id="downloadExecutiveHistoryBtn" type="button">Download Executive History Email</button></div>
+        <div class="sub" id="executiveHistoryStatus" role="status">Review scans the loaded dated history and documented coaching. Nothing is sent or added to history.</div>
+        <div id="executiveHistoryPreview" class="emailPreviewBig hidden" style="margin-top:10px"></div>
+      </details>
       <div class="concernHistoryViewer hidden" id="concernHistoryViewer" aria-live="polite"><div class="concernHistoryViewerHead"><div><strong id="concernHistoryViewerTitle">No Concern History loaded</strong><div class="sub" id="concernHistoryViewerMeta">Load a Concern History spreadsheet to confirm the names used by generated emails.</div></div><button class="btn small" id="closeConcernHistoryViewerBtn" type="button">Close</button></div><div class="concernHistoryNameList" id="concernHistoryNameList"></div><div class="concernHistoryViewerFoot"><span class="sub" id="concernHistoryViewerCount"></span><button class="btn small blue hidden" id="expandConcernHistoryBtn" type="button">Show all names</button></div></div>
       <div class="reportAudienceControls"><label>Report for<select id="reportAudienceScope"><option value="all">All organizations and coaches</option><option value="org">One organization</option><option value="coach">One specific coach</option></select></label><label id="reportAudienceSearchField">Search organizations / coaches<input id="reportAudienceSearch" type="search" placeholder="Type to narrow the dropdown..."></label><label id="reportAudienceValueField">Organization / coach<select id="reportAudienceValue"><option value="">Choose a selection</option></select></label><label>Min people per team<input id="minTeamReportReps" type="number" min="1" step="1" value="1"></label></div>
       <div id="reportAudienceStatus" class="sub">All available coaches will be included, then the minimum-people filter will be applied.</div><details class="emailAdvanced"><summary>Advanced options &amp; history tools</summary><div class="row" style="margin-top:10px"><button class="btn" id="saveHistoryBtn">Record This Report in History</button><button class="btn" id="exportProblemRepsBtn">Download History</button><button class="btn bad" id="clearConcernHistoryBtn" type="button">Clear History</button><button class="btn" id="exportEmailsBtn" disabled>Download Email Files Again</button><button class="btn" id="exportUrgencyPdfBtn" disabled>Export Email PDF</button></div><div class="sub">Record a completed report only when you intend to add it to history. Reviewing and downloading never add counts.</div><div class="reportAudienceControls impactSessionControls"><label>Recent coaching lookback days<input id="impactRecentLookbackDays" type="number" min="1" max="365" value="28"></label><label>Trend KPI<select id="impactReportKpiSelect"><option value="">All KPIs</option></select></label><label>Episode window<input value="Fixed 7 calendar days" disabled></label><button class="btn blue" type="button" id="exportImpactCsvBtn">Export Coaching Impact</button></div><details style="margin:10px 0;border:1px solid #dbe2ea;border-radius:12px;background:#f8fafc;padding:9px 11px"><summary style="cursor:pointer;font-weight:1000;color:#334155">Team Urgency Summary settings</summary><div class="reportAudienceControls" style="padding-bottom:0"><label>Green coaching coverage starts at %<input id="urgencyCoverageGreen" type="number" min="0" max="100" step="1" value="70"></label><label>Yellow coaching coverage starts at %<input id="urgencyCoverageYellow" type="number" min="0" max="100" step="1" value="40"></label></div><div class="sub">Coverage at or above the green threshold is strong; coverage at or above the yellow threshold is moderate; lower coverage is red. Missing coaching data is gray.</div></details>
@@ -1286,6 +1307,7 @@ function rebuildDataIndexes(){
 }
 function rowsForRep(kind,repK){ return state.indexes?.[kind]?.get(repK) || []; }
 function rebuildDerivedMaps(){
+  if(typeof invalidateExecutiveHistoryPreview==='function') invalidateExecutiveHistoryPreview();
   rebuildIdentityAliases();
   applyIdentityToRows(state.coachingRows); applyIdentityToRows(state.checklistRows); applyIdentityToRows(state.weeklyStatsRows); applyIdentityToRows(state.qaRows);
   rebuildCoachingTypeOptions();
@@ -2198,6 +2220,7 @@ async function loadCoaching(file, options={}){
     }
   }
   state.masterRows.coaching=out; state.masterFileNames.coaching=file.name; autoSelectCoreRules('coaching');
+  state.executiveHistoryEmptyCoachingSource=false;
   invalidateHireDateLookupSource('core:coaching');
   state.coachingRows=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
   state.coachingDiagnostics=Object.assign({},state.coachingDiagnostics,{source:options.source||'manual upload',headers,received,parsed:out.length,withName,withCoachingDate,validDate,survived:state.coachingRows.length});
@@ -2300,7 +2323,7 @@ function allStarBridgeYield(){ return new Promise(resolve=>setTimeout(resolve,0)
 function clearConnectedSource(source){
   state.masterRows[source]=[]; state.masterFileNames[source]=''; if(state.uploadRuleSelectionCounts) delete state.uploadRuleSelectionCounts[source];
   if(source==='qa'){ state.qaRows=[]; invalidateHireDateLookupSource('core:qa'); }
-  if(source==='coaching'){ state.coachingRows=[]; state.coachingTypeOptions=[]; invalidateHireDateLookupSource('core:coaching'); }
+  if(source==='coaching'){ state.coachingRows=[]; state.coachingTypeOptions=[]; state.executiveHistoryEmptyCoachingSource=false; invalidateHireDateLookupSource('core:coaching'); }
   if(source==='checklist'){ state.checklistRows=[]; invalidateHireDateLookupSource('core:checklist'); }
   if(source==='weeklyStats'){ state.weeklyStatsRows=[]; state.weeklyStatsDateHeaders=[]; }
 }
@@ -2314,6 +2337,7 @@ async function importAllStarCoreFiles(payload={}){
     allStarBridgeNotify('qualtrics-key-files-progress',{message:'Connecting Documented Coaching…'});
     state.coachingDiagnostics={source:'All-Star auto-connect',bridge:payload.diagnostics?.documentedCoaching||{},headers:files.coaching?.headers||[],received:(files.coaching?.rows||[]).length};
     if((files.coaching?.rows||[]).length) await loadCoaching(allStarRowsFile(files.coaching,'All-Star Documented Coaching','Documented Coaching'),{deferDerived:true,yieldEvery:1500,source:'All-Star auto-connect'}); else clearConnectedSource('coaching');
+    if(!(files.coaching?.rows||[]).length&&files.coaching?.headers?.length) state.executiveHistoryEmptyCoachingSource=true;
     if(state.allStarCoreImportToken!==token) return; await allStarBridgeYield();
     allStarBridgeNotify('qualtrics-key-files-progress',{message:'Connecting Checklist / Correctives…'});
     if((files.checklist?.rows||[]).length) await loadChecklist(allStarRowsFile(files.checklist,'All-Star Checklist','Checklist'),{deferDerived:true,yieldEvery:1500}); else clearConnectedSource('checklist');
@@ -3083,6 +3107,7 @@ function emailHistoryStatusText(){
   return summary.names.length?`✓ History checked — ${summary.totalAppearances.toLocaleString()} prior entries`:'! No history loaded — history frequency was not applied';
 }
 function renderConcernHistoryStatus(){
+  if(typeof invalidateExecutiveHistoryPreview==='function') invalidateExecutiveHistoryPreview();
   if(!els.concernHistoryStatusBtn) return;
   const summary=activeConcernHistoryNameSummary(), unique=summary.names.length, loaded=!!state.concernHistoryLoad;
   els.concernHistoryStatusBtn.classList.toggle('loaded',unique>0);
@@ -5150,10 +5175,39 @@ function simpleQualtricsCatalog(){
   });
   return [...seen.values()];
 }
+function simpleQualtricsCoachingRequirementsHtml(rule){
+  if(!rule) return '';
+  const groups=[], notes=[];
+  if(rule.ruleType==='coachingCorrective'){
+    const config=rule.coachingCorrective||{};
+    if(config.coachingMatch==='equals'){
+      if(String(config.coachingTopic||'').trim()) groups.push({label:'Exact coaching type',values:[config.coachingTopic]});
+    }else{
+      const phrases=ccNormalizePhraseList(config.coachingPhrases);
+      if(phrases.length){
+        groups.push({label:(config.coachingPhraseLogic==='and'?'ALL phrases required':'ANY phrase matches')+' · coaching text',values:phrases});
+        notes.push(config.coachingCaseInsensitive===false?'Case-sensitive':'Case-insensitive',config.coachingExactPhrase?'Exact phrase boundaries':'Substring match',config.coachingNormalizeSpacing===false?'Original spacing':'Normalized spacing');
+      }
+    }
+  }else{
+    const mode=rule.coaching?.mode||'none';
+    if(mode==='type'||mode==='typeOrDescription'){
+      const types=typeListFromRule(rule);
+      if(types.length) groups.push({label:'ANY coaching type',values:types});
+    }
+    if(mode==='descriptionContains'||mode==='typeOrDescription'){
+      const phrases=phraseListFromRule(rule);
+      if(phrases.length) groups.push({label:'ANY description phrase',values:phrases});
+    }
+    if(mode==='typeOrDescription'&&groups.length>1) notes.push('A listed type OR description phrase qualifies');
+  }
+  if(!groups.length) return '';
+  return '<div class="coachingRequirementPills" style="margin-top:8px;padding-top:7px;border-top:1px solid #dbeafe"><strong style="font-size:10px;color:#1e3a8a">To register as coached</strong>'+groups.map(function(group){ return '<div style="margin-top:5px"><div style="font-size:9px;color:#475569">'+esc(group.label)+'</div>'+group.values.map(function(value){ return '<span style="display:inline-block;margin:3px 3px 0 0;padding:3px 7px;border:1px solid #bfdbfe;border-radius:999px;background:#eff6ff;color:#1e40af;font-size:10px;font-weight:700;white-space:normal;overflow-wrap:anywhere">'+esc(value)+'</span>'; }).join('')+'</div>'; }).join('')+(notes.length?'<div style="margin-top:4px;font-size:9px;color:#64748b">'+esc(notes.join(' · '))+'</div>':'')+'</div>';
+}
 function simpleQualtricsRuleDescription(source){
   const rule=state.rules.find(function(item){ return item.id===(source.ruleId||(source.rows||[])[0]?.ruleId); });
   const description=sanitizeRichHtml(rule?.guidance?.html||'');
-  return description?'<div style="white-space:normal;overflow-wrap:anywhere;line-height:1.4">'+description+'</div>':'<span style="color:#94a3b8">—</span>';
+  return (description?'<div style="white-space:normal;overflow-wrap:anywhere;line-height:1.4">'+description+'</div>':'<span style="color:#94a3b8">—</span>')+simpleQualtricsCoachingRequirementsHtml(rule);
 }
 function simpleQualtricsAverage(values){
   values=(values||[]).filter(isFinite);
@@ -5876,9 +5930,90 @@ function makeEmailHtmlLegacy(title, rows, isExec=false){
   const executiveBreakdown=isExec?emailExecutiveCoachSourceBreakdown(rows):'';
   return `<!doctype html><html><body style="${css};margin:0;padding:18px;background:#f8fafc"><div style="max-width:980px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:18px">${emailIntroHtml()}<h1 style="margin:0 0 4px;color:#1e3a8a">${esc(title)}</h1><div style="color:#64748b;font-weight:700;margin-bottom:10px">Report date: ${esc(state.report?.reportDate||'')}</div>${emailPurposeNoteHtml()}${emailAudienceFilterNoteHtml()}${emailHireDateFilterNoteHtml()}${coachStrip}<table style="width:100%;border-collapse:collapse;margin-bottom:14px"><tr>${metricCells.map(x=>`<td style="border:1px solid #e5e7eb;border-radius:12px;padding:10px"><div style="color:#64748b;font-size:12px;font-weight:800">${x[0]}</div><div style="font-size:24px;font-weight:900">${x[1]}</div></td>`).join('')}</tr></table><h2 style="margin:16px 0 8px">Category Summary</h2>${categorySummary || '<div style="color:#64748b">No categories.</div>'}<h2 style="margin:16px 0 4px">Representatives for Coaching Follow-Up</h2><div style="color:#64748b;font-size:12px;font-weight:700;margin-bottom:8px">${state.reportSettings.orderEnabled?'Report sections follow the custom Page 3 priority order.':'Sorted from highest average need level to lowest.'}</div>${sources.map(emailDataSourceSection).join('')}${executiveBreakdown}</div></body></html>`;
 }
+// The history edition deliberately reads saved dated occurrences rather than the
+// current report's filtered findings. Reviewing/exporting never records history.
+function executiveHistorySettings(){
+  const whole=(value,fallback,min,max)=>Number.isFinite(Number(value))&&String(value).trim()!==''?Math.max(min,Math.min(max,Math.floor(Number(value)))):fallback;
+  return {months:whole(els.executiveHistoryMonths?.value,3,1,60),minAppearances:whole(els.executiveHistoryAppearances?.value,2,0,10000),minCoachings:whole(els.executiveHistoryCoachings?.value,2,1,10000),include:!!els.executiveHistoryInclude?.checked};
+}
+function loadExecutiveHistorySettings(){
+  let saved={}; try{ saved=JSON.parse(localStorage.getItem('coachingExecutiveHistorySettings.v1')||'{}')||{}; }catch(_){}
+  for(const [id,key] of [['executiveHistoryMonths','months'],['executiveHistoryAppearances','minAppearances'],['executiveHistoryCoachings','minCoachings']]) if(els[id]&&saved[key]!=null) els[id].value=String(saved[key]);
+  if(els.executiveHistoryInclude&&typeof saved.include==='boolean') els.executiveHistoryInclude.checked=saved.include;
+  saveExecutiveHistorySettings(false);
+}
+function saveExecutiveHistorySettings(invalidate=true){
+  const settings=executiveHistorySettings();
+  for(const [id,key] of [['executiveHistoryMonths','months'],['executiveHistoryAppearances','minAppearances'],['executiveHistoryCoachings','minCoachings']]) if(els[id]) els[id].value=String(settings[key]);
+  try{ localStorage.setItem('coachingExecutiveHistorySettings.v1',JSON.stringify(settings)); }catch(_){}
+  if(invalidate) invalidateExecutiveHistoryPreview();
+}
+function invalidateExecutiveHistoryPreview(){
+  if(els.executiveHistoryPreview){ els.executiveHistoryPreview.innerHTML=''; els.executiveHistoryPreview.classList.add('hidden'); }
+  if(els.executiveHistoryStatus) els.executiveHistoryStatus.textContent='Inputs changed. Review or download to scan the latest dated history and coaching.';
+}
+function buildExecutiveHistoryReview(reportDate){
+  const settings=executiveHistorySettings(), coachingAvailable=executiveHistoryCoachingAvailable();
+  const history=(state.history||[]).map(function(row){
+    const key=String(row.repKey||''), exact=state.identityAliases?.get(repKey(row.repName||''));
+    return exact&&!key.startsWith('stable:')?Object.assign({},row,{repKey:exact.key,repName:exact.name||row.repName}):row;
+  });
+  const review=QualtricsInsights.buildExecutiveHistoryReview({
+    ...settings,history,reportDate:reportDate||els.reportDate?.value||ymd(new Date()),rules:state.rules||[],coachingAvailable,
+    resolveRep:function(key,latest){ const current=state.teamMap?.get(key); return {repName:current?.name||state.fullNameByKey?.get(key)||latest.repName,coach:canonicalCoachName(current?.coach||latest.coach||'Unassigned'),team:canonicalTeamName(current?.team||latest.team||'')}; },
+    matchingCoachings:function(key,rule,range){ return rowsForRep('coachingByRep',key).filter(function(row){ return row.date&&row.date>=range.start&&row.date<=range.end&&coachingMatchInfo(row,rule).matches; }); }
+  });
+  if(!(state.history||[]).length&&state.concernHistoryLoad?.names?.length) review.diagnostics.warnings.push('The loaded history contains name counts only. Load an Appearance History sheet with representative, rule/topic, report date, and report identity to apply these thresholds.');
+  return review;
+}
+function executiveHistoryCoachingAvailable(){
+  if(state.coachingRows?.length) return true;
+  const d=state.coachingDiagnostics||{}, headers=new Set((d.headers||[]).map(headerKey));
+  const has=names=>names.some(name=>headers.has(headerKey(name)));
+  return !!(state.masterFileNames?.coaching||state.executiveHistoryEmptyCoachingSource)&&Number(d.received)===0&&
+    has(['Associate Name','Agent Name','Representative Name','Representative','Rep Name','Rep','CSR Name','SSR Name','Name'])&&
+    has(['Coaching Date','Documented Coaching Date','Date','Created On','Created','Create Date','Created Date','Date Completed','Completed Date','Completion Date','Submitted Date','Submit Date','Start Time','Interaction Date','Call Date','Form Date','Modified Date','Last Modified'])&&
+    has(['Description','Coaching Description','Coaching Notes','Notes','Coaching Type','Coaching Type-Multi','Type-Multi','Type']);
+}
+function executiveHistoryPieImage(shares){
+  const total=(shares||[]).reduce((sum,item)=>sum+Number(item.count||0),0); if(!total) return '';
+  try{
+    const canvas=document.createElement('canvas'); canvas.width=192; canvas.height=192;
+    const ctx=canvas.getContext('2d'); if(!ctx) return '';
+    const colors=QualtricsExecutiveEmail.colors||['#dc2626','#f59e0b','#2563eb','#16a34a','#7c3aed','#0891b2','#db2777','#64748b'];
+    ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,192,192); let start=-Math.PI/2;
+    shares.forEach(function(item,index){ const end=start+Number(item.count||0)/total*2*Math.PI; ctx.beginPath(); ctx.moveTo(96,96); ctx.arc(96,96,88,start,end); ctx.closePath(); ctx.fillStyle=colors[index%colors.length]; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle='#ffffff'; ctx.stroke(); start=end; });
+    return canvas.toDataURL('image/png');
+  }catch(_){ return ''; }
+}
+function makeExecutiveHistoryEmail(reportDate){
+  const review=buildExecutiveHistoryReview(reportDate), html=QualtricsExecutiveEmail.makeHtml(review,{title:'Executive Coaching History Review',reportDate:review.window.endDate,chartImage:executiveHistoryPieImage});
+  return {review,html};
+}
+function reviewExecutiveHistory(){
+  try{
+    const result=makeExecutiveHistoryEmail();
+    if(els.executiveHistoryPreview){ els.executiveHistoryPreview.innerHTML=emailBodyFromHtml(result.html); els.executiveHistoryPreview.classList.remove('hidden'); }
+    if(els.executiveHistoryStatus) els.executiveHistoryStatus.textContent=result.review.coachingAvailable?`${result.review.summary.concernRepCount} concern reps across ${result.review.coaches.length} coaches. Review snapshot: ${result.review.window.startDate} through ${result.review.window.endDate}.`:'Documented coaching is unavailable. Coverage is unknown; no representatives are labeled undercoached.';
+    return result;
+  }catch(error){ toast('Executive history review could not be built: '+(error.message||error)); return null; }
+}
+function downloadExecutiveHistoryEmail(){
+  const result=reviewExecutiveHistory(); if(!result) return;
+  downloadBlob(new Blob([makeEml('Executive Coaching History Review - '+result.review.window.endDate,result.html)],{type:'message/rfc822'}),'Executive_History_'+result.review.window.endDate+'.eml');
+}
 function makeEml(subject, html){
-  const boundary='----=_NextPart_'+Math.random().toString(36).slice(2);
-  return [`Subject: ${subject}`,`Date: ${new Date().toUTCString()}`,'MIME-Version: 1.0',`Content-Type: multipart/alternative; boundary="${boundary}"`,'',`--${boundary}`,'Content-Type: text/plain; charset="utf-8"','Content-Transfer-Encoding: 8bit','',subject,'Generated by Coaching Email Generator. Open the HTML version for tables and color coding.','',`--${boundary}`,'Content-Type: text/html; charset="utf-8"','Content-Transfer-Encoding: 8bit','',html,'',`--${boundary}--`].join('\r\n');
+  subject=String(subject||'').replace(/[\r\n]+/g,' ');
+  const boundary='----=_NextPart_'+Math.random().toString(36).slice(2), related=boundary+'_images', images=[];
+  html=String(html).replace(/src="data:image\/png;base64,([A-Za-z0-9+/=]+)"/g,function(_,data){ const id='coaching-chart-'+(images.length+1)+'@coachtools'; images.push({id,data}); return 'src="cid:'+id+'"'; });
+  const parts=[`Subject: ${subject}`,`Date: ${new Date().toUTCString()}`,'MIME-Version: 1.0',`Content-Type: multipart/alternative; boundary="${boundary}"`,'',`--${boundary}`,'Content-Type: text/plain; charset="utf-8"','Content-Transfer-Encoding: 8bit','',subject,'Generated by Coaching Email Generator. Open the HTML version for tables and color coding.','',`--${boundary}`];
+  if(images.length) parts.push(`Content-Type: multipart/related; boundary="${related}"`,'',`--${related}`);
+  parts.push('Content-Type: text/html; charset="utf-8"','Content-Transfer-Encoding: 8bit','',html,'');
+  if(images.length){
+    images.forEach(function(item){ parts.push(`--${related}`,'Content-Type: image/png',`Content-ID: <${item.id}>`,'Content-Disposition: inline; filename="coaching-chart.png"','Content-Transfer-Encoding: base64','',item.data.match(/.{1,76}/g).join('\r\n'),''); });
+    parts.push(`--${related}--`,'');
+  }
+  parts.push(`--${boundary}--`); return parts.join('\r\n');
 }
 async function exportEmails(){
   if(!state.report){ toast('Generate a report first.'); return; }
@@ -5888,6 +6023,7 @@ async function exportEmails(){
   if(!window.JSZip){ toast('JSZip is still loading. Try again in a moment.'); return; }
   const ext = els.exportMsgExtension.checked ? 'msg' : 'eml'; const zip=new JSZip();
   const all=state.report.flagged; zip.file(`Executive_${state.report.reportDate}.${ext}`, makeEml(`Executive - Coaching Opportunity Review - ${state.report.reportDate}`, makeEmailHtml('Executive Coaching Opportunity Review', all, true)));
+  if(els.executiveHistoryInclude?.checked){ const historyEdition=makeExecutiveHistoryEmail(state.report.reportDate); zip.file(`Executive_History_${state.report.reportDate}.eml`,makeEml(`Executive Coaching History Review - ${state.report.reportDate}`,historyEdition.html)); }
   const coachEmails=[...state.report.byCoach.entries()].map(([coach,rows])=>({coach,rows,...summaryStats(rows)})).sort((a,b)=>compareAlarmStats(a,b) || String(a.coach).localeCompare(String(b.coach)));
   for(const item of coachEmails){
     zip.file(`${sanitizeFile(item.coach)}_${state.report.reportDate}.${ext}`, makeEml(`${item.coach} - Coaching Opportunity Review - ${state.report.reportDate}`, makeEmailHtml(`${item.coach} Coaching Opportunity Review`, item.rows)));
@@ -5913,7 +6049,7 @@ function renderEmailWorkflowStatus(){
     els.emailDataStatus.textContent=ready?`Data Ready — ${files.length} reports / ${rules.length} selected rules`:missing.size?`Data needed: ${[...missing].map(source=>labels[source]||source).join(', ')}`:uploads.length?'Review report files and rule matches':'Add data and rules';
     els.emailDataStatus.className=`pill ${ready?'good':'warn'}`;
   }
-  if(els.emailOutputStatus) els.emailOutputStatus.textContent=state.report?`${(state.report.byCoach?.size||0)+1} email files • ${(state.report.flagged||[]).length.toLocaleString()} findings`:'Coach + executive email files';
+  if(els.emailOutputStatus) els.emailOutputStatus.textContent=state.report?`${(state.report.byCoach?.size||0)+1+(els.executiveHistoryInclude?.checked?1:0)} email files • ${(state.report.flagged||[]).length.toLocaleString()} findings`:'Coach + executive email files';
   if(els.exportEmailsBtn) els.exportEmailsBtn.disabled=!state.report||!!state.emailWorkflowRunning||!!state.report.weeklyStatsFilterStale;
   if(els.exportUrgencyPdfBtn) els.exportUrgencyPdfBtn.disabled=!state.report||!!state.emailWorkflowRunning||!!state.report.weeklyStatsFilterStale;
   if(els.saveHistoryBtn) els.saveHistoryBtn.disabled=!state.report||!!state.report.historySaved||!!state.emailWorkflowRunning;
@@ -6047,6 +6183,10 @@ function bind(){
 
   Object.assign(els, Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(e=>[e.id,e])));
   bindIndividualMessages();
+  for(const id of ['executiveHistoryMonths','executiveHistoryAppearances','executiveHistoryCoachings','executiveHistoryInclude']) if(els[id]) els[id].addEventListener('change',()=>{ saveExecutiveHistorySettings(); renderEmailWorkflowStatus(); });
+  if(els.reviewExecutiveHistoryBtn) els.reviewExecutiveHistoryBtn.onclick=reviewExecutiveHistory;
+  if(els.downloadExecutiveHistoryBtn) els.downloadExecutiveHistoryBtn.onclick=downloadExecutiveHistoryEmail;
+  if(els.reportDate) els.reportDate.addEventListener('change',invalidateExecutiveHistoryPreview);
   els.testDocumentedCoachingBtn.onclick=()=>renderCoachingDiagnostics(false);
   els.testAllCoachingRulesBtn.onclick=()=>renderCoachingDiagnostics(true);
   if(els.ruleSearchInput) els.ruleSearchInput.addEventListener('input',debounce(()=>{ state.ruleRenderLimit=100; els.ruleList.scrollTop=0; renderRules(); },120));
@@ -6131,7 +6271,7 @@ function bind(){
   if(els.clearEmailIntroBtn) els.clearEmailIntroBtn.onclick=()=>{ els.emailIntroEditor.innerHTML=''; saveEmailIntro(); if(state.report) renderReport(); toast('Email opening-text editor cleared. The saved copy is still available to load.'); };
 }
 async function init(){
-  bind(); loadCoachLookbackWeeks(); loadCoachAliasOverrides(); loadHireDateSettings(); loadEmailIntro(); loadOtherRuleSelection(); loadReportSettings(); loadReportAudienceSettings(); loadUrgencyCoverageControls(); els.reportDate.value=ymd(new Date()); loadWeeklyStatsFilter();
+  bind(); loadExecutiveHistorySettings(); loadCoachLookbackWeeks(); loadCoachAliasOverrides(); loadHireDateSettings(); loadEmailIntro(); loadOtherRuleSelection(); loadReportSettings(); loadReportAudienceSettings(); loadUrgencyCoverageControls(); els.reportDate.value=ymd(new Date()); loadWeeklyStatsFilter();
   switchTab('keyfiles');
   rebuildCoachAliasIndex();
   renderHireDateControls(); renderCoreChips(); renderDashboardFileList(); renderUploadReadiness(); renderOtherRulePicker(); renderStatCountSelectors(currentRule()); updateStatCountFieldVisibility(); renderReportAudienceControls(); populateOrgSummarySelect(); markRulePreviewStale('Select a saved rule, then use Refresh Preview when ready.');

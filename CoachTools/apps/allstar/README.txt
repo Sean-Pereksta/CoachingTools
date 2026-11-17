@@ -146,3 +146,34 @@ Opening or changing the builder does not launch join, weekly coverage, or backgr
 Saved cards bind charts only for the item inserted or refreshed, preventing repeated whole-workspace redraws. Viewing/fullscreen changes reuse existing results.
 
 Regressions: node tests/research-viewing.test.js and node tests/research-sample-preview.test.js (also in the modernization suite).
+
+Executive history email edition
+-------------------------------
+Open Action Report > Executive history edition. Set "More than history appearances",
+"In the last months", and "Fewer than matching coachings". Review or download this
+edition directly; a current generated report is not required. The optional ZIP
+checkbox adds Executive_History_DATE.eml beside the existing email editions.
+
+The edition scans all loaded dated Appearance History, including people absent
+from the current report. A representative must exceed the appearance threshold
+on one saved-rule topic and fall below the matching-coaching target in the same
+calendar-month window. Import the detailed Appearance History sheet or record
+completed reports explicitly; name-only totals cannot establish topic or date.
+Only loaded history and coaching are examined. Missing coaching data is unknown.
+Reviewing and downloading do not add appearances or send email.
+
+Coaches rank by unique concern representatives. Compact linked profiles include
+missing-topic pies, concern people/topics, history reps coached, average distinct
+coaching contacts per week, contacts per topic appearance, and coached-topic
+percentages. Coaching activity covers the full high-history cohort, including
+people meeting the target. Pies count concern rep-topic pairs; coached-topic
+shares count matched coaching-topic records. Multi-topic contacts count once per
+topic in those shares and once overall in contact rates. Charts are embedded PNG
+attachments in the email. Current roster assignments and coach aliases apply.
+
+Normal coach emails now show saved required type/phrase pills immediately after
+the description in Breakdown, including the actual ANY/ALL matching logic.
+
+Regressions: npm run test:executive-history. Browser checks:
+node tests/browser-qualtrics-executive-history.test.js (PLAYWRIGHT_MODULE and
+CHROMIUM_PATH are supported, as with other browser checks).
