@@ -41,10 +41,18 @@ function qualtricsBridgeRow(row,kind,sourceLabel=''){
 function qualtricsBridgeRows(rows,kind,sourceLabel=''){ return (rows||[]).map(row=>qualtricsBridgeRow(row,kind,sourceLabel)).filter(r=>Object.keys(r).length); }
 async function qualtricsBridgeRowsDeferred(rows,kind,sourceLabel='',isCurrent=()=>true){
   const out=[], source=rows||[];
+  const now=()=>typeof performance!=='undefined'?performance.now():Date.now();
+  let batchStarted=now(), batchRows=0;
   for(let i=0;i<source.length;i++){
-    if(i%1500===0&&!isCurrent()){ const error=new Error('Source connection superseded'); error.name='AbortError'; throw error; }
+    if(i%50===0&&!isCurrent()){ const error=new Error('Source connection superseded'); error.name='AbortError'; throw error; }
     const row=qualtricsBridgeRow(source[i],kind,sourceLabel); if(Object.keys(row).length) out.push(row);
-    if(i&&i%1500===0) await new Promise(resolve=>setTimeout(resolve,0));
+    batchRows++;
+    // Wide exports cost much more per row. Bound work by elapsed time as well
+    // as row count so preparing a source connection leaves room for painting.
+    if(batchRows>=1500||(batchRows%50===0&&now()-batchStarted>=8)){
+      await new Promise(resolve=>setTimeout(resolve,0));
+      batchStarted=now(); batchRows=0;
+    }
   }
   return out;
 }
