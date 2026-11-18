@@ -347,6 +347,126 @@ async function saveImportedDataToIndexedDB(reason='manual save', opts={}){
   try{ return await operation; }
   finally{ if(state.importCacheSavePromise===operation) state.importCacheSavePromise=null; }
 }
+// The worker stages acknowledged row batches in memory. Its final transaction
+// writes the existing record shapes so older releases can read the result.
+function allStarStorageWorker(){
+  const arrays=[];
+  let db,transaction,cancelled=false;
+  const fail=error=>self.postMessage({error:String(error?.message||error)});
+  self.onmessage=({data})=>{
+    try{
+      if(data.open){
+        const request=indexedDB.open(data.open);
+        request.onupgradeneeded=()=>request.transaction.abort();
+        request.onerror=()=>fail(request.error);
+        request.onsuccess=()=>{db=request.result;self.postMessage({ready:true});};
+      }else if(data.cancel){
+        cancelled=true;if(transaction)try{transaction.abort();}catch(_){}
+      }else if(data.batch){
+        const {index,offset,rows}=data.batch,target=arrays[index]||(arrays[index]=[]);
+        if(offset!==target.length)throw new Error('Unexpected storage batch order.');
+        for(const row of rows)target.push(row);
+        self.postMessage({received:target.length});
+      }else if(data.commit){
+        if(cancelled)throw new Error('Save canceled.');
+        const {stores,writes,references,checks,jobId,revision}=data.commit;
+        for(const [writeIndex,field,arrayIndex,length] of references){
+          if(arrays[arrayIndex]?.length!==length)throw new Error('Incomplete storage batch.');
+          writes[writeIndex].record.value[field]=arrays[arrayIndex];
+        }
+        transaction=db.transaction(stores,'readwrite');
+        transaction.oncomplete=()=>{db.close();self.postMessage({committed:true});};
+        transaction.onabort=()=>fail(transaction.error||'The saved data could not be verified. The previous data was kept.');
+        for(const write of writes){
+          const store=transaction.objectStore(write.store);
+          if(write.remove)store.delete(write.key);else store.put(write.record);
+        }
+        for(const check of checks){
+          const request=transaction.objectStore(stores[1]).get(check.id);
+          request.onsuccess=()=>{
+            const record=request.result;
+            if(record?.value?.rows?.length!==check.rows||record.revision!==revision)transaction.abort();
+          };
+        }
+        const request=transaction.objectStore(stores[3]).get('sourceMeta');
+        request.onsuccess=()=>{if(checks.some(check=>request.result?.value?.[check.source]?.importJobId!==jobId))transaction.abort();};
+      }
+    }catch(error){if(transaction)try{transaction.abort();}catch(_){}fail(error);}
+  };
+}
+async function prepareAllstarStorageWriter(job,db){
+  if(!job||job.normalized<10000||!['qa','qa_direct','checklist','documented_coaching','comp_calls'].includes(job.source)||
+     typeof Worker==='undefined'||typeof Blob==='undefined'||localStorage.getItem('allStarWorkerStorage.v1')!=='on')return null;
+  const writes=[],arrays=[],references=[],indices=new Map();
+  let worker,url,respond,reject,timer,committing=false,closed=false;
+  const close=()=>{closed=true;clearTimeout(timer);worker?.terminate();if(url)URL.revokeObjectURL(url);};
+  const request=message=>new Promise((resolve,fail)=>{
+    respond=resolve;reject=fail;worker.postMessage(message);
+    timer=setTimeout(()=>{close();fail(new Error('The storage worker timed out.'));},60000);
+  });
+  try{
+    url=URL.createObjectURL(new Blob(['('+allStarStorageWorker.toString()+')();'],{type:'application/javascript'}));
+    worker=new Worker(url);
+    worker.onmessage=({data})=>{clearTimeout(timer);if(data.error)reject(new Error(data.error));else respond(data);};
+    worker.onerror=event=>{clearTimeout(timer);reject(new Error(event.message||'Storage worker failed.'));};
+    await request({open:IMPORT_CACHE_DB});
+  }catch(error){close();return null;} // Some file origins cannot share IndexedDB with a worker.
+  const abort=()=>{
+    if(closed)return;
+    if(committing){worker.postMessage({cancel:true});return;}
+    close();reject(new Error('Save canceled.'));
+  };
+  const objectStore=store=>({
+    delete:key=>writes.push({store,remove:true,key}),
+    put:record=>{
+      const writeIndex=writes.length;
+      if([IMPORT_CACHE_SOURCE_STORE,IMPORT_CACHE_BOOK_STORE].includes(store)&&record.value){
+        const value={...record.value};
+        for(const [field,array] of Object.entries(value)){
+          if(!Array.isArray(array)||array.length<500)continue;
+          if(!indices.has(array)){indices.set(array,arrays.length);arrays.push(array);}
+          references.push([writeIndex,field,indices.get(array),array.length]);delete value[field];
+        }
+        record={...record,value};
+      }
+      writes.push({store,record});
+    }
+  });
+  const commit=async(checks,revision)=>{
+    try{
+      for(let index=0;index<arrays.length;index++){
+        const array=arrays[index];
+        for(let offset=0;offset<array.length;){
+          assertAllStarImportActive();
+          const start=offset,since=performance.now();let bytes=0;
+          do{
+            // Account for wide text fields. A single large row travels alone.
+            const row=array[offset++];
+            for(const value of Object.values(row||{}))bytes+=typeof value==='string'?32+value.length*2:32;
+          }while(offset<array.length&&offset-start<768&&bytes<524288&&performance.now()-since<8);
+          await request({batch:{index,offset:start,rows:array.slice(start,offset)}});
+          job.lastProgressAt=Date.now();
+        }
+      }
+      assertAllStarImportActive();
+      importJobStage(job,'Verifying');updateProgress('Verifying saved Allstar sources…',94,{force:true});
+      assertAllStarImportActive();
+      committing=true;
+      const stores=[IMPORT_CACHE_META_STORE,IMPORT_CACHE_SOURCE_STORE,IMPORT_CACHE_BOOK_STORE,IMPORT_CACHE_MISC_STORE];
+      try{await request({commit:{stores,writes,references,checks,jobId:job.id,revision}});}
+      catch(error){
+        // A worker may stop after IndexedDB commits but before it acknowledges.
+        // Its atomic marker distinguishes that case from an aborted replacement.
+        close();
+        const record=await idbReq(db.transaction(IMPORT_CACHE_MISC_STORE).objectStore(IMPORT_CACHE_MISC_STORE).get('sourceMeta'),'Checking the last committed import');
+        if(!checks.length||checks.some(check=>record?.value?.[check.source]?.importJobId!==job.id))throw error;
+      }
+    }finally{close();}
+  };
+  return {objectStore,abort,commit,close};
+}
+
+
 async function commitImportedDataToIndexedDB(reason='manual save', opts={}){
   if(state.activeImportJob && !opts.importJob && state.activeImportJob.stage!=='Waiting for previous save') return false;
   if(state.lifecycle?.closing && !opts.lifecycleSave) return false;
@@ -379,10 +499,11 @@ async function commitImportedDataToIndexedDB(reason='manual save', opts={}){
     clearImportCacheDirty();
     const teamIndex=snapshot.misc.has('teamIndex') ? serializeTeamIndex(state.teamIndexCache || buildCompactTeamIndexFromRows(reason,{mutateRows:opts.mutateRows!==false && !opts.lifecycleSave})) : null;
     if(teamIndex) state.teamIndexCache=restoreTeamIndex(teamIndex);
-    const tx=db.transaction([IMPORT_CACHE_META_STORE,IMPORT_CACHE_SOURCE_STORE,IMPORT_CACHE_BOOK_STORE,IMPORT_CACHE_MISC_STORE],'readwrite');
+    const workerWriter=await prepareAllstarStorageWriter(opts.importJob,db);
+    const tx=workerWriter||db.transaction([IMPORT_CACHE_META_STORE,IMPORT_CACHE_SOURCE_STORE,IMPORT_CACHE_BOOK_STORE,IMPORT_CACHE_MISC_STORE],'readwrite');
     writeTx=tx;
     if(opts.importJob) opts.importJob.transaction=tx;
-    const done=idbTxDone(tx); done.catch(()=>{});
+    const done=workerWriter?null:idbTxDone(tx); done?.catch(()=>{});
     const metaStore=tx.objectStore(IMPORT_CACHE_META_STORE), sourceStore=tx.objectStore(IMPORT_CACHE_SOURCE_STORE), bookStore=tx.objectStore(IMPORT_CACHE_BOOK_STORE), miscStore=tx.objectStore(IMPORT_CACHE_MISC_STORE);
     // Cleanup and writes share one transaction, so an unsuccessful save still leaves the previous cache intact.
     obsoleteBookKeys.forEach(k=>bookStore.delete(k));
@@ -406,24 +527,29 @@ async function commitImportedDataToIndexedDB(reason='manual save', opts={}){
     metaStore.put(meta); // metadata last is the commit marker for the completed dirty batch.
     // Read the newly written records within the same transaction. A failed
     // verification aborts every write, retaining the previous committed source.
-    const verifications=(opts.verifySources||[]).map(source=>{
-      const expectedRows=(getRowsUnscoped(source)||[]).length;
-      return idbReq(sourceStore.get(sourceCacheRecordId(source)),`Verifying ${source}`).then(record=>{
-        if(!record || record.value?.rows?.length!==expectedRows || record.revision!==meta.revision) throw new Error(`${source} read-back verification failed.`);
+    if(workerWriter){
+      const checks=(opts.verifySources||[]).map(source=>({source,id:sourceCacheRecordId(source),rows:(getRowsUnscoped(source)||[]).length}));
+      await workerWriter.commit(checks,meta.revision);
+    }else{
+      const verifications=(opts.verifySources||[]).map(source=>{
+        const expectedRows=(getRowsUnscoped(source)||[]).length;
+        return idbReq(sourceStore.get(sourceCacheRecordId(source)),`Verifying ${source}`).then(record=>{
+          if(!record || record.value?.rows?.length!==expectedRows || record.revision!==meta.revision) throw new Error(`${source} read-back verification failed.`);
+        });
       });
-    });
-    // A cancelled progress callback can throw before Promise.all is reached.
-    // Every queued verification still needs a rejection observer on abort.
-    verifications.forEach(verification=>verification.catch(()=>{}));
-    if(opts.verifySources?.length){
-      if(opts.importJob) importJobStage(opts.importJob,'Verifying');
-      updateProgress('Verifying saved Allstar sources…',94,{force:true});
-      verifications.push(idbReq(miscStore.get('sourceMeta'),'Verifying source metadata').then(record=>{
-        for(const source of opts.verifySources) if(record?.value?.[source]?.importJobId!==opts.importJob?.id) throw new Error(`${source} metadata verification failed.`);
-      }));
+      // A cancelled progress callback can throw before Promise.all is reached.
+      // Every queued verification still needs a rejection observer on abort.
+      verifications.forEach(verification=>verification.catch(()=>{}));
+      if(opts.verifySources?.length){
+        if(opts.importJob) importJobStage(opts.importJob,'Verifying');
+        updateProgress('Verifying saved Allstar sources…',94,{force:true});
+        verifications.push(idbReq(miscStore.get('sourceMeta'),'Verifying source metadata').then(record=>{
+          for(const source of opts.verifySources) if(record?.value?.[source]?.importJobId!==opts.importJob?.id) throw new Error(`${source} metadata verification failed.`);
+        }));
+      }
+      try{ await Promise.all(verifications); }catch(error){ try{tx.abort();}catch(_){} await done.catch(()=>{}); throw error; }
+      await done;
     }
-    try{ await Promise.all(verifications); }catch(error){ try{tx.abort();}catch(_){} await done.catch(()=>{}); throw error; }
-    await done;
     if(!opts.noCompaction) Object.keys(state.books||{}).forEach(bookKey=>{
       const pending=ensureImportCacheDirty();
       if(!pending.books.has(bookKey) && ![...pending.sheets].some(key=>splitSheetDirtyKey(key)[0]===bookKey)) releaseInactiveWorkbookSheets(bookKey);
@@ -433,7 +559,7 @@ async function commitImportedDataToIndexedDB(reason='manual save', opts={}){
     if(!opts.noRender) await renderImportCacheStatus(obsoleteBookKeys.length?`Saved imported data locally and removed ${obsoleteBookKeys.length.toLocaleString()} obsolete duplicated workbook cache records.`:'Saved imported data locally.');
     return true;
   }catch(err){
-    try{writeTx?.abort();}catch(_){}
+    try{writeTx?.abort();writeTx?.close?.();}catch(_){}
     console.error('[Import Cache] Save failed',err);
     mergeImportCacheDirtySnapshot(snapshot);
     const estimate=await importCacheStorageEstimate();
@@ -707,6 +833,7 @@ async function renameQualtricsCoachHistory(from,to){
 async function cleanupClearedReportingStorage(){
   if(!state.reportingDataCleanupPending) return true;
   try{
+    localStorage.removeItem('allStarReportList.v1');
     // These are independent databases, so the main transaction records a durable
     // cleanup marker first. Interrupted cleanup is retried on the next startup;
     // result readers never expose snapshots while that marker is present.
@@ -769,6 +896,7 @@ async function clearAllStarReportingData(){
   }
   if(!confirm('Clear all stored Allstar reporting data, imported workbooks, saved reports, Research results, and Qualtrics concern history? Application settings, models, mappings, rules, and preferences will be kept. Shared files used by other CoachTools apps will be kept and will not automatically reload into Allstar.')) return false;
   state.reportingDataClearing=true;
+  if(state.batchDiscovering){state.batchDiscovering.cancelled=true;state.batchDiscovering.cancelRead?.();}
   const controls=[el('settingsClearAllDataBtn'),els.clearImportCacheBtn].filter(Boolean), disabled=controls.map(node=>node.disabled); controls.forEach(node=>node.disabled=true);
   if(state.importCacheSaveTimer){ clearTimeout(state.importCacheSaveTimer); state.importCacheSaveTimer=null; }
   let db,tx,committed=false;
@@ -798,6 +926,10 @@ async function clearAllStarReportingData(){
     state.importCache={...state.importCache,meta,generationId:generation,revision:meta.revision,status:'saved',lastError:'',retryCount:0};
     clearImportCacheDirty(); state.importCacheSaveQueued=false; state.importCachePostLoadSave=false; state.importCacheSaveReasons=[];
     resetAllStarReportingMemory(nextData,customSources);
+    state.coachToolsImportBatch=null;
+    if(els.coachtoolsFiles)els.coachtoolsFiles.value='';
+    if(els.coachtoolsImportSummary)els.coachtoolsImportSummary.textContent='Add files to start a batch.';
+    renderCoachToolsImportReview();
     const cleaned=await cleanupClearedReportingStorage();
     renderAllStarAfterDataBatch({sourcesChanged:allSourceKeys(),teamsChanged:true,reason:'all reporting data cleared'});
     if(typeof renderSourceHealthOverview==='function') renderSourceHealthOverview();

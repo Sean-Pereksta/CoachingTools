@@ -105,7 +105,7 @@ function updateIndividualGenericVisibility(){
   if(els.individualGenericPlacement) els.individualGenericPlacement.disabled=!enabled;
 }
 async function loadIndividualMessageSettings(){
-  const rows=await getAll(STORES.settings), saved=rows.find(row=>row.key===INDIVIDUAL_SETTINGS_KEY);
+  const saved=await readGeneratorSetting(INDIVIDUAL_SETTINGS_KEY);
   fillIndividualTemplateForm(saved?.template||QualtricsIndividualMessages.DEFAULT_TEMPLATE);
 }
 async function saveIndividualMessageSettings(){
@@ -179,6 +179,7 @@ function individualAddRepresentative(map,rawName,repK,extra={}){
   map.set(ident.key,current);
 }
 function invalidateIndividualRunCache(reason='inputs changed'){
+  state.individualExportRevision=(state.individualExportRevision||0)+1;
   state.individualReviewRun?.controller?.abort();
   state.individualCoachingExportRun?.controller.abort();
   state.individualRunCache=null;
@@ -310,15 +311,23 @@ function individualReportObservation(rep,field,rule,context){
   const isPercent=isPercentHeader(header)||hasPercentSign(selected), value=numberForComparison(selected,header,isPercent), numericValue=isFinite(value)?value:NaN;
   return {missing:false,value:numericValue,raw:selected,formatted:formatValueForHeader(header,selected)||String(selected),label:header||field,source:'Report field',isPercent};
 }
+function individualLegacyRecordValue(rule,base){
+  if(base.check){
+    const check=base.check;
+    return {value:check.avg,raw:check.avg,formatted:formatMetricValue(check.label,check.avg),label:check.label,isPercent:isPercentHeader(check.label),score:(check.pctLow||0)*100};
+  }
+  if(isCoachingCorrectiveRule(rule))return {value:base.ratio,raw:base.ratio,formatted:isFinite(base.ratio)?fmtNum(base.ratio,2):String(base.coachings?.length||0),label:rule.title,score:base.coachings?.length||1};
+  return {value:base.count,raw:base.count,formatted:String(base.count),label:(isStatCountRule(rule)?rule.statCount:rule.countRule)?.label||rule.title,score:base.count};
+}
 function individualLegacyObservation(rep,rule,reportDate,cache,context){
   if(!cache.has(rule.id)){
     const map=new Map(), add=(base,observation)=>{ if(base?.repKey) map.set(base.repKey,Object.assign({missing:false,matched:true,label:rule.title,score:1},observation||{})); };
-    if(isStatRule(rule)) for(const repItem of context.scopeIndex.representatives){ const check=evaluateStatRuleForRep(repItem.repKey,rule.statRule,reportDate); if(check.meets) add(repItem,{value:check.avg,raw:check.avg,formatted:formatMetricValue(check.label,check.avg),label:check.label,isPercent:isPercentHeader(check.label),score:(check.pctLow||0)*100}); }
-    else if(isStatCountRule(rule)) for(const base of buildStatCountRecords(rule,reportDate)) add(base,{value:base.count,raw:base.count,formatted:String(base.count),label:rule.statCount?.label||rule.title,score:base.count});
-    else if(isCoachingCorrectiveRule(rule)) for(const base of buildCoachingCorrectiveRecords(rule,reportDate)) add(base,{value:base.ratio,raw:base.ratio,formatted:isFinite(base.ratio)?fmtNum(base.ratio,2):String(base.coachings?.length||0),label:rule.title,score:base.coachings?.length||1});
+    if(isStatRule(rule)) for(const repItem of context.scopeIndex.representatives){ const check=evaluateStatRuleForRep(repItem.repKey,rule.statRule,reportDate); if(check.meets) add(repItem,individualLegacyRecordValue(rule,{check})); }
+    else if(isStatCountRule(rule)) for(const base of buildStatCountRecords(rule,reportDate)) add(base,individualLegacyRecordValue(rule,base));
+    else if(isCoachingCorrectiveRule(rule)) for(const base of buildCoachingCorrectiveRecords(rule,reportDate)) add(base,individualLegacyRecordValue(rule,base));
     else if(isHeaderCountRule(rule)){
       const sources=(context.reportFiles||[]).filter(file=>individualRuleForFile(file)?.id===rule.id).map(file=>({name:file.fileName,rows:file.rows||[]}));
-      for(const base of buildHeaderCountRecords(rule,sources).records) add(base,{value:base.count,raw:base.count,formatted:String(base.count),label:rule.countRule?.label||rule.title,score:base.count});
+      for(const base of buildHeaderCountRecords(rule,sources).records) add(base,individualLegacyRecordValue(rule,base));
     }else{
       for(const [repKey,items] of context.dashboardByRuleRep.get(rule.id)||[]){
         for(const item of items){ const raw=item.raw; if(!rowMeetsRule(raw,rule)) continue; const field=rule.displayColumn?.enabled?rule.displayColumn.header:(rule.criteria?.[0]?.header||''); const value=field?raw[field]:rule.title;
@@ -536,6 +545,7 @@ function individualExportSelection(){
 function setIndividualExportCategory(category,checked){
   if(!QualtricsIndividualMessages.EXPORT_CATEGORIES.includes(category)) return;
   const selected=individualExportCategories();
+  if(selected.has(category)!==checked)state.individualExportRevision=(state.individualExportRevision||0)+1;
   if(checked) selected.add(category); else selected.delete(category);
   renderIndividualExportSelection();
 }
@@ -616,19 +626,29 @@ function exportIndividualReview(){
   if(window.XLSX){ const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Individual Messages'); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(diagnostics),'Rule Diagnostics'); XLSX.writeFile(wb,`qualtrics_individual_message_review_${ymd(new Date())}.xlsx`); }
   else { const headers=Object.keys(rows[0]); const csv=[headers.join(',')].concat(rows.map(row=>headers.map(header=>`"${String(row[header]??'').replace(/"/g,'""')}"`).join(','))).join('\n'); downloadBlob(new Blob([csv],{type:'text/csv'}),`qualtrics_individual_message_review_${ymd(new Date())}.csv`); }
 }
-function individualEml(result){
-  const subject=`Qualtrics Coaching Message — ${result.fullName}`, boundary=`individual_${Date.now()}_${Math.random().toString(36).slice(2)}`, html=result.message.split(/\n{2,}/).map(block=>`<p>${esc(block).replace(/\n/g,'<br>')}</p>`).join('');
+function individualEml(result,stamp){
+  const subject=`Qualtrics Coaching Message — ${result.fullName}`, boundary=`individual_${stamp?stamp.time:Date.now()}_${stamp?stamp.suffix:Math.random().toString(36).slice(2)}`, html=result.message.split(/\n{2,}/).map(block=>`<p>${esc(block).replace(/\n/g,'<br>')}</p>`).join('');
   return [`To: ${result.email}`,`Subject: ${subject}`,'MIME-Version: 1.0',`Content-Type: multipart/alternative; boundary="${boundary}"`,'',`--${boundary}`,'Content-Type: text/plain; charset="UTF-8"','',result.message,'',`--${boundary}`,'Content-Type: text/html; charset="UTF-8"','',`<!doctype html><html><body style="font-family:Segoe UI,Arial,sans-serif;line-height:1.5;color:#0f172a">${html}</body></html>`,'',`--${boundary}--`].join('\r\n');
 }
 async function exportIndividualEmails(){
   if(state.individualResultsStale){ toast('Run the Individual Review again before exporting changed selections.'); return; }
   const ready=individualExportSelection().ready; if(!ready.length){ toast('No send-ready individual messages are available in the checked categories.'); return; }
   if(!window.JSZip){ toast('ZIP export library is unavailable.'); return; }
-  const zip=new JSZip(); for(const result of ready) zip.file(`${sanitizeFile(result.fullName)}.eml`,individualEml(result));
-  const blob=await zip.generateAsync({type:'blob'});
-  const current=individualExportSelection().ready;
-  if(current.length!==ready.length||current.some((result,index)=>result!==ready[index])){ toast('Review or export selections changed. Export again with the current selections.'); return; }
-  downloadBlob(blob,`qualtrics_individual_emails_${ymd(new Date())}.zip`); toast(`Exported ${ready.length} reviewed send-ready email file(s). Nothing was sent.`);
+  const revision=state.individualExportRevision||0,results=state.individualResults;
+  const unchanged=()=>revision===(state.individualExportRevision||0)&&results===state.individualResults&&!state.individualResultsStale&&!state.individualReviewRun;
+  const archive=typeof QualtricsEmailPackage==='undefined'?null:QualtricsEmailPackage.create(unchanged),zip=archive?null:new JSZip();
+  try{
+    for(const result of ready){
+      const name=sanitizeFile(result.fullName)+'.eml';
+      if(archive)await archive.add(name,'individual',[{fullName:result.fullName,email:result.email,message:result.message}]);
+      else zip.file(name,individualEml(result));
+    }
+    const blob=await (archive?archive.finish():zip.generateAsync({type:'blob'}));
+    const current=individualExportSelection().ready;
+    if(!unchanged()||current.length!==ready.length||current.some((result,index)=>result!==ready[index])){toast('Review or export selections changed. Export again with the current selections.');return;}
+    downloadBlob(blob,`qualtrics_individual_emails_${ymd(new Date())}.zip`);toast(`Exported ${ready.length} reviewed send-ready email file(s). Nothing was sent.`);
+  }catch(error){if(error.name==='AbortError')toast('Review or export selections changed. Export again with the current selections.');else throw error;}
+  finally{archive?.close();}
 }
 
 function coachingNeedsRecord(record,rule,reportDate,coached=null){

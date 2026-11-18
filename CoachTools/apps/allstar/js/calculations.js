@@ -316,7 +316,7 @@ function criterionRowsForEntry(c,entry,opts={}){
   const extra=isCustomWeeklyStatSource(c.source)?(customSource(c.source)?.columns||{}):{};
   const ctx={...opts,dateBasis:extra.dateBasis,weekStart:extra.weekStart};
   const entryKey=entry?.kind==='team'?'team:'+coachNameKey(entry.name):'rep:'+(entry?.key||'');
-  const dependencies=typeof AllStarAnalysis!=='undefined'?AllStarAnalysis.dependencySignature(AllStarAnalysis.criterionSources(c,ctx)):state.dataIndex?.version||0;
+  const dependencies=typeof AllStarAnalysis!=='undefined'?(opts._reportInputVersion?AllStarAnalysis.criterionContext(c,opts).dependencies.signature:AllStarAnalysis.dependencySignature(AllStarAnalysis.criterionSources(c,ctx))):state.dataIndex?.version||0;
   const key=stableSerialize({source:c.source,version:dependencies,entryKey,team:entry?.team||'',cachePolicy:[!!ctx._sourceRowsCache,!!ctx._entryRowsCache],start:ymd(ctx.start),end:ymd(ctx.end),dateColumn:ctx.dateColumn||'',qaDateMode:ctx.qaDateMode||'',dateBasis:ctx.dateBasis||'',weekStart:ctx.weekStart||'',filters:c.filters||[],mapping:state.versions?.mappings||0,aliases:state.versions?.aliases||0});
   state.criterionInputCache=state.criterionInputCache||new Map();
   if(state.criterionInputCache.has(key)){ state.perfCounters.criterionInputCacheHits++; const v=state.criterionInputCache.get(key); state.criterionInputCache.delete(key); state.criterionInputCache.set(key,v); return v; }
@@ -517,14 +517,16 @@ function valueQA(c, entry, opts){
   if(!nums.length) return NaN;
   return nums.reduce((a,b)=>a+b,0)/nums.length;
 }
-function valueChecklist(c, entry, opts){
+function checklistRuleSelection(c,entry,opts){
   const source=rowPullSourceForCriterion(c);
   const rowPullOpts={...opts,dateColumn:c.checkDateColumn,checkValueType:c.checkValueType||'text'};
-  let rows=rowsForEntry(source, entry, rowPullOpts); rows=applyFilters(rows,c.filters,source,rowPullOpts);
+  const scoped=rowsForEntry(source,entry,rowPullOpts), filtered=applyFilters(scoped,c.filters,source,rowPullOpts);
+  let rows=filtered;
   const conditions=ensureRowPullConditions(c).map(cond=>({...cond,column:resolveColumn(source,cond.column),dateColumn:resolveColumn(source,cond.dateColumn||c.checkDateColumn)})).filter(cond=>cond.column && String(cond.phrasesText||'').trim());
   if(conditions.length) rows=rows.filter(r=>checklistRowPassesConditions(source,r,entry,rowPullOpts,conditions));
-  return rows.length;
+  return {source,scopedCount:scoped.length,filteredCount:filtered.length,conditions,rows};
 }
+function valueChecklist(c,entry,opts){return checklistRuleSelection(c,entry,opts).rows.length;}
 
 function rawDisplayCellValue(v){
   if(v===null||v===undefined) return null;
@@ -678,12 +680,12 @@ function allRepEntries(model, teams){
   return Array.from(reps.values()).sort((a,b)=>(a.team||'').localeCompare(b.team||'')||a.name.localeCompare(b.name));
 }
 function teamEntries(teams){ return teams.map(t=>({kind:'team',name:t,key:t,team:t})); }
-function applyHideNoScoreRepOption(repPack){
+function applyHideNoScoreRepOption(repPack,settings={}){
   if(hasTrustedControlRoster()) return repPack;
-  if(!els.hideNoScoreReps || !els.hideNoScoreReps.checked || !repPack) return repPack;
+  if(!(settings.hideNoScore??els.hideNoScoreReps?.checked) || !repPack) return repPack;
   const criteria=repPack.criteria||[];
   if(!criteria.length) return repPack;
-  const thresholdValue=els.hideNoScoreThreshold ? els.hideNoScoreThreshold.value : 'all';
+  const thresholdValue=settings.hideNoScoreThreshold??els.hideNoScoreThreshold?.value??'all';
   const threshold=thresholdValue==='all' ? criteria.length : Math.max(1,Number(thresholdValue)||1);
   const rows=(repPack.rows||[]).filter(r=>{
     const missingCount=criteria.reduce((n,c)=>n+(criterionHasUsableValue(c,r.values?.[c.id])?0:1),0);

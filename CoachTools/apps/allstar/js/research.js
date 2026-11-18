@@ -526,15 +526,23 @@ function normalizeResearchItem(item={}){
   return normalized;
 }
 
-function researchItemForLocalStorage(item){ const copy=clonePlain(item||{}); if(copy.renderedResult){ copy.renderedResult={version:2,outputType:copy.outputType,renderedAt:copy.renderedResult.renderedAt||'',id:copy.id,storedIn:'indexedDB'}; } return copy; }
+function researchItemForLocalStorage(item){
+  const {renderedResult,...definition}=item||{},copy=clonePlain(definition);
+  if(renderedResult?.version===1&&renderedResult.result)copy.renderedResult=renderedResult;
+  else if(renderedResult)copy.renderedResult={version:2,outputType:renderedResult.outputType||copy.outputType,renderedAt:renderedResult.renderedAt||'',inputKey:renderedResult.inputKey||'',id:copy.id,storedIn:'indexedDB'};
+  return copy;
+}
 function loadResearchItems(options={}){
   try{ state.researchItems=(JSON.parse(localStorage.getItem(RESEARCH_KEY)||'[]')||[]).map(normalizeResearchItem); }catch(_){ state.researchItems=[]; }
   if(options.definitionsOnly){ state.researchDefinitionsOnly=true; return; }
   state.researchDefinitionsOnly=false;
   loadResearchResultCache();
-  migrateLegacyResearchRenderedResults();
+  migrateLegacyResearchRenderedResults().catch(error=>console.warn('[Research Builder] Existing snapshots will be migrated on a later open.',error));
 }
-function persistResearchItemsToLocalStorage(){ try{ localStorage.setItem(RESEARCH_KEY, JSON.stringify((state.researchItems||[]).map(researchItemForLocalStorage))); }catch(e){ console.warn('[Research Builder] Saving definitions only after storage error',e); localStorage.setItem(RESEARCH_KEY, JSON.stringify((state.researchItems||[]).map(x=>{ const y=researchItemForLocalStorage(x); delete y.renderedResult; return y; }))); } updateResearchCacheBadge(); }
+function persistResearchItemsToLocalStorage(){
+  localStorage.setItem(RESEARCH_KEY,JSON.stringify((state.researchItems||[]).map(researchItemForLocalStorage)));
+  window.AllStarResearchLibrary?.invalidateMissing?.();updateResearchCacheBadge();
+}
 function saveResearchItems(){ bumpVersion('researchDefinitions'); selectiveResearchInvalidation({reason:'research changed',researchDefinitions:true}); persistResearchItemsToLocalStorage(); }
 
 function concreteResearchSources(){ return allSourceKeys().map(k=>({value:k,label:labelSource(k)})); }
@@ -1010,7 +1018,40 @@ function researchJoinPreviewSnapshot(item){
   return {population:population.size,mode,baseSource:item.source,totalSourceRows:rows.reduce((n,x)=>n+x.sourceRows,0),rows};
 }
 function renderResearchJoinPreview(){
-  if(els.researchJoinPreview)els.researchJoinPreview.innerHTML='<strong>Preview on demand</strong><span class="hint">Click Run preview to inspect up to 500 source rows. Full joins, coverage, and calculations run with Save &amp; Run Research.</span>';
+  const host=els.researchJoinPreview;if(!host)return;
+  host.innerHTML='<strong>Source matching</strong><button class="smallBtn" type="button">Inspect matching and date alignment</button><div class="hint" aria-live="polite">Inspect up to 500 source rows across the selected inputs. Click Run preview to sample the primary source and its filters.</div>';
+  host.querySelector('button').onclick=()=>{
+    const item=effectiveResearchItem(normalizeResearchItem(currentResearchItemFromEditor())),report=researchJoinSample(item);
+    if(report.sources.length<2){host.lastChild.textContent='This question uses one source. No cross-source matching is required.';return;}
+    host.lastChild.innerHTML=`<p>Match on ${esc(report.mode)}. Compare each ${esc(report.grain)}. Current organizational scope and saved population filters apply.</p><div class="tableWrap"><table><thead><tr><th>Source</th><th>Date alignment</th><th>Inspected / in scope and period</th><th>Matched keys</th><th>Unmatched keys</th><th>Repeated keys</th><th>Ambiguous keys</th></tr></thead><tbody>${report.sources.map(s=>`<tr><th>${esc(labelSource(s.source))}</th><td>${esc(s.date||'Undated snapshot')}</td><td>${s.inspected} / ${s.eligible}</td><td>${s.matched}</td><td>${s.unmatched}</td><td>${s.duplicates}</td><td>${s.ambiguous}</td></tr>`).join('')}</tbody></table></div><p>Matches compare the primary sample with each source sample. Repeated keys need a defined aggregation on each side. A shared person and date range alone cannot establish a period-by-period relationship. Inspect full join diagnostics after running.</p>`;
+  };
+}
+function researchJoinSample(item,requiredSources){
+  const sources=[...new Set(requiredSources||[item.source,...researchExecutionSources(item)])],limit=Math.floor(500/sources.length);
+  const mode=researchEffectiveJoinMode(item,[]),scope=researchPopulationMatchKeys(item.populationScope);
+  const sides=sources.map(source=>{
+    const raw=getRowsRaw(source)||[],inspected=Math.min(limit,raw.length),sample=[];
+    for(let i=0;i<inspected;i++)sample.push(raw[Math.floor(i*raw.length/inspected)]);
+    const date=source===item.source?(item.dateColumn||researchDefaultDateColumn(item)):researchDefaultDateColumn({source});
+    const rows=filterRowsForSource(source,sample,{start:parseDateOnly(item.startDate),end:parseDateOnly(item.endDate),dateColumn:date,qaDateMode:els.runQADateSelect?.value||'interaction'});
+    const readers=researchCohortIdentityReaders(source),ids=(getHeaders(source)||[]).filter(h=>/^(employee|agent|associate|representative|rep)[ _-]*(id|number)$|^(username|email|email address)$/i.test(h));
+    const keys=new Map();let eligible=0;
+    for(const row of rows){
+      const rep=readers.rep(row),team=readers.team(row);
+      if(!researchPopulationIdentityMatches(scope,rep,team))continue;
+      eligible++;const key=mode==='strict_team'?team:rep;if(!key)continue;
+      if(!keys.has(key))keys.set(key,{count:0,ids:new Map(),teams:new Set()});
+      const entry=keys.get(key);entry.count++;if(team)entry.teams.add(team);
+      for(const field of ids){const value=String(row[field]??'').trim().toLowerCase();if(!value)continue;if(!entry.ids.has(field))entry.ids.set(field,new Set());entry.ids.get(field).add(value);}
+    }
+    return {source,date,inspected,eligible,keys};
+  });
+  const primary=sides[0].keys;
+  return {mode:mode==='strict_team'?'canonical coach or team':mode==='rep_then_team'?'canonical representative (full run can fall back to team)':'canonical representative',grain:researchAnalysisGrain(item,[]),sources:sides.map(side=>{
+    let matched=0,duplicates=0,ambiguous=0;
+    for(const [key,v] of side.keys){if(primary.has(key))matched++;if(v.count>1)duplicates++;if(mode!=='strict_team'&&(v.teams.size>1||[...v.ids.values()].some(set=>set.size>1)))ambiguous++;}
+    return {source:side.source,date:side.date,inspected:side.inspected,eligible:side.eligible,matched,unmatched:side.keys.size-matched,duplicates,ambiguous};
+  })};
 }
 function scheduleResearchJoinPreview(){
   if(state.researchPreviewCancel)state.researchPreviewCancel.cancelled=true;
@@ -1020,6 +1061,10 @@ function scheduleResearchJoinPreview(){
   if(els.researchFoundPreview&&!els.researchFoundPreview.classList.contains('hidden'))els.researchFoundPreview.innerHTML='<div class="hint">Settings changed. Click Run preview for an updated sample.</div>';
 }
 async function openResearchWorkspace(){
+  if(window.AllStarResearchLibrary?.enabled()){
+    loadResearchItems({definitionsOnly:true});
+    openModal('researchModal');window.AllStarResearchLibrary.refresh();setResearchCanvasStatus('Saved Research');return;
+  }
   loadResearchItems();
   openModal('researchModal');
   renderResearchCanvasShell('Loading research items...');
@@ -1030,7 +1075,7 @@ async function openResearchWorkspace(){
 }
 function researchHasAnyData(){ return allSourceKeys().some(s=>(getRowsRaw(s)||[]).length); }
 function openResearchItemEditor(itemId){ if(state.researchItems.find(i=>i.id===itemId)?.datedStats)return openDatedStatsResearchEditor(itemId);
-  const existing=state.researchItems.find(x=>x.id===itemId), item=normalizeResearchItem(existing||{guidedEnabled:true,populationFilterVersion:2});
+  const existing=state.researchItems.find(x=>x.id===itemId), item=normalizeResearchItem(existing||state.newResearchQuestion||{guidedEnabled:true,populationFilterVersion:2});
   state.editingGuidedResearchActive=!!item.guidedEnabled;
   if(el('researchGroupAggregation'))el('researchGroupAggregation').value=item.groupAggregation;
   if(el('researchShowLinesFor'))el('researchShowLinesFor').value=item.showLinesFor;
@@ -2018,7 +2063,7 @@ function applyGuidedResearchTemplate(key){
 }
 
 function currentResearchItemFromEditor(){ const valueField=els.researchValueField.value; return normalizeResearchItem({id:els.researchEditId.value||id(),title:els.researchTitleInput.value||'Research Item',outputType:els.researchOutputType.value,mode:els.researchMode.value,filterDuplicateReps:!!els.researchFilterDuplicateReps?.checked,...readResearchPopulationBehaviorEditor(),source:els.researchSource.value,groupAggregation:el('researchGroupAggregation')?.value||'average',showLinesFor:el('researchShowLinesFor')?.value||'representatives',analysisGrain:els.researchAnalysisGrain?.value||'auto',crossSourceJoinMode:els.researchCrossSourceJoin?.value||'grain',populationScope:normalizeResearchPopulationScope(state.editingResearchPopulationScope),weeklyCoverage:readResearchWeeklyCoverageEditor(),unmatchedBehavior:els.researchUnmatchedBehavior?.value||'exclude',calculationGroupLimit:+els.researchCalculationGroupLimit?.value||0,reconcile:!!els.researchReconcile?.checked,missingBehavior:els.researchMissingBehavior?.value||'missing',bucketSize:els.researchBucketSize?.value||'',dateColumn:els.researchDateColumn.value,startDate:els.researchStartDate.value,endDate:els.researchEndDate.value,groupField:els.researchGroupField.value,groupMultiAdd:!!els.researchGroupMultiAdd?.checked,groupAxisItems:state.editingResearchGroupAxisItems||[],groupExpression:els.researchGroupExpression.value,useSecondaryGroup:els.researchUseSecondaryGroup?.value==='yes',secondaryGroupField:els.researchSecondaryGroupField?.value||'',panelField:els.researchPanelField?.value||'',valueMode:els.researchValueMode.value,valueField,measureId:researchMeasureIdFromRef(valueField),percentOfField:els.researchPercentOfField?.value||'',withinCompareField:els.researchWithinCompareField?.value||'',withinUseRange:!!els.researchWithinUseRange?.checked,withinDays:els.researchWithinDays?.value||'',withinRangeMin:els.researchWithinRangeMin?.value||'',withinRangeMax:els.researchWithinRangeMax?.value||'',dateGrouping:els.researchDateGrouping.value,modelId:els.researchModelSelect.value,criteriaId:els.researchCriteriaSelect.value,modelResult:els.researchModelResult.value,population:els.researchPopulation.value,numeratorExpression:els.researchNumeratorExpression.value,numeratorCount:els.researchNumeratorCount.value,denominator:els.researchDenominator.value,denominatorExpression:els.researchDenominatorExpression.value,zeroDenominator:els.researchZeroDenominator.value,percentBuilder:readPercentBuilderEditor(),sort:els.researchSort.value,axisMin:els.researchAxisMin.value,axisMax:els.researchAxisMax.value,decimals:+((els.researchOutputType.value==='table'?els.researchTableDecimals?.value:els.researchDecimals?.value)||0)||0,showValues:els.researchShowValues.checked,showDateLabels:!!els.researchShowDateLabels?.checked,showPercent:els.researchOutputType.value==='table'?!!els.researchTableShowPercent?.checked:els.researchShowPercent.checked,graphSort:els.researchGraphSort?.value||'inherit',topN:+(els.researchTopN?.value||0)||0,showSummaryLine:!!els.researchShowSummaryLine?.checked,goalValue:els.researchGoalValue?.value??'',rotateLabels:!!els.researchRotateLabels?.checked,wrapLabels:els.researchWrapLabels?els.researchWrapLabels.checked:true,showLegend:!!els.researchShowLegend?.checked,showGridlines:els.researchShowGridlines?els.researchShowGridlines.checked:true,smoothLine:!!els.researchSmoothLine?.checked,useDots:els.researchUseDots?els.researchUseDots.checked:true,barOrientation:els.researchBarOrientation?.value||'vertical',stackedBars:!!els.researchStackedBars?.checked,groupedBars:els.researchGroupedBars?els.researchGroupedBars.checked:true,hideZeroGroups:!!els.researchHideZeroGroups?.checked,highlightBest:!!els.researchHighlightBest?.checked,highlightWorst:!!els.researchHighlightWorst?.checked,rowLimit:+els.researchRowLimit.value||0,totals:els.researchTotals.checked,textWrap:els.researchTextWrap?els.researchTextWrap.checked:true,rowDensity:els.researchRowDensity?.value||'comfortable',cardSize:(state.researchItems.find(x=>x.id===(els.researchEditId.value||''))?.cardSize)||'medium',collapsed:!!(state.researchItems.find(x=>x.id===(els.researchEditId.value||''))?.collapsed),filters:state.editingResearchFilters||[],columns:state.editingResearchColumns||[],gearFilters:state.editingResearchGear||{},...(state.editingGuidedResearchActive?guidedConfigFromForm():{guidedEnabled:false})}); }
-async function saveResearchItemFromEditor(){
+async function saveResearchItemFromEditor(options={}){
   if(state.researchEditorSaving)return;
   state.researchEditorSaving=true;
   const button=els.saveResearchItemBtn,previousLabel=button?.textContent;
@@ -2037,11 +2082,17 @@ async function saveResearchItemFromEditor(){
     const item=currentResearchItemFromEditor();
     if(item.analysisGrain==='auto') item.analysisGrain=researchAnalysisGrain(item,researchApplyPopulationScope(getRowsRaw(resolveDynamicResearchSource(item)).slice(0,250),effectiveResearchItem(item)));
     const i=state.researchItems.findIndex(x=>x.id===item.id);
-    if(i>=0) state.researchItems[i]=item; else state.researchItems.push(item);
+    if(i>=0){item.renderedResult=state.researchItems[i].renderedResult;state.researchItems[i]=item;}else state.researchItems.push(item);
     saveResearchItems();
     if(els.topStatus) els.topStatus.textContent=`Saved Research item: ${item.title||'Research Item'}`;
     closeModal('researchEditorModal');
-    if(els.researchModal?.classList.contains('open')){ await renderResearchCanvasAsync({reason:'save'}); await refreshResearchItem(item.id); }
+    if(els.researchModal?.classList.contains('open')){
+      await renderResearchCanvasAsync({reason:'save'});
+      if(!options.definitionOnly){
+        if(window.AllStarResearchLibrary?.enabled())await window.AllStarResearchLibrary.run([item.id]);
+        else await refreshResearchItem(item.id);
+      }
+    }
   }catch(err){
     console.error(err);
     alert('Research item save failed. Check the console for details.');
@@ -2446,14 +2497,29 @@ function researchDuplicateRowsBySource(item, primaryRows){ const refs=researchDu
 function researchDuplicateWarning(map){ const n=map?.excludedRepKeys?.size||0; return n?`Duplicate rep filter applied: ${n.toLocaleString()} duplicate records excluded`:''; }
 function researchCohortIdentityReaders(source){
   if(isDatedStatsSource(source))return {rep:row=>getRepIdentity(row,source).normalizedName,team:row=>getCoachIdentity(row,source).normalizedName};
-  const repColumn=detectIdentityColumn({},source,'rep').column,coachColumn=detectIdentityColumn({},source,'coach').column;
-  const rep=row=>{ const raw=repColumn?row?.[repColumn]:(row?._rep||row?._repKey||''); let normalized=normalizeIdentityName(raw); const mapped=state.repAliases?.get?.(aliasLookupKey(raw))||state.repAliases?.get?.(normalized)||state.masterRepMap?.get?.(normalized)||''; return mapped?normalizeIdentityName(mapped):normalized; };
+  const mappings=researchSourceMappings()[source]||{},fields=researchMappedSourceFields(source);
+  const explicitRep=mappings.rep&&fields.rep,explicitCoach=mappings.coach&&fields.coach;
+  const repColumn=explicitRep||detectIdentityColumn({},source,'rep').column,coachColumn=explicitCoach||detectIdentityColumn({},source,'coach').column;
+  const repNames=new Map(),coachNames=new Map(),useRoster=sourceSkipsTeamBuild(source);
+  const rep=row=>{
+    if(row?._researchPopulationAnchor||rowSourceKey(row,source)!==source)return getRepIdentity(row,source).normalizedName;
+    const raw=explicitRep?(row?.[explicitRep]||''):repColumn?row?.[repColumn]:(row?._rep||row?._repKey||'');
+    if(repNames.has(raw))return repNames.get(raw);
+    const normalized=normalizeIdentityName(raw),mapped=state.repAliases?.get?.(aliasLookupKey(raw))||state.repAliases?.get?.(normalized)||state.masterRepMap?.get?.(normalized)||'';
+    const key=mapped?normalizeIdentityName(mapped):normalized;
+    if(repNames.size<10000)repNames.set(raw,key);
+    return key;
+  };
   const team=row=>{
-    if(row?._monthly||rowSourceKey(row,source)!==source) return getCoachIdentity(row,source).normalizedName;
+    if(row?._monthly||row?._researchPopulationAnchor||rowSourceKey(row,source)!==source) return getCoachIdentity(row,source).normalizedName;
     let raw;
-    if(rowSkipsTeamBuild(row,source)) raw=state.repTeams?.get?.(rep(row))||'';
+    if(explicitCoach)raw=row?.[explicitCoach]||'';
+    else if(useRoster) raw=state.repTeams?.get?.(rep(row))||'';
     else {raw=coachColumn?row?.[coachColumn]:(row?._team||'');if(!raw)raw=state.repTeams?.get?.(rep(row))||'';}
-    return normalizeIdentityName(canonicalCoachName(raw));
+    if(coachNames.has(raw))return coachNames.get(raw);
+    const key=normalizeIdentityName(canonicalCoachName(raw));
+    if(coachNames.size<10000)coachNames.set(raw,key);
+    return key;
   };
   return {rep,team};
 }
@@ -2539,9 +2605,13 @@ function* researchCohortIdentityBuild(sourceKey,type){
 function researchCohortIdentityIndex(sourceKey,type){ const work=researchCohortIdentityBuild(sourceKey,type); let step; do{step=work.next();}while(!step.done); return step.value; }
 async function prepareResearchJoinIndexes(item,token){
   const sources=researchExecutionSources(item); if(sources.length<2) return;
+  let deadline=performance.now()+12;
   for(const source of sources) for(const type of ['rep','team']){
     const work=researchCohortIdentityBuild(source,type); let step;
-    do{ researchThrowIfCancelled(token); step=work.next(); if(!step.done) await yieldToBrowser(); }while(!step.done);
+    do{
+      researchThrowIfCancelled(token);step=work.next();
+      if(!step.done&&performance.now()>=deadline){await yieldToBrowser();deadline=performance.now()+12;}
+    }while(!step.done);
   }
 }
 function resolveRowsForCohort(sourceKey, cohortContext, options = {}){
@@ -2665,7 +2735,20 @@ function researchGroupDateField(item){
 function researchGroupKey(item,r){ item=effectiveResearchItem(item||{});if((item.eventTimeAxis&&item.guidedTimeGrouping==='period')||(researchHasDynamicPopulation(item)&&researchPopulationPeriod(item)==='period'&&researchGroupDateField(item)))return (item.startDate||'Start')+' → '+(item.endDate||'End'); const dateGroup=researchGroupDateField(item); if(dateGroup) return researchBucketDate(researchFieldValue(r,dateGroup,item.source),researchHasDynamicPopulation(item)?researchPopulationPeriod(item):(item.weeklyTimeAxis?'daily':(item.dateGrouping||'daily')),customSource(item.source)?.columns?.weekStart||'sunday'); if(item.groupExpression) return String(evaluateResearchExpression(r,item.groupExpression,{source:item.source,context:'Research group expression',row:r})??'(blank)'); const metric=findMetricByRef(item.groupField); if(metric) return metric.name||metricRefName(item.groupField)||'Metric'; return String(researchFieldValue(r,item.groupField,item.source)||'(blank)')||'(blank)'; }
 function researchSecondaryKey(item,r){ item=effectiveResearchItem(item||{}); if(!(item.useSecondaryGroup&&item.secondaryGroupField)) return ''; const metric=findMetricByRef(item.secondaryGroupField); if(metric){ const cfg=researchGearGetForItem(item,'secondaryGroupField'); const counts=getMetricEntityCounts(metric,{item,warnings:[]},cfg); const e=metricEntityDisplayKey(r,item.source,counts.entityMode,counts.coachMethod); return counts.bucketByEntity.get(e)||'0'; } return String(researchFieldValue(r,item.secondaryGroupField,item.source)||'(blank)'); }
 function researchPanelKey(item,r){ item=effectiveResearchItem(item||{}); return item.panelField&&['line','bar','scatter','histogram','heatmap','box','pie'].includes(item.outputType)?String(researchFieldValue(r,item.panelField,item.source)||'(blank)'):''; }
-function uniqueCount(rows, field, source){ return new Set(rows.map(r=>field?researchFieldValue(r,field,source):personKeyFromRow(r)).map(v=>String(v??'').trim()).filter(Boolean)).size; }
+function uniqueCount(rows, field, source){
+  const values=new Set(),indexes=new Map();
+  for(const row of rows){
+    let value;
+    if(field)value=researchFieldValue(row,field,source);
+    else{
+      const key=rowSourceKey(row);
+      if(key&&!indexes.has(key))indexes.set(key,sourceIndex(key));
+      value=indexes.get(key)?.rowMeta?.get(row)?.repIdentity||personKeyFromRow(row);
+    }
+    const text=String(value??'').trim();if(text)values.add(text);
+  }
+  return values.size;
+}
 function researchRowsWithFieldValue(rows, field, source){ return (rows||[]).filter(r=>String(researchFieldValue(r,field,source)??'').trim()!==''); }
 function percentBuilderPhrases(value){ const parsed=parseQuotedPhrases(String(value??'')); if(parsed.ok&&parsed.phrases?.length) return parsed.phrases.map(p=>normalizeResearchText(p)).filter(Boolean); return String(value??'').split(/[;,]/).map(p=>normalizeResearchText(p)).filter(Boolean); }
 function comparePercentBuilderRuleValue(left,op,value,value2){
@@ -3522,6 +3605,11 @@ function researchDrilldownFields(item,col){
 }
 async function openResearchCellDrilldown(tokenId, presentation={}){
   const meta=state.researchDrilldownStore?.get(tokenId); if(!meta) return alert('Drilldown context is no longer available. Reopen the Research page and try again.');
+  if(meta.snapshot){
+    const s=meta.snapshot;
+    const detail=Object.entries(s.detail||{}).filter(([,value])=>value!=null&&typeof value!=='object').map(([key,value])=>`<dt>${esc(key)}</dt><dd>${esc(String(value))}</dd>`).join('');
+    return dsDialog('Saved point evidence',`<h3>${esc(meta.rowLabel)} · ${esc(meta.columnLabel)}</h3><p>${esc(String(meta.value??'Missing'))} · ${esc(s.source)} · ${esc(s.date||'Saved snapshot')}</p><dl><dt>Supporting rows</dt><dd>${esc(String(s.rows??'Unknown'))}</dd><dt>Calculation</dt><dd>${esc([s.aggregation,s.field].filter(Boolean).join(' · '))}</dd>${detail}</dl>`);
+  }
   const item=effectiveResearchItem(normalizeResearchItem(presentation.draft||(state.researchItems||[]).find(x=>x.id===meta.itemId)||{})); if(!item.id) return alert('Research item was not found.');
   let wrap=presentation.host||document.getElementById('researchCellFeedbackModal'); if(!wrap){ wrap=document.createElement('div'); wrap.id='researchCellFeedbackModal'; wrap.className='researchFeedbackBackdrop'; wrap.onclick=e=>{ if(e.target===wrap) wrap.remove(); }; document.body.appendChild(wrap); }
   const close=()=>{if(presentation.host)wrap.innerHTML='';else wrap.remove();};
@@ -3551,14 +3639,14 @@ function researchTableHeaderHtml(item,result,sec){ const grainLabel=researchAnal
 function researchDrilldownToken(item,row,colIndex,col,value,display){
   if(!state.researchDrilldownStore) state.researchDrilldownStore=new Map();
   const token='rd_'+id();
-  state.researchDrilldownStore.set(token,{itemId:item.id,rowLabel:row.label||'',secondaryLabel:row.secondary||'',panelLabel:row.panel||'',columnIndex:colIndex,columnLabel:researchColumnDisplayTitle(item,col)||col.label||col.mode||'Value',value,display,renderedDataSignature:item.renderedResult?.dataVersion||item.renderedResult?.renderedAt||''});
+  state.researchDrilldownStore.set(token,{itemId:item.id,snapshot:item._frozenSnapshot?{...item._frozenSnapshot,detail:row.pointDetails?.[colIndex],rows:row.rows,field:col.field,aggregation:col.mode}:null,rowLabel:row.label||'',secondaryLabel:row.secondary||'',panelLabel:row.panel||'',columnIndex:colIndex,columnLabel:researchColumnDisplayTitle(item,col)||col.label||col.mode||'Value',value,display,renderedDataSignature:item.renderedResult?.dataVersion||item.renderedResult?.renderedAt||''});
   return token;
 }
-function researchTableTraceCell(viewer,r,v,i){ const item=viewer.item, result=viewer.result, col=result.columns[i]||{}, saved=(r.cells||[])[i]; const display=saved?(saved.html??esc(saved.text??saved.display??v??'')):null; const drill=researchDrilldownToken(item,r,i,col,v,display); if(saved) return `<td class="right researchTraceCell" data-drilldown-id="${esc(drill)}" style="${esc(saved.style||'')}" title="Click to drill into this saved value">${display}</td>`; const t=r.traces?.[i]||{}, rowObjs=(t.rowRefs||[]).map(researchRowByRef).filter(Boolean), pres=researchColumnCellPresentation(v,item,col,rowObjs,t.ctx||{},result.warnings||[]); if(result.valueOnly) return `<td class="right researchTraceCell" data-drilldown-id="${esc(drill)}" style="${esc(pres.style)}" title="Click to drill into this saved value">${pres.html}</td>`; const traceId=createResearchCellTrace({item,rows:rowObjs,col,rowKey:r.label,columnKey:researchColumnDisplayTitle(item,col)||col.label||i,rowLabel:r.label,secondaryLabel:r.secondary,columnLabel:researchColumnDisplayTitle(item,col)||col.label||col.mode||'Value',displayValue:pres.html,displayValueRaw:v,ctx:t.ctx||{},warnings:result.warnings||[]}); return `<td class="right researchTraceCell" data-trace-id="${esc(traceId)}" data-drilldown-id="${esc(drill)}" style="${esc(pres.style)}" title="Click to view calculation details">${pres.html}</td>`; }
+function researchTableTraceCell(viewer,r,v,i){ const item=viewer.item, result=viewer.result, col=result.columns[i]||{}, saved=(r.cells||[])[i]; const display=saved?(saved.html??esc(saved.text??saved.display??v??'')):null; const drill=researchDrilldownToken(item,r,i,col,v,display); if(saved||item._frozenSnapshot) return `<td class="right researchTraceCell" data-drilldown-id="${esc(drill)}" style="${esc(saved?.style||'')}" title="Click to drill into this saved value">${display??esc(String(v??"—"))}</td>`; const t=r.traces?.[i]||{}, rowObjs=(t.rowRefs||[]).map(researchRowByRef).filter(Boolean), pres=researchColumnCellPresentation(v,item,col,rowObjs,t.ctx||{},result.warnings||[]); if(result.valueOnly) return `<td class="right researchTraceCell" data-drilldown-id="${esc(drill)}" style="${esc(pres.style)}" title="Click to drill into this saved value">${pres.html}</td>`; const traceId=createResearchCellTrace({item,rows:rowObjs,col,rowKey:r.label,columnKey:researchColumnDisplayTitle(item,col)||col.label||i,rowLabel:r.label,secondaryLabel:r.secondary,columnLabel:researchColumnDisplayTitle(item,col)||col.label||col.mode||'Value',displayValue:pres.html,displayValueRaw:v,ctx:t.ctx||{},warnings:result.warnings||[]}); return `<td class="right researchTraceCell" data-trace-id="${esc(traceId)}" data-drilldown-id="${esc(drill)}" style="${esc(pres.style)}" title="Click to view calculation details">${pres.html}</td>`; }
 function researchTableRowHtml(viewer,start,end){ const sec=!!viewer.result.hasSecondary; return (viewer.rows||[]).slice(start,end).map(r=>`<tr><td>${esc(r.label)}</td>${sec?`<td>${esc(r.secondary||'')}</td>`:''}${r.values.map((v,i)=>researchTableTraceCell(viewer,r,v,i)).join('')}</tr>`).join(''); }
 function researchTableTotalRowHtml(viewer){ const item=viewer.item, result=viewer.result, sec=!!result.hasSecondary; if(!item.totals||!viewer.rows.length) return ''; const totalVals=Array.isArray(result.totalValues)?result.totalValues:[], totalCells=Array.isArray(result.totalCells)?result.totalCells:[]; return `<tr><td><strong>Total</strong></td>${sec?'<td></td>':''}${result.columns.map((c,i)=>{ const saved=totalCells[i]; if(saved) return `<td class="right" style="${esc(saved.style||'')}"><strong>${saved.html??esc(saved.text??saved.display??totalVals[i]??'')}</strong></td>`; const pres=researchColumnCellPresentation(totalVals[i],item,c,[],{},result.warnings||[]); return `<td class="right" style="${esc(pres.style)}"><strong>${pres.html}</strong></td>`; }).join('')}</tr>`; }
 function researchVirtualSpacer(height,colspan){ return height>0 ? `<tr class="researchVirtualSpacer" aria-hidden="true"><td colspan="${colspan}" style="height:${Math.max(0,Math.round(height))}px"></td></tr>` : ''; }
-function renderResearchVirtualWindow(id){ const viewer=state.researchVirtualTables?.get(id), root=els.researchCanvas?.querySelector(`[data-virtual-table="${CSS.escape(id)}"]`); if(!viewer||!root) return; const tbody=root.querySelector('tbody'); if(!tbody) return; const rowH=viewer.rowHeight||VIRTUAL_TABLE_ESTIMATED_ROW_HEIGHT, viewRows=Math.ceil(root.clientHeight/rowH), first=Math.max(0,Math.floor(root.scrollTop/rowH)-VIRTUAL_TABLE_BUFFER_ROWS), count=viewRows+(VIRTUAL_TABLE_BUFFER_ROWS*2), end=Math.min(viewer.rows.length,first+count), top=first*rowH, bottom=Math.max(0,(viewer.rows.length-end)*rowH), colspan=1+(viewer.result.hasSecondary?1:0)+(viewer.result.columns||[]).length; tbody.innerHTML=researchVirtualSpacer(top,colspan)+researchTableRowHtml(viewer,first,end)+researchVirtualSpacer(bottom,colspan)+researchTableTotalRowHtml(viewer); root.querySelectorAll('[data-trace-id]').forEach(c=>c.onclick=e=>{ e.stopPropagation(); openResearchCellFeedback(c.dataset.traceId); }); root.querySelectorAll('[data-drilldown-id]:not([data-trace-id])').forEach(c=>c.onclick=e=>{ e.stopPropagation(); openResearchCellDrilldown(c.dataset.drilldownId); }); const firstRow=tbody.querySelector('tr:not(.researchVirtualSpacer)'); if(firstRow){ const h=firstRow.getBoundingClientRect().height; if(h>0 && Math.abs(h-rowH)>2) viewer.rowHeight=h; } }
+function renderResearchVirtualWindow(id){ const viewer=state.researchVirtualTables?.get(id), root=(window.AllStarResearchLibrary?.enabled()?el("researchLibraryDetail"):els.researchCanvas)?.querySelector(`[data-virtual-table="${CSS.escape(id)}"]`); if(!viewer||!root) return; const tbody=root.querySelector('tbody'); if(!tbody) return; const rowH=viewer.rowHeight||VIRTUAL_TABLE_ESTIMATED_ROW_HEIGHT, viewRows=Math.ceil(root.clientHeight/rowH), first=Math.max(0,Math.floor(root.scrollTop/rowH)-VIRTUAL_TABLE_BUFFER_ROWS), count=viewRows+(VIRTUAL_TABLE_BUFFER_ROWS*2), end=Math.min(viewer.rows.length,first+count), top=first*rowH, bottom=Math.max(0,(viewer.rows.length-end)*rowH), colspan=1+(viewer.result.hasSecondary?1:0)+(viewer.result.columns||[]).length; tbody.innerHTML=researchVirtualSpacer(top,colspan)+researchTableRowHtml(viewer,first,end)+researchVirtualSpacer(bottom,colspan)+researchTableTotalRowHtml(viewer); root.querySelectorAll('[data-trace-id]').forEach(c=>c.onclick=e=>{ e.stopPropagation(); openResearchCellFeedback(c.dataset.traceId); }); root.querySelectorAll('[data-drilldown-id]:not([data-trace-id])').forEach(c=>c.onclick=e=>{ e.stopPropagation(); openResearchCellDrilldown(c.dataset.drilldownId); }); const firstRow=tbody.querySelector('tr:not(.researchVirtualSpacer)'); if(firstRow){ const h=firstRow.getBoundingClientRect().height; if(h>0 && Math.abs(h-rowH)>2) viewer.rowHeight=h; } }
 function bindResearchVirtualTables(root=document){ root.querySelectorAll('[data-virtual-table]').forEach(wrap=>{ const id=wrap.dataset.virtualTable; if(wrap.dataset.virtualBound==='1') return; wrap.dataset.virtualBound='1'; wrap.addEventListener('scroll',()=>requestAnimationFrame(()=>renderResearchVirtualWindow(id)),{passive:true}); renderResearchVirtualWindow(id); }); }
 function renderResearchTable(item,result){
   const sec=!!result.hasSecondary, allData=result.data||[], tall=allData.length>35, virtual=allData.length>VIRTUAL_TABLE_THRESHOLD;
@@ -3917,11 +4005,11 @@ function researchProcessingStepCount(item){
   return n;
 }
 function shouldChunkResearchQuery(item,rowCount){ return Number(rowCount)>1000 && researchProcessingStepCount(item)>1; }
-function researchStoredResultValid(item){ return !!(item&&item.renderedResult&&item.renderedResult.outputType===item.outputType&&(item.renderedResult.result||item.renderedResult.storedIn==='indexedDB'||item.renderedResult.id)); }
+function researchStoredResultValid(item){ return !!(item?.renderedResult&&(item.renderedResult.result||item.renderedResult.storedIn==='indexedDB'||item.renderedResult.id)); }
 function researchNoStoredResultBody(item){ return `<div class="researchEmpty"><strong>No rendered result saved. Click Refresh or Render All to calculate this output.</strong><div class="hint">Research formulas will not run automatically while opening, switching tabs, or selecting this saved item.</div><button class="smallBtn green" data-research-refresh="${esc(item.id)}">Refresh / Re-run</button></div>`; }
 function researchLoadingStoredBody(label='Rendering output...', detail=''){ return `<div class="researchEmpty"><div class="loadingTitle">${esc(label)}</div><div class="hint">${esc(detail)}</div></div>`; }
 
-function researchCompactColumnForStorage(item,c){ return {label:c?.label||'',displayTitle:researchColumnDisplayTitle(item,c)||c?.label||c?.mode||'Value',mode:c?.mode||'',field:c?.field||'',measureId:c?.measureId||researchMeasureIdFromRef(c?.field),missingBehavior:c?.missingBehavior||item.missingBehavior||'missing',showAsPercent:!!c?.showAsPercent,formatRules:c?.formatRules||[],displayRules:c?.displayRules||[],elseDisplay:c?.elseDisplay||''}; }
+function researchCompactColumnForStorage(item,c){ return {unit:c?.unit||findMetricByRef(c?.field)?.displayFormat||researchTypedMeasureDefinition(c?.measureId)?.valueType||(c?.showAsPercent?'percent':['count','unique'].includes(c?.mode)?'count':''),label:c?.label||'',displayTitle:researchColumnDisplayTitle(item,c)||c?.label||c?.mode||'Value',mode:c?.mode||'',field:c?.field||'',measureId:c?.measureId||researchMeasureIdFromRef(c?.field),missingBehavior:c?.missingBehavior||item.missingBehavior||'missing',showAsPercent:!!c?.showAsPercent,formatRules:c?.formatRules||[],displayRules:c?.displayRules||[],elseDisplay:c?.elseDisplay||''}; }
 function researchCellPresentationSnapshot(value,item,col,rows=[],ctx={},warnings=[]){ const pres=researchColumnCellPresentation(value,item,col,rows,ctx,warnings); return {raw:value,text:pres.text,html:pres.html,style:pres.style||''}; }
 function researchCompactRenderedResult(item,result){
   if(item.datedStats)return {...clonePlain(result),savedAt:new Date().toISOString()};
@@ -3958,27 +4046,36 @@ function researchRenderedDb(){
   return state.researchRenderedDbPromise;
 }
 function researchIdbReq(req){ return new Promise((resolve,reject)=>{ req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error); }); }
-async function researchRenderedResultPut(item,result,renderedAt){
+function researchImportInProgress(){return !!(state.activeImportJob||state.centralSyncStageActive||state.coachToolsBatchImportRunning);}
+function researchRequireCommittedInputs(){
+  if(researchImportInProgress())throw new Error('Data is updating. Open a saved snapshot or run again when the import finishes.');
+}
+async function researchRenderedResultPut(item,result,renderedAt,isCurrent=()=>true){
   const dataGeneration=state.reportingDataGeneration||'', resultGeneration=Number(state.researchResultGeneration||0);
-  const active=()=>!state.reportingDataClearing && !state.reportingDataCleanupPending && dataGeneration===(state.reportingDataGeneration||'') && resultGeneration===Number(state.researchResultGeneration||0);
+  const active=()=>!researchImportInProgress() && !state.reportingDataClearing && !state.reportingDataCleanupPending && dataGeneration===(state.reportingDataGeneration||'') && resultGeneration===Number(state.researchResultGeneration||0) && isCurrent();
   if(!active()) throw new Error('Reporting data changed before the Research result could be saved.');
-  const db=await researchRenderedDb(), itemId=item.id, data=clonePlain(result||{}), rows=Array.isArray(data.data)?data.data:(Array.isArray(data.rows)?data.rows:[]);
-  let oldMeta=null; try{ const oldTx=db.transaction(RESEARCH_RENDER_META_STORE,'readonly'); oldMeta=await researchIdbReq(oldTx.objectStore(RESEARCH_RENDER_META_STORE).get(itemId)); }catch(_){ oldMeta=null; }
+  const db=await researchRenderedDb(), itemId=item.id, data={...result}, rows=Array.isArray(data.data)?data.data:(Array.isArray(data.rows)?data.rows:[]);
   if(!active()) throw new Error('Reporting data changed while saving the Research result.');
   const rowProp=Array.isArray(data.data)?'data':(Array.isArray(data.rows)?'rows':'');
   if(rowProp) data[rowProp]=[];
   const meta={itemId,version:2,outputType:item.outputType,resultType:item.outputType,renderedAt,rowCount:rows.length,chunkSize:RESEARCH_RENDER_CHUNK_SIZE,rowProp,columns:data.columns||[],customColumnTitles:(data.columns||[]).map(c=>c.customTitle||c.displayTitle||''),displayColumnNames:(data.columns||[]).map(c=>researchColumnDisplayTitle(item,c)),formatting:(data.columns||[]).map(c=>({formatRules:c.formatRules||[],displayRules:c.displayRules||[],elseDisplay:c.elseDisplay||''})),chartConfig:{outputType:item.outputType,groupField:item.groupField,secondaryGroupField:item.secondaryGroupField,panelField:item.panelField,valueMode:item.valueMode,measureId:item.measureId||researchMeasureIdFromRef(item.valueField)},dataVersion:researchItemCacheKey(item,item.outputType==='conversation'?'raw':'agg'),result:data};
-  const tmpId=`${itemId}::tmp::${Date.now()}`;
-  let tx=db.transaction([RESEARCH_RENDER_META_STORE,RESEARCH_RENDER_CHUNK_STORE],'readwrite'), metaStore=tx.objectStore(RESEARCH_RENDER_META_STORE), chunkStore=tx.objectStore(RESEARCH_RENDER_CHUNK_STORE);
-  await researchIdbReq(metaStore.put({...meta,itemId:tmpId,stagingFor:itemId}));
-  for(let i=0;i<rows.length;i+=RESEARCH_RENDER_CHUNK_SIZE){ await researchIdbReq(chunkStore.put({id:`${tmpId}::${Math.floor(i/RESEARCH_RENDER_CHUNK_SIZE)}`,itemId:tmpId,index:Math.floor(i/RESEARCH_RENDER_CHUNK_SIZE),rows:rows.slice(i,i+RESEARCH_RENDER_CHUNK_SIZE)})); }
-  await new Promise((resolve,reject)=>{ tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error); tx.onabort=()=>reject(tx.error); });
-  if(!active()) throw new Error('Reporting data changed while saving the Research result.');
-  tx=db.transaction([RESEARCH_RENDER_META_STORE,RESEARCH_RENDER_CHUNK_STORE],'readwrite'); metaStore=tx.objectStore(RESEARCH_RENDER_META_STORE); const finalChunkStore=tx.objectStore(RESEARCH_RENDER_CHUNK_STORE);
-  await researchIdbReq(metaStore.put({...meta,chunkPrefix:tmpId}));
-  metaStore.delete(tmpId);
-  if(oldMeta?.chunkPrefix && oldMeta.chunkPrefix!==tmpId){ for(let i=0;i<Math.ceil((oldMeta.rowCount||0)/(oldMeta.chunkSize||RESEARCH_RENDER_CHUNK_SIZE));i++) finalChunkStore.delete(`${oldMeta.chunkPrefix}::${i}`); }
-  await new Promise((resolve,reject)=>{ tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error); tx.onabort=()=>reject(tx.error); });
+  // New chunks and the current pointer commit together. Aborting the transaction
+  // keeps the previous generation readable and drops every uncommitted chunk.
+  const prefix=`${itemId}::tmp::${id()}`;
+  const tx=db.transaction([RESEARCH_RENDER_META_STORE,RESEARCH_RENDER_CHUNK_STORE],'readwrite');
+  const metaStore=tx.objectStore(RESEARCH_RENDER_META_STORE),chunks=tx.objectStore(RESEARCH_RENDER_CHUNK_STORE);
+  const previous=await researchIdbReq(metaStore.get(itemId));
+  for(let i=0;i<rows.length;i+=RESEARCH_RENDER_CHUNK_SIZE){
+    const index=Math.floor(i/RESEARCH_RENDER_CHUNK_SIZE);
+    await researchIdbReq(chunks.put({id:`${prefix}::${index}`,itemId:prefix,index,rows:rows.slice(i,i+RESEARCH_RENDER_CHUNK_SIZE)}));
+  }
+  if(!active()){tx.abort();throw Object.assign(new Error('Research changed before this result was saved.'),{name:'AbortError'});}
+  metaStore.put({...meta,chunkPrefix:prefix});
+  if(previous){
+    const chunkCount=Math.ceil(previous.rowCount/(previous.chunkSize||RESEARCH_RENDER_CHUNK_SIZE));
+    for(let i=0;i<chunkCount;i++)chunks.delete(`${previous.chunkPrefix||itemId}::${i}`);
+  }
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
 }
 async function researchRenderedResultGet(itemId){
   if(state.reportingDataClearing || state.reportingDataCleanupPending) return null;
@@ -3988,7 +4085,12 @@ async function researchRenderedResultGet(itemId){
     const db=await researchRenderedDb(), tx=db.transaction([RESEARCH_RENDER_META_STORE,RESEARCH_RENDER_CHUNK_STORE],'readonly'), meta=await researchIdbReq(tx.objectStore(RESEARCH_RENDER_META_STORE).get(itemId));
     if(!meta || state.reportingDataClearing || state.reportingDataCleanupPending || dataGeneration!==(state.reportingDataGeneration||'') || (state.reportingDataClearedAt && (!meta.renderedAt || Date.parse(meta.renderedAt)<=Date.parse(state.reportingDataClearedAt)))){ console.timeEnd('[Research Builder] saved result load'); return null; }
     const rows=[], chunks=Math.ceil((meta.rowCount||0)/(meta.chunkSize||RESEARCH_RENDER_CHUNK_SIZE)), store=tx.objectStore(RESEARCH_RENDER_CHUNK_STORE), prefix=meta.chunkPrefix||itemId;
-    for(let i=0;i<chunks;i++){ const c=await researchIdbReq(store.get(`${prefix}::${i}`)); if(c?.rows) rows.push(...c.rows); }
+    for(let i=0;i<chunks;i++){
+      const chunk=await researchIdbReq(store.get(`${prefix}::${i}`));
+      if(!Array.isArray(chunk?.rows))throw new Error('The saved snapshot is missing a result chunk.');
+      rows.push(...chunk.rows);
+    }
+    if(rows.length!==(meta.rowCount||0))throw new Error('The saved snapshot has an incomplete row count.');
     if(state.reportingDataClearing || state.reportingDataCleanupPending || dataGeneration!==(state.reportingDataGeneration||'')){ console.timeEnd('[Research Builder] saved result load'); return null; }
     const result={...(meta.result||{})}; if(meta.rowProp) result[meta.rowProp]=rows; console.timeEnd('[Research Builder] saved result load'); return result;
   }catch(e){ console.timeEnd('[Research Builder] saved result load'); console.warn('[Research Builder] unable to load rendered result',e); return null; }
@@ -4004,27 +4106,45 @@ async function migrateLegacyResearchRenderedResults(){
   let changed=false;
   for(const item of (state.researchItems||[])){
     if(item.renderedResult?.version===1&&item.renderedResult.result){
-      await researchRenderedResultPut(item,item.renderedResult.result,item.renderedResult.renderedAt||new Date().toISOString());
+      const previous=item.renderedResult,valid=()=>state.researchItems.includes(item)&&item.renderedResult===previous;
+      await researchRenderedResultPut(item,previous.result,previous.renderedAt||new Date().toISOString(),valid);
+      if(!valid())continue;
       item.renderedResult={version:2,outputType:item.outputType,renderedAt:item.renderedResult.renderedAt,id:item.id,storedIn:'indexedDB'};
       changed=true;
     }
   }
   if(changed) persistResearchItemsToLocalStorage();
 }
-async function researchSaveRenderedResult(item,result){
-  if(state.reportingDataClearing || state.reportingDataCleanupPending) return false;
+function researchSnapshotKey(item){
+  const key=researchItemCacheKey(item,item.outputType==='conversation'?'raw':'agg');
+  return researchHashText(key+(item.datedStats?datedResearchInputSignature(item):''));
+}
+async function researchSaveRenderedResult(item,result,options={}){
+  if(researchImportInProgress() || state.reportingDataClearing || state.reportingDataCleanupPending) return false;
   const idx=(state.researchItems||[]).findIndex(x=>x.id===item.id);
   if(idx<0) return false;
   const renderedAt=new Date().toISOString(), generation={};
   state.researchSaveGenerations=state.researchSaveGenerations||new Map(); state.researchSaveGenerations.set(item.id,generation);
-  try{ await researchRenderedResultPut(item,researchCompactRenderedResult(item,result),renderedAt); const current=(state.researchItems||[]).find(x=>x.id===item.id); if(!current||state.researchSaveGenerations.get(item.id)!==generation) return false; current.renderedResult={version:2,outputType:item.outputType,renderedAt,id:item.id,storedIn:'indexedDB'}; persistResearchItemsToLocalStorage(); return true; }
-  catch(e){ console.error('[Research Builder] rendered result storage failed',e); persistResearchItemsToLocalStorage(); return false; }
+  const inputKey=options.inputKey||researchSnapshotKey(item);
+  const currentItem=()=>(state.researchItems||[]).find(x=>x.id===item.id);
+  const valid=()=>!researchImportInProgress()&&!options.token?.cancelled&&state.researchSaveGenerations.get(item.id)===generation&&!!currentItem()&&researchSnapshotKey(currentItem())===inputKey;
+  try{
+    if(!valid())return false;
+    const compact=researchCompactRenderedResult(item,result),{renderedResult,...definition}=item;
+    compact.snapshotDefinition=clonePlain(definition);
+    await researchRenderedResultPut(item,compact,renderedAt,valid);
+    if(!valid())return false;
+    currentItem().renderedResult={version:2,outputType:item.outputType,renderedAt,inputKey,id:item.id,storedIn:'indexedDB'};
+    persistResearchItemsToLocalStorage();return true;
+  }
+  catch(e){ console.error('[Research Builder] rendered result storage failed',e);return false; }
 }
 async function researchStoredResultBodyAsync(item){
   if(!researchStoredResultValid(item)) return researchNoStoredResultBody(item);
   const result=item.renderedResult?.result || await researchRenderedResultGet(item.id);
   if(!result) return researchNoStoredResultBody(item);
-  return researchStoredResultBody({...item,renderedResult:{...item.renderedResult,result}});
+  const display=result.snapshotDefinition||{...item,outputType:item.renderedResult.outputType||item.outputType};
+  return researchStoredResultBody({...display,_frozenSnapshot:{source:labelSource(display.source),date:item.renderedResult.renderedAt},renderedResult:{...item.renderedResult,result}},item);
 }
 function renderGuidedSummaryCards(item,res){
   const col=res.columns?.[0]||{}, data=(res.data||[]).slice(0,item.rowLimit||24);
@@ -4062,14 +4182,15 @@ function renderResearchResultContent(item,res){
   if(item.guidedDisplay==='table_chart') return `${renderResearchVisualization(item,res)}<div style="margin-top:12px">${renderResearchTable(item,res)}</div>`;
   return item.outputType==='conversation'?renderResearchConversationViewer(item,res):(item.outputType==='table'?renderResearchTable(item,res):renderResearchVisualization(item,res));
 }
-function researchStoredResultBody(item){
+function researchStoredResultBody(item,current=item){
   if(!researchStoredResultValid(item)) return researchNoStoredResultBody(item);
   try{
     resetExpressionRunStats();
     const domStart=performance.now(), stored=item.renderedResult.result||{}, warns=(stored.warnings||[]).map(w=>`<div class="researchWarn">${esc(w)}</div>`).join('');
     const dup=stored.duplicateMap, dupBadge=(dup?.enabled&&(dup.excludedCount||dup.excludedRepKeys?.length))?`<div class="researchDiag">Duplicate rep filter applied: ${Number(dup.excludedCount||dup.excludedRepKeys?.length||0).toLocaleString()} duplicate records excluded</div>`:'';
     const stamp=item.renderedResult.renderedAt?`<div class="hint">Loaded from saved rendered results (${new Date(item.renderedResult.renderedAt).toLocaleString()}).</div>`:'';
-    const stale=!stored.inputSignature||stored.inputSignature!==researchExecutionDataSignature(item)?'<div class="researchWarn">Results may be stale — Run to refresh</div>':'';
+    const isStale=current.renderedResult?.inputKey?current.renderedResult.inputKey!==researchSnapshotKey(current):!stored.inputSignature||stored.inputSignature!==researchExecutionDataSignature(current);
+    const stale=isStale?'<div class="researchWarn">Results may be stale — Run to refresh</div>':'';
     const html=stale+stamp+warns+dupBadge+researchJoinSummaryHtml(stored.joinDiagnostics)+researchPerformanceHtml(item,{...(stored.perf||{}),cacheUsed:true},stored.reconciliation)+renderResearchResultByDisplay(item,stored); console.info('[Research Builder] DOM render time',{item:item.title,ms:Math.round(performance.now()-domStart),valueOnly:!!stored.valueOnly}); return html;
   }catch(e){ return researchFailedBody(e); }
 }
@@ -4099,6 +4220,7 @@ function renderResearchCanvasShell(message){
   return items;
 }
 function renderResearchItemBody(item){
+  if(researchImportInProgress())return '<div class="researchDiag">Data is updating. Open a saved snapshot or run again after the import finishes.</div>';
   try{ resetExpressionRunStats(); const computeStart=performance.now(), res=item.outputType==='conversation'?evaluateResearchRawRows(item):evaluateResearchItem(item), renderStart=performance.now(), resultHtml=renderResearchResultByDisplay(item,res); res.perf=res.perf||{}; res.perf.timings=res.perf.timings||{}; res.perf.timings.renderMs=Math.round(performance.now()-renderStart); const warns=(res.warnings||[]).map(w=>`<div class="researchWarn">${esc(w)}</div>`).join(''), dupBadge=(res.duplicateMap?.enabled&&res.duplicateMap.excludedRepKeys?.size)?`<div class="researchDiag" title="Click calculated cells for duplicate details.">Duplicate rep filter applied: ${res.duplicateMap.excludedRepKeys.size.toLocaleString()} duplicate records excluded</div>`:'', html=warns+dupBadge+researchJoinSummaryHtml(res.joinDiagnostics)+queryPlanBadge(res.perf?.queryPlan)+researchPerformanceHtml(item,res.perf,res.reconciliation)+resultHtml+expressionSummaryPanel('Research expression diagnostics'); researchSaveRenderedResult(item,res); recordResearchPerformance(item,res.perf); console.info('[Research Builder]',{item:item.title,cacheUsed:!!res.perf?.cacheUsed,totalComputeTime:res.perf?.totalComputeMs ?? Math.round(renderStart-computeStart),renderTime:res.perf.timings.renderMs,rowsScanned:res.perf?.rowsScanned,indexesUsed:res.perf?.indexesUsed}); return html; }
   catch(e){ return researchFailedBody(e); }
 }
@@ -4114,20 +4236,39 @@ function researchWorkerMeasurePlan(item,outputColumns,groupList){
 async function evaluateResearchTypedWorker(item,groupList,outputColumns,warnings=[],token){
   researchThrowIfCancelled(token);
   const plan=researchWorkerMeasurePlan(item,outputColumns,groupList); if(!plan) return null;
-  const groupIndex=new Uint32Array(plan.rowCount), entityNumbers=new Uint32Array(plan.rowCount), columns=plan.measures.map(({col,resolved})=>{ const a=new Float64Array(plan.rowCount),b=resolved.aggregation==='weighted_rate'?new Float64Array(plan.rowCount):null; a.fill(NaN); if(b)b.fill(NaN); return {aggregation:resolved.aggregation,behavior:col?.missingBehavior||item.missingBehavior||resolved.missingBehavior||'missing',label:resolved.label,a,b,resolved}; }), metas=groupList.map(g=>({label:g.primary,secondary:g.secondary||'',panel:g.panel||'',rows:g.rows?.length||0,dateValue:Number.isFinite(g.dateValue)?g.dateValue:researchSortDateValue(item,g.rows||[])}));
+  if(state.researchWorkerBusy||plan.measures.some(m=>!['count','unique_rep','sum','avg','weighted_rate'].includes(m.resolved.aggregation)))return null;
+  const projectionBytes=plan.rowCount*8*(1+plan.measures.reduce((n,m)=>n+(m.resolved.aggregation==='weighted_rate'?2:1),0));
+  if(projectionBytes>16*1024*1024)return null;
+  const groupIndex=new Uint32Array(plan.rowCount), entityNumbers=new Uint32Array(plan.rowCount), columns=plan.measures.map(({col,resolved})=>{ const a=new Float64Array(plan.rowCount),b=resolved.aggregation==='weighted_rate'?new Float64Array(plan.rowCount):null; a.fill(NaN); if(b)b.fill(NaN); return {aggregation:resolved.aggregation,behavior:col?.missingBehavior||item.missingBehavior||resolved.missingBehavior||'missing',label:resolved.label,a,b,read:['count','unique_rep'].includes(resolved.aggregation)?null:researchNumericReader(b?resolved.numeratorField:resolved.valueField,item.source),readDenominator:b?researchNumericReader(resolved.denominatorField,item.source):null}; }), metas=groupList.map(g=>({label:g.primary,secondary:g.secondary||'',panel:g.panel||'',rows:g.rows?.length||0,dateValue:Number.isFinite(g.dateValue)?g.dateValue:researchSortDateValue(item,g.rows||[])}));
   const idx=sourceIndex(item.source); let offset=0;
-  for(let gi=0;gi<groupList.length;gi++) for(const row of (groupList[gi].rows||[])){ groupIndex[offset]=gi; entityNumbers[offset]=idx?.rowMeta?.get?.(row)?.entityNumber||0; columns.forEach(col=>{ if(['sum','avg','min','max'].includes(col.aggregation)) col.a[offset]=evaluateResearchNumericField(row,col.resolved.valueField,item.source); else if(col.aggregation==='weighted_rate'){ col.a[offset]=evaluateResearchNumericField(row,col.resolved.numeratorField,item.source); col.b[offset]=evaluateResearchNumericField(row,col.resolved.denominatorField,item.source); } }); offset++; if(offset%2000===0){ await yieldToBrowser(); researchThrowIfCancelled(token); } }
+  let deadline=performance.now()+12;
+  for(let gi=0;gi<groupList.length;gi++)for(const row of groupList[gi].rows||[]){
+    groupIndex[offset]=gi;entityNumbers[offset]=idx?.rowMeta?.get?.(row)?.entityNumber||0;
+    for(const col of columns){
+      if(col.aggregation==='count'||col.aggregation==='unique_rep')continue;
+      col.a[offset]=col.read(row);if(col.b)col.b[offset]=col.readDenominator(row);
+    }
+    offset++;
+    if(offset%128===0&&performance.now()>=deadline){await yieldToBrowser();researchThrowIfCancelled(token);deadline=performance.now()+12;}
+  }
   const workerSource=`self.onmessage=e=>{const p=e.data,acc=p.metas.map(()=>({rows:0,cols:p.defs.map(()=>({sum:0,count:0,num:0,den:0,missing:0,unique:new Set()}))}));for(let i=0;i<p.groupIndex.length;i++){const g=acc[p.groupIndex[i]];g.rows++;for(let c=0;c<p.defs.length;c++){const d=p.defs[c],s=g.cols[c],a=p.a[c][i],b=p.b[c]?p.b[c][i]:NaN;if(d.aggregation==='count'){s.count++;continue}if(d.aggregation==='unique_rep'){const u=p.entityNumbers[i];if(u)s.unique.add(u);else s.missing++;continue}if(d.aggregation==='weighted_rate'){if(Number.isFinite(a))s.num+=a;else s.missing++;if(Number.isFinite(b))s.den+=b;else s.missing++;continue}if(Number.isFinite(a)){s.sum+=a;s.count++}else{s.missing++;if(d.behavior==='zero')s.count++}}}const data=p.metas.map((m,g)=>{const values=p.defs.map((d,c)=>{const s=acc[g].cols[c];if(d.aggregation==='count')return s.count;if(d.aggregation==='unique_rep')return s.unique.size;if(d.aggregation==='weighted_rate')return s.den?s.num/s.den*100:(p.zeroBlank?null:0);if(d.aggregation==='avg')return s.count?s.sum/s.count:(d.behavior==='missing'?null:0);return s.sum});return {...m,values}}),missing=p.defs.map((d,c)=>acc.reduce((n,g)=>n+g.cols[c].missing,0));self.postMessage({data,missing})}`;
-  let url=null, worker=null; const started=performance.now();
+  if(state.researchWorkerBusy)return null;
+  state.researchWorkerBusy=true;
+  let url=null, worker=null,reusable=false;const started=performance.now();
   try{
-    researchThrowIfCancelled(token); url=URL.createObjectURL(new Blob([workerSource],{type:'text/javascript'})); worker=new Worker(url);
+    researchThrowIfCancelled(token);worker=state.researchIdleWorker;
+    if(!worker){url=URL.createObjectURL(new Blob([workerSource],{type:'text/javascript'}));worker=new Worker(url);}
     const transfer=[groupIndex.buffer,entityNumbers.buffer], a=columns.map(c=>{transfer.push(c.a.buffer);return c.a;}), b=columns.map(c=>{if(c.b)transfer.push(c.b.buffer);return c.b;});
     const result=await new Promise((resolve,reject)=>{ const finish=(fn,value)=>{clearTimeout(timer);clearInterval(cancelPoll);fn(value);}, timer=setTimeout(()=>finish(reject,new Error('Research worker timed out and will fall back.')),60000), cancelPoll=setInterval(()=>{try{researchThrowIfCancelled(token);}catch(error){finish(reject,error);}},40); worker.onmessage=e=>finish(resolve,e.data); worker.onerror=e=>finish(reject,new Error(e.message||'Research worker failed')); try{ worker.postMessage({groupIndex,entityNumbers,a,b,metas,defs:columns.map(c=>({aggregation:c.aggregation,behavior:c.behavior})),zeroBlank:item.zeroDenominator==='blank'},transfer); }catch(error){finish(reject,error);} });
     researchThrowIfCancelled(token);
     result.missing.forEach((count,i)=>{ if(count&&columns[i].behavior==='warn') warnings.push(`${columns[i].label}: ${count.toLocaleString()} blank/non-numeric inputs were excluded by the worker aggregation.`); });
+    reusable=true;
     return {data:result.data,workerMs:Math.round(performance.now()-started)};
   }catch(error){ if(error.name==='AbortError') throw error; console.warn('[Research Builder] Worker aggregation fell back to the main thread',error); return null; }
-  finally{ if(worker) worker.terminate(); if(url) URL.revokeObjectURL(url); }
+  finally{
+    if(worker){worker.onmessage=null;worker.onerror=null;if(!reusable)worker.terminate();}
+    state.researchIdleWorker=reusable?worker:null;state.researchWorkerBusy=false;if(url)URL.revokeObjectURL(url);
+  }
 }
 
 function researchPopulationCacheKey(item,planned){
@@ -4182,6 +4323,11 @@ async function evaluateResearchItemWorkAsync(item, progress={}){
   item=effectiveResearchItem(normalizeResearchItem(item));
   const cacheKey=researchItemCacheKey(item,'agg'), cached=progress.inspect?null:researchCacheGet(cacheKey); if(cached) return researchCachedPresentation(item,cached);
   const t0=performance.now(), perf={rowsScanned:0,indexesUsed:[],filters:[],cacheUsed:false,timings:{}};
+  let groupDeadline=t0+12;
+  const groupCheckpoint=async()=>{
+    await yieldToBrowser();researchThrowIfCancelled(progress.operationToken||progress.token);
+    groupDeadline=performance.now()+12;
+  };
   const warnings=[]; perf.warnings=warnings; attachResearchRuntime(item,warnings);
   const report=(done,total,stage='Processing research table',stageStart=.34,stageEnd=.94,unit='rows')=>{
     researchThrowIfCancelled(progress.operationToken||progress.token);
@@ -4227,15 +4373,23 @@ async function evaluateResearchItemWorkAsync(item, progress={}){
       parentTotals.set(bucket,bucketUniverse.length||bucketRows.length||0);
       for(let i=0;i<bucketRows.length;i++){
         const r=bucketRows[i], sec=hasSecondary?researchSecondaryKey(item,r):'', panel=researchPanelKey(item,r), key=bucket+'\u0000'+sec+'\u0000'+panel; if(!groups.has(key)) groups.set(key,{primary:bucket,secondary:sec,panel,rows:[],dateValue:researchSortDateValue(item,[r])}); groups.get(key).rows.push(r); groups.get(key).dateValue=Math.min(groups.get(key).dateValue||Infinity,researchSortDateValue(item,[r])||Infinity);
-        if((i+1)%RESEARCH_BATCH_SIZE===0){ report(i+1,bucketRows.length,`Processing research bucket ${processed+1} of ${totalBuckets}`,.34,.58); await yieldToBrowser(); researchThrowIfCancelled(progress.operationToken||progress.token); }
+        if((i&63)===63&&performance.now()>=groupDeadline){ report(i+1,bucketRows.length,`Processing research bucket ${processed+1} of ${totalBuckets}`,.34,.58); await groupCheckpoint(); }
       }
-      processed++; report(processed,totalBuckets,'Processing research buckets',.34,.58,'buckets'); await yieldToBrowser(); researchThrowIfCancelled(progress.operationToken||progress.token);
+      processed++;if(performance.now()>=groupDeadline){report(processed,totalBuckets,'Processing research buckets',.34,.58,'buckets');await groupCheckpoint();}
     }
   }else{
     const readGroup=researchGroupLabelReader(item), groupedLabels=new WeakMap(), dateIndex=sourceIndex(item.source);
     const readDate=row=>{ const ms=dateIndex?.rowMeta?.get(row)?.dateMs; return Number.isFinite(ms)?ms:researchSortDateValue(item,[row]); };
-    for(let i=0;i<universeRows.length;i++){ const r=universeRows[i], p=readGroup(r); groupedLabels.set(r,p); parentTotals.set(p,(parentTotals.get(p)||0)+1); if((i+1)%RESEARCH_BATCH_SIZE===0){ report(i+1,universeRows.length,'Building group totals',.34,.46); await yieldToBrowser(); researchThrowIfCancelled(progress.operationToken||progress.token); } }
-    for(let i=0;i<rows.length;i++){ const r=rows[i], p=groupedLabels.get(r)??readGroup(r), sec=hasSecondary?researchSecondaryKey(item,r):'', panel=researchPanelKey(item,r), key=p+'\u0000'+sec+'\u0000'+panel; if(!groups.has(key)) groups.set(key,{primary:p,secondary:sec,panel,rows:[],dateValue:readDate(r)}); groups.get(key).rows.push(r); groups.get(key).dateValue=Math.min(groups.get(key).dateValue||Infinity,readDate(r)||Infinity); if((i+1)%RESEARCH_BATCH_SIZE===0){ report(i+1,rows.length,'Grouping filtered rows',.46,.58); await yieldToBrowser(); researchThrowIfCancelled(progress.operationToken||progress.token); } }
+    for(let i=0;i<universeRows.length;i++){
+      const r=universeRows[i],p=readGroup(r);groupedLabels.set(r,p);parentTotals.set(p,(parentTotals.get(p)||0)+1);
+      if((i&63)===63&&performance.now()>=groupDeadline){report(i+1,universeRows.length,'Building group totals',.34,.46);await groupCheckpoint();}
+    }
+    for(let i=0;i<rows.length;i++){
+      const r=rows[i],p=groupedLabels.get(r)??readGroup(r),sec=hasSecondary?researchSecondaryKey(item,r):'',panel=researchPanelKey(item,r),key=p+'\u0000'+sec+'\u0000'+panel;
+      let group=groups.get(key);if(!group){group={primary:p,secondary:sec,panel,rows:[],dateValue:readDate(r)};groups.set(key,group);}
+      group.rows.push(r);group.dateValue=Math.min(group.dateValue||Infinity,readDate(r)||Infinity);
+      if((i&63)===63&&performance.now()>=groupDeadline){report(i+1,rows.length,'Grouping filtered rows',.46,.58);await groupCheckpoint();}
+    }
   }
   perf.timings.groupingMs=Math.round(performance.now()-groupingStart); const calculationStart=performance.now();
   const total=universeRows.length||1;
@@ -4261,11 +4415,16 @@ async function evaluateResearchItemWorkAsync(item, progress={}){
 }
 async function renderResearchItemBodyAsync(item, progress={}){
   try{
+    researchRequireCommittedInputs();
+    const inputKey=researchSnapshotKey(item);
     resetExpressionRunStats(); const computeStart=performance.now(), res=item.outputType==='conversation'?evaluateResearchRawRows(item):await evaluateResearchItemAsync(item,progress);
     researchThrowIfCancelled(progress.token);
+    researchRequireCommittedInputs();
+    const current=(state.researchItems||[]).find(row=>row.id===item.id);
+    if(!current||researchSnapshotKey(current)!==inputKey)throw Object.assign(new Error('Research inputs changed. Run again.'),{name:'AbortError'});
     const renderStart=performance.now(), resultHtml=renderResearchResultByDisplay(item,res);
     res.perf=attachResearchPreparationPerf(res.perf||{},item); res.perf.timings=res.perf.timings||{}; res.perf.timings.renderMs=Math.round(performance.now()-renderStart);
-    const persistenceStart=performance.now(), savePromise=researchSaveRenderedResult(item,res);
+    const persistenceStart=performance.now(), savePromise=researchSaveRenderedResult(item,res,{inputKey,token:progress.token});
     const saveWarn='<div class="researchDiag" data-research-save-status>Saving rendered values in the background…</div>', warns=(res.warnings||[]).map(w=>`<div class="researchWarn">${esc(w)}</div>`).join(''), dupBadge=(res.duplicateMap?.enabled&&res.duplicateMap.excludedRepKeys?.size)?`<div class="researchDiag" title="Click calculated cells for duplicate details.">Duplicate rep filter applied: ${res.duplicateMap.excludedRepKeys.size.toLocaleString()} duplicate records excluded</div>`:'', html=saveWarn+warns+dupBadge+researchSourceAuditHtml(item,res.perf,res.joinDiagnostics)+researchJoinSummaryHtml(res.joinDiagnostics)+queryPlanBadge(res.perf?.queryPlan)+researchPerformanceHtml(item,res.perf,res.reconciliation)+resultHtml+expressionSummaryPanel('Research expression diagnostics'), run=recordResearchPerformance(item,res.perf);
     savePromise.then(ok=>{ if(progress.token?.cancelled) return; const ms=Math.round(performance.now()-persistenceStart); run.timings.persistenceMs=ms; res.perf.timings.persistenceMs=ms; renderResearchDiagnosticsDrawer(); document.querySelectorAll(`[data-research-card=\"${CSS.escape(item.id)}\"] [data-research-save-status]`).forEach(n=>n.textContent=ok?`Rendered values saved in ${ms.toLocaleString()} ms.`:'Displayed, but saving rendered values failed.'); });
     console.info('[Research Builder]',{item:item.title,cacheUsed:!!res.perf?.cacheUsed,totalComputeTime:res.perf?.totalComputeMs ?? Math.round(renderStart-computeStart),renderTime:res.perf.timings.renderMs,rowsScanned:res.perf?.rowsScanned,indexesUsed:res.perf?.indexesUsed}); return html;
@@ -4327,6 +4486,7 @@ function moveResearchItem(itemId,dir){ const a=state.researchItems||[], i=a.find
 async function renderResearchCanvas(){ return renderResearchCanvasAsync({reason:'manual'}); }
 async function renderResearchCanvasAsync(opts={}){
   if(!els.researchCanvas) return;
+  if(window.AllStarResearchLibrary?.enabled())return window.AllStarResearchLibrary.refresh();
   const token=newResearchRenderToken(opts.reason||'render');
   const items=renderResearchCanvasShell('Loading research items...');
   if(!items.length) return;
@@ -4346,6 +4506,7 @@ async function renderResearchCanvasAsync(opts={}){
 
 async function renderAllResearchItems(){
   if(!els.researchCanvas) return;
+  if(window.AllStarResearchLibrary?.enabled())return window.AllStarResearchLibrary.run(state.researchItems.map(item=>item.id));
   const items=currentResearchItemsNormalized();
   if(!items.length){ setResearchCanvasStatus('No research items to render.'); return; }
   if(!researchHasAnyData()){ setResearchCanvasStatus('No data is imported yet.'); return; }
@@ -4395,12 +4556,13 @@ async function renderAllResearchItems(){
 }
 function deleteResearchItem(itemId){ if(!confirm('Delete this research item?')) return; state.researchItems=state.researchItems.filter(x=>x.id!==itemId); saveResearchItems(); renderResearchCanvasAsync({reason:'delete'}); }
 async function exportResearchItemData(itemId){
-  const item=normalizeResearchItem(state.researchItems.find(x=>x.id===itemId)||{}); if(!item.id) return;
-  if(item.datedStats){const saved=await researchRenderedResultGet(item.id);if(!saved)return alert('Calculate and save the Dated Stats result first.');downloadText((item.title||'Dated_Stats')+'.json',JSON.stringify(saved,null,2));return;}
+  let item=state.researchItems.find(x=>x.id===itemId); if(!item)return;
   try{
     showProgress(item.outputType==='table'?'Preparing research table export...':'Preparing research export...',2);
-    const res=await researchRenderedResultGet(item.id);
+    const res=item.renderedResult?.result||await researchRenderedResultGet(item.id);
     if(!res){ alert('No rendered result exists for this item. Click Refresh or Render All before exporting.'); return; }
+    item=normalizeResearchItem(res.snapshotDefinition||{...item,outputType:item.renderedResult?.outputType||item.outputType});
+    if(item.datedStats){downloadText((item.title||'Dated_Stats')+'.json',JSON.stringify(res,null,2));return;}
     await yieldToBrowser();
     if(item.outputType==='table'){
       updateProgress('Preparing export rows...',45); await yieldToBrowser();

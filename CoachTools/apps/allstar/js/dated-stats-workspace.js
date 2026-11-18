@@ -14,12 +14,12 @@ function datedStatsConfig(source){
   for(const [field,def] of Object.entries(fields))if(def.inputUnit==='per-date'&&!def.unitReviewed&&!Object.keys(def.unitsByDate||{}).length&&detected.fields[field]?.inputUnit)fields[field]={...def,inputUnit:detected.fields[field].inputUnit};
   return {...data.config,fields};
 }
-function datedStatsUploadedFields(){
-  return ['weeklyRetail','weeklyReferral'].flatMap(source=>Object.entries(datedStatsConfig(source).fields||{}).map(([field,def])=>window.AllStarDatedStats.normalizeMetric({id:'field:'+source+':'+encodeURIComponent(field),name:labelSource(source)+' → '+field,source,field,kind:def.kind,behavior:def.behavior,aggregation:'equal_rep',directField:true})));
+function datedStatsUploadedFields(selectedSource){
+  return (selectedSource?[selectedSource]:['weeklyRetail','weeklyReferral']).flatMap(source=>Object.entries(datedStatsConfig(source).fields||{}).map(([field,def])=>window.AllStarDatedStats.normalizeMetric({id:'field:'+source+':'+encodeURIComponent(field),name:labelSource(source)+' → '+field,source,field,kind:def.kind,behavior:def.behavior,aggregation:'equal_rep',directField:true})));
 }
-function datedStatsAvailableMetrics(){return [...datedStatsUploadedFields(),...state.metrics.filter(m=>m.dataCategory==='datedStats'&&m.output!=='summary')];}
+function datedStatsAvailableMetrics(source){return [...datedStatsUploadedFields(source),...state.metrics.filter(m=>m.dataCategory==='datedStats'&&m.output!=='summary'&&(!source||m.source===source))];}
 function datedStatsResearchMetric(settings){
-  if(settings.fieldMetric)return datedStatsUploadedFields().find(m=>m.id===settings.fieldMetric.id);
+  if(settings.fieldMetric)return datedStatsUploadedFields(settings.fieldMetric.source).find(m=>m.id===settings.fieldMetric.id);
   return state.metrics.find(m=>m.id===settings.metricId);
 }
 function datedStatsSelectMetric(settings,metric){
@@ -53,14 +53,16 @@ function datedStatsCategory(source,required=true,sourceDate=false){
   return pack;
 }
 function datedStatsResolveCoach(raw){const value=window.CoachToolsStatsDirectory?.resolve(raw,'coach')||raw,candidates=[...new Set([...controlRosterRows().map(r=>r._team||r.team),...(window.CoachToolsStatsDirectory?.grouped()||[]).flatMap(g=>g.coaches)].filter(Boolean))],resolved=resolveWeeklyCoachIdentity(value,'',candidates);return resolved.method==='unresolved'?{value:String(value||''),method:'historical source label; not in current directory'}:resolved;}
-async function datedStatsResearchCategory(source,sourceDate,cancelled){
-  const signature=datedStatsSourceSignature(source),existing=sourceDate?datedStatsDirectCategories.get(source):state.categorized.stats?.sources?.[source];
-  if(existing&&!existing.pending&&existing.signature===signature)return existing;
+const datedStatsScopedResearchCategories=new Map();
+async function datedStatsResearchCategory(source,sourceDate,cancelled,onProgress){
+  const scope=typeof allStarGlobalScopeKey==='function'?allStarGlobalScopeKey():'all',cacheKey=source+'/'+sourceDate;
+  const signature=datedStatsSourceSignature(source),existing=scope!=='all'?datedStatsScopedResearchCategories.get(cacheKey):sourceDate?datedStatsDirectCategories.get(source):state.categorized.stats?.sources?.[source];
+  if(existing&&!existing.pending&&existing.signature===signature&&(scope==='all'||existing.scope===scope))return existing;
   const data=state.data[source]||{},config=clonePlain(datedStatsConfig(source)),coaches=new Map();
   if(sourceDate)config.calendar={reviewed:false,frequency:'observation'};
-  const result=await window.AllStarDatedStats.categorizeAsync(data.rows||[],config,{headers:data.headers||[],fileName:data.fileName,resolveIdentity:datedStatsIdentityResolver(source),resolveCoach:raw=>{if(!coaches.has(raw))coaches.set(raw,datedStatsResolveCoach(raw));return coaches.get(raw);},yield:yieldToBrowser,cancelled,progress:(n,total)=>updateProgress(`Preparing ${labelSource(source)} · ${n} / ${total} rows`,8)});
-  if(cancelled()||signature!==datedStatsSourceSignature(source))throw Object.assign(new Error('Research source changed; run again.'),{name:'AbortError'});
-  const pack={...result,signature};if(sourceDate)datedStatsDirectCategories.set(source,pack);else{state.categorized.stats=state.categorized.stats||{version:1,sources:{}};state.categorized.stats.sources[source]=pack;}return pack;
+  const result=await window.AllStarDatedStats.categorizeAsync(getRowsRaw(source),config,{headers:data.headers||[],fileName:data.fileName,resolveIdentity:datedStatsIdentityResolver(source),resolveCoach:raw=>{if(!coaches.has(raw))coaches.set(raw,datedStatsResolveCoach(raw));return coaches.get(raw);},yield:yieldToBrowser,cancelled,progress:onProgress});
+  if(cancelled()||scope!==(typeof allStarGlobalScopeKey==='function'?allStarGlobalScopeKey():'all')||signature!==datedStatsSourceSignature(source))throw Object.assign(new Error('Research source changed; run again.'),{name:'AbortError'});
+  const pack={...result,signature,scope};if(scope!=='all')datedStatsScopedResearchCategories.set(cacheKey,pack);else if(sourceDate)datedStatsDirectCategories.set(source,pack);else{state.categorized.stats=state.categorized.stats||{version:1,sources:{}};state.categorized.stats.sources[source]=pack;}return pack;
 }
 const datedStatsRosterSignatures=new WeakMap();
 function datedStatsRosterSignature(){
@@ -170,23 +172,42 @@ function evaluateDatedStatsMetric(metric,rows,source,warnings=[]){
   if(result.exclusions?.length)warnings.push(`${metric.name}: ${result.missingRepresentatives} representatives missing or excluded. Open Dated Stats Research for period-level evidence.`);
   return result.value;
 }
+const datedEventProjections=new WeakMap();
 function datedStatsEvents(sources=['documented_coaching','checklist','qa']){
-  const events=[],invalidSources=new Set();
+  const result=[],invalidSources=new Set(),uncertainSessions=new Set();
   for(const source of sources){
     const rows=getRowsRaw(source),hs=getHeaders(source);
     const mapped=researchMappedSourceFields(source),dateField=mapped.date;
+    const signature=JSON.stringify([source,researchSourceIndexSignature(source),mapped]),previous=datedEventProjections.get(rows);
+    if(previous?.signature===signature){
+      for(const event of previous.events)result.push(event);
+      if(previous.invalid)invalidSources.add(source);
+      if(previous.uncertain)uncertainSessions.add(source);
+      continue;
+    }
+    const events=[],repMapping=researchSourceMappings()[source]?.rep,sortedHeaders=[...hs].sort();
     const idField=researchExactHeader(source,['Coaching ID','Session ID','Evaluation ID','Event ID','Record ID','ID']);
+    const staffFields=hs.filter(h=>/^(employee|associate|representative|agent|rep)[ _-]*(id|number)$/i.test(h)),staffIds=new Map(),roster=ensureRosterIndex();
+    if(!idField)uncertainSessions.add(source);
     const textFields=[...new Set([mapped.text,...hs.filter(h=>/description|topic|comment|focus|item|notes|category|behavior|type/i.test(h))].filter(Boolean))];
     if(!hs.length&&!rows.length)invalidSources.add(source);
     for(const r of rows){
-      const repId=researchSourceMappings()[source]?.rep?fullNameIdentityKey(researchRowRepName(r,source)):(r._repKey||fullNameIdentityKey(researchRowRepName(r,source)));
+      const repId=repMapping?fullNameIdentityKey(researchRowRepName(r,source)):(r._repKey||fullNameIdentityKey(researchRowRepName(r,source)));
+      if(!idField||String(r[idField]??'').trim()===''||roster.byRepKey.get(repId)?.conflict)uncertainSessions.add(source);
+      for(const field of staffFields){
+        const value=String(r[field]??'').trim().toLowerCase();if(!value)continue;
+        const key=JSON.stringify([repId,field]);if(staffIds.has(key)&&staffIds.get(key)!==value)uncertainSessions.add(source);else staffIds.set(key,value);
+      }
       const rawDate=dateField?r[dateField]:r._date,date=Number.isFinite(window.AllStarDatedStats.day(rawDate))?rawDate:parseDateOnly(rawDate);
       if(!repId||!Number.isFinite(window.AllStarDatedStats.day(date))){invalidSources.add(source);continue;}
-      const fields=Object.fromEntries(hs.map(h=>[h,r[h]])),eventId=idField&&String(r[idField]??'').trim()?r[idField]:JSON.stringify(Object.keys(fields).sort().map(h=>[h,fields[h]]));
+      const fields=Object.fromEntries(hs.map(h=>[h,r[h]])),eventId=idField&&String(r[idField]??'').trim()?r[idField]:JSON.stringify(sortedHeaders.map(h=>[h,fields[h]]));
       events.push({source,repId,date:window.AllStarDatedStats.iso(window.AllStarDatedStats.day(date)),id:eventId,fields,text:textFields.map(h=>r[h]??'').join(' | '),topics:textFields.map(h=>String(r[h]??'')),deliveredBy:r['Coached By']||r['Coaching Delivered By']||''});
     }
+    const distinct=window.AllStarDatedStats.dedupeEvents(events);
+    datedEventProjections.set(rows,{signature,events:distinct,invalid:invalidSources.has(source),uncertain:uncertainSessions.has(source)});
+    for(const event of distinct)result.push(event);
   }
-  const distinct=window.AllStarDatedStats.dedupeEvents(events);distinct.invalidSources=[...invalidSources];return distinct;
+  result.invalidSources=[...invalidSources];result.uncertainSessions=[...uncertainSessions];return result;
 }
 function datedStatsCriterionValue(c,entry,opts={}){
   const metric=state.metrics.find(m=>m.id===c.datedStatsMetricId);
@@ -359,14 +380,51 @@ function openDatedStatsStatConditions(conditions=[],onSave){
   wrap.querySelector('[data-ds-save]').onclick=()=>{read();onSave(rows);wrap.remove();};render();
 }
 function dsMulti(label,name,options,selected=[]){return `<fieldset class="ds-picker"><legend>${esc(label)}</legend><input type="search" data-ds-search placeholder="Search ${esc(label.toLowerCase())}" aria-label="Search ${esc(label)}"><div>${options.map(([v,l])=>`<label data-ds-choice><input type="checkbox" data-ds-multi="${name}" value="${esc(v)}" ${selected.includes(v)?'checked':''}> ${esc(l)}</label>`).join('')}</div></fieldset>`;}
-function openDatedStatsResearchEditor(itemId,preferredSource){
-  const item=state.researchItems.find(i=>i.id===itemId),settings=clonePlain(item?.datedStats||{}),metrics=datedStatsAvailableMetrics();
+function openDatedStatsResearchEditor(itemId,preferredSource,seed){
+  const item=state.researchItems.find(i=>i.id===itemId)||seed,settings=clonePlain(item?.datedStats||{}),metrics=datedStatsAvailableMetrics();
   if(!metrics.length){alert('Upload weekly statistics to choose a numerical field.');return;}
   const selectedMetric=datedStatsResearchMetric(settings)||metrics.find(m=>m.source===preferredSource)||metrics[0];
   let conditions=settings.eventConditions||[],coverage=settings.coverage||{},statConditions=settings.statConditions||[];
-  const observations=datedStatsLoadedObservations(),coaches=[...new Set(observations.map(o=>o.coach).filter(Boolean))].sort(),directory=window.CoachToolsStatsDirectory?.grouped()||[],reps=[...new Map(observations.map(o=>[o.repId,o.rep])).entries()];
+  const observations=(settings.managerNames||[]).map(manager=>({manager})),coaches=settings.coachNames||[],directory=window.CoachToolsStatsDirectory?.grouped()||[],reps=(settings.selectedRepIds||[]).map(id=>[id,id]);
   const wrap=dsDialog('Weekly Stats Research',`<p>Choose a source, a numerical field, and a display. Its dates are ready to use.</p><div class="grid3">${dsInput('Research title','title',item?.title||'Weekly performance trends')}${dsSelect('Data source','source',['weeklyRetail','weeklyReferral'].map(source=>[source,labelSource(source)]),selectedMetric.source)}${dsSelect('Value','metricId',metrics.filter(m=>m.source===selectedMetric.source).map(m=>[m.id,m.directField?m.field:'Custom metric → '+m.name]),selectedMetric.id)}<div class="field"><label>Date / horizontal axis</label><span data-ds-axis>${esc(labelSource(selectedMetric.source))} → ${esc(datedStatsConfig(selectedMetric.source).dateField)}</span></div>${dsSelect('Display','display',[['line','Line graph']], 'line')}</div><details data-ds-research-options><summary>Filters, grouping, and comparisons</summary><div class="grid3">${dsSelect('Membership','mode',[['fixed','Fixed group from anchor window'],['changing','Membership recalculated each week'],['before_after','Before / after first qualifying coaching']],settings.mode||'fixed')}${dsSelect('One line per','groupBy',[['all','All eligible loaded representatives'],['coach','Assigned coach'],['organization','Organization'],['manager','Manager'],['representative','Representative'],['coaching_frequency','Number of coaching sessions']],settings.groupBy||'all')}${dsInput('Measure from (complete period)','startDate',settings.startDate,'date')}${dsInput('Measure through (complete period)','endDate',settings.endDate,'date')}${dsInput('Anchor / coaching window from','anchorStart',settings.anchorStart,'date')}${dsInput('Anchor / coaching window through','anchorEnd',settings.anchorEnd,'date')}${dsSelect('Coaching-frequency window','frequencyWindow',[['anchor','Selected anchor week / range'],['plotted','Each plotted week'],['fixed','Fixed anchor date range'],['rolling','Rolling complete weeks']],settings.frequencyWindow||'anchor')}${dsInput('Rolling weeks','rollingWeeks',settings.rollingWeeks||4,'number')}${dsInput('Coaching topic (optional)','topic',settings.topic||'')}${dsInput('Frequency buckets (last is +)','buckets',(settings.buckets||[0,1,2,3,4]).join(','))}${dsInput('Weeks before coaching','beforeWeeks',settings.beforeWeeks??4,'number')}${dsInput('Complete weeks after coaching','afterWeeks',settings.afterWeeks??6,'number')}</div><div class="row"><button type="button" data-ds-events>Dated Items conditions / coverage</button><span data-ds-event-count>${conditions.length} conditions</span><button type="button" data-ds-stats>Numerical conditions</button><span data-ds-stat-count>${statConditions.length} conditions</span></div><div class="grid2">${dsMulti('Organizations','orgIds',(state.orgs||[]).map(o=>[o.id,o.name]),settings.orgIds||[])}${dsMulti('Managers','managerNames',[...new Set([...directory.map(g=>g.name),...observations.map(o=>o.manager).filter(Boolean)])].map(name=>[name,name]),settings.managerNames||[])}${dsMulti('Coaches','coachNames',coaches.map(c=>[c,c]),settings.coachNames||[])}${dsMulti('Representatives','selectedRepIds',reps,settings.selectedRepIds||[])}</div><p class="hint">An empty selection includes all eligible representatives in the loaded source. Multiple selected organizations are combined without duplicating representatives. Manager and organization selections use saved current membership; assigned coaches on each point come from that reporting period.</p><div class="grid3">${dsSelect('Optional saved model population','modelId',[['','No model restriction'],...state.models.map(m=>[m.id,m.name])],settings.modelId||'')}${dsInput('Model criterion name (qualification)','modelCriterion',settings.modelCriterion||'')}${dsInput('Criterion value must be at least','modelThreshold',settings.modelThreshold??1,'number')}</div><p class="hint">A saved model/category qualification is static context evaluated in the anchor window. It does not become an invented historical measurement.</p></details><div class="row"><button type="button" data-ds-run>Calculate</button><button type="button" data-ds-cancel>Cancel calculation</button><button type="button" class="green" data-ds-save>Save definition &amp; calculated result</button></div><div data-ds-preview-result></div>`);
   const sourcePicker=wrap.querySelector('[data-ds="source"]'),valuePicker=wrap.querySelector('[data-ds="metricId"]');
+  const populationOptions=wrap.querySelector('[data-ds-research-options]');
+  let populationRequest=0;
+  async function loadChoices(){
+    const request=++populationRequest,src=sourcePicker.value;
+    if(!populationOptions.open)return;
+    const cancelled=()=>!wrap.isConnected||request!==populationRequest;
+    try{
+      const pack=await datedStatsResearchCategory(src,true,cancelled);
+      if(cancelled())return;
+      const choices={Coaches:new Map(),Managers:new Map(directory.map(g=>[g.name,g.name])),Representatives:new Map()};
+      for(const o of pack.observations){
+        if(o.coach)choices.Coaches.set(o.coach,o.coach);
+        if(o.manager)choices.Managers.set(o.manager,o.manager);
+        choices.Representatives.set(o.repId,o.rep);
+      }
+      for(const fieldset of populationOptions.querySelectorAll('fieldset.ds-picker')){
+        const label=fieldset.querySelector('legend').textContent,options=choices[label];
+        if(!options)continue;
+        const name={Coaches:'coachNames',Managers:'managerNames',Representatives:'selectedRepIds'}[label];
+        const selected=new Set([...fieldset.querySelectorAll('input:checked')].map(n=>n.value));
+        for(const saved of selected)if(!options.has(saved))options.set(saved,saved);
+        fieldset.querySelector('div').innerHTML=[...options].sort((a,b)=>a[1].localeCompare(b[1])).map(([id,title])=>`<label data-ds-choice><input type="checkbox" data-ds-multi="${name}" value="${esc(id)}" ${selected.has(id)?'checked':''}> ${esc(title)}</label>`).join('');
+        fieldset.querySelector('[data-ds-search]').oninput?.();
+      }
+    }catch(error){if(!cancelled())dsMessage(wrap,error.message);}
+  }
+  populationOptions.addEventListener('toggle',loadChoices);sourcePicker.addEventListener('change',loadChoices);
+  if(seed?.datedStats?.mode==='before_after')populationOptions.open=true;
+  if(settings.relationship==='sessions_performance'){
+    const review=document.createElement('section');review.innerHTML='<h3>Match the two sources</h3><p>Match on canonical representative. Compare each representative within the same complete reporting week. The weekly file supplies the historical coach assignment. Current organization and manager selections restrict eligibility. Events must have distinct session IDs and confirmed coverage.</p><div class="row"><button type="button" data-pair-sample>Inspect source sample</button><button type="button" data-pair-map>Review weekly mapping</button><button type="button" data-pair-cover>Review coaching coverage</button></div><p role="status"></p>';populationOptions.before(review);
+    review.querySelector('[data-pair-map]').onclick=()=>openDatedStatsSourceEditor(sourcePicker.value);
+    review.querySelector('[data-pair-cover]').onclick=()=>wrap.querySelector('[data-ds-events]').click();
+    review.querySelector('[data-pair-sample]').onclick=()=>{
+      const source=sourcePicker.value,report=researchJoinSample({source,dateColumn:datedStatsConfig(source).dateField,analysisGrain:'representatives',startDate:wrap.querySelector('[data-ds="startDate"]').value,endDate:wrap.querySelector('[data-ds="endDate"]').value},[source,'documented_coaching']);
+      review.lastChild.textContent=report.sources.map(s=>labelSource(s.source)+' · '+s.inspected+' sampled source rows · '+s.matched+' matched representative keys · '+s.unmatched+' unmatched · '+s.ambiguous+' ambiguous · '+s.duplicates+' repeated').join(' / ')+'. This sample uses the current data scope and date window. Full results apply all cohort conditions and match exact periods.';
+    };
+  }
   sourcePicker.onchange=()=>{valuePicker.innerHTML=metrics.filter(m=>m.source===sourcePicker.value).map(m=>`<option value="${esc(m.id)}">${esc(m.directField?m.field:'Custom metric → '+m.name)}</option>`).join('');wrap.querySelector('[data-ds-axis]').textContent=labelSource(sourcePicker.value)+' → '+datedStatsConfig(sourcePicker.value).dateField;};
   let result=null,resultSignature='',generation=0;
   wrap.querySelectorAll('[data-ds-search]').forEach(input=>input.oninput=()=>{const q=input.value.toLowerCase();input.closest('fieldset').querySelectorAll('[data-ds-choice]').forEach(l=>l.hidden=!l.textContent.toLowerCase().includes(q));});
@@ -382,18 +440,39 @@ function openDatedStatsResearchEditor(itemId,preferredSource){
     wrap.querySelector('[data-ds-preview-result]').innerHTML=researchLoadingStoredBody('Calculating Research…','Preparing the selected sources.');
     await yieldToBrowser();
     if(current!==generation||!wrap.isConnected)return null;
-    const calculated=await evaluateDatedStatsResearch(next,{token:{get cancelled(){return current!==generation||!wrap.isConnected;}}});
+    const calculated=await evaluateDatedStatsResearch(next,{stage:message=>dsMessage(wrap,message),token:{get cancelled(){return current!==generation||!wrap.isConnected;}}});
     if(current!==generation)return null;result=calculated;resultSignature=signature;wrap.querySelector('[data-ds-preview-result]').innerHTML=renderDatedStatsResult(next,calculated);bindDatedStatsCharts(wrap);dsMessage(wrap,`${calculated.data.length} points calculated. Missing weeks remain gaps.`);return next;
   };
   wrap.querySelector('[data-ds-run]').onclick=()=>run().catch(e=>dsMessage(wrap,e.message));
   wrap.querySelector('[data-ds-cancel]').onclick=()=>{generation++;dsMessage(wrap,'Calculation cancelled. Previous saved results retained.');};
+  const saveOnly=document.createElement('button');saveOnly.type='button';saveOnly.textContent='Save definition';wrap.querySelector('[data-ds-save]').before(saveOnly);
+  saveOnly.onclick=()=>{
+    try{const next=read(),prior=state.researchItems.find(i=>i.id===next.id);if(prior)next.renderedResult=prior.renderedResult;
+      generation++;state.researchItems=[...state.researchItems.filter(i=>i.id!==next.id),next];saveResearchItems();wrap.remove();renderResearchCanvasAsync({reason:'Saved definition'});
+    }catch(error){dsMessage(wrap,error.message);}
+  };
   wrap.querySelector('[data-ds-save]').onclick=async()=>{
-    try{let next=read();if(!result||JSON.stringify(next.datedStats)!==resultSignature||result.sourceSignature!==JSON.stringify([datedStatsSourceSignature(next.source),state.metrics,state.orgs,['documented_coaching','checklist','qa'].map(source=>state.sourceMeta[source]?.sourceVersion||0)])){next=await run();if(!next)return;}
+    try{researchRequireCommittedInputs();let next=read();if(!result||JSON.stringify(next.datedStats)!==resultSignature||result.sourceSignature!==datedResearchInputSignature(next)){next=await run();if(!next)return;}
+      const prior=state.researchItems.find(i=>i.id===next.id);if(prior?.renderedResult)next.renderedResult=prior.renderedResult;
       state.researchItems=[...state.researchItems.filter(i=>i.id!==next.id),next];saveResearchItems();const saved=await researchSaveRenderedResult(next,result);if(!saved)throw new Error('Definition saved, but the result could not be saved. Retry saving the calculated result.');wrap.remove();await renderResearchCanvasAsync({reason:'Dated Stats saved'});
     }catch(e){dsMessage(wrap,e.message);}
   };
+  return wrap;
+}
+function datedResearchEventSources(s){
+  const sources=new Set((s.eventConditions||[]).map(condition=>condition.source));
+  if(s.measure==='calculated')for(const source of window.AllStarDatedStats.calculationSources(s.calculation))sources.add(source);
+  if(s.relationship==='sessions_performance'||s.groupBy==='coaching_frequency'||s.mode==='before_after'||['coaching_count','coaching_per_rep','coached_percent'].includes(s.measure))sources.add(s.coachingSource||'documented_coaching');
+  function includeClause(clause){if(!clause)return;if(clause.source)sources.add(clause.source);(clause.children||[]).forEach(includeClause);includeClause(clause.where);}
+  includeClause(s.sentenceQuery?.root);
+  return [...sources].filter(Boolean);
+}
+function datedResearchInputSignature(item){
+  const sources=datedResearchEventSources(item.datedStats);
+  return JSON.stringify([datedStatsSourceSignature(item.source),typeof allStarGlobalScopeKey==='function'?allStarGlobalScopeKey():'all',state.metrics,state.orgs,item.datedStats.modelId&&findModel(item.datedStats.modelId),sources.map(source=>[source,state.sourceMeta[source]?.sourceVersion||0,researchSourceMappings()[source]||{}])]);
 }
 async function evaluateDatedStatsResearch(item,progress={}){
+  if(typeof researchRequireCommittedInputs==='function')researchRequireCommittedInputs();
   const operation={};datedStatsResearchOperations.set(item.id,operation);
   const cancelled=()=>progress.token?.cancelled||datedStatsResearchOperations.get(item.id)!==operation;
   await yieldToBrowser();
@@ -401,8 +480,9 @@ async function evaluateDatedStatsResearch(item,progress={}){
   const E=window.AllStarDatedStats,s=clonePlain(item.datedStats),metric=datedStatsResearchMetric(s);if(!metric)throw new Error('This Research definition references a missing Dated Stats metric.');
   if(metric.output==='summary')throw new Error('This metric returns a trend summary. Choose a single-value or series metric for period-by-period Research; Models can evaluate the summary.');
   if(s.sentenceQuery?.view==='number')s.resultWindow='range';
-  const pack=await datedStatsResearchCategory(metric.source,!!metric.directField,cancelled);
-  const dependency=()=>JSON.stringify([datedStatsSourceSignature(metric.source),state.metrics,state.orgs,['documented_coaching','checklist','qa'].map(source=>[state.sourceMeta[source]?.sourceVersion||0,researchSourceMappings()[source]||{}])]),sourceVersion=dependency(),settings={...s},orgs=(state.orgs||[]).filter(o=>s.orgIds?.includes(o.id)),directory=window.CoachToolsStatsDirectory?.grouped()||[];
+  const stage=(message,percent)=>{if(progress.stage)progress.stage(message);else if(researchProgressActive(progress.token))updateResearchProgress(progress.token,message,percent);};
+  const pack=await datedStatsResearchCategory(metric.source,!!metric.directField,cancelled,(n,total)=>stage('Preparing '+labelSource(metric.source)+' · '+n+' / '+total+' rows',8));
+  const dependency=()=>datedResearchInputSignature(item),sourceVersion=dependency(),settings={...s},orgs=(state.orgs||[]).filter(o=>s.orgIds?.includes(o.id)),directory=window.CoachToolsStatsDirectory?.grouped()||[];
   const selectedManagers=directory.filter(g=>s.managerNames?.includes(g.name));
   const restrictSets=[];
   if(s.orgIds?.length){if(orgs.length!==s.orgIds.length)throw new Error('A selected organization is missing. Review the population selection.');restrictSets.push(new Set(orgs.flatMap(o=>o.coachNames).map(coachNameKey)));}
@@ -432,10 +512,23 @@ async function evaluateDatedStatsResearch(item,progress={}){
     }
   }
   const eventSources=[...new Set([...(s.eventConditions||[]).map(c=>c.source),...(s.measure==='calculated'?E.calculationSources(s.calculation):[]),...((s.groupBy==='coaching_frequency'||s.mode==='before_after'||['coaching_count','coaching_per_rep','coached_percent'].includes(s.measure))?[s.coachingSource||'documented_coaching']:[])])];
-  const events=datedStatsEvents(eventSources);
+  if(s.relationship==='sessions_performance'){
+    if(metric.directField||!pack.config.calendar.reviewed||pack.config.calendar.frequency!=='week')throw new Error('Review the weekly calendar and select a saved performance metric before aligning coaching sessions.');
+    if(s.mode==='before_after'||s.resultWindow==='range')throw new Error('Choose fixed or changing membership with complete reporting weeks for this relationship.');
+    eventSources.push(s.coachingSource||'documented_coaching');
+  }
+  const events=datedStatsEvents([...new Set(eventSources)]);
   if(events.invalidSources.length){settings.coverage={...settings.coverage};for(const source of events.invalidSources)settings.coverage[source]={...(settings.coverage[source]||settings.coverage),complete:false};}
-  const runMetric=m=>E.research(observations,{...m,startDate:s.startDate||m.startDate,endDate:s.endDate||m.endDate},settings,events,{yield:yieldToBrowser,cancelled:()=>cancelled()||sourceVersion!==dependency(),progress:(n,total)=>updateProgress(`Research · ${m.name} · ${n} / ${total} periods`,Math.round(n/total*100))});
+  const runMetric=(m,config=settings)=>E.research(observations,{...m,startDate:s.startDate||m.startDate,endDate:s.endDate||m.endDate},config,events,{yield:yieldToBrowser,cancelled,progress:(n,total)=>stage(`Research · ${m.name} · ${n} / ${total} periods`,Math.round(n/total*100))});
   const result=await runMetric(metric);
+  const identities=researchHashText(stableSerialize([datedStatsRosterSignature(),[...(state.repAliases||[])],[...(state.masterRepMap||[])],state.quarantinedRepAliases||[],typeof weeklyDirectoryRevision==='function'?weeklyDirectoryRevision():0]));
+  result.pairingContext={scope:typeof allStarGlobalScopeKey==='function'?allStarGlobalScopeKey():'all',identities};
+  if(s.measure==='coaching_count'&&events.uncertainSessions.includes(s.coachingSource||'documented_coaching'))result.pairingContext.uncertain=true;
+  if(s.relationship==='sessions_performance'){
+    const sessionResult=await runMetric(metric,{...settings,measure:'coaching_count',activityWindow:'period'});
+    sessionResult.pairingContext={...result.pairingContext,uncertain:events.uncertainSessions.includes(s.coachingSource||'documented_coaching')};
+    result.relationship={...E.alignResearchMeasures(sessionResult,result),xLabel:'Distinct coaching sessions',yLabel:metric.name,independentCounts:sessionResult.data.map(p=>({label:p.label,line:p.line,value:p.value,eligible:p.eligibleRepresentatives,unknown:p.missingRepresentatives}))};
+  }
   if(!s.measure||s.measure==='performance'){
     result.additionalMetrics=[];
     for(const metricId of [...new Set(s.additionalMetricIds||[])].filter(id=>id!==metric.id).slice(0,6)){
@@ -446,6 +539,8 @@ async function evaluateDatedStatsResearch(item,progress={}){
       result.additionalMetrics.push({name:additional.name,result:await runMetric(additional)});
     }
   }
+  if(cancelled()||sourceVersion!==dependency())throw Object.assign(new Error('Research inputs changed. Run again.'),{name:'AbortError'});
+  if(typeof researchRequireCommittedInputs==='function')researchRequireCommittedInputs();
   result.calendar=pack.config.calendar;result.sourceSignature=sourceVersion;result.description+=' · '+labelSource(metric.source);result.perf={rowsScanned:observations.length};
   if(metric.directField&&(!s.measure||s.measure==='performance')){
     const grouping={all:'All representatives',coach:'One line per coach',representative:'One line per representative',manager:'One line per manager',organization:'One line per organization',coaching_frequency:'One line per coaching frequency'};
@@ -462,6 +557,34 @@ function datedStatsSparkline(points){
   return `<svg viewBox="0 0 280 64" class="ds-sparkline" role="img" aria-label="Trend sparkline; missing periods are gaps">${segments.map(p=>`<polyline points="${p.join(' ')}" fill="none" stroke="currentColor" stroke-width="2"/>`).join('')}</svg>`;
 }
 const datedStatsChartResults=new Map();
+const datedPairedViews=new WeakMap();
+function showDatedResearchRelationship(host,pair){
+  if(!pair||datedPairedViews.get(host)===pair)return;datedPairedViews.set(host,pair);
+  const counts=pair.coverage,summary=counts?`${counts.matched} matched · ${counts.leftOnly} only on X · ${counts.rightOnly} only on Y · ${counts.duplicates} duplicate keys · ${counts.excluded} excluded · ${counts.unknown} unknown coverage`:'';
+  host.innerHTML=`<h3>Relationship by representative and period</h3><p>${esc(summary)}</p>`;
+  if(!pair.verified){
+    const message=document.createElement('p');message.textContent=pair.reason+' Review the representative, date and coverage settings.';host.appendChild(message);
+    if(pair.independentCounts?.length){
+      const details=document.createElement('details');details.innerHTML='<summary>Independent coaching session totals</summary><div></div>';
+      details.ontoggle=()=>{if(details.open&&!details.lastChild.children.length){
+        const result={columns:[{label:'Distinct sessions'},{label:'Eligible representatives'},{label:'Missing or unknown'}],data:pair.independentCounts.map(p=>({label:p.label,secondary:p.line,values:[p.value,p.eligible,p.unknown]}))};
+        window.AllStarResearchLibrary.showTable(details.lastChild,result);
+      }};host.appendChild(details);
+    }return;
+  }
+  const points=pair.points,n=Math.min(points.length,500),sample=Array.from({length:n},(_,i)=>points[Math.floor(i*points.length/n)]),C=window.AllStarCharts;
+  const axis=(label,measure)=>[label,measure.unit].filter(Boolean).join(' · ');
+  const x=axis(pair.xLabel,points[0].x),y=axis(pair.yLabel,points[0].y);
+  const chart={columns:[{label:y}],data:sample.map(p=>({label:p.rep+' · '+p.start,xValue:p.x.value,values:[p.y.value]}))};
+  const def=C.normalize({type:'scatter',x:'xValue',y:[0],xLabel:x,yLabel:y,title:y+' by '+x},{},chart);
+  const drawing=document.createElement('div');drawing.innerHTML=C.renderSVG(def,C.buildDataset(def,chart)).svg;host.appendChild(drawing);
+  const note=document.createElement('p');note.textContent=`One mark per eligible representative and exact period. Showing ${n} of ${points.length} matched values. X uses ${points[0].x.aggregation}. Y uses ${points[0].y.aggregation}.`;host.appendChild(note);
+  const table=document.createElement('details');table.innerHTML='<summary>All paired values and evidence</summary><div></div>';
+  const values=()=>({columns:[{label:x},{label:y},{label:'X numerator'},{label:'X denominator'},{label:'Y numerator'},{label:'Y denominator'},{label:'X source records'},{label:'Y source records'}],data:points.map(p=>({label:p.rep,secondary:p.start+' through '+p.end,values:[p.x.value,p.y.value,p.x.numerator,p.x.denominator,p.y.numerator,p.y.denominator,p.x.observations.join(', '),p.y.observations.join(', ')]}))});
+  table.ontoggle=()=>{if(table.open&&!table.lastChild.children.length)window.AllStarResearchLibrary.showTable(table.lastChild,values());};host.appendChild(table);
+  const download=document.createElement('button');download.type='button';download.textContent='Export all paired values and evidence';download.onclick=()=>downloadText('Research_paired_values.json',JSON.stringify(pair,null,2));host.appendChild(download);
+  const csv=document.createElement('button');csv.type='button';csv.textContent='Export all paired values CSV';csv.onclick=()=>window.AllStarResearchLibrary.exportCsv({title:'Research paired values'},{...values(),lineage:pair.context});host.appendChild(csv);
+}
 const DATED_CHART_VIEWS_KEY='allstar.datedStatsChartViews.v1';
 function datedStatsChartPreferences(value={}){return {...AllStarCharts.linePreferences(value),rolling:[0,2,3,4,6,8,12].includes(Number(value.rolling))?Number(value.rolling):0};}
 function datedStatsSavedChartPreferences(itemId){try{return datedStatsChartPreferences(JSON.parse(localStorage.getItem(DATED_CHART_VIEWS_KEY)||'{}')[itemId]||{});}catch(_){return datedStatsChartPreferences();}}
@@ -469,14 +592,25 @@ function datedStatsLineControls(prefs){
   return `<details class="ds-line-options"><summary>Line display and labels</summary><div class="grid4">${dsSelect('Rolling average','rolling',[[0,'Off'],[2,'2 weeks / points'],[3,'3 weeks / points'],[4,'4 weeks / points'],[6,'6 weeks / points'],[8,'8 weeks / points'],[12,'12 weeks / points']],prefs.rolling)}${dsSelect('Line display','rollingDisplay',[['overlay','Original + rolling average'],['only','Rolling average only']],prefs.rollingDisplay)}${dsSelect('Line labels','endLabelMode',[['none','No line labels'],['all','All lines (up to 8)'],['top','Top N by average'],['bottom','Bottom N by average'],['both','Top and bottom N by average']],prefs.endLabelMode)}${dsInput('Number at each end (N)','endLabelCount',prefs.endLabelCount,'number')}</div><p class="hint">Dated points use trailing calendar weeks; relative-week charts use that many points. Missing values remain gaps; starting windows use available values. Top/bottom labels rank each visible line’s unsmoothed average over the displayed dates. Other lines stay visible.</p><button type="button" class="smallBtn" data-ds-save-view>Save chart defaults</button><span role="status" data-ds-view-status></span></details>`;
 }
 
+function datedPairedEndpoints(result){
+  const movement=result.movement||[],valid=movement.flatMap(row=>[row.first,row.latest]).filter(Number.isFinite);
+  const low=valid.reduce((a,b)=>Math.min(a,b),Infinity),high=valid.reduce((a,b)=>Math.max(a,b),-Infinity);
+  const y=value=>12+(high-low?(high-value)/(high-low):.5)*40;
+  return `<section><h3>Paired change around the first qualifying coaching</h3><p>Each endpoint uses representatives observed at both ends. Week 0 includes time before and after the session.</p><div class="tableWrap"><table><thead><tr><th>Group</th><th>First week</th><th>Change</th><th>Last week</th><th>Paired reps</th><th>Reps missing an endpoint</th></tr></thead><tbody>${movement.map(row=>{
+    const ends=result.data.filter(p=>p.line===row.line&&(p.label===row.firstPeriod||p.label===row.lastPeriod));
+    const population=new Set(ends.flatMap(point=>point.members||[])).size;
+    const slope=Number.isFinite(row.first)&&Number.isFinite(row.latest)?`<svg width="76" height="64" viewBox="0 0 76 64" aria-hidden="true"><line x1="7" x2="69" y1="${y(row.first)}" y2="${y(row.latest)}" stroke="#2668b5" stroke-width="2"/><circle cx="7" cy="${y(row.first)}" r="4" fill="#2668b5"/><circle cx="69" cy="${y(row.latest)}" r="4" fill="#2668b5"/></svg>`:'';
+    return `<tr><th>${esc(row.line)}</th><td>${esc(row.firstPeriod)}<br>${dsNumber(row.first)} ${esc(row.unit)}</td><td>${slope} ${dsNumber(row.change)} ${esc(row.changeUnit)}</td><td>${esc(row.lastPeriod)}<br>${dsNumber(row.latest)} ${esc(row.unit)}</td><td>${row.pairedRepresentatives}</td><td>${Math.max(0,population-row.pairedRepresentatives)}</td></tr>`;
+  }).join('')}</tbody></table></div></section>`;
+}
 function renderDatedStatsResult(item,result){
   const token='ds_'+id(),prefs=datedStatsSavedChartPreferences(item.id);datedStatsChartResults.set(token,{result,itemId:item.id,prefs});if(datedStatsChartResults.size>80)datedStatsChartResults.delete(datedStatsChartResults.keys().next().value);
   const lines=[...new Set((result.data||[]).map(p=>p.line))],palette=['#c6253b','#2668b5','#18806a','#8654a8','#bc6d14','#516174','#b0458b','#1c8495'];
-  return `<section class="ds-result" data-ds-chart="${token}"><p><strong>${esc(result.description||'Dated Stats')}</strong></p><p class="hint">${esc(result.savedAt?'Saved snapshot · '+result.savedAt:'Calculated preview · '+(result.calculatedAt||''))} · ${esc((result.warnings||[]).join(' '))}</p><div class="row"><input type="search" data-ds-legend-search placeholder="Search chart lines"><button type="button" class="smallBtn" data-ds-show-all>Show all</button><button type="button" class="smallBtn" data-ds-export>Export definition &amp; evidence JSON</button></div><div class="ds-legend">${lines.map((line,i)=>`<span data-ds-line-option="${esc(line.toLowerCase())}"><label><input type="checkbox" data-ds-line="${i}" checked> <span style="color:${AllStarCharts.colorForIndex(i)}">${esc(line)}</span></label><button type="button" class="smallBtn" data-ds-isolate="${i}">Isolate</button></span>`).join('')}</div>${datedStatsLineControls(prefs)}<div data-ds-plot>${datedStatsPlot(result,lines,prefs)}</div><details><summary>Point values, eligibility, and evidence</summary><div class="tableWrap ds-points"><table><thead><tr><th>Period</th><th>Line</th><th>Value</th><th>Eligible reps</th><th>Missing reps</th><th>Numerator</th><th>Denominator</th></tr></thead><tbody>${(result.data||[]).map((p,i)=>`<tr><td>${esc(p.label)}</td><td>${esc(p.line)}</td><td><button type="button" class="smallBtn" data-ds-point="${i}">${dsNumber(p.value)} ${esc(p.unit||'')}</button></td><td>${p.eligibleRepresentatives}</td><td>${p.missingRepresentatives}</td><td>${dsNumber(p.numerator)}</td><td>${dsNumber(p.denominator)}</td></tr>`).join('')}</tbody></table></div></details></section>`;
+  return (item.questionKind==='Before and after'&&item.datedStats.mode==='before_after'?datedPairedEndpoints(result):'')+`<section class="ds-result" data-ds-chart="${token}"><p><strong>${esc(result.description||'Dated Stats')}</strong></p><p class="hint">${esc(result.savedAt?'Saved snapshot · '+result.savedAt:'Calculated preview · '+(result.calculatedAt||''))} · ${esc((result.warnings||[]).join(' '))}</p><div class="row"><input type="search" data-ds-legend-search placeholder="Search chart lines"><button type="button" class="smallBtn" data-ds-show-all>Show all</button><button type="button" class="smallBtn" data-ds-export>Export definition &amp; evidence JSON</button></div><div class="ds-legend">${lines.map((line,i)=>`<span data-ds-line-option="${esc(line.toLowerCase())}"><label><input type="checkbox" data-ds-line="${i}" checked> <span style="color:${AllStarCharts.colorForIndex(i)}">${esc(line)}</span></label><button type="button" class="smallBtn" data-ds-isolate="${i}">Isolate</button></span>`).join('')}</div>${datedStatsLineControls(prefs)}<div data-ds-plot>${datedStatsPlot(result,lines,prefs)}</div><details data-ds-values><summary>Point values, eligibility, and evidence</summary><div></div></details></section>`;
 }
 function datedStatsPlot(result,visibleLines,preferences={}){
   const C=AllStarCharts,prefs=datedStatsChartPreferences(preferences),data=result.data||[],labels=result.axisLabels?.length?result.axisLabels:[...new Set(data.map(p=>p.label))],lines=[...new Set(data.map(p=>p.line))],byLine=new Map();
-  data.forEach((p,index)=>{if(!byLine.has(p.line))byLine.set(p.line,new Map());byLine.get(p.line).set(p.label,{...p,sourcePointIndex:index});});
+  data.forEach((p,index)=>{if(!byLine.has(p.line))byLine.set(p.line,new Map());byLine.get(p.line).set(p.label,{...p,sourcePointIndex:p.displaySourceIndex??index});});
   const series=lines.map(line=>({id:line,name:line,points:labels.map((label,index)=>{const p=byLine.get(line)?.get(label);return {index,label,categoryKey:label,date:/^\d{4}-\d{2}-\d{2}$/.test(label)?Date.parse(label):null,value:Number.isFinite(p?.value)?p.value:null,sourcePointIndex:p?.sourcePointIndex,detail:p?{metric:result.measureLabel||result.definition?.metric?.name,representatives:p.eligibleRepresentatives,numerator:p.numerator,denominator:p.denominator,numeratorLabel:'Numerator',denominatorLabel:'Denominator'}:null};})}));
   const averages=prefs.rolling>1?series.map(s=>{const values=C.weeklyMovingAverage(s.points,prefs.rolling);return {id:s.id+'::rolling',parentId:s.id,name:s.name+' · '+prefs.rolling+(s.points.every(p=>Number.isFinite(p.date))?'-week':'-point')+' rolling average',derived:true,layerKind:'rolling',points:s.points.map((p,i)=>({...p,value:values[i],detail:null}))};}):[];
   const def={type:'line',title:result.measureLabel||result.definition?.metric?.name||'Research trend',lineWidth:2,grid:true,points:true,decimals:2,format:data.some(p=>p.unit==='%')?'percent':'number',...prefs,hiddenSeries:lines.filter(line=>!visibleLines.includes(line))};
@@ -486,11 +620,42 @@ function datedStatsPlot(result,visibleLines,preferences={}){
 function bindDatedStatsCharts(host){
   host?.querySelectorAll('[data-ds-chart]').forEach(box=>{
     const stored=datedStatsChartResults.get(box.dataset.dsChart);if(!stored)return;const {result,itemId}=stored;let prefs=stored.prefs;datedStatsChartResults.delete(box.dataset.dsChart);const lines=[...new Set(result.data.map(p=>p.line))];
+    if(result.relationship){const paired=document.createElement('section');box.prepend(paired);showDatedResearchRelationship(paired,result.relationship);}
     const evidence=()=>box.querySelectorAll('[data-ds-point]').forEach(b=>{
       const open=()=>{const p=result.data[Number(b.dataset.dsPoint)],rows=[...(p?.contributions||[]),...(p?.exclusions||[])];if(!p)return;dsDialog('Supporting representative values',`${b.hasAttribute('data-ds-smoothed')?`<p>Rolling average: ${dsNumber(Number(b.dataset.dsSmoothed))}. Evidence below is the original value at this reporting point.</p>`:''}<p>${esc(p.line)} · ${esc(p.label)} · ${dsNumber(p.value)} ${esc(p.unit||'')} · ${esc(p.aggregation)}</p><p>${p.eligibleRepresentatives} eligible · ${p.missingRepresentatives} missing · Numerator ${dsNumber(p.numerator)} / denominator ${dsNumber(p.denominator)}</p><div class="tableWrap ds-points"><table><thead><tr><th>Representative</th><th>Assigned coach</th><th>Period</th><th>Value</th><th>Components</th><th>Status / reason</th><th>Source row</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.rep||r.repId)}</td><td>${esc(r.coach||'')}</td><td>${esc(r.period?.key||'')}</td><td>${dsNumber(r.value)}</td><td>${dsNumber(r.numerator)} / ${dsNumber(r.denominator)}</td><td>${esc(r.reason||r.status||'valid')}</td><td>${esc(r.provenance?.file||'')} · ${esc(r.provenance?.row||'')}</td></tr>`).join('')}</tbody></table></div>`);};b.onclick=open;b.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open();}};
     });
     const redraw=()=>{box.querySelector('[data-ds-plot]').innerHTML=datedStatsPlot(result,[...box.querySelectorAll('[data-ds-line]:checked')].map(n=>lines[Number(n.dataset.dsLine)]),prefs);evidence();};
     const controls=box.querySelector('.ds-line-options');
+    const points=box.querySelector('[data-ds-values]');
+    if(points){
+      const body=points.lastChild;let start=0;
+      const drawRows=()=>{
+        const rows=result.data.slice(start,start+100);
+        body.innerHTML=`<div class="tableWrap ds-points"><table><thead><tr><th>Period</th><th>Line</th><th>Value</th><th>Eligible reps</th><th>Missing reps</th><th>Numerator</th><th>Denominator</th></tr></thead><tbody>${rows.map((p,i)=>`<tr><td>${esc(p.label)}</td><td>${esc(p.line)}</td><td><button type="button" class="smallBtn" data-ds-point="${start+i}">${dsNumber(p.value)} ${esc(p.unit||'')}</button></td><td>${p.eligibleRepresentatives}</td><td>${p.missingRepresentatives}</td><td>${dsNumber(p.numerator)}</td><td>${dsNumber(p.denominator)}</td></tr>`).join('')}</tbody></table></div>`;
+        if(result.data.length>100){
+          const nav=document.createElement('div');nav.className='row';nav.innerHTML=`<button type="button" ${start?'':'disabled'}>Previous</button><span role="status">${start+1}–${start+rows.length} of ${result.data.length} points</span><button type="button" ${start+100>=result.data.length?'disabled':''}>Next</button>`;
+          nav.firstChild.onclick=()=>{start-=100;drawRows();};nav.lastChild.onclick=()=>{start+=100;drawRows();};body.appendChild(nav);
+        }
+        evidence();
+      };
+      points.ontoggle=()=>{if(points.open&&!body.children.length)drawRows();};
+    }
+    if(lines.length>6){
+      const panels=document.createElement('details');panels.innerHTML='<summary>View each series in its own chart</summary><div></div>';
+      box.querySelector('[data-ds-plot]').after(panels);
+      const body=panels.lastChild;let first=0;
+      const drawPanels=()=>{
+        const shown=lines.slice(first,first+4),series=new Map(shown.map(name=>[name,[]]));
+        result.data.forEach((point,index)=>{series.get(point.line)?.push({...point,displaySourceIndex:index});});
+        body.innerHTML='<div class="rwSnapshotPair"></div>';
+        for(const name of shown){
+          const part=document.createElement('section');part.innerHTML=`<h4>${esc(name)}</h4>`+datedStatsPlot({...result,data:series.get(name)},[name],prefs);body.firstChild.appendChild(part);
+        }
+        const nav=document.createElement('div');nav.className='row';nav.innerHTML=`<button type="button" ${first?'':'disabled'}>Previous charts</button><span role="status">${first+1}–${first+shown.length} of ${lines.length} series</span><button type="button" ${first+4>=lines.length?'disabled':''}>Next charts</button>`;
+        nav.firstChild.onclick=()=>{first-=4;drawPanels();};nav.lastChild.onclick=()=>{first+=4;drawPanels();};body.appendChild(nav);evidence();
+      };
+      panels.ontoggle=()=>{if(panels.open)drawPanels();};
+    }
     const updateControls=()=>{controls.querySelector('[data-ds=rollingDisplay]').disabled=prefs.rolling<2;controls.querySelector('[data-ds=endLabelCount]').disabled=!['top','bottom','both'].includes(prefs.endLabelMode);};
     controls.querySelectorAll('[data-ds]').forEach(control=>control.onchange=()=>{prefs=datedStatsChartPreferences(dsValues(controls));controls.querySelector('[data-ds=endLabelCount]').value=prefs.endLabelCount;updateControls();redraw();});
     box.querySelector('[data-ds-save-view]').onclick=()=>{try{const saved=JSON.parse(localStorage.getItem(DATED_CHART_VIEWS_KEY)||'{}');saved[itemId]=prefs;localStorage.setItem(DATED_CHART_VIEWS_KEY,JSON.stringify(saved));box.querySelector('[data-ds-view-status]').textContent='Chart defaults saved.';}catch(_){box.querySelector('[data-ds-view-status]').textContent='Could not save chart defaults. Your current view is still available.';}};updateControls();
@@ -502,6 +667,20 @@ function bindDatedStatsCharts(host){
 }
 function initDatedStatsWorkspace(){
   if(document.documentElement.dataset.datedStatsInitialized)return;document.documentElement.dataset.datedStatsInitialized='true';
+  els.researchSource?.addEventListener('change',()=>{
+    const source=els.researchSource.value,editor=els.researchEditorModal;
+    if(!isDatedStatsSource(source)||!editor?.classList.contains('open')||editor.dataset.workspaceMode!=='advanced')return;
+    if((state.researchItems||[]).some(item=>item.id===els.researchEditId.value)||!state.data[source]?.rows?.length)return;
+    queueMicrotask(()=>{
+      if(els.researchSource.value!==source||!editor.classList.contains('open'))return;
+      const weekly=openDatedStatsResearchEditor(null,source);
+      if(!weekly)return;
+      closeModal('researchEditorModal');
+      const standard=document.createElement('button');standard.type='button';standard.textContent='Continue in standard Research editor';
+      standard.onclick=()=>{weekly.remove();openModal('researchEditorModal');els.researchSource.focus();};
+      weekly.querySelector('[data-ds-close]').after(standard);
+    });
+  });
   document.querySelectorAll('[data-ds-upload]').forEach(input=>input.onchange=async()=>{for(const file of input.files||[]){const ok=await loadDatedStatsFile(input.dataset.dsUpload,file);if(!ok)break;}input.value='';renderDatedStatsImportSummary();});
   const addButton=(anchor,label,onclick)=>{if(!anchor)return;const b=document.createElement('button');b.type='button';b.className='green';b.textContent=label;b.onclick=onclick;anchor.after(b);};
   addButton(document.getElementById('newMetricBtn'),'Create custom weekly metric',()=>openDatedStatsMetricEditor());
@@ -522,5 +701,16 @@ function renderDatedStatsUnitReview(wrap,data,config){
 const datedStatsResearchOperations=new Map();
 function normalizeDatedStatsRawIdentities(rows,source,config){
   const resolveIdentity=datedStatsIdentityResolver(source);
-  return rows.map(row=>{const person=resolveIdentity(row[config.repField]);return {...row,_rep:person.name||String(row[config.repField]||''),_repKey:person.id||'',_team:String(row[config.coachField]||''),_date:row[config.dateField]};});
+  const dates=new Map(),calendar=window.AllStarDatedStats;
+  let first=Infinity,last=-Infinity;
+  const normalized=rows.map(row=>{
+    const person=resolveIdentity(row[config.repField]),date=row[config.dateField];
+    if(!dates.has(date)){
+      const day=calendar.day(date);dates.set(date,day);
+      if(Number.isFinite(day)){first=Math.min(first,day);last=Math.max(last,day);}
+    }
+    return {...row,_rep:person.name||String(row[config.repField]||''),_repKey:person.id||'',_team:String(row[config.coachField]||''),_date:date};
+  });
+  state.sourceMeta[source]={...state.sourceMeta[source],fileCoverage:Number.isFinite(first)?{start:calendar.iso(first),end:calendar.iso(last)}:null};
+  return normalized;
 }

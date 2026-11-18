@@ -5,7 +5,11 @@
 
 // Shared multi-file discovery needs original cell types and formatting. Keep
 // that existing contract, but parse on the same offline-capable worker.
-window.CoachToolsWorkbookReader=async file=>parseAllStarWorkbook(await readAllStarFileBuffer(file),{allstarSharedFile:{name:String(file.name||'').replace(/\([^)]*\)/g,' ').replace(/[_-]+/g,' '),csv:/\.csv$/i.test(file.name)||file.type==='text/csv'}});
+window.CoachToolsWorkbookReader=async (file,discovery=false)=>{
+  const owner=state.activeImportJob||state.batchDiscovering;
+  const options={allstarDiscovery:discovery,allstarSharedFile:{name:String(file.name||'').replace(/\([^)]*\)/g,' ').replace(/[_-]+/g,' '),csv:/\.csv$/i.test(file.name)||file.type==='text/csv'}};
+  return parseAllStarWorkbook(await readAllStarFileBuffer(file,owner),options,owner);
+};
 
 async function readFileWorkbook(file,parseOptions){
   const timing=importTiming('file parsing/loading');
@@ -297,42 +301,28 @@ function buildRowsFromLayout(aoa, headerRow, startCol, fullRow=false, manualHead
   }
   return {rows,headers,headerCols,headerDefs,headerRow:hr,startCol:sc,detected:false,matchCount:0,fullRow:!!fullRow,manualHeaders:manualHeaders||[]};
 }
-async function buildRowsFromLayoutAsync(aoa, headerRow, startCol, fullRow=false, manualHeaders=[], label='Building rows', start=20, end=38){
-  aoa=aoa||[];
-  const base=buildRowsFromLayout(aoa.slice(0,Math.min(aoa.length,1)), headerRow, startCol, fullRow, manualHeaders);
-  const hr=Math.max(0,Number(headerRow)||0);
-  const requestedStart=Math.max(0,Number(startCol)||0);
-  const sc=fullRow ? 0 : requestedStart;
-  const row=aoa[hr]||[];
-  const manualMap=new Map();
-  (manualHeaders||[]).forEach(m=>{
-    const col=Math.max(0,Number(m.col ?? m.colIndex ?? 0));
-    const name=plainHeaderName(m.name || m.header || m.value);
-    if(name) manualMap.set(col,{name,row:Math.max(0,Number(m.row ?? hr))});
-  });
-  const headerDefs=[]; const seenCols=new Set();
-  const maxCol=Math.max(row.length, ...Array.from(manualMap.keys()).map(x=>x+1), 0);
-  for(let c=sc;c<maxCol;c++){
-    const manual=manualMap.get(c);
-    let h=manual ? manual.name : String(row[c]??'').trim().replace(/\s+/g,' ');
-    if(!h) continue;
-    headerDefs.push({h, col:c, row:manual ? manual.row : hr});
-    seenCols.add(c);
+async function materializeImportLayout(aoa,layout,label,start,end,mapRow){
+  const {headerDefs,headerRow}=layout;
+  const first=headerDefs.length?Math.min(...headerDefs.map(def=>def.row+1)):headerRow+1;
+  const rows=[],total=Math.max(1,aoa.length-first);
+  let sliceStart=performance.now();
+  for(let i=first;i<aoa.length;i++){
+    const cells=aoa[i]||[],row={};let populated=false;
+    for(const def of headerDefs){
+      const value=i>def.row?(cells[def.col]??''):'';
+      if(String(value).trim()!=='')populated=true;
+      row[def.finalHeader]=value;
+    }
+    if(populated){const accepted=mapRow?mapRow(row):row;if(accepted)rows.push(accepted);}
+    if(i===aoa.length-1||performance.now()-sliceStart>=8){
+      assertAllStarImportActive();
+      if(state.lifecycle?.closing||state.lifecycle?.hidden)throw Object.assign(new Error('Allstar import canceled.'),{cancelled:true});
+      const done=i-first+1;
+      updateProgress(label+' ('+done.toLocaleString()+' / '+total.toLocaleString()+')',start+(end-start)*done/total);
+      await yieldToBrowser();sliceStart=performance.now();
+    }
   }
-  Array.from(manualMap.entries()).sort((a,b)=>a[0]-b[0]).forEach(([c,manual])=>{ if(!seenCols.has(c)) headerDefs.push({h:manual.name, col:c, row:manual.row}); });
-  const headers=[]; const headerCols=[]; const seen={};
-  headerDefs.forEach(def=>{ let h=def.h; const baseName=h; if(seen[baseName]){ seen[baseName]++; h=`${baseName}_${seen[baseName]}`; } else seen[baseName]=1; def.finalHeader=h; headers.push(h); headerCols.push(def.col); });
-  const dataStart=headerDefs.length ? Math.min(...headerDefs.map(d=>d.row+1)) : hr+1;
-  const rows=[], total=Math.max(1,aoa.length-dataStart), span=end-start; let sliceStart=performance.now();
-  for(let r=dataStart;r<aoa.length;r++){
-    if(state.lifecycle?.closing || state.lifecycle?.hidden) throw Object.assign(new Error('Allstar import cancelled by the application lifecycle.'),{cancelled:true});
-    const arr=aoa[r]||[]; const obj={}; let any=false;
-    headerDefs.forEach(def=>{ const v = r>def.row ? (arr[def.col]??'') : ''; if(String(v).trim()!=='') any=true; obj[def.finalHeader]=v; });
-    if(any) rows.push(obj);
-    const done=r-dataStart+1;
-    if(performance.now()-sliceStart>=8 || r===aoa.length-1){ updateProgress(`${label} (${done.toLocaleString()} / ${total.toLocaleString()})`, start + span*(done/total)); await yieldToBrowser(); sliceStart=performance.now(); }
-  }
-  return {...base,rows,headers,headerCols,headerDefs,headerRow:hr,startCol:sc,fullRow:!!fullRow,manualHeaders:manualHeaders||[]};
+  return {...layout,rows};
 }
 function detectHeaderLayout(aoa, expectedNames, preferredRow=0, preferredCol=0){
   aoa=aoa||[]; expectedNames=uniquePlain(expectedNames);
@@ -410,7 +400,7 @@ function sheetRowsFromAoa(aoa, headerRow, startCol, strict=false, expectedNames=
   const pack=buildRowsFromLayout(aoa,layout.headerRow,layout.startCol,layout.fullRow,manualHeaders); pack.detected=detected||!!layout.detected; pack.matchCount=headersMatchCount(pack.headers,expected);
   return pack;
 }
-async function sheetRowsFromAoaAsync(aoa, headerRow, startCol, strict=false, expectedNames=[], source='', model=null, manualHeaders=[], label='Building rows', start=20, end=38){
+async function sheetRowsFromAoaAsync(aoa, headerRow, startCol, strict=false, expectedNames=[], source='', model=null, manualHeaders=[], label='Building rows', start=20, end=38, prepareRows=null){
   aoa=aoa||[];
   let hr=Math.max(0,Number(headerRow)||0), sc=Math.max(0,Number(startCol)||0);
   const expected=uniquePlain(expectedNames);
@@ -429,8 +419,8 @@ async function sheetRowsFromAoaAsync(aoa, headerRow, startCol, strict=false, exp
     if(!strict && (!aoa[hr] || layout.headers.length<2)){ const found=detectHeaderLayout(aoa,[],hr,sc); if(found){layout=inspectRowsLayout(aoa,found.headerRow,0,true,manualHeaders);detected=true;} }
   }
   updateProgress(`${label} · layout locked at row ${layout.headerRow+1}`,start,{force:true}); await yieldToBrowser();
-  const pack=await buildRowsFromLayoutAsync(aoa,layout.headerRow,layout.startCol,layout.fullRow,manualHeaders,label,start,end); pack.detected=detected||!!layout.detected; pack.matchCount=headersMatchCount(pack.headers,expected);
-  return pack;
+  layout.detected=detected||!!layout.detected;layout.matchCount=headersMatchCount(layout.headers,expected);
+  return materializeImportLayout(aoa,layout,label,start,end,prepareRows?.(layout));
 }
 function sheetRows(wb, sheetName, headerRow, startCol, strict=false){
   return sheetRowsFromAoa(sheetAoa(wb,sheetName), headerRow, startCol, strict);
@@ -578,14 +568,14 @@ function importedNormalizerContext(headers,cfg,source,meta){
   };
   importedNormalizerContexts.set(meta,context); return context;
 }
-function normalizeImportedRowOnce(row, headers, cfg, source, meta, i){
+function normalizeImportedRowOnce(row, headers, cfg, source, meta, i, owned=false){
   const context=importedNormalizerContext(headers,cfg,source,meta), sourceArea=context.sourceArea;
   if(source==='qa' || source===QA_DIRECT_SOURCE){
     const q=context.columns, rep=context.representative(row);
     const coach=context.coach(row[meta.detectedTeamColumn]??''), qaTeam=coach.value;
     const selectedDate=meta.detectedDateColumn?row[meta.detectedDateColumn]:'';
     const dateValue=cachedSourceDateValue(source,meta.detectedDateColumn||meta.interactionDateColumn,selectedDate || row[meta.interactionDateColumn]);
-    return {...row,_rowId:`${source}:${i+1}`,_source:context.label,_sourceKey:source,_sourceArea:'',_rep:rep,_repKey:nameKey(rep),_team:q.skipTeamBuild?'':qaTeam,_teamKey:q.skipTeamBuild?'':coach.key,_coach:q.skipTeamBuild?'':qaTeam,_coachKey:q.skipTeamBuild?'':coach.key,_qaTeam:qaTeam,_qaTeamKey:coach.key,_score:normalizeScore(row[meta.scoreColumn]),_interactionDate:row[meta.interactionDateColumn]||'',_interactionDateValue:cachedSourceDateValue(source,meta.interactionDateColumn,row[meta.interactionDateColumn]),_assignedDate:row[meta.assignedDateColumn]||'',_assignedDateValue:cachedSourceDateValue(source,meta.assignedDateColumn,row[meta.assignedDateColumn]),_date:selectedDate || row[meta.interactionDateColumn] || '',_dateValue:dateValue};
+    return Object.assign(owned?row:{...row},{_rowId:`${source}:${i+1}`,_source:context.label,_sourceKey:source,_sourceArea:'',_rep:rep,_repKey:nameKey(rep),_team:q.skipTeamBuild?'':qaTeam,_teamKey:q.skipTeamBuild?'':coach.key,_coach:q.skipTeamBuild?'':qaTeam,_coachKey:q.skipTeamBuild?'':coach.key,_qaTeam:qaTeam,_qaTeamKey:coach.key,_score:normalizeScore(row[meta.scoreColumn]),_interactionDate:row[meta.interactionDateColumn]||'',_interactionDateValue:cachedSourceDateValue(source,meta.interactionDateColumn,row[meta.interactionDateColumn]),_assignedDate:row[meta.assignedDateColumn]||'',_assignedDateValue:cachedSourceDateValue(source,meta.assignedDateColumn,row[meta.assignedDateColumn]),_date:selectedDate || row[meta.interactionDateColumn] || '',_dateValue:dateValue});
   }
   const c=context.columns, rep=context.representative(row), repKey=fullNameIdentityKey(rep);
   const coach=context.coach(row[meta.detectedTeamColumn]??''), directTeamRaw=coach.value;
@@ -594,7 +584,7 @@ function normalizeImportedRowOnce(row, headers, cfg, source, meta, i){
   const team=c.skipTeamBuild?'':directTeam;
   const dateRaw=meta.detectedDateColumn?row[meta.detectedDateColumn]:'';
   const teamKey=c.skipTeamBuild?'':weeklyCoachResolution?coachNameKey(team):coach.key;
-  return {...row,_rowId:`${source}:${i+1}`,_source:context.label,_sourceKey:source,_sourceArea:sourceArea,_rawRep:rep,_rawRepKey:repKey,_rep:rep,_repKey:repKey,_team:team,_teamKey:teamKey,_coach:team,_coachKey:teamKey,_rawWeeklyCoach:weeklyCoachResolution?directTeamRaw:'',_weeklyCoachMatchMethod:weeklyCoachResolution?.method||'',_rosterId:safeFallbackRosterIdentity({_rep:rep,_team:team},sourceArea),_date:dateRaw,_dateValue:dateRaw?cachedSourceDateValue(source,meta.detectedDateColumn,dateRaw):NaN,_week:meta.weekColumn?row[meta.weekColumn]:'',_text:meta.textColumn?String(row[meta.textColumn]??''):'',_score:meta.scoreColumn?normalizeScore(row[meta.scoreColumn]):NaN,_aliasApplied:false,_aliasRecord:null};
+  return Object.assign(owned?row:{...row},{_rowId:`${source}:${i+1}`,_source:context.label,_sourceKey:source,_sourceArea:sourceArea,_rawRep:rep,_rawRepKey:repKey,_rep:rep,_repKey:repKey,_team:team,_teamKey:teamKey,_coach:team,_coachKey:teamKey,_rawWeeklyCoach:weeklyCoachResolution?directTeamRaw:'',_weeklyCoachMatchMethod:weeklyCoachResolution?.method||'',_rosterId:safeFallbackRosterIdentity({_rep:rep,_team:team},sourceArea),_date:dateRaw,_dateValue:dateRaw?cachedSourceDateValue(source,meta.detectedDateColumn,dateRaw):NaN,_week:meta.weekColumn?row[meta.weekColumn]:'',_text:meta.textColumn?String(row[meta.textColumn]??''):'',_score:meta.scoreColumn?normalizeScore(row[meta.scoreColumn]):NaN,_aliasApplied:false,_aliasRecord:null});
 }
 function categorizationSourceAffects(source){
   return !!source && source!==QA_DIRECT_SOURCE && !isCategorizedSource(source) && !TEAM_TOTAL_SOURCE_KEYS.includes(source);
@@ -683,15 +673,41 @@ async function processImportedSource(source, file, options={}){
     if(source!==QA_DIRECT_SOURCE){ state.books[sourceBookKey(source)].selectedSheets[source]=sn; setSourceAoa(source,aoa,sn); }
     else { setSourceAoa(source,aoa,sn); }
     if(manageProgress) updateProgress(`Detecting ${label} headers...`,28); await yieldToBrowser();
-    const pack=await sheetRowsFromAoaAsync(aoa||[],Math.max(0,(Number(cfg.headerRow)||1)-1),Math.max(0,(Number(cfg.startCol)||1)-1),!isCustomSource(source),expectedHeadersForSource(settingSource,m),settingSource,m,cfg.manualHeaders||[],`Building ${label} rows`,28,42);
-    if((pack.detected || pack.fullRow) && m.sourceSettings?.[settingSource]){ m.sourceSettings[settingSource].headerRow=pack.headerRow+1; m.sourceSettings[settingSource].startCol=pack.startCol+1; cfg.headerRow=pack.headerRow+1; cfg.startCol=pack.startCol+1; }
-    const meta=buildHeaderMetadata(settingSource,pack.headers,cfg,pack);
-    timing.mark('Detect headers', `${pack.headers.length} headers`);
-    if(state.activeImportJob){state.activeImportJob.parsed=pack.rows.length;importJobStage(state.activeImportJob,'Normalizing');}
-    const rows=await mapRowsChunked(pack.rows,r=>normalizeImportedRowOnce(r,pack.headers,cfg,source,meta,counts.rowNormalization++),(r)=>source==='qa'||source===QA_DIRECT_SOURCE?(r._repKey||r._team||Number.isFinite(r._score)):(r._repKey||r._team),`Normalizing ${label} rows`,42,70);
+    let earliest=Infinity,latest=-Infinity;
+    const reps=new Set(),teams=new Set();
+    const acceptRow=row=>{
+      const accepted=row._repKey||row._team||((source==='qa'||source===QA_DIRECT_SOURCE)&&Number.isFinite(row._score));
+      if(!accepted)return false;
+      if(row._repKey)reps.add(row._repKey);
+      if(row._teamKey)teams.add(row._teamKey);
+      const timestamp=Number.isFinite(row._dateValue)?row._dateValue:
+        Number.isFinite(row._interactionDateValue)?row._interactionDateValue:
+        Number.isFinite(row._assignedDateValue)?row._assignedDateValue:workflowRowTimestamp(row);
+      if(Number.isFinite(timestamp)){earliest=Math.min(earliest,timestamp);latest=Math.max(latest,timestamp);}
+      return true;
+    };
+    let meta;
+    const prepareRows=layout=>{
+      if((layout.detected||layout.fullRow)&&m.sourceSettings?.[settingSource]){
+        cfg.headerRow=layout.headerRow+1;cfg.startCol=layout.startCol+1;
+        Object.assign(m.sourceSettings[settingSource],{headerRow:cfg.headerRow,startCol:cfg.startCol});
+      }
+      meta=buildHeaderMetadata(settingSource,layout.headers,cfg,layout);
+      timing.mark('Detect headers',layout.headers.length+' headers');
+      if(state.activeImportJob)importJobStage(state.activeImportJob,'Normalizing');
+      return row=>{
+        const normalized=normalizeImportedRowOnce(row,layout.headers,cfg,source,meta,counts.rowNormalization++,true);
+        return acceptRow(normalized)?normalized:null;
+      };
+    };
+    const pack=await sheetRowsFromAoaAsync(aoa||[],Math.max(0,(Number(cfg.headerRow)||1)-1),Math.max(0,(Number(cfg.startCol)||1)-1),!isCustomSource(source),expectedHeadersForSource(settingSource,m),settingSource,m,cfg.manualHeaders||[],`Normalizing ${label} rows`,28,70,prepareRows);
+    const rows=pack.rows;
     if(!pack.headers.length || !rows.length) throw new Error('No usable rows were found. Check the selected sheet and source mappings.');
-    if(state.activeImportJob){ state.activeImportJob.parsed=pack.rows.length; state.activeImportJob.normalized=rows.length; state.activeImportJob.counts=counts; importJobStage(state.activeImportJob,'Normalized'); }
+    if(state.activeImportJob){ state.activeImportJob.parsed=counts.rowNormalization; state.activeImportJob.normalized=rows.length; state.activeImportJob.counts=counts; importJobStage(state.activeImportJob,'Normalized'); }
     timing.mark(`Normalize ${rows.length.toLocaleString()} rows`, 'identity/team/date fields resolved once per row');
+    Object.assign(meta,{rowCount:rows.length,representativeCount:reps.size,teamCount:teams.size,earliestDate:Number.isFinite(earliest)?new Date(earliest).toISOString():'',latestDate:Number.isFinite(latest)?new Date(latest).toISOString():'',batchDigest:options.batchDigest||''});
+    meta.fileCoverage=Number.isFinite(earliest)?{start:ymd(new Date(earliest)),end:ymd(new Date(latest))}:null;
+    meta.intakeScope=options.fromCentral?(options.sharedScope||'Connected source'):'Entire file';
     commitImportedSource(source,file,pack,rows,cfg,meta,{diagnostics:{counts}});
     const nameEl=sourceNameElement(source); if(nameEl) nameEl.textContent=`${file.name} · ${sn}${source===QA_DIRECT_SOURCE?' · direct mode source':''}`;
     await finishSingleSourceIntake(source,`${label} import`,timing,counts,options);
@@ -857,6 +873,15 @@ function allStarGlobalScopeMatcher(key=allStarGlobalScopeKey(),view=state.global
 }
 function allStarGlobalRowVisible(row){ return allStarGlobalScopeMatcher()(row); }
 const allStarScopedRowsCache=new WeakMap();
+function allStarCachedNavigationCount(source){
+  const key=allStarGlobalScopeKey();
+  if(key==='all')return importedSourceRowCount(source);
+  if(source==='monthly_opportunity'||source==='monthly_wiper')return null;
+  const rows=getRowsUnscoped(source);
+  if(!rows?.length)return 0;
+  const cache=allStarScopedRowsCache.get(rows);
+  return cache&&cache.view===state.globalScopeView&&cache.key===key&&cache.version===(state.versions?.data||0)&&cache.length===rows.length?cache.rows.length:null;
+}
 function filterAllStarRowsForGlobalScope(rows){
   const key=allStarGlobalScopeKey();
   if(key==='all')return rows||[];
@@ -921,6 +946,10 @@ async function prepareAllStarGlobalScope(options={}){
   return context.active;
 }
 function readAllStarCentralRecord(datasetType){
+  const data=window.CoachToolsData;
+  if(data?.streamRows&&data.getDatasetVersion?.(datasetType)?.scopedRowCount>=10000){
+    return data.getCurrent(datasetType,{includeRecord:true,unscoped:true,editableStream:true});
+  }
   let sharedAdapter=null;
   try{
     if(window.parent&&window.parent!==window) sharedAdapter=window.parent.CoachToolsAppData;
@@ -1015,7 +1044,7 @@ async function syncAllStarFromCoachToolsData(options={}){
         continue;
       }
       const file={name:record.originalFileName||`${change.datasetType}.xlsx`,size:record.fileSize||0,lastModified:Date.parse(record.fileModifiedDate||record.importedAt)||Date.now()};
-      const common={fromCentral:true,batch:true,render:false,persist:false,categorize:false,manageProgress:false,silent:true};
+      const common={fromCentral:true,batch:true,render:false,persist:false,categorize:false,manageProgress:false,silent:true,sharedScope:record.scopeSnapshot?.label||record.scopeMode||''};
       if(state.startup?.running && typeof setAllStarStartupDiagnosticPhase==='function'){ setAllStarStartupDiagnosticPhase(`${change.datasetType} normalization`,change.datasetType); state.startup.phase.rows=Number(record?.rowCount||record?.data?.meta?.totalRows||0); }
       const ok=await loader(file,wb,common); if(ok===false) throw new Error(`${change.datasetType} could not be applied.`);
       applied.push(change.datasetType); nextSync[change.datasetType]=change.identity;
@@ -1032,6 +1061,10 @@ async function syncAllStarFromCoachToolsData(options={}){
       markCategorizationNeeded(options.reason||'central IndexedDB synchronization',invalidation.sources);
     }
     if(!active()) throw Object.assign(new Error('Central synchronization cancelled.'),{cancelled:true});
+    for(const type of applied){
+      const current=allStarCentralSyncIdentity(window.CoachToolsData.getDatasetVersion(type)||{});
+      if(!sameAllStarCentralIdentity(nextSync[type],current))throw Object.assign(new Error('The connected source changed during import. Retry with the current version.'),{cancelled:true});
+    }
     const saved=options.persist===false?true:await flushImportCacheSave('central CoachTools batch complete',{dirtyOnly:true,noCompaction:true,noRender:true,mutateRows:false,deferIndexes:!!job||!!options.deferIndexes,verifySources:invalidation.sources,noRetry:true});
     if(!saved) throw new Error('The refreshed Allstar data could not be committed to IndexedDB.');
     committed=true;
@@ -1053,60 +1086,216 @@ async function syncAllStarFromCoachToolsData(options={}){
   }
 }
 
-function renderCoachToolsImportReview(){
-  if(!els.coachtoolsImportReview) return;
-  const batch=state.coachToolsImportBatch||{recognized:[],needsReview:[],errors:[]};
-  const rows=[];
-  batch.recognized.forEach((entry,index)=>rows.push(`<div class="checkResultRow" data-shared-import-row="${index}"><strong>✓ ${esc(entry.classification.id&&window.CoachToolsImport.SOURCES[entry.classification.id]?.label||entry.classification.id)}</strong><div class="checkResultMeta">${esc(entry.file.name)} · ${esc(entry.classification.detectedPeriod?.label||'Current')} · Ready</div></div>`));
-  batch.needsReview.forEach(entry=>rows.push(`<div class="checkResultRow"><strong>Needs Review · ${esc(entry.classification.predictedId&&window.CoachToolsImport.SOURCES[entry.classification.predictedId]?.label||'Unknown source')}</strong><div class="checkResultMeta">${esc(entry.file.name)} · ${esc(entry.classification.validation?.reason||'No compatible dataset structure was found.')}</div></div>`));
-  batch.errors.forEach(entry=>rows.push(`<div class="checkResultRow"><strong>Could not read</strong><div class="checkResultMeta">${esc(entry.file?.name||'File')} · ${esc(entry.error?.message||String(entry.error))}</div></div>`));
-  els.coachtoolsImportReview.innerHTML=rows.join('')||'<div class="checkResultMeta">No files staged.</div>';
-  if(els.coachtoolsImportAllBtn) els.coachtoolsImportAllBtn.disabled=!batch.recognized.length;
-  if(els.coachtoolsImportSummary) els.coachtoolsImportSummary.textContent=batch.recognized.length?`${batch.recognized.length} file${batch.recognized.length===1?'':'s'} recognized${batch.needsReview.length?` · ${batch.needsReview.length} need review`:''}.`:'Choose weekly, monthly, QA, MyOne, Checklist, and Comp Coaching files together.';
+const batchSources=['weeklyRetail','weeklyReferral','monthlyRetail','monthlyReferral','qa','documentedCoaching','checklist','compCoaching'];
+const batchSingleSources={qa:'qa',documentedCoaching:'documented_coaching',checklist:'checklist',compCoaching:'comp_calls'};
+
+function reviewedBatchEntries(batch){
+  return [...batch?.recognized||[],...batch?.needsReview||[],...batch?.errors||[]];
 }
-async function stageCoachToolsImportFiles(files){
-  if(!window.CoachToolsImport) return alert('Shared CoachTools import utilities are unavailable.');
-  showProgress('Analyzing CoachTools files...',5);
-  try{
-    state.coachToolsImportBatch=await window.CoachToolsImport.analyzeFiles(files,{manualSourceSelection:true,onProgress:progress=>updateProgress(`Reading ${progress.fileName||'file'}${progress.sheetName?' · '+progress.sheetName:''}`,10+Math.round(70*((progress.fileIndex+(progress.total?progress.current/progress.total:0))/Math.max(1,progress.fileCount))))});
-    renderCoachToolsImportReview(); updateProgress('Files analyzed',100,{force:true});
-  }finally{ hideProgress(); }
+function batchSourceLabel(type){return window.CoachToolsImport?.SOURCES?.[type]?.label||type;}
+function validateBatchSheet(entry,sheet){
+  const workbook=entry.parsed.workbook;
+  const subset={...entry.parsed,workbook:{sheets:[sheet],data:{[sheet]:workbook.data[sheet]}}};
+  const result=window.CoachToolsImport.validateClassification(entry.classification.id,subset);
+  entry.status=result.valid?'':'Needs review';
+  entry.problem=result.valid?'':result.reason;
 }
-async function importCoachToolsBatch(){
-  const batch=state.coachToolsImportBatch;
-  if(!batch?.recognized?.length) return;
-  els.coachtoolsImportAllBtn.disabled=true;
-  state.coachToolsBatchImportRunning=true;
-  state.coachToolsBatchImportCancelled=false;
-  let imported=0, failed=0, categorizable=0; const monthlyApplied=new Set();
-  try{
-    for(let index=0;index<batch.recognized.length;index++){
-      if(state.coachToolsBatchImportCancelled) break;
-      const entry=batch.recognized[index], type=entry.classification.id;
-      const monthlyBundle=entry.parsed?.meta?.monthlyBundle, monthlyId=monthlyBundle?JSON.stringify(monthlyBundle):'';
-      if(monthlyId&&monthlyApplied.has(monthlyId))continue;
-      showProgress(`Importing ${window.CoachToolsImport.SOURCES[type]?.label||type}...`,Math.round(index/batch.recognized.length*100));
-      try{
-        let ok=true;
-        if(type==='weeklyRetail'||type==='weeklyReferral'){ ok=!!(await window.CoachToolsImport.saveRecognizedEntry(entry)); if(ok){ const result=await syncAllStarFromCoachToolsData({forceSharedReload:true,onlyDatasets:[type]}); if(result.error)throw new Error(result.error); } }
-        else if(type==='monthlyRetail') ok=await loadRetailFile(entry.file,{workbook:entry.rawWorkbook,monthlyBundle:entry.parsed?.meta?.monthlyBundle});
-        else if(type==='monthlyReferral') ok=await loadReferralFile(entry.file,{workbook:entry.rawWorkbook,monthlyBundle:entry.parsed?.meta?.monthlyBundle});
-        else if(type==='qa') ok=await processImportedSource('qa',entry.file,{workbook:entry.rawWorkbook,label:'QA Stats',bookKey:'qa'});
-        else if(['documentedCoaching','checklist','compCoaching'].includes(type)){const source={documentedCoaching:'documented_coaching',checklist:'checklist',compCoaching:'comp_calls'}[type];ok=await processImportedSource(source,entry.file,{workbook:entry.rawWorkbook,label:labelSource(source),bookKey:source});}
-        if(ok===false) failed++;
-        else { entry.rawWorkbook=null; if(monthlyId)monthlyApplied.add(monthlyId); imported++; if(type!=='weeklyRetail'&&type!=='weeklyReferral') categorizable++; }
-      }catch(error){ console.error('[All-Star] Shared batch import failed',entry.file?.name,error); failed++; }
-    }
-    hideProgress();
-    if(categorizable) markCategorizationNeeded('shared multi-file upload',batch.recognized.map(entry=>entry.classification.id).flatMap(allStarSourcesForDataset));
-  }finally{
-    state.coachToolsBatchImportRunning=false;
-    hideProgress();
-    els.coachtoolsImportAllBtn.disabled=false;
+function batchEntrySheet(entry){
+  const sheets=entry.parsed?.workbook?.sheets||[],source=batchSingleSources[entry.classification?.id];
+  if(entry.sheetName||!sheets.length)return entry.sheetName||'';
+  if(source){
+    const preview=entry.rawWorkbook||{SheetNames:sheets,__coachToolsAoaBySheet:Object.fromEntries(sheets.map(name=>[name,entry.parsed.workbook.data[name]?.aoa||[]]))};
+    entry.sheetName=pickBestSheetForSource(preview,source,activeModelForImport(),SOURCE_SHEET_HINTS[source]);
+    return entry.sheetName;
   }
-  if(els.coachtoolsImportSummary) els.coachtoolsImportSummary.textContent=`CoachTools Data Ready · ${imported} source${imported===1?'':'s'} updated${categorizable?' · Categorization Needed':''}${state.coachToolsBatchImportCancelled?' · Remaining files cancelled':failed?` · ${failed} failed`:''}.`;
-  if(categorizable) renderCategorizedSummary();
+  return sheets[0];
 }
+function batchEntryAction(entry){
+  if(entry.status)return entry.status;
+  const type=entry.classification?.id;
+  if(entry.error||!type)return 'Needs review';
+  const sources=allStarSourcesForDataset(type);
+  if(entry.digest&&batchSingleSources[type]&&state.sourceMeta?.[batchSingleSources[type]]?.batchDigest===entry.digest&&
+     state.sourceMeta[batchSingleSources[type]].selectedSheet===batchEntrySheet(entry))return 'Duplicate';
+  const loaded=sources.some(source=>state.sourceMeta?.[source]?.rowCount>0||sourceFileName(source));
+  if(loaded&&['weeklyRetail','weeklyReferral'].includes(type))return 'Add or update weeks';
+  if(loaded&&entry.parsed?.meta?.monthlyBundle)return 'Apply reviewed monthly changes';
+  return loaded?'Replace':'Add';
+}
+function batchCanApply(entry){return !!entry.classification?.id&&!['Complete','Duplicate','Importing','Needs review'].includes(batchEntryAction(entry));}
+
+function renderCoachToolsImportReview(){
+  if(!els.coachtoolsImportReview)return;
+  const entries=reviewedBatchEntries(state.coachToolsImportBatch);
+  const running=state.coachToolsBatchImportRunning||state.batchDiscovering;
+  const rows=entries.map((entry,index)=>{
+    const classification=entry.classification||{},type=classification.id,action=batchEntryAction(entry),workbook=entry.parsed?.workbook;
+    const sheet=batchEntrySheet(entry),simple=!!batchSingleSources[type],locked=running||action==='Complete'||!!entry.parsed?.meta?.monthlyBundle;
+    const sample=(workbook?.data?.[sheet]?.aoa||[]).slice(0,8);
+    const reason=entry.error?.message||entry.problem||classification.validation?.reason||({'filename+headers':'Filename and headers match',header:'Matching headers','multiple-compatible-headers':'More than one source matches','no-compatible-header':'No matching headers'})[classification.reason]||classification.classificationMethod||'';
+    const candidates=classification.candidates?.map(batchSourceLabel).join(', ')||'';
+    const select='<select data-batch-source aria-label="Destination for '+esc(entry.file?.name)+'" '+(locked?'disabled':'')+'><option value="">Choose source</option>'+batchSources.map(s=>'<option value="'+s+'" '+(s===type?'selected':'')+'>'+esc(batchSourceLabel(s))+'</option>').join('')+'</select>';
+    const sheetOptions=(workbook?.sheets||[]).map(name=>'<option '+(name===sheet?'selected':'')+'>'+esc(name)+'</option>').join('');
+    const detailsId='batchFileDetails'+index;
+    const heading='<tr><th scope="row"><button type="button" data-batch-toggle aria-controls="'+detailsId+'" aria-expanded="'+!!entry.expanded+'">'+esc(entry.file?.name||'File')+'</button></th><td>'+esc(batchSourceLabel(type)||'Choose source')+'</td><td>'+esc(simple?sheet:(workbook?.sheets||[]).join(', '))+'</td><td><strong>'+esc(action)+'</strong></td></tr>';
+    return '<tbody data-batch-row="'+index+'">'+heading+'<tr id="'+detailsId+'" '+(entry.expanded?'':'hidden')+'><td colspan="4"><div class="batchReviewBody"><p>'+esc(reason)+(candidates?' · Candidates: '+esc(candidates):'')+'</p>'+(entry.parsed?'<label>Destination '+select+'</label>':'')+(simple&&sheetOptions?'<label>Worksheet <select data-batch-sheet '+(locked?'disabled':'')+'>'+sheetOptions+'</select></label>':'')+
+    (sample.length?'<div class="batchSample"><table><caption>Sample · first '+sample.length+' rows, up to 12 columns</caption><tbody>'+sample.map(row=>'<tr>'+row.slice(0,12).map(v=>'<td>'+esc(String(v??'').slice(0,160))+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>':'')+
+    (!locked?'<label>Replace file <input type="file" data-batch-replace accept=".xls,.xlsx,.csv"></label>':'')+
+    (!running&&(entry.error||action==='Failed'||action==='Canceled')?'<button type="button" data-batch-retry>Retry file</button>':'')+'</div></td></tr></tbody>';
+  }).join('');
+  els.coachtoolsImportReview.innerHTML=rows?'<div class="batchTableFrame"><table class="batchTable"><caption>Batch review</caption><thead><tr><th>File</th><th>Destination</th><th>Worksheet</th><th>Action</th></tr></thead>'+rows+'</table></div>':'';
+  const ready=entries.filter(batchCanApply).length;
+  if(els.coachtoolsImportAllBtn){
+    els.coachtoolsImportAllBtn.disabled=!!running||!ready;
+    els.coachtoolsImportAllBtn.textContent=entries.some(e=>e.status==='Failed')?'Retry remaining files':'Import reviewed files';
+  }
+  if(els.coachtoolsImportSummary&&entries.length)els.coachtoolsImportSummary.textContent=entries.length+' files · '+ready+' available to import · '+entries.filter(e=>e.status==='Complete').length+' completed · '+entries.filter(e=>['Needs review','Failed','Canceled'].includes(batchEntryAction(e))).length+' need attention';
+}
+async function stageCoachToolsImportFiles(files,replacement=null){
+  if(!window.CoachToolsImport)return alert('Shared CoachTools import utilities are unavailable.');
+  if(state.coachToolsBatchImportRunning||state.batchDiscovering||state.reportingDataClearing)return;
+  const operation={cancelled:false};
+  state.batchDiscovering=operation;
+  const status=els.coachtoolsImportSummary,cancel=el('allstarCancelBatch');
+  if(cancel)cancel.hidden=false;
+  if(status)status.textContent='Reviewing file headers…';
+  try{
+    const batch=await window.CoachToolsImport.analyzeFiles(files,{discoverySamples:true,isCancelled:()=>operation.cancelled,onProgress:p=>{if(!operation.cancelled&&status)status.textContent='Reviewing '+p.fileName;}});
+    if(operation.cancelled)return;
+    for(const entry of batch.recognized){
+      if(operation.cancelled)return;
+      if(batchSingleSources[entry.classification.id])validateBatchSheet(entry,batchEntrySheet(entry));
+      if(batchSingleSources[entry.classification.id]&&window.crypto?.subtle&&entry.file?.arrayBuffer){
+        const digest=await window.crypto.subtle.digest('SHA-256',await entry.file.arrayBuffer());
+        entry.digest=Array.from(new Uint8Array(digest),n=>n.toString(16).padStart(2,'0')).join('');
+      }
+    }
+    if(operation.cancelled)return;
+    if(replacement){
+      const prior=state.coachToolsImportBatch;
+      for(const key of ['recognized','needsReview','errors'])prior[key]=[...(prior[key]||[]).filter(e=>e!==replacement),...batch[key]];
+    }else state.coachToolsImportBatch=batch;
+  }catch(error){if(status)status.textContent='Could not review the files. '+error.message;}
+  finally{state.batchDiscovering=null;if(cancel)cancel.hidden=true;renderCoachToolsImportReview();}
+}
+async function importCoachToolsBatch(onlyEntry=null){
+  const batch=state.coachToolsImportBatch;
+  if(!batch||state.coachToolsBatchImportRunning||state.batchDiscovering||state.reportingDataClearing)return;
+  const entries=reviewedBatchEntries(batch).filter(e=>(!onlyEntry||e===onlyEntry)&&batchCanApply(e));
+  if(!entries.length)return;
+  state.coachToolsBatchImportRunning=true;state.coachToolsBatchImportCancelled=false;
+  const scopeKey=allStarGlobalScopeKey(),scope=window.CoachToolsStorage?.getScope?.();
+  const cancel=el('allstarCancelBatch');if(cancel)cancel.hidden=false;
+  const monthlyApplied=new Set();
+  try{
+    for(const entry of entries){
+      if(state.coachToolsBatchImportCancelled)break;
+      if(scopeKey!==allStarGlobalScopeKey()){entry.status='Canceled';entry.problem='The CoachTools scope changed. Review the remaining files before retrying.';break;}
+      if(batchEntryAction(entry)==='Duplicate')continue;
+      const type=entry.classification.id,source=batchSingleSources[type];
+      const bundle=entry.parsed?.meta?.monthlyBundle,monthlyId=bundle?JSON.stringify(bundle):'';
+      if(monthlyId&&monthlyApplied.has(monthlyId)){entry.status='Complete';continue;}
+      entry.status='Importing';entry.problem='';renderCoachToolsImportReview();
+      try{
+        let ok;
+        if(entry.previewOnly&&!entry.rawWorkbook)entry.rawWorkbook=await window.CoachToolsImport.readWorkbook(entry.file);
+        const options={workbook:entry.rawWorkbook,silent:true,onError:error=>{entry.problem=error.message;}};
+        if(source){
+          options.sheetName=entry.sheetName;
+          options.batchDigest=entry.digest||'';
+          ok=await processImportedSource(source,entry.file,{...options,label:labelSource(source),bookKey:source});
+        }else if(type==='weeklyRetail'||type==='weeklyReferral'){
+          // The shared reader applies its own scope and percentage mappings.
+          const current=window.CoachToolsData?.getDatasetVersion?.(type);
+          ok=!!current&&sameAllStarCentralIdentity(entry.sharedVersion,allStarCentralSyncIdentity(current))&&entry.sharedScope===scopeKey;
+          if(!ok){
+            ok=!!await window.CoachToolsImport.saveRecognizedEntry(entry,{scope});
+            if(ok){entry.sharedVersion=allStarCentralSyncIdentity(window.CoachToolsData?.getDatasetVersion?.(type)||{});entry.sharedScope=scopeKey;}
+          }
+          if(ok){
+            const sync=await syncAllStarFromCoachToolsData({forceSharedReload:true,onlyDatasets:[type]});
+            if(sync.error||sync.busy||sync.cancelled)throw new Error(sync.error||'The shared source was saved. Retry when the current operation finishes.');
+          }
+        }else if(type==='monthlyRetail'||type==='monthlyReferral'){
+          ok=await (type==='monthlyRetail'?loadRetailFile:loadReferralFile)(entry.file,{...options,monthlyBundle:bundle});
+        }else throw new Error('Choose a supported destination.');
+        if(!ok)throw new Error(entry.problem||'The source could not be applied. Check the source and worksheet.');
+        entry.status='Complete';entry.rawWorkbook=null;
+        if(monthlyId)monthlyApplied.add(monthlyId);
+      }catch(error){entry.status=state.coachToolsBatchImportCancelled?'Canceled':'Failed';entry.problem=error.message;}
+    }
+  }finally{
+    state.coachToolsBatchImportRunning=false;if(cancel)cancel.hidden=true;
+    hideProgress();renderCoachToolsImportReview();renderCategorizedSummary();
+    if(typeof renderSourceHealthOverview==='function')renderSourceHealthOverview();
+  }
+}
+function wireAllstarBatchReview(){
+  const host=els.coachtoolsImportReview,drop=el('allstarBatchDrop'),cancel=el('allstarCancelBatch');
+  if(!host||!drop)return;
+  const storageOption=el('allstarWorkerStorage');
+  if(storageOption){
+    storageOption.checked=localStorage.getItem('allStarWorkerStorage.v1')==='on';
+    storageOption.onchange=()=>localStorage.setItem('allStarWorkerStorage.v1',storageOption.checked?'on':'off');
+  }
+  const getEntry=target=>reviewedBatchEntries(state.coachToolsImportBatch)[Number(target.closest('[data-batch-row]')?.dataset.batchRow)];
+  host.onchange=event=>{
+    const target=event.target,entry=getEntry(target);if(!entry||state.coachToolsBatchImportRunning)return;
+    if(target.hasAttribute('data-batch-replace')){if(target.files?.length)stageCoachToolsImportFiles(target.files,entry);return;}
+    if(target.hasAttribute('data-batch-source')){
+      const type=target.value,api=window.CoachToolsImport;
+      const validation=type?api.validateClassification(type,entry.parsed):null;
+      entry.classification=validation?.valid?{id:type,validation,reason:'manual+headers',detectedPeriod:api.detectPeriod(entry.file,type)}:{id:null,candidates:type?[type]:[],validation};
+      entry.sheetName='';entry.status='';entry.problem='';
+      if(validation?.valid&&batchSingleSources[type])validateBatchSheet(entry,batchEntrySheet(entry));
+    }else if(target.hasAttribute('data-batch-sheet')){
+      entry.sheetName=target.value;validateBatchSheet(entry,entry.sheetName);
+    }
+    renderCoachToolsImportReview();
+    const row=host.querySelector('[data-batch-row="'+reviewedBatchEntries(state.coachToolsImportBatch).indexOf(entry)+'"]');row?.querySelector(target.hasAttribute('data-batch-sheet')?'[data-batch-sheet]':'[data-batch-source]')?.focus();
+  };
+  host.onclick=event=>{
+    const button=event.target.closest('button');
+    if(!button)return;
+    const entry=getEntry(button);if(!entry)return;
+    if(button.hasAttribute('data-batch-toggle')){
+      entry.expanded=!entry.expanded;
+      button.setAttribute('aria-expanded',String(entry.expanded));
+      el(button.getAttribute('aria-controls')).hidden=!entry.expanded;
+    }else if(button.hasAttribute('data-batch-retry')){
+      if(entry.error)stageCoachToolsImportFiles([entry.file],entry);else importCoachToolsBatch(entry);
+    }
+  };
+  drop.ondragover=event=>{event.preventDefault();};
+  drop.ondrop=event=>{event.preventDefault();if(event.dataTransfer?.files.length)stageCoachToolsImportFiles(event.dataTransfer.files);};
+  cancel.onclick=()=>{
+    if(state.batchDiscovering){state.batchDiscovering.cancelled=true;state.batchDiscovering.cancelRead?.();}
+    state.coachToolsBatchImportCancelled=true;cancelAllStarImport();
+    els.coachtoolsImportSummary.textContent='Batch canceled. Completed files are available.';
+  };
+  const button=el('allstarImportFromShared');
+  button.onclick=async()=>{
+    button.disabled=true;
+    try{
+      const result=await syncAllStarFromCoachToolsData({forceSharedReload:true,render:true});
+      els.coachtoolsImportSummary.textContent=result.error||((result.busy||result.cancelled)?'Try again after the current data operation finishes.':result.changed?'Updated '+result.changedDatasets.map(batchSourceLabel).join(', ')+'.':'Connected sources are up to date.');
+      renderSourceHealthOverview();
+    }catch(error){els.coachtoolsImportSummary.textContent=error.message;}finally{button.disabled=false;}
+  };
+  const toggle=el('dataLayoutToggle'),body=drop.closest('.modalBody'),section=drop.closest('section');
+  const overview=body.querySelector('.currentDataSection');
+  const categorize=els.categorizeDataBtn.closest('.panel');
+  const sections=[section,overview,categorize];
+  const anchors=sections.map(node=>{const marker=document.createComment('original Data panel position');node.before(marker);return marker;});
+  const setLayout=enabled=>{
+    toggle.setAttribute('aria-pressed',String(enabled));
+    if(enabled)body.prepend(...sections);else sections.forEach((node,index)=>anchors[index].after(node));
+  };
+  setLayout(localStorage.getItem('allStarBatchReviewLayout.v1')==='on');
+  toggle.onclick=()=>{const enabled=toggle.getAttribute('aria-pressed')!=='true';setLayout(enabled);localStorage.setItem('allStarBatchReviewLayout.v1',enabled?'on':'off');};
+}
+
+
 function setSourceRowsAndHeaders(source, headers, rows, model){
   if(source===NONDATED_SOURCE || source===DATED_SOURCE){
     const normalizedRows=normalizeCategorizedRowsFromObjects(source, headers||[], rows||[]);
@@ -2094,7 +2283,8 @@ function rowTeam(row,options={}){
     if(mutate && team && row._team !== team) row._team=team;
     return team;
   }
-  if(rowSkipsTeamBuild(row)) return repKey ? (state.repTeams.get(repKey)||'') : '';
+  const skip=options.skipTeamBuild!==undefined&&rowSourceKey(row)===options.source?options.skipTeamBuild:rowSkipsTeamBuild(row);
+  if(skip) return repKey ? (state.repTeams.get(repKey)||'') : '';
   const team=canonicalCoachName(row._team || (repKey ? state.repTeams.get(repKey) : '') || '');
   if(mutate && team && row._team !== team) row._team=team;
   return team;

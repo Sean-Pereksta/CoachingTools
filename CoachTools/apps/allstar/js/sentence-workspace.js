@@ -267,7 +267,7 @@
     dialog.querySelector('[data-sq-restore]')?.addEventListener('click',()=>{if(remembered?.datedStats?.sentenceQuery?.version!==1){status.textContent='This draft version is not supported.';return;}item=copy(remembered);markIds(q().root);changed();});
     dialog.querySelector('[data-sq-close]').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{running++;clearTimeout(timer);dialog.remove();previousFocus?.focus();});draw();if(!saved&&initialView==='calculated')edit('count');
   }
-  openDatedStatsResearchEditor=function(id,source){if(state.researchItems.find(i=>i.id===id)?.datedStats?.sentenceQuery)return open(id);return oldOpen(id,source);};
+  openDatedStatsResearchEditor=function(id,source,seed){if(state.researchItems.find(i=>i.id===id)?.datedStats?.sentenceQuery)return open(id);return oldOpen(id,source,seed);};
   openResearchItemEditor=function(id){if(state.researchItems.find(i=>i.id===id)?.datedStats?.sentenceQuery)return open(id);return oldResearchOpen(id);};
   const button=document.createElement('button');button.type='button';button.id='allstarSentenceBuilder';button.className='toolbarBtn';button.textContent='Build a question +';button.onclick=()=>open();
   document.querySelector('.toolbar')?.insertBefore(button,document.getElementById('researchBtn'));

@@ -3,6 +3,7 @@
 'use strict';
 const AllStarAnalysis=(()=>{
   const stores=new Map(), rowIds=new WeakMap(), sourceEpochs=new Map();
+  const reportCriteria=new WeakMap();
   const limits={modelPlans:80,criterionResults:40000,numericColumns:32};
   const maxWeight=32*1024*1024;
   let sequence=0, epoch=0, weight=0, clock=0;
@@ -75,7 +76,31 @@ const AllStarAnalysis=(()=>{
     if(typeof expressionRefsForSource==='function') expressions.filter(Boolean).forEach(expression=>{
       expressionRefsForSource(expression,c.customSource||c.source).forEach(ref=>add(ref.source));
     });
+    if(typeof findMetricByRef==='function'){
+      for(const value of [c.column,c.leftColumn,c.rightColumn,...(c.filters||[]).map(f=>f.column)]){
+        const metric=findMetricByRef(value);
+        if(metric&&typeof metricDependencies==='function')metricDependencies(metric).forEach(add);
+      }
+    }
     return [...sources];
+  }
+  function criterionContext(criterion,opts){
+    let cache;
+    if(opts?._reportInputVersion){
+      cache=reportCriteria.get(opts);
+      if(!cache){cache=new WeakMap();reportCriteria.set(opts,cache);}
+      if(cache.has(criterion))return cache.get(criterion);
+    }
+    const sources=criterionSources(criterion,opts),v=state.versions||{};
+    const references=encode([criterion.expression,criterion.column,criterion.leftColumn,criterion.rightColumn,criterion.filters]);
+    const dependencies={sources,identity:true,signature:dependencySignature(sources,{
+      models:/model\s*\(/i.test(references)?v.models:undefined,
+      metrics:/@|metric:/i.test(references)?v.metrics:undefined,
+      scope:typeof allStarGlobalScopeKey==='function'?allStarGlobalScopeKey():''
+    })};
+    const context={sources,dependencies,keyPrefix:encode({criterion,options:optionsSignature(opts)})};
+    cache?.set(criterion,context);
+    return context;
   }
   function modelPlan(model,opts,build){
     const sources=[...new Set((model?.criteria||[]).flatMap(c=>criterionSources(c,opts)))];
@@ -91,8 +116,7 @@ const AllStarAnalysis=(()=>{
     // True team values emit per-run lineage; calculated display dates depend on the wall clock.
     if(opts.disableAnalysisCache || (entry?.kind==='team'&&criterion.trueValueEnabled) ||
       (criterion.calcType==='displayColumn'&&['daysSince','monthsSince','yearsSince'].includes(criterion.displayCalculation))) return compute();
-    const sources=criterionSources(criterion,opts), key=encode({criterion,entry,options:optionsSignature(opts)});
-    const dependencies={sources,identity:true,signature:dependencySignature(sources)};
+    const {sources,dependencies,keyPrefix}=criterionContext(criterion,opts),key=keyPrefix+'|'+encode(entry);
     const hit=get('criterionResults',key,dependencies); if(hit!==undefined) return hit;
     const started=now(), value=compute(); record('Model execution','partial recalculation',now()-started,{criterion:criterion.name||criterion.id||'',sources});
     return set('criterionResults',key,dependencies,value);
@@ -121,6 +145,6 @@ const AllStarAnalysis=(()=>{
   }
   function diagnostics(){ return {hits:stats.hits,misses:stats.misses,writes:stats.writes,evictions:stats.evictions,invalidations:stats.invalidations,
     estimatedBytes:weight,maxBytes:maxWeight,entries:Object.fromEntries([...stores].map(([name,store])=>[name,store.size])),stages:JSON.parse(JSON.stringify(stats.stages)),recent:stats.recent.slice()}; }
-  return {get,set,invalidate,record,diagnostics,sourceSignature,dependencySignature,optionsSignature,criterionSources,modelPlan,criterionValue,numberReader};
+  return {get,set,invalidate,record,diagnostics,sourceSignature,dependencySignature,optionsSignature,criterionSources,criterionContext,modelPlan,criterionValue,numberReader};
 })();
 if(typeof globalThis!=='undefined') globalThis.AllStarAnalysis=AllStarAnalysis;

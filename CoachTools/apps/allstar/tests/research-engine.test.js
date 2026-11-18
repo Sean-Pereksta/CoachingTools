@@ -99,6 +99,10 @@ async function invalidationAndBudget(){
 async function joinDiagnostics(){
   const h=fixture();
   try{
+    const audit=h.run("researchJoinSample({...fixtureItem,source:'retail_sv2',groupField:'Team',valueField:'![referral_sv2].[Metric]',analysisGrain:'representatives',crossSourceJoinMode:'strict_rep'})");
+    assert.ok(audit.sources.length>=2);
+    assert.ok(audit.sources.reduce((sum,side)=>sum+side.inspected,0)<=500);
+    assert.ok(audit.sources.some(side=>side.ambiguous>0));
     h.run(`const joinItem=attachResearchRuntime({...fixtureItem,analysisGrain:'representatives',crossSourceJoinMode:'strict_rep',startDate:'2026-09-01',endDate:'2026-09-01'},[]);const joined1=researchRowsForCohort('referral_sv2',state.data.retail.sv2,'retail_sv2',joinItem);const joined2=researchRowsForCohort('referral_sv2',state.data.retail.sv2,'retail_sv2',joinItem);`);
     assert.equal(h.run('joined1===joined2'),true,'date-filtered joined population must be reusable by all measures');
     assert.equal(h.run('joined1.length'),h.run("filterRowsForSource('referral_sv2',state.data.referral.sv2,{start:parseDateOnly(joinItem.startDate),end:parseDateOnly(joinItem.endDate),dateColumn:researchDefaultDateColumn({source:'referral_sv2'}),qaDateMode:els.runQADateSelect?.value||'interaction'}).length"),'source-specific date range semantics are retained');

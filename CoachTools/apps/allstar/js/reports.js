@@ -3,12 +3,28 @@
  */
 'use strict';
 
+let activeReportJob=null,activeMultiReport=null;
+function reportInputVersion(){
+  const v=state.versions||{};
+  return [state.reportingDataGeneration,state.activeImportJob?.id,state.centralSyncStageActive,v.data,v.models,v.metrics,v.roster,v.aliases,v.teams,v.mappings,
+    typeof allStarGlobalScopeKey==='function'?allStarGlobalScopeKey():''].join('|');
+}
+function reportStage(text){
+  const status=document.getElementById('reportStage');
+  if(status) status.textContent=text;
+}
+function cancelReportRun(){
+  if(activeReportJob||activeMultiReport){
+    if(activeReportJob)activeReportJob.cancelled=true;
+    if(activeMultiReport)activeMultiReport.cancelled=true;
+    reportStage('Canceling report…');
+  }
+}
 async function buildRun(runRequest={}){
+  if(state.activeImportJob||state.centralSyncStageActive){reportStage('Data is being updated. Run the report when the import finishes.');return null;}
   if(runRequest instanceof Event) runRequest={};
-  if(!runRequest.org && state.runMode==='multi') return buildMultiRun();
-  const generation=state.reportingDataGeneration||'', revision=state.versions?.data||0;
-  const assertCurrent=()=>{if(state.reportingDataClearing||state.coachRenameActive||generation!==(state.reportingDataGeneration||'')||revision!==(state.versions?.data||0))throw new Error('Reporting data changed during this run. Run the report again.');};
-  assertCurrent();
+  if(!runRequest.org && state.runMode==='multi') return buildMultiRun(runRequest.settings);
+  const revision=state.versions?.data||0;
   const settings=runRequest.settings||captureRunExecutionSettings(), model=findModel(settings.modelId||els.runModelSelect?.value); if(!model) return null;
   const start=parseDateOnly(settings.startDate), end=parseDateOnly(settings.endDate); if(start&&end&&start>end){ const err=new Error('Start Date must be on or before End Date.'); if(runRequest.rethrow) throw err; alert(err.message); return null; }
   let teams=[], includeOrgNames=new Set(), excludeOrgNames=new Set();
@@ -23,48 +39,83 @@ async function buildRun(runRequest={}){
   }
   const qaDateMode=settings.qaDateMode||'interaction', qaTeamScoreMode=settings.qaTeamScoreMode||'assignedReps', view=settings.view||'both';
   resetExpressionRunStats();
-  const opts={_dataRevision:revision,start,end,qaDateMode,qaTeamScoreMode,teamSpecificRepRanking:!!settings.teamSpecificRepRanking,selectedTeamNames:teams.slice(),organizationId:runRequest.org?.id||'',organizationName:runRequest.org?.name||'',_sourceRowsCache:new Map(),_entryRowsCache:new Map(),_qaSheetTeamRowsCache:new Map(),_criterionFilteredRowsCache:new Map(),runId:'run_'+Date.now().toString(36)};
+  const job={cancelled:false,inputVersion:reportInputVersion(),modelSelection:els.runModelSelect?.value};
+  activeReportJob=job;
+  const cancel=document.getElementById('reportCancel');if(cancel)cancel.hidden=false;
+  const assertCurrent=()=>{
+    if(job.cancelled||activeReportJob!==job) throw new Error('Report canceled.');
+    if(state.reportingDataClearing||state.coachRenameActive||job.inputVersion!==reportInputVersion()||findModel(model.id)!==model||els.runModelSelect?.value!==job.modelSelection)
+      throw new Error('The model, scope, or source data changed. Run the report again.');
+  };
+  const opts={_inlineProgress:true,pdfOptions:mergePdfOptions(runRequest.pdfOptions||state.pdfOptions||loadPdfOptions()),_dataRevision:revision,_reportInputVersion:job.inputVersion,_assertCurrent:assertCurrent,start,end,qaDateMode,qaTeamScoreMode,teamSpecificRepRanking:!!settings.teamSpecificRepRanking,selectedTeamNames:teams.slice(),organizationId:runRequest.org?.id||'',organizationName:runRequest.org?.name||'',_sourceRowsCache:new Map(),_entryRowsCache:new Map(),_qaSheetTeamRowsCache:new Map(),_criterionFilteredRowsCache:new Map(),runId:'run_'+Date.now().toString(36)};
   const oldRunText=els.executeRunBtn?.textContent||'';
   if(els.executeRunBtn&&!runRequest.multi){ els.executeRunBtn.disabled=true; els.executeRunBtn.textContent='Running...'; }
   try{
     const label=runRequest.org?.name?`${runRequest.org.name}: `:'', totalStart=performance.now(), perfStart=runPerfSnapshot(); console.groupCollapsed(`[All Star Run] ${runRequest.org?.name||'Single report'}`); console.time('[All Star Run] Total time from click to visible report');
-    showProgress(`${label}determining required sources...`,2); await yieldToBrowser(); assertCurrent();
+    reportStage(`${label}Preparing data…`); await yieldToBrowser(); assertCurrent();
     console.time('[All Star Run] Required sources'); const plan=compileRunCriterionPlan(model,{qaTeamScoreMode,qaDateMode}); opts._criterionPlan=plan; console.timeEnd('[All Star Run] Required sources'); console.info('requiredSources',plan.requiredSources);
-    updateProgress(`${label}awaiting matching preparation jobs`,8); console.time('[All Star Run] Awaited jobs');
-    console.time('[All Star Run] Remaining preparation after final click'); await ensureSelectedModelPreparedForRun(model,{qaTeamScoreMode,qaDateMode}); assertCurrent(); console.timeEnd('[All Star Run] Awaited jobs'); console.timeEnd('[All Star Run] Remaining preparation after final click');
+    console.time('[All Star Run] Awaited jobs');
+    let stageStart=performance.now();console.time('[All Star Run] Remaining preparation after final click'); await ensureSelectedModelPreparedForRun(model,{qaTeamScoreMode,qaDateMode}); assertCurrent();AllStarAnalysis.record('Report preparation','selected sources',performance.now()-stageStart,{sources:plan.requiredSources.length});stageStart=performance.now();console.timeEnd('[All Star Run] Awaited jobs'); console.timeEnd('[All Star Run] Remaining preparation after final click');
     console.time('[All Star Run] Reused indexes'); console.info('Run index counters',runPerfDelta(perfStart)); console.timeEnd('[All Star Run] Reused indexes');
-    updateProgress(`${label}filtering rows by date`,18); console.time('[All Star Run] Date filtering'); const teamEntryList=teamEntries(teams), repEntryList=allRepEntries(model,teams); console.timeEnd('[All Star Run] Date filtering');
-    console.time('[All Star Run] Team scoring'); const teamRows=await computeEntriesAsync(model,teamEntryList,'team',opts,{start:22,end:48,label:`${label}scoring teams`}); console.timeEnd('[All Star Run] Team scoring');
+    console.time('[All Star Run] Date filtering'); const teamEntryList=teamEntries(teams), repEntryList=allRepEntries(model,teams); console.timeEnd('[All Star Run] Date filtering');
+    reportStage(`${label}Calculating…`); console.time('[All Star Run] Team scoring'); const teamRows=await computeEntriesAsync(model,teamEntryList,'team',opts,{start:22,end:48,label:`${label}scoring teams`}); console.timeEnd('[All Star Run] Team scoring');
     console.time('[All Star Run] Representative scoring'); let repRows=await computeEntriesAsync(model,repEntryList,'rep',opts,{start:48,end:88,label:`${label}scoring representatives`}); console.timeEnd('[All Star Run] Representative scoring');
-    console.time('[All Star Run] Rank calculation'); repRows=applyHideNoScoreRepOption(repRows); const teamRepRows=opts.teamSpecificRepRanking?buildTeamScopedRepresentativePack(repRows):repRows; console.timeEnd('[All Star Run] Rank calculation'); updateProgress(`${label}rendering report`,96); await yieldToBrowser(); assertCurrent();
-    renderResults(model,teamRows,repRows,view,start,end,qaDateMode,opts,teamRepRows); console.timeEnd('[All Star Run] Total time from click to visible report'); console.info('[All Star Run] Perf counters',runPerfDelta(perfStart),'visibleMs',Math.round(performance.now()-totalStart)); console.groupEnd();
-    if(runRequest.org&&els.workArea) els.workArea.querySelector('.reportMeta')?.insertAdjacentHTML('beforeend',`<span class="badge">Organization: ${esc(runRequest.org.name)}</span>`);
-    else { const inc=(settings.includeOrgIds||[]).map(idv=>(state.orgs||[]).find(o=>o.id===idv)?.name).filter(Boolean), exc=(settings.excludeOrgIds||[]).map(idv=>(state.orgs||[]).find(o=>o.id===idv)?.name).filter(Boolean); if((inc.length||exc.length)&&els.workArea) els.workArea.querySelector('.reportMeta')?.insertAdjacentHTML('beforeend',`<span class="badge">Include Orgs: ${esc(inc.join(', ')||'None')}</span><span class="badge">Exclude Orgs: ${esc(exc.join(', ')||'None')}</span>`); }
-    if(els.workArea) els.workArea.insertAdjacentHTML('beforeend',expressionSummaryPanel('Model run expression diagnostics')); updateProgress(`${label}report generated`,100); await yieldToBrowser(); assertCurrent(); saveRunSettings();
-    if(!runRequest.keepModalOpen) closeModal('runModal'); return state.lastRenderedReport;
+    console.time('[All Star Run] Rank calculation'); repRows=applyHideNoScoreRepOption(repRows,settings); const teamRepRows=opts.teamSpecificRepRanking?buildTeamScopedRepresentativePack(repRows):repRows; console.timeEnd('[All Star Run] Rank calculation'); AllStarAnalysis.record('Report scoring','rank and score',performance.now()-stageStart,{teams:teamRows.rows.length,reps:repRows.rows.length});
+    reportStage(`${label}Displaying results…`); await yieldToBrowser(); assertCurrent();
+    stageStart=performance.now();opts.monthlyCoverage=typeof monthlyReportCoverage==='function'?monthlyReportCoverage(model):'';
+    if(qaTeamScoreMode==='sheetTeam')opts.qaSourceLabel=activeDirectQASourceLabel();
+    const report={model,teamPack:teamRows,repPack:repRows,teamRepPack:teamRepRows,view,start,end,qaDateMode,runOpts:opts,monthlyCoverage:opts.monthlyCoverage};
+    if(!runRequest.background){renderResults(model,teamRows,repRows,view,start,end,qaDateMode,opts,teamRepRows);report.monthlyCoverage=state.lastRenderedReport.monthlyCoverage;
+      AllStarAnalysis.record('Report rendering','active result',performance.now()-stageStart,{view});
+    } console.timeEnd('[All Star Run] Total time from click to visible report'); console.info('[All Star Run] Perf counters',runPerfDelta(perfStart),'visibleMs',Math.round(performance.now()-totalStart)); console.groupEnd();
+    if(!runRequest.background&&runRequest.org&&els.workArea) els.workArea.querySelector('.reportMeta')?.insertAdjacentHTML('beforeend',`<span class="badge">Organization: ${esc(runRequest.org.name)}</span>`);
+    else if(!runRequest.background){ const inc=(settings.includeOrgIds||[]).map(idv=>(state.orgs||[]).find(o=>o.id===idv)?.name).filter(Boolean), exc=(settings.excludeOrgIds||[]).map(idv=>(state.orgs||[]).find(o=>o.id===idv)?.name).filter(Boolean); if((inc.length||exc.length)&&els.workArea) els.workArea.querySelector('.reportMeta')?.insertAdjacentHTML('beforeend',`<span class="badge">Include Orgs: ${esc(inc.join(', ')||'None')}</span><span class="badge">Exclude Orgs: ${esc(exc.join(', ')||'None')}</span>`); }
+    if(!runRequest.background&&els.workArea) els.workArea.insertAdjacentHTML('beforeend',expressionSummaryPanel('Model run expression diagnostics')); reportStage(`${label}Report ready.`);
+    if(!runRequest.keepModalOpen) closeModal('runModal'); return report;
   }catch(err){
-    console.error(err); if(runRequest.rethrow) throw err; alert(`The report could not finish running.${err?.message?' '+err.message:''}`); return null;
+    reportStage(err.message||String(err)); if(job.cancelled&&!runRequest.rethrow) return null; console.error(err); if(runRequest.rethrow) throw err; alert(`The report could not finish running.${err?.message?' '+err.message:''}`); return null;
   }finally{
-    if(els.executeRunBtn&&!runRequest.multi){ els.executeRunBtn.disabled=false; els.executeRunBtn.textContent=oldRunText||'Run Single Report'; } if(!runRequest.keepProgress) hideProgress();
+    if(activeReportJob===job){activeReportJob=null;if(cancel&&!activeMultiReport)cancel.hidden=true;}
+    if(els.executeRunBtn&&!runRequest.multi){ els.executeRunBtn.disabled=false; els.executeRunBtn.textContent=oldRunText||'Run report'; }
   }
 }
-async function buildMultiRun(){
-  if(state.multiRunActive) return;
-  const orgs=[...(state.multiRunOrgIds||[])].map(idv=>(state.orgs||[]).find(o=>o.id===idv)).filter(Boolean); if(!orgs.length){ alert('Select at least one organization for the multi report.'); return; }
-  const settings=captureRunExecutionSettings(), pdfOptions=mergePdfOptions(state.pdfOptions||loadPdfOptions()); if(!pdfHasAnyContent(pdfOptions)){ alert('Choose at least one PDF winner or breakdown option before running MultiReport.'); return; }
-  if(!jsPDFCtor()){ alert('The PDF library did not load. Check the internet connection, refresh, and try again.'); return; }
-  const oldText=els.executeRunBtn?.textContent||''; state.multiRunActive=true; if(els.executeRunBtn){ els.executeRunBtn.disabled=true; els.executeRunBtn.textContent=`Running 1 of ${orgs.length}...`; } saveRunSettings();
-  const completed=[], failed=[];
+async function buildMultiRun(capturedSettings,retryId){
+  if(state.multiRunActive)return;
+  const settings=capturedSettings||captureRunExecutionSettings(),orgIds=retryId?[retryId]:settings.multiOrgIds||[];
+  const orgs=orgIds.map(key=>(state.orgs||[]).find(o=>o.id===key)).filter(Boolean);
+  if(!orgs.length)return alert('Choose at least one organization to run.');
+  const pdfOptions=mergePdfOptions(state.pdfOptions||loadPdfOptions());
+  if(!pdfHasAnyContent(pdfOptions))return alert('Choose at least one PDF winner or breakdown option.');
+  if(!jsPDFCtor())return alert('The PDF library could not load. Reopen CoachTools and try again.');
+  const host=el('multiReportStatus'),cancel=el('reportCancel'),batch={cancelled:false},version=reportInputVersion();
+  if(!retryId&&host)host.replaceChildren();
+  const current=()=>{
+    if(batch.cancelled)throw Error('Canceled.');
+    if(version!==reportInputVersion()||els.runModelSelect?.value!==settings.modelId)throw Error('Inputs changed. Run again on current data.');
+  };
+  activeMultiReport=batch;state.multiRunActive=true;
+  if(cancel)cancel.hidden=false;els.executeRunBtn.disabled=true;
+  let completed=0,failed=0;
   try{
-    for(let i=0;i<orgs.length;i++){
-      const org=orgs[i]; if(els.executeRunBtn) els.executeRunBtn.textContent=`Running ${i+1} of ${orgs.length}: ${org.name}`; showProgress(`MultiReport ${i+1} of ${orgs.length}: generating ${org.name}`,Math.floor(i/orgs.length*100)); await yieldToBrowser();
-      try{ const report=await buildRun({org,settings,multi:true,keepModalOpen:true,keepProgress:true,rethrow:true}); if(!report) throw new Error('No report was produced.'); await exportPDF({report,fileNameBase:org.name,keepProgress:true,silent:true,progressLabel:`MultiReport ${i+1} of ${orgs.length}: exporting ${org.name}`}); completed.push(org.name); }
-      catch(err){ console.error(`MultiReport failed for ${org.name}`,err); failed.push(`${org.name}: ${err?.message||err}`); }
-      await yieldToBrowser();
+    for(const org of orgs){
+      let row=host&&[...host.children].find(node=>node.dataset.org===org.id);
+      if(host&&!row){row=document.createElement('div');row.dataset.org=org.id;host.appendChild(row);}
+      if(row)row.textContent=org.name+' · Preparing data…';
+      try{
+        current();await yieldToBrowser();current();
+        const report=await buildRun({org,settings,pdfOptions,multi:true,background:completed>0,keepModalOpen:true,rethrow:true});
+        if(!report)throw Error('No report was produced.');
+        current();if(row)row.textContent=org.name+' · Preparing PDF…';
+        await exportPDF({report,options:pdfOptions,fileNameBase:org.name,background:true,assertCurrent:current,silent:true});
+        completed++;if(row)row.textContent=org.name+' · PDF exported';
+      }catch(error){
+        failed++;
+        if(row){row.textContent=org.name+' · '+(error.message||error)+' ';const retry=document.createElement('button');retry.type='button';retry.textContent='Retry';retry.onclick=()=>buildMultiRun(captureRunExecutionSettings(),org.id);row.appendChild(retry);}
+      }
     }
-    updateProgress(`MultiReport finished: ${completed.length} exported${failed.length?`, ${failed.length} failed`:''}`,100); await yieldToBrowser(); closeModal('runModal');
-    alert(`MultiReport complete. ${completed.length} organization PDF${completed.length===1?'':'s'} exported.${failed.length?`\n\nCould not export:\n${failed.join('\n')}`:''}`);
-  }finally{ state.multiRunActive=false; if(els.executeRunBtn){ els.executeRunBtn.disabled=false; els.executeRunBtn.textContent=oldText||'Run & Export Selected Orgs'; } hideProgress(); }
+    reportStage(`${completed} organization PDFs exported · ${failed} incomplete`);
+    if(!failed)closeModal('runModal');
+  }finally{activeMultiReport=null;state.multiRunActive=false;els.executeRunBtn.disabled=false;if(cancel)cancel.hidden=true;}
 }
 function missingRankForCriterion(c){ return Math.max(1,Number(c.missingRank)||999); }
 function missingPointsForCriterion(c){ return Number(c.missingPoints)||0; }
@@ -137,18 +188,19 @@ function applyNoScoreForRank(rows,c,weight){
   });
 }
 async function computeEntriesAsync(model, entries, kind, opts, progress={}){
+  opts?._assertCurrent?.();
   const criteria=(opts?._criterionPlan ? (kind==='team'?opts._criterionPlan.teamCriteria:opts._criterionPlan.repCriteria).map(p=>p.criterion) : (model.criteria||[]).filter(c=>criterionAppliesToKind(c,kind)));
   const rows=entries.map(entry=>({entry, values:{}, ranks:{}, scoreParts:{}, missingScores:{}, overallScore:0, eligible:true, autofails:[], minimumFails:[], zeroCanWinOverall:false}));
   const start=Number(progress.start)||0, end=Number(progress.end)||100, span=end-start;
   const totalValueOps=Math.max(1,criteria.length*Math.max(1,rows.length));
   let done=0;
-  const update=(label,extra=0)=>updateProgress(label, start + span*Math.min(.98,(done+extra)/totalValueOps));
-  const chunkSize=35;
+  const update=(label,extra=0)=>!opts._inlineProgress&&updateProgress(label, start + span*Math.min(.98,(done+extra)/totalValueOps));
+  let sliceStart=performance.now();
   for(const c of criteria){
     for(let i=0;i<rows.length;i++){
       rows[i].values[c.id]=criterionValue(c,rows[i].entry,opts);
       done++;
-      if(done%chunkSize===0){ update(`${progress.label||'Scoring'}: ${esc(c.name||'criterion')}`); await yieldToBrowser(); }
+      if(performance.now()-sliceStart>=12){ update(`${progress.label||'Scoring'}: ${esc(c.name||'criterion')}`); await yieldToBrowser(); opts?._assertCurrent?.(); sliceStart=performance.now(); }
     }
   }
   const applicableCriteria=criteria.filter(c=>c.scoreType!=='display');
@@ -292,7 +344,11 @@ function autofailHit(v,c){
   return v>=t;
 }
 
-function sourceDateRangeText(src,rows){ const vals=(rows||[]).map(r=>rowDateMillisForSource(src,r)).filter(Number.isFinite); return vals.length ? `${ymd(new Date(Math.min(...vals)))} – ${ymd(new Date(Math.max(...vals)))}` : 'No mapped dates'; }
+function sourceDateRangeText(src,rows){
+  let min=Infinity,max=-Infinity; const read=sourceIndexDateReader(src);
+  for(const row of rows||[]){const ms=read(row);if(Number.isFinite(ms)){min=Math.min(min,ms);max=Math.max(max,ms);}}
+  return Number.isFinite(min)?`${ymd(new Date(min))} – ${ymd(new Date(max))}`:'No mapped dates';
+}
 function dataHealthPanelHtml(){
   const indexCurrent=dataIndexReady();
   const rows=allSourceKeys().map(src=>{ const headers=sourceHeaders(src)||[], rows=sourceRows(src)||[], cfg=getSourceSetting(activeModelForImport(),src); const imported=sourceHasImportedData(src); const fw=isCustomSource(src)?` · ${frameworkDef(sourceFramework(src)).label}`:''; const keys=isCustomSource(src)?relevantMappingKeys(src,cfg.framework||sourceFramework(src)):[]; const mapped=keys.filter(k=>cfg.columns?.[k]).length; const mapText=isCustomSource(src)?` · ${mapped}/${keys.length} mappings set`:''; const warn=isCustomSource(src)?customSourceWarnings(src):[]; const cols=cfg.columns||{}; const mappedText=isCustomSource(src)?`<div class="checkResultMeta">Rep: <b>${esc(cols.rep||cols.fullName||'')}</b> · Team: <b>${esc(cols.team||cols.coach||'')}</b> · Date/Week: <b>${esc(cols.date||cols.week||cols.month||'')}</b></div>`:''; const warnText=warn.length?`<div class="checkResultMeta"><span class="badge warn">${warn.map(esc).join('</span> <span class="badge warn">')}</span></div>`:''; return `<div class="checkResultRow ${(imported&&!warn.length)?'okRow':'warnRow'}"><strong>${esc(labelSource(src))}${esc(fw)}</strong><div class="checkResultMeta">${rows.length.toLocaleString()} rows · ${headers.length} headers · ${esc(sourceDateRangeText(src,rows))} · indexes ${indexCurrent&&sourceIndex(src)?'current':'need rebuild'} · header row ${esc(cfg.headerRow||1)} · start column ${esc(cfg.startCol||1)}${mapText}</div>${mappedText}${warnText}</div>`; }).join('');
@@ -422,24 +478,61 @@ function trueValueDiagnosticsHtml(runOpts={}){
   return `<details class="panel" ${unique.length?'open':''}><summary><strong>True Team Value Check</strong> <span class="badge ${unique.length?'warn':'good'}">${successCount} matched · ${unique.length} failed</span></summary><div class="checkResultList">${rows||'<div class="checkResultRow okRow"><strong>All configured true team values matched.</strong></div>'}</div></details>`;
 }
 function renderResults(model, teamPack, repPack, view, start, end, qaDateMode, runOpts={}, teamRepPack=repPack){
-  state.lastRenderedReport={model,teamPack,repPack,teamRepPack,view,start,end,qaDateMode,runOpts,monthlyCoverage:typeof monthlyReportCoverage==='function'?monthlyReportCoverage(model):''};
+  const monthlyCoverage=runOpts.monthlyCoverage??(runOpts._saved?'':typeof monthlyReportCoverage==='function'?monthlyReportCoverage(model):'');
+  const report={model,teamPack,repPack,teamRepPack,view,start,end,qaDateMode,runOpts,monthlyCoverage};
   const html=[];
-  const dateText=(start&&end)?`${ymd(start)} to ${ymd(end)}`:'All available dates';
-  const teamCount=(state.selectedTeams||new Set()).size || runTeamNames().length;
+  const dateText=start||end?`${start?ymd(start):'First available date'} to ${end?ymd(end):'last available date'}`:'All available dates';
+  const teamCount=runOpts.selectedTeamNames?.length??teamPack.rows.length;
   const qaDateBadge=modelUsesQA(model) ? `<span class="badge">QA Dates: ${qaDateMode==='assigned'?'Assigned Date':'Interaction Start Time'}</span>` : '';
-  const qaTeamBadge=modelUsesQA(model) ? `<span class="badge">QA Team Scores: ${(runOpts.qaTeamScoreMode||'assignedReps')==='sheetTeam'?`Direct raw QA upload: ${esc(activeDirectQASourceLabel())}`:'Assigned representatives'}</span>` : '';
+  const qaTeamBadge=modelUsesQA(model) ? `<span class="badge">QA Team Scores: ${(runOpts.qaTeamScoreMode||'assignedReps')==='sheetTeam'?`Direct raw QA upload: ${esc(runOpts.qaSourceLabel??(runOpts._saved?'QA source':activeDirectQASourceLabel()))}`:'Assigned representatives'}</span>` : '';
   const rankingBadge=`<span class="badge">Representative ranking: ${runOpts.teamSpecificRepRanking?'team-specific on team pages; overall on Total Representatives':'overall across the selected population'}</span>`;
-  const rosterCount=(runOpts.selectedTeamNames||[]).reduce((n,t)=>n+repsForTeam(t).length,0);
-  const rosterBadge=hasTrustedControlRoster()?`<span class="badge">Trusted roster: ${rosterCount.toLocaleString()}</span><span class="badge">Displayed representatives: ${(repPack?.rows?.length||0).toLocaleString()}</span><span class="badge">Hidden without scores: ${Math.max(0,rosterCount-(repPack?.rows?.length||0)).toLocaleString()}</span>`:'';
+  const rosterCount=runOpts._saved?runOpts.rosterCount:(runOpts.selectedTeamNames||[]).reduce((n,t)=>n+repsForTeam(t).length,0);
+  if(!runOpts._saved&&hasTrustedControlRoster())runOpts.rosterCount=rosterCount;
+  const rosterBadge=(runOpts._saved?Number.isFinite(rosterCount):hasTrustedControlRoster())?`<span class="badge">Trusted roster: ${rosterCount.toLocaleString()}</span><span class="badge">Displayed representatives: ${(repPack?.rows?.length||0).toLocaleString()}</span><span class="badge">Hidden without scores: ${Math.max(0,rosterCount-(repPack?.rows?.length||0)).toLocaleString()}</span>`:'';
   state.researchTraceStore=new Map();
-  const reportHeader=`<div class="reportHeader"><h1 class="resultTitle">${esc(model.name)}</h1><div class="reportMeta"><span class="badge">Date Range: ${esc(dateText)}</span><span class="badge">Teams: ${teamCount}</span><span class="badge">View: ${esc(view==='both'?'Teams + Representatives':view==='team'?'Teams':'Representatives')}</span>${qaDateBadge}${qaTeamBadge}${rankingBadge}${rosterBadge}${state.lastRenderedReport.monthlyCoverage?`<span class="badge warn">${esc(state.lastRenderedReport.monthlyCoverage)}</span>`:''}<span class="badge">Medals: 🥇 first, 🥈 second, 🥉 third</span></div></div>`;
+  const reportHeader=`<div class="reportHeader"><h1 class="resultTitle">${esc(model.name)}</h1><div class="reportMeta"><span class="badge">Date Range: ${esc(dateText)}</span><span class="badge">Teams: ${teamCount}</span><span class="badge">View: ${esc(view==='both'?'Teams + Representatives':view==='team'?'Teams':'Representatives')}</span>${qaDateBadge}${qaTeamBadge}${rankingBadge}${rosterBadge}${monthlyCoverage?`<span class="badge warn">${esc(monthlyCoverage)}</span>`:''}<span class="badge">Medals: 🥇 first, 🥈 second, 🥉 third</span></div></div>`;
+  if(document.getElementById('reportFocusedMode')?.checked){
+    renderFocusedReport(report,reportHeader);
+    state.lastRenderedReport=report;
+    return;
+  }
   html.push(`<div id="pdfContent">`);
-  html.push(`<section class="pdfPage pdfOverviewPage">${reportHeader}${dataHealthPanelHtml()}${trueValueDiagnosticsHtml(runOpts)}${rosterReconciliationHtml(repPack,runOpts)}${(view==='both'||view==='team')?sectionTable('Team Breakdown',teamPack,'team',model,runOpts):''}</section>`);
+  html.push(`<section class="pdfPage pdfOverviewPage">${reportHeader}${runOpts._saved?'':dataHealthPanelHtml()}${trueValueDiagnosticsHtml(runOpts)}${runOpts._saved?'':rosterReconciliationHtml(repPack,runOpts)}${(view==='both'||view==='team')?sectionTable('Team Breakdown',teamPack,'team',model,runOpts):''}</section>`);
   if(view==='both'||view==='rep') html.push(`<section class="pdfPage pdfTotalsPage"><div class="teamPageHeading"><h2>Total Representatives</h2><span class="badge">${repPack.rows.length.toLocaleString()} representatives · overall ranking</span></div>${sectionTable('Total Representative Ranking',repPack,'rep',model,runOpts)}</section>`);
   if(view==='both'||view==='rep') html.push(repTeamPages(teamRepPack,teamPack,model,runOpts));
   html.push('</div>');
   els.workArea.innerHTML=html.join('');
+  state.lastRenderedReport=report;
   bindModelTraceCells();
+}
+function renderFocusedReport(report,header){
+  const {model,teamPack,repPack,teamRepPack,runOpts,view}=report,host=els.workArea;
+  const scopes=[];
+  if(view!=='rep')scopes.push({title:'Teams',kind:'team',pack:teamPack});
+  if(view!=='team'){
+    scopes.push({title:'All representatives',kind:'rep',pack:repPack});
+    const groups=new Map();
+    for(const row of teamRepPack.rows){const key=row.entry.team||'No Team';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row);}
+    for(const [team,rows] of [...groups].sort(([a],[b])=>a.localeCompare(b)))scopes.push({title:team,kind:'rep',team:true,pack:{criteria:teamRepPack.criteria,rows}});
+  }
+  host.innerHTML=header+`<div class="row"><label>Results <select id="reportResultScope">${scopes.map((s,i)=>`<option value="${i}">${esc(s.title)}</option>`).join('')}</select></label><button type="button" id="reportPagePrev">Previous</button><span id="reportPageCount" role="status"></span><button type="button" id="reportPageNext">Next</button></div><div id="reportResultTable"></div><details id="reportDiagnostics"><summary>Inspect report diagnostics</summary><div></div></details>`;
+  const select=el('reportResultScope'),prev=el('reportPagePrev'),next=el('reportPageNext');
+  let page=0;
+  const paint=()=>{
+    const scope=scopes[Number(select.value)||0],all=scope.pack.rows,rows=all.slice(page*50,(page+1)*50);
+    state.researchTraceStore=new Map();
+    el('reportResultTable').innerHTML=scope.team?
+      `<div class="resultSection"><h2>${esc(scope.title)}</h2><div class="tableWrap"><table>${sectionRowsOnly(scope.pack.criteria,all,'rep',model,runOpts,rows)}</table></div></div>`:
+      sectionTable(scope.title,{criteria:scope.pack.criteria,rows},scope.kind,model,runOpts,all);
+    prev.disabled=page===0;next.disabled=(page+1)*50>=all.length;
+    el('reportPageCount').textContent=all.length?`${page*50+1}–${page*50+rows.length} of ${all.length}`:'0 rows';
+    bindModelTraceCells();
+  };
+  select.onchange=()=>{page=0;paint();};prev.onclick=()=>{page--;paint();};next.onclick=()=>{page++;paint();};
+  const diagnostics=el('reportDiagnostics');
+  diagnostics.ontoggle=()=>{if(diagnostics.open&&!diagnostics.lastElementChild.innerHTML)diagnostics.lastElementChild.innerHTML=
+    (runOpts._saved?'':dataHealthPanelHtml())+trueValueDiagnosticsHtml(runOpts)+(runOpts._saved?'':rosterReconciliationHtml(repPack,runOpts));};
+  paint();
 }
 function repTeamPages(repPack,teamPack,model,runOpts={}){
   const byTeam=new Map();
@@ -510,12 +603,15 @@ function criterionReportHeaderHtml(c,kind){
   return `<th class="right">${esc(c.name)} Value${kind==='team'&&c.trueValueEnabled?'<br><span class="badge">True Team Value</span>':''}</th><th class="right">${esc(c.name)} Score</th>`;
 }
 function criterionReportCellsHtml(model,c,r,kind,runOpts={}){
+  if(runOpts._evidenceUnavailable){
+    return c.calcType==='displayColumn'?`<td>${valueDisplay(r,c)}</td>`:`<td class="right">${valueDisplay(r,c)}</td><td class="right">${scoreDisplay(r,c)}</td>`;
+  }
   if(c.calcType==='displayColumn') return `<td class="${lookupDisplayCellClass(c,r.values?.[c.id])}">${modelTraceCell(valueDisplay(r,c),createModelCellTrace(model,c,r,kind,'value',runOpts))}</td>`;
   return `<td class="right">${modelTraceCell(valueDisplay(r,c),createModelCellTrace(model,c,r,kind,'value',runOpts))}</td><td class="right">${modelTraceCell(scoreDisplay(r,c),createModelCellTrace(model,c,r,kind,'score',runOpts))}</td>`;
 }
-function sectionTable(title, pack, kind, model, runOpts={}){
+function sectionTable(title, pack, kind, model, runOpts={},allRows=pack.rows){
   const criteria=pack.criteria||[];
-  const context={winningTeam:kind==='team'?firstWinningRow(pack.rows,'team'):null};
+  const context={winningTeam:kind==='team'?firstWinningRow(allRows,'team'):null};
   const head=`<tr><th>Rank</th><th>${kind==='team'?'Team':'Representative'}</th>${kind==='rep'?'<th>Team</th>':''}<th class="right">Score</th><th>Eligible</th>${criteria.map(c=>criterionReportHeaderHtml(c,kind)).join('')}<th>Autofail</th></tr>`;
   const body=pack.rows.map(r=>`<tr class="${rowHighlightClasses(r,kind,context)}"><td>${r.overallRank}${medalForRow(r,kind)}</td><td>${esc(r.entry.name)}${kind==='team'&&context.winningTeam===r?winnerBadge('team'):''}</td>${kind==='rep'?`<td>${esc(r.entry.team||'')}</td>`:''}<td class="right">${fmt(r.overallScore,'number')}</td><td>${r.eligible?'<span class="badge good">Yes</span>':'<span class="badge bad">No</span>'}</td>${criteria.map(c=>criterionReportCellsHtml(model,c,r,kind,runOpts)).join('')}<td>${esc([...r.autofails,...r.minimumFails].join(', '))}</td></tr>`).join('');
   return `<div class="resultSection"><h2>${esc(title)}</h2><div class="tableWrap"><table>${head}${body}</table></div></div>`;
@@ -527,12 +623,12 @@ function repByTeamSection(pack, model, runOpts={}){
   Array.from(byTeam.keys()).sort((a,b)=>a.localeCompare(b)).forEach(t=>{ html+=`<h3>${esc(t)}</h3><div class="tableWrap"><table>${sectionRowsOnly(pack.criteria,byTeam.get(t),'rep',model,runOpts)}</table></div>`; });
   html+='</div>'; return html;
 }
-function sectionRowsOnly(criteria, rows, kind, model, runOpts={}){
+function sectionRowsOnly(criteria, rows, kind, model, runOpts={},visibleRows=rows){
   const teamWinner=firstWinningRow(rows,'rep');
   const localRanks=new Map(); let localRank=0,lastScore=null;
   (rows||[]).forEach(r=>{ if(!r.eligible||rowZeroBottom(r,'rep')) return; const score=rowSortScore(r); if(score!==lastScore){localRank++;lastScore=score;} localRanks.set(r,localRank); });
   const head=`<tr><th>Team Rank</th><th>Representative</th><th class="right">Score</th><th>Eligible</th>${criteria.map(c=>criterionReportHeaderHtml(c,kind)).join('')}<th>Autofail</th></tr>`;
-  const body=rows.map(r=>`<tr class="${rowHighlightClasses(r,'rep',{teamWinner})}"><td>${localRanks.get(r)||'-'}${medalForRow(r,'rep')}</td><td>${esc(r.entry.name)}${teamWinner===r?winnerBadge('rep'):''}</td><td class="right">${fmt(r.overallScore,'number')}</td><td>${r.eligible?'<span class="badge good">Yes</span>':'<span class="badge bad">No</span>'}</td>${criteria.map(c=>criterionReportCellsHtml(model,c,r,kind,runOpts)).join('')}<td>${esc([...r.autofails,...r.minimumFails].join(', '))}</td></tr>`).join('');
+  const body=visibleRows.map(r=>`<tr class="${rowHighlightClasses(r,'rep',{teamWinner})}"><td>${localRanks.get(r)||'-'}${medalForRow(r,'rep')}</td><td>${esc(r.entry.name)}${teamWinner===r?winnerBadge('rep'):''}</td><td class="right">${fmt(r.overallScore,'number')}</td><td>${r.eligible?'<span class="badge good">Yes</span>':'<span class="badge bad">No</span>'}</td>${criteria.map(c=>criterionReportCellsHtml(model,c,r,kind,runOpts)).join('')}<td>${esc([...r.autofails,...r.minimumFails].join(', '))}</td></tr>`).join('');
   return head+body;
 }
 function populateRunModels(){
@@ -1099,7 +1195,12 @@ function requiredRunSourcesForModel(model, runOptions={}){
   const add=s=>{ if(s && all.has(s)) required.add(s); };
   const inspectValue=v=>{ if(typeof v==='string'){ expressionReferencedSources(v).forEach(add); const m=findMetricByRef(v); if(m) metricDependencies(m).forEach(add); } };
   const inspectObj=obj=>{ if(!obj || typeof obj!=='object') return; if(Array.isArray(obj)){ obj.forEach(inspectObj); return; } Object.entries(obj).forEach(([k,v])=>{ if(/source$/i.test(k) || ['source','leftSource','rightSource','customSource','trueValueSource','qualifierSource','numeratorSource','denominatorSource'].includes(k)) add(v); inspectValue(v); if(v&&typeof v==='object') inspectObj(v); }); };
-  (model?.criteria||[]).forEach(c=>{ if(c.calcType==='datedStats'){add(state.metrics.find(m=>m.id===c.datedStatsMetricId)?.source||c.source);(c.datedStatsEventConditions||[]).forEach(condition=>add(condition.source));return;} if(c.calcType==='qaScore' || criterionUsesQA(c)) add(runOptions.qaTeamScoreMode==='sheetTeam'?activeDirectQASource():'qa'); if(isRowPullCriterion(c)) add(rowPullSourceForCriterion(c)); if(c.trueValueEnabled) add(c.trueValueSource); inspectObj(c); });
+  (model?.criteria||[]).forEach(c=>{ if(c.calcType==='datedStats'){add(state.metrics.find(m=>m.id===c.datedStatsMetricId)?.source||c.source);(c.datedStatsEventConditions||[]).forEach(condition=>add(condition.source));return;} if(c.calcType==='qaScore' || criterionUsesQA(c)) add(runOptions.qaTeamScoreMode==='sheetTeam'?activeDirectQASource():'qa'); if(isRowPullCriterion(c)) add(rowPullSourceForCriterion(c)); if(c.trueValueEnabled)add(c.trueValueSource);
+    const active={...c};
+    if(c.calcType!=='multi'){delete active.leftSource;delete active.rightSource;delete active.leftColumn;delete active.rightColumn;}
+    if(c.calcType!=='custom'){delete active.customSource;delete active.expression;}
+    if(!c.trueValueEnabled){delete active.trueValueSource;delete active.trueValueColumn;}
+    inspectObj(active); });
   inspectObj(model?.metrics||[]); inspectObj(model?.expressions||[]);
   return [...required].filter(Boolean);
 }
@@ -1110,10 +1211,20 @@ function runIndexOptionsForSource(source, model){
 }
 function createRunSourceIndexShell(source,signature,rows,options={}){
   const headers=getHeaders(source)||[];
-  return {kind:'run',schemaVersion:RUN_INDEX_SCHEMA_VERSION,source,signature,version:signature,rows,headers,byRep:new Map(),byTeam:new Map(),byTeamKey:new Map(),dateMetadata:new WeakMap(),rowMeta:new WeakMap(),dateValues:[],sortedDateRows:null,dateSortedRows:[],byRepSortedDate:new Map(),byTeamSortedDate:new Map(),byRowId:new Map(),lazyIndexes:new Map(),reps:new Map(),optionalStructures:{sortedDateRows:!!options.sortedDateRows,teamLookup:options.teamLookup!==false},perf:{rowsIndexed:0,lazyBuilds:[]}};
+  const coaching=source==='documented_coaching'?{dateColumn:sourceDateHeader(source,headers),dates:[],representatives:new Set(),matchedCoaches:0,unmatchedRepresentatives:0}:null;
+  return {coaching,dateReader:sourceIndexDateReader(source),coverageMin:Infinity,coverageMax:-Infinity,kind:'run',schemaVersion:RUN_INDEX_SCHEMA_VERSION,source,signature,version:signature,rows,headers,byRep:new Map(),byTeam:new Map(),byTeamKey:new Map(),dateMetadata:new WeakMap(),rowMeta:new WeakMap(),dateValues:[],sortedDateRows:null,dateSortedRows:[],byRepSortedDate:new Map(),byTeamSortedDate:new Map(),byRowId:new Map(),lazyIndexes:new Map(),reps:new Map(),optionalStructures:{sortedDateRows:!!options.sortedDateRows,teamLookup:options.teamLookup!==false},perf:{rowsIndexed:0,lazyBuilds:[]}};
 }
 function addRunIndexedRow(idx,source,row,rowId,options={}){
-  const key=row._repKey||repKeyFromAnyRow(row)||'', team=rowTeam(row), teamKey=coachNameKey(team), ms=rowDateMillisForSource(source,row);
+  const key=row._repKey||repKeyFromAnyRow(row)||'', team=rowTeam(row), teamKey=coachNameKey(team), ms=idx.dateReader(row);
+  const coverage=typeof workflowRowTimestamp==='function'?workflowRowTimestamp(row):ms;
+  if(Number.isFinite(coverage)){idx.coverageMin=Math.min(idx.coverageMin,coverage);idx.coverageMax=Math.max(idx.coverageMax,coverage);}
+  if(idx.coaching){
+    const summary=idx.coaching;
+    if(row._repKey)summary.representatives.add(row._repKey);else summary.unmatchedRepresentatives++;
+    if(row._team)summary.matchedCoaches++;
+    const stamp=summary.dateColumn?parseDateOnly(row[summary.dateColumn]||row._date)?.getTime():NaN;
+    if(Number.isFinite(stamp))summary.dates.push(stamp);
+  }
   if(team && !row._team) row._team=team;
   if(key) pushMapArray(idx.byRep,key,row);
   if(team){ pushMapArray(idx.byTeam,team,row); if(options.teamLookup!==false) pushMapArray(idx.byTeamKey,teamKey,row); }
@@ -1126,9 +1237,14 @@ function addRunIndexedRow(idx,source,row,rowId,options={}){
 }
 async function buildRunSourceIndex(source,signature,options={}){
   const timings={source,totalRows:(getRowsRaw(source)||[]).length,signature,cache:'miss',persistedRestoration:'skipped',groupingMs:0,dateParsingMs:0,sortingMs:0,optionalStructures:[],totalMs:0}, totalStart=performance.now();
-  const rows=getRowsRaw(source)||[], idx=createRunSourceIndexShell(source,signature,rows,options), chunk=1200;
+  const rows=getRowsRaw(source)||[], idx=createRunSourceIndexShell(source,signature,rows,options);
   const groupStart=performance.now();
-  for(let i=0;i<rows.length;i++){ addRunIndexedRow(idx,source,rows[i],i,options); if(i && i%chunk===0) await yieldToBrowser(); }
+  let slice=performance.now();
+  for(let i=0;i<rows.length;i++){
+    addRunIndexedRow(idx,source,rows[i],i,options);
+    if(i%32===0&&performance.now()-slice>=12){await yieldToBrowser();slice=performance.now();}
+  }
+  if(idx.coaching)idx.coaching.dates.sort((a,b)=>a-b);
   timings.groupingMs=Math.round(performance.now()-groupStart); timings.dateParsingMs=timings.groupingMs;
   if(options.sortedDateRows){ const sortStart=performance.now(); idx.byRepSortedDate.forEach(list=>list.sort((a,b)=>(idx.rowMeta.get(a)?.dateMs||0)-(idx.rowMeta.get(b)?.dateMs||0))); idx.byTeamSortedDate.forEach(list=>list.sort((a,b)=>(idx.rowMeta.get(a)?.dateMs||0)-(idx.rowMeta.get(b)?.dateMs||0))); idx.dateSortedRows.sort((a,b)=>(idx.rowMeta.get(a)?.dateMs||0)-(idx.rowMeta.get(b)?.dateMs||0)); idx.sortedDateRows=idx.dateSortedRows; timings.sortingMs=Math.round(performance.now()-sortStart); timings.optionalStructures.push('sortedDateRows'); }
   timings.totalMs=Math.round(performance.now()-totalStart); console.groupCollapsed('[All Star Run Index] source preparation'); console.table([timings]); console.groupEnd(); state.runIndexDiagnostics=[...(state.runIndexDiagnostics||[]),timings].slice(-100); return idx;
@@ -1442,13 +1558,14 @@ async function exportPDF(request={}){
   if(validation){ if(request.silent) throw new Error(validation); alert(validation); return null; }
   const JsPDF=jsPDFCtor(); if(!JsPDF){ const msg='The PDF library did not load. Check the internet connection, refresh, and try again.'; if(request.silent) throw new Error(msg); alert(msg); return null; }
   const label=request.progressLabel?request.progressLabel+': ':'';
+  const pdfProgress=(text,pct)=>{if(!request.background)updateProgress(text,pct);};
   try{
-    showProgress(`${label}validating report and PDF settings...`,5); await yieldToBrowser(); updateProgress(`${label}building PDF content plan...`,12); const plan=buildPdfContentPlan(report,options); if(!plan.length) throw new Error('No valid PDF sections were available for the selected options.');
-    await yieldToBrowser(); const doc=createPdfDocument(options), theme=getPdfTheme(options), ctx=pdfCreateRenderContext(doc,report,options,theme); updateProgress(`${label}rendering selected PDF sections...`,25);
-    for(let i=0;i<plan.length;i++){ updateProgress(`${label}building section ${i+1} of ${plan.length}: ${plan[i].title}`,25+Math.floor(60*i/Math.max(1,plan.length))); await renderPdfSection(ctx,plan[i]); await yieldToBrowser(); }
-    updateProgress(`${label}adding headers and page numbers...`,88); pdfAddFinalFooters(doc,ctx); updateProgress(`${label}saving PDF...`,94);
+    if(request.background)reportStage('Preparing PDF…');else showProgress(`${label}validating report and PDF settings...`,5); await yieldToBrowser(); pdfProgress(`${label}building PDF content plan...`,12); const plan=buildPdfContentPlan(report,options); if(!plan.length) throw new Error('No valid PDF sections were available for the selected options.');
+    await yieldToBrowser(); const doc=createPdfDocument(options), theme=getPdfTheme(options), ctx=pdfCreateRenderContext(doc,report,options,theme); pdfProgress(`${label}rendering selected PDF sections...`,25);
+    for(let i=0;i<plan.length;i++){ request.assertCurrent?.();pdfProgress(`${label}building section ${i+1} of ${plan.length}: ${plan[i].title}`,25+Math.floor(60*i/Math.max(1,plan.length))); await renderPdfSection(ctx,plan[i]); await yieldToBrowser(); }
+    pdfProgress(`${label}adding headers and page numbers...`,88); pdfAddFinalFooters(doc,ctx); pdfProgress(`${label}saving PDF...`,94);
     const prefix=request.fileNameBase?`${pdfFilePart(request.fileNameBase)}-${pdfFilePart(options.title||report.model?.name)}`:pdfFilePart(options.title||report.model?.name), fileName=`${prefix}-${ymd(new Date())}.pdf`;
-    doc.save(fileName); updateProgress(`${label}PDF exported`,100); return {fileName,doc};
+    request.assertCurrent?.();doc.save(fileName); pdfProgress(`${label}PDF exported`,100); return {fileName,doc};
   }catch(err){ console.error('PDF export failed',err); if(request.silent) throw err; alert(`PDF export failed: ${err?.message||err}`); return null; }
-  finally{ if(!request.keepProgress) hideProgress(); }
+  finally{ if(!request.background&&!request.keepProgress) hideProgress(); }
 }

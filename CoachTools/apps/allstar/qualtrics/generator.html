@@ -8,6 +8,8 @@
 <script src="../../../vendor/jszip.min.js"></script>
 <script src="insights.js" onerror="this.onerror=null;this.src='qualtrics/insights.js'"></script>
 <script src="workflow.js"></script>
+<script src="key-file-intake.js"></script>
+<script src="email-package.js"></script>
 <script src="executive-email.js" onerror="this.onerror=null;this.src='qualtrics/executive-email.js'"></script>
 <script src="individual-messages.js" onerror="this.onerror=null;this.src='qualtrics/individual-messages.js'"></script>
 <script src="individual-ui.js" onerror="this.onerror=null;this.src='qualtrics/individual-ui.js'"></script>
@@ -102,10 +104,12 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
     <button class="tabBtn" data-tab="rules">3. Build Rules</button>
     <button class="tabBtn" data-tab="report">4. Action Report</button>
     <button class="tabBtn" data-tab="individual">5. Individual Messages</button>
+    <button class="tabBtn" data-tab="history">History</button>
   </nav>
+  <button class="btn small" type="button" id="toggleQualtricsWorkflow" aria-pressed="false">Try guided workflow</button>
   <span class="spacer"></span>
   <div class="progressWrap" id="progressWrap"><div class="progress"><span id="progressBar"></span></div><span class="mono mini" id="progressText">0%</span></div>
-  <div class="status" id="status">Ready. Rules and follow-up history save locally in IndexedDB.</div>
+  <div class="status" id="status" role="status" aria-live="polite">Ready. Rules and follow-up history save locally in IndexedDB.</div>
 </header>
 
 <main class="wrap">
@@ -136,6 +140,11 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
       </aside>
 
       <div class="card ruleEditor">
+        <div class="note" id="ruleStudioTools">
+          <div class="row"><strong id="ruleStudioTitle">Rule draft</strong><span class="spacer"></span><button type="button" class="btn" id="openRuleDraft">Edit as draft</button><button type="button" class="btn" id="cancelRuleDraft" hidden>Discard draft</button><button type="button" class="btn" id="saveRuleDraftCopy" hidden>Save as a new rule</button><button type="button" class="btn" id="toggleRuleStudio">Advanced autosave editor</button></div>
+          <div class="row"><label>New rule<select id="newRuleTemplate"><option value="multiHeader">Match conditions across report headers</option><option value="headerCount">Count report rows by person</option><option value="statRule">Check weekly or QA performance</option><option value="statCount">Count matching key-file rows</option><option value="coachingCorrective">Check coaching-to-corrective follow-up</option></select></label><button class="btn" id="startRuleDraft" type="button">Create draft</button></div>
+          <div id="ruleStudioGuide" hidden><div class="row" aria-label="Rule editing steps"><button class="btn" type="button" data-rule-step="source">Source</button><button class="btn" type="button" data-rule-step="conditions">Conditions</button><button class="btn" type="button" data-rule-step="qualifies">Who qualifies</button><button class="btn" type="button" data-rule-step="message">Message</button><button class="btn" type="button" data-rule-step="test">Test rule</button></div><p id="ruleStudioSentence"></p><div id="ruleStudioState" role="status" class="sub"></div></div>
+        </div>
         <div class="ruleEditorHero">
           <div><h2 id="ruleEditorTitle">File Rule Editor</h2><div class="sub" id="ruleEditorSubtitle">Choose a saved rule or create a new one.</div></div>
           <span class="pill blue" id="openRuleSetEditorPill">Open: None selected</span>
@@ -152,7 +161,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
               <div class="fileIdentityGrid">
                 <label>Rule set title<input id="ruleTitle" placeholder="Skipped Insurance Cash"></label>
                 <label>Base file name contains — file rules only<input id="ruleBaseName" placeholder="Insurance_Cash_Usage"></label>
-                <label>Rule type<select id="ruleType"><option value="multiHeader">Multi-header rule</option><option value="headerCount">Header count rule</option><option value="statRule">Stat Rules — 4 key files</option><option value="statCount">Stat Count — count matching rows in a master file</option><option value="coachingCorrective">Documented Coaching → Corrective</option></select></label>
+                <label>Rule type<select id="ruleType"><option value="multiHeader">Match conditions across headers</option><option value="headerCount">Count matching report rows</option><option value="statRule">Check weekly or QA performance</option><option value="statCount">Count matching key-file rows</option><option value="coachingCorrective">Check coaching-to-corrective follow-up</option></select></label>
                 <label>Agent header<input id="ruleAgentHeader" value="Agent Name"></label>
                 <div class="sub">Recent coaching uses the weeks setting in Load Key Files for every rule.</div>
                 <label>Dashboard criteria logic<select id="ruleCriteriaLogic"><option value="and">AND — all dashboard criteria must match</option><option value="or">OR — any dashboard criterion can match</option></select></label>
@@ -444,8 +453,8 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
           <details class="ruleSection" open>
             <summary><span class="sectionCopy">Live representative preview<small>Confirm the selected file rule is pulling the intended people.</small></span><span class="pill blue sectionState">Validation</span></summary>
             <div class="ruleSectionContent">
-              <div class="row"><div class="sub">Uses matching uploaded report files first, then this rule’s sample file. Names resolve against the four key files.</div><span class="spacer"></span><button class="btn blue" id="refreshRulePreviewBtn">Refresh Preview</button></div>
-              <div id="ruleNamePreview" class="previewBox empty">Add the four key files first, then build or select a rule to preview pulled names.</div>
+              <div class="row"><div class="sub">Uses matching uploaded report files first, then this rule’s sample file. Names resolve against the four key files.</div><span class="spacer"></span><button class="btn blue" id="refreshRulePreviewBtn">Detailed Preview</button><button type="button" class="btn primary" id="sampleKeyRuleBtn">Test rule</button><button type="button" class="btn" id="fullKeyRuleBtn">Run full preview</button><button type="button" class="btn" id="cancelKeyRuleTest" hidden>Cancel test</button></div>
+              <div id="keyRuleTestResult" role="status" aria-live="polite"></div><div id="ruleNamePreview" class="previewBox empty">Add the four key files first, then build or select a rule to preview pulled names.</div>
             </div>
           </details>
 
@@ -456,6 +465,17 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
   </section>
 
   <section class="view active" id="view-keyfiles">
+    <div class="card" id="keyBatchCard">
+      <div class="row"><h2>Add key files</h2><span class="spacer"></span><button type="button" class="btn" id="toggleKeyBatch" aria-expanded="true">Use individual uploads</button></div>
+      <div id="keyBatchTools">
+        <div id="keyDropZone" class="note"><label>Choose files or drop them here<input type="file" id="keyBatchPicker" multiple accept=".csv,.tsv,.txt,.xls,.xlsx"></label></div>
+        <div id="keySlotSummary" class="readinessGrid"></div>
+        <div class="sub" role="status" aria-live="polite" id="keyBatchStatus">Choose any combination of the four key files.</div>
+        <div id="keyBatchReview"></div>
+        <div class="row"><button type="button" class="btn primary" id="applyKeyBatch" hidden>Apply files</button><button type="button" class="btn" id="cancelKeyBatch" hidden>Cancel</button></div>
+      </div>
+    </div>
+
     <div class="card reportConfigCard" id="weeklyStatsActivityFilter" style="margin-bottom:14px">
       <h2>Weekly Stats filter</h2>
       <div class="reportAudienceControls" style="padding-top:0">
@@ -509,6 +529,23 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
     </div>
   </section>
 
+  <section class="view" id="view-history">
+    <div class="card">
+      <div class="row"><h2>History</h2><span class="spacer"></span><button type="button" class="btn" id="openExecutiveHistory">Executive History settings and exports</button><button type="button" class="btn" id="downloadHistoryHere">Download history</button></div>
+      <div id="historyProvenance" class="sub"></div>
+      <div class="grid">
+        <label>Show<select id="historyBrowseMode"><option value="counts">Concern counts</option><option value="details">Recorded appearances</option></select></label>
+        <label>Search representatives<input type="search" id="historyBrowseSearch"></label>
+      </div>
+      <div class="grid" id="historyBrowseFilters" hidden>
+        <label>From<input type="date" id="historyBrowseFrom"></label><label>Through<input type="date" id="historyBrowseThrough"></label>
+        <label>Coach<input type="search" id="historyBrowseCoach"></label><label>Rule or topic<input type="search" id="historyBrowseRule"></label>
+      </div>
+      <div id="historyBrowseTable" class="tableWrap"></div>
+      <div class="row"><button class="btn" id="historyBack">Previous</button><span role="status" id="historyPageStatus"></span><button class="btn" id="historyNext">Next</button></div>
+    </div>
+  </section>
+
   <section class="view" id="view-reportfiles">
     <div class="stepBanner">
       <strong>Step 3 — Add report files after rules are built</strong>
@@ -547,6 +584,7 @@ label{color:#526174;font-size:10.5px}input,select,textarea{border-color:#d6dee8;
         <div class="row"><label class="btn historyLoadLabel"><span id="emailHistoryLoadLabel">Load History</span><input id="importProblemRepsInput" type="file" accept=".xlsx,.xls,.csv,.txt"></label><button class="btn concernHistoryStatusBtn" id="concernHistoryStatusBtn" type="button" aria-controls="concernHistoryViewer" aria-expanded="false" disabled>View</button></div>
       </section>
       <div class="sub" id="emailHistoryOutputStatus" role="status">! No history loaded — history frequency was not applied</div>
+      <div id="emailReviewContext" class="sub"></div>
       <div class="row emailPrimaryActions"><button class="btn primary" id="generateReportBtn">Generate Email Files</button><button class="btn" id="reviewReportBtn" type="button">Review Email Output</button><span class="sub">Downloads coach and executive emails in a ZIP. Nothing is sent.</span></div>
       <details class="emailAdvanced" id="executiveHistoryEdition" open>
         <summary>Executive history edition</summary>
@@ -945,9 +983,12 @@ function requestHireDateMappingData(){
   }
   if(state.hireDateLookupLoading===signature) return;
   state.hireDateLookupLoading=signature; state.hireDateByRep=new Map(); renderHireDateControls();
-  allStarBridgeNotify('qualtrics-hire-date-source-request',{requestId:uid(),sourceKey:cfg.sourceKey,repColumn:cfg.repColumn,hireDateColumn:cfg.hireDateColumn});
+  state.hireDateRequestId=uid();
+  allStarBridgeNotify('qualtrics-hire-date-source-request',{scope:state.allStarScope||'all',requestId:state.hireDateRequestId,sourceKey:cfg.sourceKey,repColumn:cfg.repColumn,hireDateColumn:cfg.hireDateColumn});
 }
 function importAllStarHireDateSource(payload={}){
+  if(payload.requestId&&payload.requestId!==state.hireDateRequestId)return;
+  if(payload.scope&&(payload.scope!==(state.allStarScope||'all')||payload.revision!==state.allStarSourceRevision))return;
   const signature=[payload.sourceKey||'',payload.repColumn||'',payload.hireDateColumn||''].join('\u001f');
   state.hireDateLookupCache.set(signature,Array.isArray(payload.rows)?payload.rows:[]);
   if(signature===hireDateMappingSignature()){ state.hireDateLookupLoading=''; rebuildHireDateIndex(); renderHireDateControls(); renderCoreChips(); renderUploadReadiness(); }
@@ -1031,6 +1072,15 @@ function displayName(raw){ return String(raw ?? '').replace(/\([^)]*\)/g,' ').re
 function stableRepresentativeValue(row){
   if(!row||typeof row!=='object') return '';
   const priority=['All-Star Representative Key','All Star Representative Key','Employee ID','Employee Id','Employee Number','Employee Email','Work Email','Email Address','Email','Agent ID','Associate ID','Representative ID','Rep ID'];
+  const layout=typeof rowVal==='function'&&rowVal.layouts?.get(row);
+  if(layout){
+    if(!layout.identity){
+      const wanted=new Set(priority.map(headerKey));
+      layout.identity=[...new Set([...priority.filter(h=>Object.hasOwn(layout.example,h)),...layout.headers.filter(h=>wanted.has(headerKey(h)))])];
+    }
+    for(const h of layout.identity){const value=String(row[h]??'').trim();if(value)return value;}
+    return '';
+  }
   for(const header of priority){ const value=row[header]; if(String(value??'').trim()) return String(value).trim(); }
   const wanted=new Set(priority.map(headerKey));
   for(const [header,value] of Object.entries(row)){ if(wanted.has(headerKey(header))&&String(value??'').trim()) return String(value).trim(); }
@@ -1199,6 +1249,12 @@ function cleanTextForSearch(v){ return String(v ?? '').toLowerCase().replace(/&/
 function phraseListFromRule(rule){ return (rule?.coaching?.descriptionPhrases || []).flatMap(p=>splitListInput(p)).map(p=>p.trim()).filter(Boolean); }
 function typeListFromRule(rule){ return splitListInput(rule?.coaching?.typeValue || '').filter(Boolean); }
 function findHeaderPreferred(row, aliases){
+  const layout=typeof rowVal==='function'&&rowVal.layouts?.get(row);
+  if(layout){
+    const key=aliases.join('\u001f');
+    if(!layout.preferred.has(key))layout.preferred.set(key,findHeaderPreferred(layout.example,aliases));
+    return layout.preferred.get(key);
+  }
   const entries=Object.entries(row||{});
   for(const alias of aliases){
     const ak=headerKey(alias);
@@ -1239,6 +1295,11 @@ function extractCoachingType(row){
   return [...new Set(values)].join(' | ');
 }
 function extractCoachingDescriptionParts(row){
+  const layout=typeof rowVal==='function'&&rowVal.layouts?.get(row);
+  if(layout){
+    layout.description ||= extractCoachingDescriptionParts(layout.example);
+    return [...new Set(layout.description.map(h=>String(row[h]??'').trim()).filter(Boolean))];
+  }
   const aliases=['Description','Coaching Description','Coaching Details','Coaching Notes','Notes','Comments','Details','Summary','Feedback','Observation','Recommendation','Action Plan','Action Plan Notes','Discussion','Reason Description'];
   const values=[];
   // First pull the actual Description-style columns directly. With duplicate headers preserved as Description (2), etc.,
@@ -1307,6 +1368,7 @@ function rebuildDataIndexes(){
 }
 function rowsForRep(kind,repK){ return state.indexes?.[kind]?.get(repK) || []; }
 function rebuildDerivedMaps(){
+  state.evaluationRevision=(state.evaluationRevision||0)+1;
   if(typeof invalidateExecutiveHistoryPreview==='function') invalidateExecutiveHistoryPreview();
   rebuildIdentityAliases();
   applyIdentityToRows(state.coachingRows); applyIdentityToRows(state.checklistRows); applyIdentityToRows(state.weeklyStatsRows); applyIdentityToRows(state.qaRows);
@@ -1384,6 +1446,17 @@ function detectHeaderRow(aoa, required='Agent Name'){
   return best.i;
 }
 async function readFileAsWorkbookRows(file, preferredHeader='Agent Name'){
+  if(file?.__selectedSheets){
+    // The key-file reader emits exactly these physical headers on every row.
+    // Other callers may have ragged objects and continue to resolve individually.
+    rowVal.layouts ||= new WeakMap();
+    for(const sheet of file.__selectedSheets){
+      const headers=Object.keys(sheet.rows[0]||{});
+      const layout={headers,example:Object.fromEntries(headers.map(h=>[h,h])),matches:new Map(),preferred:new Map()};
+      for(const row of sheet.rows)rowVal.layouts.set(row,layout);
+    }
+    return {fileName:file.name,sheets:file.__selectedSheets};
+  }
   if(file && Array.isArray(file.__allStarRows)){
     const rows=file.__allStarRows;
     const headers=Array.isArray(file.__allStarHeaders)&&file.__allStarHeaders.length
@@ -1415,7 +1488,15 @@ function findHeader(headers, aliases){
   const exact = hs.find(h=>aliases.some(a=>headerKey(h)===headerKey(a))); if(exact) return exact;
   return hs.find(h=>aliases.some(a=>headerKey(h).includes(headerKey(a)) || headerKey(a).includes(headerKey(h)))) || '';
 }
-function rowVal(row, aliases){ const h = findHeader(Object.keys(row||{}), aliases); return h ? row[h] : ''; }
+function rowVal(row, aliases){
+  const layout=rowVal.layouts?.get(row);
+  if(layout){
+    const key=aliases.join('\u001f');
+    if(!layout.matches.has(key))layout.matches.set(key,findHeader(layout.headers,aliases));
+    const header=layout.matches.get(key);return header?row[header]:'';
+  }
+  const header=findHeader(Object.keys(row||{}),aliases);return header?row[header]:'';
+}
 
 function normalizeRule(rule){
   rule = rule || {};
@@ -1532,7 +1613,10 @@ function autoSelectUploadedRules(files){
     if(file.ruleId) individualRuleSelection().add(file.ruleId);
   }
 }
-function currentRule(){ return state.rules.find(r=>r.id===state.currentRuleId) || null; }
+function currentRule(){
+  if(state.ruleStudio&&state.ruleStudio.value.id===state.currentRuleId)return state.ruleStudio.value;
+  return state.rules.find(r=>r.id===state.currentRuleId)||null;
+}
 function renderOpenRuleSetName(rule=currentRule()){
   const name = rule?.title || 'None selected';
   const type = rule ? ruleTypeLabel(rule) : 'No type';
@@ -1541,13 +1625,20 @@ function renderOpenRuleSetName(rule=currentRule()){
   if(els.openRuleSetEditorPill) els.openRuleSetEditorPill.textContent = `Open: ${name}`;
 }
 async function saveRuleObj(rule, options={}){
+  if(state.ruleStudio?.value.id===rule.id&&!options.commitStudio)return updateStudioDraft(rule,options);
   const fullRender=options.fullRender!==false;
   const preview=options.preview===true;
   rule = normalizeRule(rule);
   rule.updatedAt = new Date().toISOString();
   QualtricsWorkflow.invalidateSearch(rule);
-  try{ await put(STORES.rules, rule); }catch(error){ rulesetDraftDirty=true; updateRulesetStatus(); throw error; }
+  try{
+    if(options.commitStudio)await writeStudioRule(rule,options.expected);
+    else await put(STORES.rules,rule);
+  }catch(error){ if(!options.commitStudio){rulesetDraftDirty=true;updateRulesetStatus();} throw error; }
   const idx=state.rules.findIndex(r=>r.id===rule.id);
+  const previous=state.rules[idx];
+  const relevant=state.selectedOtherRuleIds?.has(rule.id)||state.dashboardFiles?.some(file=>file.ruleId===rule.id||(!file.ruleId&&[rule.baseName,previous?.baseName].some(name=>name&&String(file.fileName||'').toLowerCase().includes(name.toLowerCase()))));
+  if(relevant&&studioDefinition(previous)!==studioDefinition(rule))state.evaluationRevision=(state.evaluationRevision||0)+1;
   if(idx>=0) state.rules[idx]=rule; else state.rules.push(rule);
   rulesetDraftDirty=false; updateRulesetStatus();
   invalidateIndividualRunCache('individual message rules changed');
@@ -1573,7 +1664,7 @@ function correctiveContextFormSnapshot(){
   return {enabled:!!els.correctiveContextEnabled?.checked,lookbackWeeks:Math.max(1,Number(els.correctiveContextLookbackWeeks?.value)||52),recentWeeks:Math.max(1,Number(els.correctiveContextRecentWeeks?.value)||8),scope:els.correctiveContextScope?.value||'all',phrase:(els.correctiveContextPhrase?.value||'').trim(),match:els.correctiveContextMatch?.value||'contains',persistentWeeks:Math.max(2,Number(els.correctiveContextPersistentWeeks?.value)||3),watchlistEnabled:!!els.correctiveWatchlistEnabled?.checked};
 }
 function readRuleForm(){
-  let rule = currentRule() || newRule();
+  let rule = currentRule()?JSON.parse(JSON.stringify(currentRule())):newRule();
   rule.title = els.ruleTitle.value.trim() || 'Untitled Rule Set';
   rule.baseName = els.ruleBaseName.value.trim();
   rule.ruleType = els.ruleType?.value || rule.ruleType || 'multiHeader';
@@ -1595,6 +1686,7 @@ function readRuleForm(){
   return rule;
 }
 function fillRuleForm(rule){
+  if(state.ruleStudio&&state.ruleStudio.value.id!==rule?.id)parkStudioDraft();
   rule = rule ? normalizeRule(rule) : null;
   state.currentRuleId = rule?.id || null;
   if(els.deleteRuleBtn) els.deleteRuleBtn.disabled = !rule;
@@ -1706,7 +1798,7 @@ function renderRules(){
   els.ruleList.innerHTML = '';
   renderOpenRuleSetName(currentRule());
   renderRuleLibraryStats();
-  if(!state.rules.length){ els.ruleList.innerHTML = '<div class="empty">No file rules saved yet. Create one to define matching, coaching logic, and coach instructions.</div>'; fillRuleForm(null); return; }
+  if(!state.rules.length){ els.ruleList.innerHTML = '<div class="empty">No file rules saved yet. Create one to define matching, coaching logic, and coach instructions.</div>'; if(!state.ruleStudio)fillRuleForm(null); return; }
   // Normalize at load/save boundaries, never on a cosmetic search.
   const ordered=state.rules.sort((a,b)=>String(a.title).localeCompare(String(b.title)));
   const q=norm(els.ruleSearchInput?.value||'');
@@ -1727,7 +1819,13 @@ function renderRules(){
     div.className='item ruleSetCard'+(isActive?' active':'');
     div.dataset.ruleId = r.id; div.tabIndex = 0; div.setAttribute('role','button'); div.setAttribute('aria-pressed', isActive ? 'true' : 'false'); div.setAttribute('aria-label', `Open file rule ${r.title}`);
     div.innerHTML = `<div class="itemHead"><div><div class="itemTitle">${esc(r.title)}</div><div class="ruleCardBase">${isCoreDataRule(r)?'Source: four key files':`Filename contains: <span class="mono">${esc(r.baseName||'Not set')}</span>`}</div></div><span class="pill ${isActive?'good':'blue'}">${isActive?'Selected':'Open'}</span></div><div class="ruleCardMeta"><span class="pill">${ruleTypeLabel(r)}</span><span class="pill">${isHeaderCountRule(r) ? 'Count ≥ '+Number(r.countRule?.minCount ?? 1) : isStatRule(r) ? `${r.statRule?.minimumMode==='weeks'?Number(r.statRule?.minWeeks||1)+' weeks':r.statRule?.minPctRaw||'75%'} below goal` : isStatCountRule(r) ? `${statCountSourceLabel(r.statCount?.source)} count ≥ ${Number(r.statCount?.minCount??1)}` : isCoachingCorrectiveRule(r) ? `Coaching count ≥ ${Number(r.coachingCorrective?.minCoachingCount??1)}` : (r.criteria?.length||0)+' dashboard rule(s)'}</span><span class="pill ${isCoreDataRule(r)?'coreRuleBadge':'blue'}">${isCoreDataRule(r)?'4 key files only':(r.stats?.length||0)+' stat check(s)'}</span></div><div class="ruleCardGuide"><span class="alertDot ${hasGuide?'good':'warn'}"></span>${hasGuide?`Coach instructions: ${esc(r.guidance.title||'Saved')}`:'Coach instructions not added'}</div>`;
-    fragment.appendChild(div);
+    const required=isStatRule(r)?[r.statRule?.metric==='callQuality'?'qa':'weeklyStats']:isStatCountRule(r)?[r.statCount?.source||'qa']:isCoachingCorrectiveRule(r)?['coaching',...(r.coachingCorrective?.requireChecklist?['checklist']:[])]:[];
+    const missing=required.filter(slot=>!state.masterRows?.[slot]?.length);
+    const hasReport=state.dashboardFiles?.some(file=>file.ruleId===r.id&&file.rows?.length);
+    const readiness=!isCoreDataRule(r)&&!r.baseName?'Draft':missing.length||(!required.length&&!hasReport)?'Missing data':'Ready';
+    const badge=document.createElement('span');badge.className='pill '+(readiness==='Ready'?'good':'warn');badge.textContent=readiness;
+    badge.title=missing.length?missing.map(statCountSourceLabel).join(', '):!hasReport&&!required.length?'Load a matching report file.':readiness;
+    div.appendChild(badge);fragment.appendChild(div);
   }
   els.ruleList.appendChild(fragment);
   if(filtered.length>(state.ruleRenderLimit||100)){
@@ -1736,7 +1834,12 @@ function renderRules(){
   }
   els.ruleList.scrollTop=scrollTop;
   els.ruleList.querySelectorAll('[data-rule-id]').forEach(card=>{
-    const open = async ()=>{ autoSaveRuleEdit.cancel?.(); if(state.currentRuleId&&rulesetDraftDirty&&!await saveRuleObj(readRuleForm(),{fullRender:false,preview:false})) return; const rule=state.rules.find(r=>r.id===card.dataset.ruleId); if(rule){ fillRuleForm(rule); renderRules(); } };
+    const open = async ()=>{
+      const rule=state.rules.find(r=>r.id===card.dataset.ruleId);if(!rule)return;
+      if(state.ruleStudioEnabled){await beginRuleStudio(rule);return;}
+      autoSaveRuleEdit.cancel?.();if(state.currentRuleId&&rulesetDraftDirty&&!await saveRuleObj(readRuleForm(),{fullRender:false,preview:false}))return;
+      fillRuleForm(rule);renderRules();
+    };
     card.onclick=open; card.onkeydown=e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); open(); } };
   });
 }
@@ -2194,12 +2297,13 @@ async function loadTeamMap(file){
 }
 async function loadCoaching(file, options={}){
   if(!file) return;
+  const importEpoch=state.keySlotEpoch||0;
   const parsed=await readFileAsWorkbookRows(file,'Associate Name'); const out=[]; let processed=0, received=0, withName=0, withCoachingDate=0, validDate=0;
   const headers=[...new Set((parsed.sheets||[]).flatMap(sh=>sh.headers||[]))];
   for(const sh of parsed.sheets){
     for(const row of sh.rows||[]){
       received++;
-      if(++processed%Math.max(1,Number(options.yieldEvery)||250)===0) await allStarBridgeYield();
+      if(++processed%Math.max(1,Number(options.yieldEvery)||250)===0){ await allStarBridgeYield(); if(options.isCurrent&&!options.isCurrent())throw new Error('Import canceled.'); }
       const rawName=rowVal(row,['Associate Name','Agent Name','Representative Name','Representative','Rep Name','Rep','CSR Name','SSR Name','Name']); if(!String(rawName||'').trim()) continue; withName++;
       const ident=resolveIdentityFromRow(row,rawName);
       const coachingDateRaw=rowVal(row,['Coaching Date','Documented Coaching Date']);
@@ -2218,19 +2322,28 @@ async function loadCoaching(file, options={}){
       out.push({rawName:String(rawName).trim(), name:ident.name, key:ident.key, repKey:ident.key, date, type, typeParts, desc, descParts, searchText, coach, rawCoach:coach, raw:row,dateTrace:{coachingDateRaw,bridgeDateRaw,createdOnRaw,selectedSource:selected.source,selectedValue:selected.value,parsed:!!date}});
     }
   }
-  state.masterRows.coaching=out; state.masterFileNames.coaching=file.name; autoSelectCoreRules('coaching');
-  state.executiveHistoryEmptyCoachingSource=false;
-  invalidateHireDateLookupSource('core:coaching');
-  state.coachingRows=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
-  state.coachingDiagnostics=Object.assign({},state.coachingDiagnostics,{source:options.source||'manual upload',headers,received,parsed:out.length,withName,withCoachingDate,validDate,survived:state.coachingRows.length});
+  const dated=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
+  const apply=()=>{
+    state.masterRows.coaching=out; state.masterFileNames.coaching=file.name; autoSelectCoreRules('coaching');
+    state.executiveHistoryEmptyCoachingSource=false;
+    invalidateHireDateLookupSource('core:coaching');
+    state.coachingRows=dated;
+    state.coachingDiagnostics=Object.assign({},state.coachingDiagnostics,{source:options.source||'manual upload',headers,received,parsed:out.length,withName,withCoachingDate,validDate,survived:state.coachingRows.length});
+    state.keySlotInfo ||= {};
+    state.keySlotInfo.coaching={origin:options.origin||'Manual file',first:dated.at(-1)?.date,last:dated[0]?.date,revision:(state.keySlotInfo.coaching?.revision||0)+1};
+  };
+  if(options.stage)return {apply,accepted:out.length,dated:dated.length};
+  if(importEpoch!==(state.keySlotEpoch||0))return;
+  apply();
   if(!options.deferDerived){ rebuildDerivedMaps(); renderStatCountSelectors(currentRule()); renderStatCountRuleChips(); setStatus(`Loaded ${state.coachingRows.length.toLocaleString()} documented coaching rows, found ${(state.coachingTypeOptions||[]).length.toLocaleString()} unique coaching type option(s), and refreshed name matching.`); }
 }
 async function loadChecklist(file, options={}){
   if(!file) return;
+  const importEpoch=state.keySlotEpoch||0;
   const parsed=await readFileAsWorkbookRows(file,'Associate Name'); const out=[]; let processed=0;
   for(const sh of parsed.sheets){
     for(const row of sh.rows||[]){
-      if(++processed%Math.max(1,Number(options.yieldEvery)||250)===0) await allStarBridgeYield();
+      if(++processed%Math.max(1,Number(options.yieldEvery)||250)===0){ await allStarBridgeYield(); if(options.isCurrent&&!options.isCurrent())throw new Error('Import canceled.'); }
       const rawName=rowVal(row,['Associate Name','Agent Name','Representative','Rep','CSR Name','Name']); if(!String(rawName||'').trim()) continue;
       const ident=resolveIdentityFromRow(row,rawName);
       const date=parseDate(rowVal(row,['Created On','Date','Date Served','Incident Date','Start Time']));
@@ -2244,12 +2357,22 @@ async function loadChecklist(file, options={}){
       out.push({rawName:String(rawName).trim(), name:ident.name, key:ident.key, repKey:ident.key, date, incident, corrective, coachingTypeMulti, desc, searchText, coach, rawCoach:coach, raw:row});
     }
   }
-  state.masterRows.checklist=out; state.masterFileNames.checklist=file.name; autoSelectCoreRules('checklist');
-  invalidateHireDateLookupSource('core:checklist');
-  state.checklistRows=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
+  const dated=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
+  const apply=()=>{
+    state.masterRows.checklist=out; state.masterFileNames.checklist=file.name; autoSelectCoreRules('checklist');
+    invalidateHireDateLookupSource('core:checklist');
+    state.checklistRows=dated;
+    state.keySlotInfo ||= {};
+    state.keySlotInfo.checklist={origin:options.origin||'Manual file',first:dated.at(-1)?.date,last:dated[0]?.date,revision:(state.keySlotInfo.checklist?.revision||0)+1};
+  };
+  if(options.stage)return {apply,accepted:out.length,dated:dated.length};
+  if(importEpoch!==(state.keySlotEpoch||0))return;
+  apply();
   if(!options.deferDerived){ rebuildDerivedMaps(); renderStatCountSelectors(currentRule()); renderStatCountRuleChips(); setStatus(`Loaded ${state.checklistRows.length.toLocaleString()} checklist rows and refreshed name matching.`); }
 }
 function weeklyStatsDateHeader(row){
+  const layout=typeof rowVal==='function'&&rowVal.layouts?.get(row);
+  if(layout){if(layout.weeklyDate===undefined)layout.weeklyDate=weeklyStatsDateHeader(layout.example);return layout.weeklyDate;}
   const safe={};
   for(const [header,value] of Object.entries(row||{})){
     const key=headerKey(header);
@@ -2260,10 +2383,11 @@ function weeklyStatsDateHeader(row){
 }
 async function loadWeeklyStats(file, options={}){
   if(!file) return;
+  const importEpoch=state.keySlotEpoch||0;
   const parsed=await readFileAsWorkbookRows(file,'Agent Name'); const out=[]; const dateHeaders=new Set(); let processed=0;
   for(const sh of parsed.sheets){
     for(const row of sh.rows||[]){
-      if(++processed%Math.max(1,Number(options.yieldEvery)||250)===0) await allStarBridgeYield();
+      if(++processed%Math.max(1,Number(options.yieldEvery)||250)===0){ await allStarBridgeYield(); if(options.isCurrent&&!options.isCurrent())throw new Error('Import canceled.'); }
       const rawName=rowVal(row,['Agent Name','Associate Name','Representative','Rep','CSR Name','Name']); if(!String(rawName||'').trim()) continue;
       const ident=resolveIdentityFromRow(row,rawName);
       const dateHeader=weeklyStatsDateHeader(row);
@@ -2275,10 +2399,18 @@ async function loadWeeklyStats(file, options={}){
     }
   }
   const missingDates=out.filter(r=>!r.date).length;
-  state.weeklyStatsRows=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
-  state.weeklyStatsDateHeaders=[...dateHeaders];
-  state.masterRows.weeklyStats=out; state.masterFileNames.weeklyStats=file.name; autoSelectCoreRules('weeklyStats');
-  // Weekly Stats are deliberately independent from the optional hire-date mapping.
+  const dated=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
+  const apply=()=>{
+    state.weeklyStatsRows=dated;
+    state.weeklyStatsDateHeaders=[...dateHeaders];
+    state.masterRows.weeklyStats=out; state.masterFileNames.weeklyStats=file.name; autoSelectCoreRules('weeklyStats');
+    // Weekly Stats are deliberately independent from the optional hire-date mapping.
+    state.keySlotInfo ||= {};
+    state.keySlotInfo.weeklyStats={origin:options.origin||'Manual file',first:dated.at(-1)?.date,last:dated[0]?.date,revision:(state.keySlotInfo.weeklyStats?.revision||0)+1};
+  };
+  if(options.stage)return {apply,accepted:out.length,dated:dated.length};
+  if(importEpoch!==(state.keySlotEpoch||0))return;
+  apply();
   if(!options.deferDerived){
     rebuildDerivedMaps();
     renderWeeklyColumnSelectors(currentRule());
@@ -2291,10 +2423,11 @@ async function loadWeeklyStats(file, options={}){
 }
 async function loadQA(file, options={}){
   if(!file) return;
+  const importEpoch=state.keySlotEpoch||0;
   const parsed=await readFileAsWorkbookRows(file,'Agent Name'); const out=[]; let processed=0;
   for(const sh of parsed.sheets){
     for(const row of sh.rows||[]){
-      if(++processed%Math.max(1,Number(options.yieldEvery)||250)===0) await allStarBridgeYield();
+      if(++processed%Math.max(1,Number(options.yieldEvery)||250)===0){ await allStarBridgeYield(); if(options.isCurrent&&!options.isCurrent())throw new Error('Import canceled.'); }
       const rawName=rowVal(row,['Agent Name','Agent','Associate Name','Representative','Rep','CSR Name','Name']); if(!String(rawName||'').trim()) continue;
       const ident=resolveIdentityFromRow(row,rawName);
       const date=parseDate(rowVal(row,['Interaction Start Time','Interaction Start','Start Time','Scored Date','Date','Week','Week Start'])) || new Date();
@@ -2306,9 +2439,17 @@ async function loadQA(file, options={}){
       out.push({rawName:String(rawName).trim(), name:ident.name, key:ident.key, repKey:ident.key, date, score, team, rawTeam:team, coach, rawCoach:coach, evaluator, raw:row, sourceSheet:sh.sheetName});
     }
   }
-  state.masterRows.qa=out; state.masterFileNames.qa=file.name; autoSelectCoreRules('qa');
-  invalidateHireDateLookupSource('core:qa');
-  state.qaRows=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
+  const dated=out.filter(r=>r.date).sort((a,b)=>b.date-a.date);
+  const apply=()=>{
+    state.masterRows.qa=out; state.masterFileNames.qa=file.name; autoSelectCoreRules('qa');
+    invalidateHireDateLookupSource('core:qa');
+    state.qaRows=dated;
+    state.keySlotInfo ||= {};
+    state.keySlotInfo.qa={origin:options.origin||'Manual file',first:dated.at(-1)?.date,last:dated[0]?.date,revision:(state.keySlotInfo.qa?.revision||0)+1};
+  };
+  if(options.stage)return {apply,accepted:out.length,dated:dated.length};
+  if(importEpoch!==(state.keySlotEpoch||0))return;
+  apply();
   if(!options.deferDerived){ rebuildDerivedMaps(); renderStatCountSelectors(currentRule()); renderStatCountRuleChips(); setStatus(`Loaded ${state.qaRows.length.toLocaleString()} 90-day QA rows and rebuilt latest team/coach mapping.`); }
 }
 
@@ -2342,6 +2483,7 @@ async function runReportSteps(steps,isCurrent=()=>true){
   }
 }
 function clearConnectedSource(source){
+  if(state.keySlotInfo)delete state.keySlotInfo[source];
   state.masterRows[source]=[]; state.masterFileNames[source]=''; if(state.uploadRuleSelectionCounts) delete state.uploadRuleSelectionCounts[source];
   if(source==='qa'){ state.qaRows=[]; invalidateHireDateLookupSource('core:qa'); }
   if(source==='coaching'){ state.coachingRows=[]; state.coachingTypeOptions=[]; state.executiveHistoryEmptyCoachingSource=false; invalidateHireDateLookupSource('core:coaching'); }
@@ -2349,43 +2491,112 @@ function clearConnectedSource(source){
   if(source==='weeklyStats'){ state.weeklyStatsRows=[]; state.weeklyStatsDateHeaders=[]; }
 }
 async function importAllStarCoreFiles(payload={}){
-  const files=payload.files||{}, token=uid(); state.allStarCoreImportToken=token;
-  state.organizations=(payload.organizations||[]).map(normalizeBridgeOrganization); setHireDateSourceCatalog(payload.lookupSources||[]); renderReportAudienceControls(); populateOrgSummarySelect();
+  const files=payload.files||{}, token=uid(), prepared=[],scope=payload.scope||'all';
+  state.allStarCoreImportToken=token;
+  const current=()=>state.allStarCoreImportToken===token&&qualtricsBridgeCurrent('core',payload);
+  const notify=(type,extra)=>allStarBridgeNotify(type,{operationId:payload.operationId,scope,...extra});
   try{
-    allStarBridgeNotify('qualtrics-key-files-progress',{message:'Connecting 90-day KPI data…'});
-    if((files.qa?.rows||[]).length) await loadQA(allStarRowsFile(files.qa,'All-Star QA','90-day KPI'),{deferDerived:true,yieldEvery:1500}); else clearConnectedSource('qa');
-    if(state.allStarCoreImportToken!==token) return; await allStarBridgeYield();
-    allStarBridgeNotify('qualtrics-key-files-progress',{message:'Connecting Documented Coaching…'});
-    state.coachingDiagnostics={source:'All-Star auto-connect',bridge:payload.diagnostics?.documentedCoaching||{},headers:files.coaching?.headers||[],received:(files.coaching?.rows||[]).length};
-    if((files.coaching?.rows||[]).length) await loadCoaching(allStarRowsFile(files.coaching,'All-Star Documented Coaching','Documented Coaching'),{deferDerived:true,yieldEvery:1500,source:'All-Star auto-connect'}); else clearConnectedSource('coaching');
-    if(!(files.coaching?.rows||[]).length&&files.coaching?.headers?.length) state.executiveHistoryEmptyCoachingSource=true;
-    if(state.allStarCoreImportToken!==token) return; await allStarBridgeYield();
-    allStarBridgeNotify('qualtrics-key-files-progress',{message:'Connecting Checklist / Correctives…'});
-    if((files.checklist?.rows||[]).length) await loadChecklist(allStarRowsFile(files.checklist,'All-Star Checklist','Checklist'),{deferDerived:true,yieldEvery:1500}); else clearConnectedSource('checklist');
-    if(state.allStarCoreImportToken!==token) return; await allStarBridgeYield();
-    rebuildDerivedMaps();
-    renderOtherRulePicker(); renderStatCountSelectors(currentRule()); renderStatCountRuleChips();
-    updateStatRuleFieldVisibility(); updateCoachingCorrectiveFieldVisibility(); renderStatRuleChips(); renderCoachingCorrectiveRuleChips();
-    markRulePreviewStale('Connected sources are ready. Nothing has been calculated; click Refresh Preview or Generate Report when you choose.');
+    for(const [slot,loader,sheet] of [['qa',loadQA,'90-day KPI'],['coaching',loadCoaching,'Documented Coaching'],['checklist',loadChecklist,'Checklist']]){
+      if(state.keySlotInfo?.[slot]?.origin==='Manual file')continue;
+      const input=files[slot];notify('qualtrics-key-files-progress',{message:'Connecting '+sheet+'…'});
+      const stage=input?.rows?.length?await loader(allStarRowsFile(input,'All-Star '+sheet,sheet),{stage:true,yieldEvery:400,source:'All-Star auto-connect',origin:'Use Allstar data',isCurrent:current}):null;
+      if(!current())return;
+      prepared.push({slot,stage,input});
+    }
+    if(!current()||!await confirmBridgePublication('core',payload)||!current())return;
+    for(const {slot,stage,input} of prepared){
+      // A manual upload may have committed while the bridge was normalizing.
+      if(state.keySlotInfo?.[slot]?.origin==='Manual file')continue;
+      if(stage)stage.apply();else clearConnectedSource(slot);
+      if(slot==='coaching'){
+        state.coachingDiagnostics={...state.coachingDiagnostics,bridge:payload.diagnostics?.documentedCoaching||{}};
+        if(!stage){state.coachingDiagnostics={source:'All-Star auto-connect',received:0,headers:input?.headers||[],bridge:payload.diagnostics?.documentedCoaching||{}};state.executiveHistoryEmptyCoachingSource=!!input?.headers?.length;}
+      }
+    }
+    if(state.allStarScope!==scope||state.allStarSourceRevision!==payload.revision){state.hireDateLookupCache.clear();state.hireDateLookupLoading='';state.hireDateRequestId=null;if(state.keySlotInfo?.weeklyStats?.origin==='Use Allstar data'&&state.allStarScope!==scope)clearConnectedSource('weeklyStats');}
+    state.allStarScope=scope;state.allStarSourceRevision=payload.revision;state.organizations=(payload.organizations||[]).map(normalizeBridgeOrganization);
+    setHireDateSourceCatalog(payload.lookupSources||[]);populateOrgSummarySelect();
+    rebuildDerivedMaps();renderOtherRulePicker();renderStatCountSelectors(currentRule());renderStatCountRuleChips();
+    updateStatRuleFieldVisibility();updateCoachingCorrectiveFieldVisibility();renderStatRuleChips();renderCoachingCorrectiveRuleChips();
+    markRulePreviewStale('Connected sources are ready. Test a rule or review the email output.');
     const counts={qa:state.qaRows.length,coaching:state.coachingRows.length,checklist:state.checklistRows.length,stats:state.weeklyStatsRows.length};
-    setStatus(`Connected without running a report: ${counts.qa.toLocaleString()} KPI, ${counts.coaching.toLocaleString()} coaching, and ${counts.checklist.toLocaleString()} checklist rows. Weekly Stats remain manual.`);
-    allStarBridgeNotify('qualtrics-key-files-complete',{counts,mode:'core'});
-  }catch(err){ console.error('All-Star source connection failed',err); setStatus(`All-Star connection failed: ${err?.message||err}`); allStarBridgeNotify('qualtrics-key-files-error',{message:String(err?.message||err)}); }
+    setStatus('Connected Allstar sources. Manual files retain precedence. Weekly Stats use the selected source.');
+    notify('qualtrics-key-files-complete',{counts,mode:'core'});
+  }catch(error){if(current()){setStatus('Could not connect Allstar data: '+error.message);notify('qualtrics-key-files-error',{message:error.message});}}
 }
+
 async function importAllStarWeeklyStats(payload={}){
+  const token=uid();state.weeklyImportToken=token;
+  const current=()=>state.weeklyImportToken===token&&qualtricsBridgeCurrent('weekly',payload);
+  const notify=(type,extra)=>allStarBridgeNotify(type,{operationId:payload.operationId,scope:payload.scope,...extra});
   const item=payload.files?.stats||payload.stats||{};
   try{
-    allStarBridgeNotify('qualtrics-weekly-progress',{message:`Loading ${payload.statsSource||'selected'} weekly stats on request…`});
-    if((item.rows||[]).length) await loadWeeklyStats(allStarRowsFile(item,'All-Star Weekly Stats','Weekly Stats'),{deferDerived:true,yieldEvery:1500}); else clearConnectedSource('weeklyStats');
-    await allStarBridgeYield(); rebuildDerivedMaps();
+    notify('qualtrics-weekly-progress',{message:`Loading ${payload.statsSource||'selected'} weekly stats on request…`});
+    const manual=state.keySlotInfo?.weeklyStats?.origin==='Manual file';
+    const stage=!manual&&item.rows?.length?await loadWeeklyStats(allStarRowsFile(item,'All-Star Weekly Stats','Weekly Stats'),{stage:true,yieldEvery:400,origin:'Use Allstar data',isCurrent:current}):null;
+    if(!current()||!await confirmBridgePublication('weekly',payload)||!current())return;
+    if(state.keySlotInfo?.weeklyStats?.origin!=='Manual file'){if(stage)stage.apply();else clearConnectedSource('weeklyStats');}
+    rebuildDerivedMaps();
     renderWeeklyColumnSelectors(currentRule()); renderStatCountSelectors(currentRule()); renderStatCountRuleChips();
     updateStatRuleFieldVisibility(); updateCoachingCorrectiveFieldVisibility(); renderStatRuleChips(); renderCoachingCorrectiveRuleChips();
     markRulePreviewStale('Weekly Stats loaded manually. Nothing has been calculated; click Refresh Preview or Generate Report when ready.');
     const counts={stats:state.weeklyStatsRows.length}; setStatus(`Loaded ${counts.stats.toLocaleString()} weekly stat rows on request without generating a preview or report.`);
-    allStarBridgeNotify('qualtrics-weekly-complete',{counts,statsSource:payload.statsSource||''});
+    notify('qualtrics-weekly-complete',{counts,statsSource:payload.statsSource||''});
   }catch(err){ console.error('All-Star weekly load failed',err); setStatus(`Weekly Stats load failed: ${err?.message||err}`); allStarBridgeNotify('qualtrics-key-files-error',{message:String(err?.message||err)}); }
 }
+function qualtricsBridgeCurrent(kind,payload){
+  if(!payload.operationId||window.parent===window)return true;
+  try{return window.parent.qualtricsTransferCurrent(kind,payload.operationId,payload.scope,payload.revision);}catch{return true;}
+}
+function confirmBridgePublication(kind,payload){
+  if(!payload.operationId||window.parent===window)return Promise.resolve(true);
+  return new Promise(resolve=>{
+    const channel=new MessageChannel(),finish=valid=>{clearTimeout(timer);channel.port1.close();resolve(valid);};
+    const timer=setTimeout(()=>finish(false),5000);
+    channel.port1.onmessage=({data})=>finish(data?.operationId===payload.operationId&&data.current===true);
+    window.parent.postMessage({type:'qualtrics-source-publish-check',kind,operationId:payload.operationId,scope:payload.scope,revision:payload.revision},'*',[channel.port2]);
+  });
+}
+function receiveSourceBatch(event){
+  const {type,kind,operationId,scope,revision}=event.data;
+  if(!['weekly','core'].includes(kind))return;
+  state.incomingBridge ||= {};
+  if(type==='allstar-source-start'){
+    state.incomingBridge[kind]?.port.close();
+    if(kind==='core')state.allStarCoreImportToken=uid();else state.weeklyImportToken=uid();
+    const payload=event.data.payload;
+    if(!qualtricsBridgeCurrent(kind,payload))return;
+    for(const file of Object.values(payload.files))file.rows=[];
+    state.incomingBridge[kind]={operationId,scope,revision,payload,sequence:0,port:event.ports[0]};return;
+  }
+  const session=state.incomingBridge[kind];
+  if(!session||session.operationId!==operationId||session.scope!==scope||session.revision!==revision)return;
+  const close=()=>{session.port.close();delete state.incomingBridge[kind];};
+  if(type==='allstar-source-cancel'||!qualtricsBridgeCurrent(kind,session.payload)){close();return;}
+  const {sequence,slot,rows}=event.data;
+  if(type==='allstar-source-chunk'){
+    if(sequence!==session.sequence+1||!session.payload.files[slot]||!Array.isArray(rows)){close();return;}
+    session.sequence=sequence;session.payload.files[slot].rows.push(...rows);
+    session.port.postMessage({sequence,operationId});return;
+  }
+  if(type==='allstar-source-finish'){
+    close();if(sequence!==session.sequence)return;
+    if(kind==='core')state.allStarCoreImportPromise=importAllStarCoreFiles(session.payload);
+    else state.allStarWeeklyImportPromise=Promise.resolve(state.allStarCoreImportPromise).then(()=>qualtricsBridgeCurrent(kind,session.payload)?importAllStarWeeklyStats(session.payload):null);
+  }
+}
+
+
 window.addEventListener('message',event=>{
+  if(event.source!==window.parent)return;
+  if(event.data?.type==='allstar-source-closed'){
+    for(const session of Object.values(state.incomingBridge||{}))session.port.close();
+    state.incomingBridge={};state.hireDateRequestId=null;state.hireDateLookupLoading='';
+    state.allStarCoreImportToken=uid();state.weeklyImportToken=uid();
+    if(state.emailWorkflowRunning)state.evaluationRevision=(state.evaluationRevision||0)+1;
+    return;
+  }
+  if(event.data?.type?.startsWith('allstar-source-')){receiveSourceBatch(event);return;}
   if(event.data?.type==='allstar-core-files') state.allStarCoreImportPromise=importAllStarCoreFiles(event.data.payload||{});
   if(event.data?.type==='allstar-weekly-stats') {const generation=Number(state.allStarCoachRenameGeneration||0);state.allStarWeeklyImportPromise=Promise.resolve(state.allStarCoreImportPromise).catch(()=>{}).then(()=>generation===Number(state.allStarCoachRenameGeneration||0)?importAllStarWeeklyStats(event.data.payload||{}):null);}
   if(event.data?.type==='allstar-hire-date-source') importAllStarHireDateSource(event.data.payload||{});
@@ -2394,6 +2605,7 @@ window.addEventListener('message',event=>{
 });
 
 function renderCoreChips(){
+  if(typeof renderKeyFileSlots==="function") renderKeyFileSlots();
   if(!els.coreDataChips) return;
   const unresolved=(state.coachAliasIndex?.unresolved||[]).length;
   const d=state.coachingDiagnostics||{}, withDesc=state.coachingRows.filter(r=>String(r.desc||'').trim()).length, recognized=new Set(state.coachingRows.map(r=>r.repKey).filter(Boolean)).size, descriptionRules=state.rules.filter(r=>r.coaching?.mode==='descriptionContains').length;
@@ -2653,9 +2865,9 @@ function statRuleWhy(check,config){
   return `${check.lowWeeks} of ${check.valuedWeeks} valued week(s) below ${goal||config?.goalRaw||'goal'} (${isFinite(check.pctLow)?fmtPct(check.pctLow,1):'N/A'}; ${check.naWeeks} N/A week(s) not counted; ${requirement}) • ${lookback}${sources?` • source: ${sources}`:''}`;
 }
 function buildStatRuleRecords(rule,reportDate){ return finishReportSteps(buildStatRuleRecordsSteps(rule,reportDate)); }
-function* buildStatRuleRecordsSteps(rule,reportDate){
+function* buildStatRuleRecordsSteps(rule,reportDate,population=null){
   const records=[];
-  for(const base of knownRepUniverse().values()){
+  for(const base of (population||knownRepUniverse()).values()){
     yield;
     const check=evaluateStatRuleForRep(base.repKey,rule.statRule,reportDate);
     if(!check.meets) continue;
@@ -2746,9 +2958,9 @@ function buildUpPasses(c,buildUp,reportDate){
   return {passes:check.meets,check,impactTrend};
 }
 function buildCoachingCorrectiveRecords(rule,reportDate){ return finishReportSteps(buildCoachingCorrectiveRecordsSteps(rule,reportDate)); }
-function* buildCoachingCorrectiveRecordsSteps(rule,reportDate){
+function* buildCoachingCorrectiveRecordsSteps(rule,reportDate,sourceRows=state.coachingRows){
   const c=rule.coachingCorrective||{}; const {start:from,end}=coachingDateRange(reportDate,c.coachingLookbackWeeks||52); const groups=new Map();
-  for(const row of state.coachingRows||[]){
+  for(const row of sourceRows||[]){
     yield;
     if(!row.date||row.date<from||row.date>end||!coachingTopicMatches(row,c)) continue;
     const build=buildUpPasses(row,c.buildUp,reportDate); if(!build.passes) continue;
@@ -2790,8 +3002,8 @@ function statCountConditionPass(value,config){
   return a===b;
 }
 function buildStatCountRecords(rule,reportDate){ return finishReportSteps(buildStatCountRecordsSteps(rule,reportDate)); }
-function* buildStatCountRecordsSteps(rule,reportDate){
-  const c=rule.statCount||{}; const sourceRows=statCountSourceRows(c.source); const range=statCountDateRange(c,reportDate); const counts=new Map(); let scanned=0,matchingRows=0;
+function* buildStatCountRecordsSteps(rule,reportDate,rows=null,population=null){
+  const c=rule.statCount||{}; const sourceRows=rows||statCountSourceRows(c.source); const range=statCountDateRange(c,reportDate); const counts=new Map(); let scanned=0,matchingRows=0;
   const ensure=(ident,rawName)=>{ const map=state.teamMap.get(ident.key)||{}; if(!counts.has(ident.key)) counts.set(ident.key,{repName:ident.name||displayName(rawName),rawName:displayName(rawName),repKey:ident.key,key:ident.key,coach:map.coach||'Unassigned',team:map.team||'Unassigned',count:0,examples:[]}); return counts.get(ident.key); };
   for(const row of sourceRows||[]){
     yield;
@@ -2802,7 +3014,7 @@ function* buildStatCountRecordsSteps(rule,reportDate){
     if(rec.examples.length<3) rec.examples.push({date:row.date,value:raw[c.conditionHeader]});
   }
   const minimum=Math.max(0,Number(c.minCount)||0);
-  if(minimum===0){ for(const base of knownRepUniverse().values()) if(!counts.has(base.repKey)) counts.set(base.repKey,{...base,count:0,examples:[]}); }
+  if(minimum===0){ for(const base of (population||knownRepUniverse()).values()) if(!counts.has(base.repKey)) counts.set(base.repKey,{...base,count:0,examples:[]}); }
   const records=[...counts.values()].filter(r=>r.count>=minimum).map(r=>({...r,matchedValues:`${c.label||'Matching rows'}: ${r.count} where ${c.conditionHeader||'selected header'} ${statCountOperatorLabel(c.operator)} ${['blank','notBlank'].includes(c.operator)?'':c.value} in ${statCountSourceLabel(c.source)} (minimum ${minimum})`}));
   records.scanned=scanned; records.matchingRows=matchingRows; records.minimum=minimum; records.range=range;
   return records.sort((a,b)=>b.count-a.count||String(a.coach).localeCompare(String(b.coach))||String(a.repName).localeCompare(String(b.repName)));
@@ -2846,7 +3058,7 @@ function knownRepUniverse(){
   return out;
 }
 function buildHeaderCountRecords(rule, sources){ return finishReportSteps(buildHeaderCountRecordsSteps(rule, sources)); }
-function* buildHeaderCountRecordsSteps(rule, sources){
+function* buildHeaderCountRecordsSteps(rule, sources,population=null){
   const threshold=countThreshold(rule);
   const countHeader=rule?.countRule?.nameHeader || rule?.agentHeader || '';
   const counts=new Map(); let scanned=0, countedRows=0;
@@ -2872,7 +3084,7 @@ function* buildHeaderCountRecordsSteps(rule, sources){
     }
   }
   if(threshold<=0){
-    for(const base of knownRepUniverse().values()){
+    for(const base of (population||knownRepUniverse()).values()){
       yield;
       if(!counts.has(base.repKey)) counts.set(base.repKey,{...base, sources:new Set(['4 key files']), count:0, sourceRows:[]});
     }
@@ -3189,7 +3401,8 @@ async function clearConcernHistory(){
   }
 }
 // Publish counts only when the atomic totals/details transaction commits.
-async function commitConcernHistory(transform,{replaceDetails=false,details=[]}={}){
+async function commitConcernHistory(transform,{replaceDetails=false,details=[],runId=null}={}){
+  let alreadyRecorded=false;
   const snapshot=await new Promise((resolve,reject)=>{
     const tx=state.db.transaction([STORES.settings,STORES.history],'readwrite'), settings=tx.objectStore(STORES.settings);
     let next;
@@ -3197,9 +3410,11 @@ async function commitConcernHistory(transform,{replaceDetails=false,details=[]}=
     tx.onerror=()=>reject(tx.error||new Error('Concern History could not be saved.'));
     tx.onabort=()=>reject(tx.error||new Error('Concern History save was aborted.'));
     const request=settings.get(CONCERN_HISTORY_LOAD_KEY);
-    request.onsuccess=()=>{
+    const apply=(recorded)=>{
       try{
         const current=request.result||{version:2,names:QualtricsInsights.canonicalConcernNames(state.history||[]).names};
+        if(recorded){alreadyRecorded=true;next=current;return;}
+        if(runId)settings.put({key:'qualtrics-recorded-run:'+runId});
         next={...transform(current),key:CONCERN_HISTORY_LOAD_KEY,version:2};
         settings.put(next);
         const history=tx.objectStore(STORES.history);
@@ -3208,9 +3423,17 @@ async function commitConcernHistory(transform,{replaceDetails=false,details=[]}=
         for(const row of details){ row.appearanceCount=counts.get(QualtricsInsights.normalizeConcernName(row.repName))??row.appearanceCount; history.put(row); }
       }catch(error){ tx.abort(); reject(error); }
     };
+    request.onsuccess=()=>{
+      if(!runId){apply(false);return;}
+      const ledger=settings.get('qualtrics-recorded-run:'+runId);
+      ledger.onsuccess=()=>apply(!!ledger.result);
+    };
   });
+  if(alreadyRecorded){state.concernHistoryLoad=normalizeConcernHistoryLoad(snapshot);return snapshot;}
+  state.evaluationRevision=(state.evaluationRevision||0)+1;
+  state.historyRevision=(state.historyRevision||0)+1;
   state.concernHistoryLoad=normalizeConcernHistoryLoad(snapshot);
-  if(replaceDetails) state.history=details.slice();
+  if(replaceDetails){state.history=details.slice();state.historyDeferred=false;}
   else if(details.length) state.history=[...(state.history||[]),...details];
   rebuildConcernHistoryIndex(); renderConcernHistoryStatus(); refreshReportConcernHistory(false);
   return snapshot;
@@ -3270,14 +3493,23 @@ async function incrementConcernAppearances(records,run){
     const totals=new Map((current.names||[]).map(item=>[QualtricsInsights.normalizeConcernName(item.name),{...item}]));
     for(const [key,name] of names){ const previous=totals.get(key); totals.set(key,{key,name:previous?.name||name,count:Number(previous?.count||0)+1}); }
     return {...current,names:[...totals.values()],loadedAt:new Date().toISOString()};
-  },{details:run===state.report?historyRowsForCurrentReport():[]});
+  },{runId:run.runId,details:run===state.report?historyRowsForCurrentReport():[]});
   run.historySaved=true;
   if(run!==state.report) refreshReportConcernHistory();
 }
+async function ensureDatedConcernHistory(){
+  if(!state.historyDeferred)return;
+  if(!state.historyLoading){
+    const revision=state.historyRevision||0;
+    state.historyLoading=getAll(STORES.history).then(rows=>{if(revision===(state.historyRevision||0)){state.history=rows;rebuildConcernHistoryIndex();state.historyDeferred=false;}}).finally(()=>{state.historyLoading=null;});
+  }
+  await state.historyLoading;
+  if(state.historyDeferred)return ensureDatedConcernHistory();
+}
 async function loadConcernHistorySnapshot(){
-  const settings=await getAll(STORES.settings), saved=settings.find(item=>item?.key===CONCERN_HISTORY_LOAD_KEY);
+  const saved=await new Promise((resolve,reject)=>{const request=state.db.transaction(STORES.settings).objectStore(STORES.settings).get(CONCERN_HISTORY_LOAD_KEY);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
   state.concernHistoryLoad=normalizeConcernHistoryLoad(saved);
-  if(!state.concernHistoryLoad) await commitConcernHistory(current=>({...current,names:QualtricsInsights.canonicalConcernNames(state.history||[]).names,fileName:'Saved Concern History'}));
+  if(!state.concernHistoryLoad){await ensureDatedConcernHistory();await commitConcernHistory(current=>({...current,names:QualtricsInsights.canonicalConcernNames(state.history||[]).names,fileName:'Saved Concern History'}));}
 }
 function rebuildConcernHistoryIndex(){
   const valid=[], warnings=[];
@@ -3501,6 +3733,7 @@ ruleCategories=function(rule){
 };
 const saveRuleObjBeforeCoachingPhrases=saveRuleObj;
 saveRuleObj=async function(rule,options){
+  if(state.ruleStudio?.value.id===rule.id&&!options?.commitStudio)return saveRuleObjBeforeCoachingPhrases(rule,options||{});
   const validation=ccCoachingPhraseValidation(rule,{mark:true,notify:false});
   if(!validation.ok) return null;
   return saveRuleObjBeforeCoachingPhrases(rule,options||{});
@@ -3514,7 +3747,7 @@ renderRuleNamePreview=function(){
 const generateReportBeforeCoachingPhrases=generateReport;
 generateReport=async function(){
   const selected=state.rules.filter(function(rule){ return isCoreDataRule(rule)&&state.selectedOtherRuleIds.has(rule.id); });
-  const draft=state.currentRuleId&&state.selectedOtherRuleIds.has(state.currentRuleId)?readRuleForm():null;
+  const draft=!state.ruleStudio&&state.currentRuleId&&state.selectedOtherRuleIds.has(state.currentRuleId)?readRuleForm():null;
   const invalid=(draft&&!ccCoachingPhraseValidation(draft,{mark:true,notify:false}).ok?draft:null)||selected.find(function(rule){ return !ccCoachingPhraseValidation(rule,{mark:false,notify:false}).ok; });
   if(invalid){ fillRuleForm(invalid); switchTab('rules'); ccCoachingPhraseValidation(invalid,{mark:true,notify:true}); return; }
   return generateReportBeforeCoachingPhrases();
@@ -3995,6 +4228,8 @@ function urgencyExecutiveCenterpieceHtml(rows,email,includeRuleCoaching){
 coachSummaryStripHtml=function(sum,rows){ return urgencyExecutiveCenterpieceHtml(rows||[],false); };
 emailCoachSummaryStrip=function(sum,rows){ return urgencyExecutiveCenterpieceHtml(rows||[],true); };
 function clearAllStarQualtricsData(){
+  for(const session of Object.values(state.incomingBridge||{}))session.port.close();state.incomingBridge={};state.hireDateRequestId=null;
+  state.weeklyImportToken=uid(); state.keyBatch?.controller.abort(); state.keyBatch=null; state.keySlotInfo={}; state.keySlotEpoch=(state.keySlotEpoch||0)+1;
   state.allStarCoreImportToken=uid();
   state.allStarCoreImportPromise=Promise.resolve();
   ['qa','coaching','checklist','weeklyStats'].forEach(clearConnectedSource);
@@ -4017,6 +4252,7 @@ function clearAllStarQualtricsData(){
   if(els.reportBody) els.reportBody.innerHTML='<div class="empty">Qualtrics-side source data cleared. Saved rules and settings were kept.</div>';
   markRulePreviewStale('Qualtrics-side data cleared. Refresh connected sources or load new files when ready.');
   setStatus('Qualtrics-side source rows, report files, previews, and generated report data cleared. Saved rules and settings were kept.');
+  if(typeof renderBatchReview==='function')renderBatchReview();
   allStarBridgeNotify('qualtrics-data-cleared');
 }
 function urgencyRepresentativeRows(teamRows,eligibleCount){
@@ -4448,13 +4684,13 @@ function impactTimeliness(days,hasEpisode){
   if(!hasEpisode) return 'Unaddressed';
   if(days<=7) return 'Prompt'; if(days<=14) return 'Moderate Delay'; if(days<=28) return 'Delayed'; return 'Long-Standing Need';
 }
-function impactMovementForWindow(record,rule,config,series,anchorStart,anchorEnd,episode){
+function impactMovementForWindow(record,rule,config,series,anchorStart,anchorEnd,episode,reportDate){
   const s=impactNormalizeSettings(rule.coachingImpact,rule), label=metricLabel(config.metric,config.customHeader), preAll=series.filter(function(item){ return item.date<anchorStart; }), postAll=series.filter(function(item){ return item.date>anchorEnd; });
   const preItems=preAll.slice(-s.prePeriods), postItems=postAll.slice(0,s.postPeriods), pre=impactAggregatePeriods(record.repKey,config,preItems), post=impactAggregatePeriods(record.repKey,config,postItems), current=impactAggregatePeriods(record.repKey,config,series.slice(-s.postPeriods));
   const base={pre:pre,post:post,current:current,prePeriods:pre.periodCount,postPeriods:post.periodCount,rawChange:NaN,favorableChange:NaN,broadGroup:'Not Yet Measurable',status:'',measurable:false,later:null,episode:episode||null};
   if(!series.length){ const ownRows=config.metric==='callQuality'?rowsForRep('qaByRep',record.repKey):rowsForRep('weeklyByRep',record.repKey), sourceRows=config.metric==='callQuality'?state.qaRows:state.weeklyStatsRows; base.status=ownRows.length?'Insufficient Eligible Opportunities':sourceRows.length?'Unable to Match the Representative to the statistic source':'Missing Weekly Stats'; return base; }
   if(pre.periodCount<s.minimumPeriods||pre.observationCount<s.minimumObservations){ base.status='Insufficient Pre-Coaching Data'; return base; }
-  if(post.periodCount<s.minimumPeriods||post.observationCount<s.minimumObservations){ base.status=episode&&anchorEnd>addDays(parseDate(state.report?.reportDate)||new Date(),-7*s.postPeriods)?'Too Soon to Measure':'Insufficient Post-Coaching Data'; return base; }
+  if(post.periodCount<s.minimumPeriods||post.observationCount<s.minimumObservations){ base.status=episode&&anchorEnd>addDays(reportDate||parseDate(state.report?.reportDate)||new Date(),-7*s.postPeriods)?'Too Soon to Measure':'Insufficient Post-Coaching Data'; return base; }
   base.measurable=true; base.rawChange=post.value-pre.value; base.favorableChange=s.direction==='lower'?-base.rawChange:base.rawChange;
   const positive=impactThreshold(s.positiveThresholdRaw,label,isPercentHeader(label)?.05:5), negative=impactThreshold(s.negativeThresholdRaw,label,isPercentHeader(label)?.05:5), goal=impactGoalValue(rule,config), preNeed=impactIsNeed(pre.value,goal,s.direction), postNeed=impactIsNeed(post.value,goal,s.direction);
   const laterItems=postAll.slice(s.postPeriods,s.postPeriods*2), later=impactAggregatePeriods(record.repKey,config,laterItems); base.later=later;
@@ -4475,7 +4711,7 @@ function impactComparableWindow(record,rule,config,series,reportDate,otherRows){
   if(otherRows?.length) anchor=otherRows[otherRows.length-1].date;
   if(!anchor&&series.length){ const tail=series.slice(-(s.prePeriods+s.postPeriods)); anchor=tail[Math.min(s.prePeriods,Math.max(0,tail.length-1))]?.date||addDays(reportDate,-14); }
   anchor=anchor||addDays(reportDate,-14);
-  return impactMovementForWindow(record,rule,config,series,anchor,anchor,null);
+  return impactMovementForWindow(record,rule,config,series,anchor,anchor,null,reportDate);
 }
 function impactSuggestedAction(need){
   if(need.status==='Declining After Coaching'||need.status==='Worsening Across Episodes') return 'Review a different intervention and observe a call before the next coaching session.';
@@ -4491,7 +4727,7 @@ function impactAnalyzeNeed(record,rule,reportDate,recentDays){
   const settings=impactNormalizeSettings(rule.coachingImpact,rule), config=impactMetricConfig(rule), allRows=impactRowsForRep(record.repKey,reportDate), recentStart=addDays(reportDate,-recentDays), recentRows=allRows.filter(function(row){ return row.date>=recentStart; });
   const recentExact=recentRows.filter(function(row){ return impactRowMatchesRule(row,rule).matches; }), recentOther=recentRows.filter(function(row){ return !impactRowMatchesRule(row,rule).matches; });
   const alignmentGroup=recentExact.length?'Exact-Topic Coaching':recentRows.length?'Other-Topic Coaching':'No Recent Coaching', episodes=impactBuildEpisodes(record,rule,reportDate), series=config?impactMetricSeries(record.repKey,config,reportDate):[];
-  episodes.forEach(function(episode){ const result=config?impactMovementForWindow(record,rule,config,series,episode.startDate,episode.endDate,episode):{broadGroup:'Not Yet Measurable',status:'Missing Assigned Statistic',measurable:false,pre:{value:NaN},post:{value:NaN},current:{value:NaN},prePeriods:0,postPeriods:0,rawChange:NaN,favorableChange:NaN,later:null}; Object.assign(episode,result); episode.assignedStatistic=config?metricLabel(config.metric,config.customHeader):'Not assigned'; });
+  episodes.forEach(function(episode){ const result=config?impactMovementForWindow(record,rule,config,series,episode.startDate,episode.endDate,episode,reportDate):{broadGroup:'Not Yet Measurable',status:'Missing Assigned Statistic',measurable:false,pre:{value:NaN},post:{value:NaN},current:{value:NaN},prePeriods:0,postPeriods:0,rawChange:NaN,favorableChange:NaN,later:null}; Object.assign(episode,result); episode.assignedStatistic=config?metricLabel(config.metric,config.customHeader):'Not assigned'; });
   const measurableEpisodes=episodes.filter(function(episode){ return episode.measurable; }), latestMeasurable=measurableEpisodes[measurableEpisodes.length-1]||null, latestEpisode=episodes[episodes.length-1]||null;
   let movement;
   if(!config) movement={broadGroup:'Not Yet Measurable',status:'Missing Assigned Statistic',measurable:false,pre:{value:NaN},post:{value:NaN},current:{value:NaN},prePeriods:0,postPeriods:0,rawChange:NaN,favorableChange:NaN,later:null};
@@ -4576,8 +4812,8 @@ function impactTopicSummaries(needs){
   }).sort(function(a,b){ return String(a.ruleTitle).localeCompare(String(b.ruleTitle)); });
 }
 function impactBuildAnalysis(){ return finishReportSteps(impactBuildAnalysisSteps()); }
-function* impactBuildAnalysisSteps(){
-  const report=state.report;
+function* impactBuildAnalysisSteps(report=state.report){
+  const existingReport=arguments.length===0;
   if(!report) return null;
   const reportDate=parseDate(report.reportDate)||new Date(), recentDays=impactSaveWorkspaceSettings().recentLookbackDays, sourceRows=report.flagged||[], ruleMap=new Map(state.rules.map(function(rule){ return [rule.id,rule]; })), byNeed=new Map(), firstRecordByNeed=new Map();
   sourceRows.forEach(function(record){
@@ -4592,7 +4828,7 @@ function* impactBuildAnalysisSteps(){
   for(const need of needs){ yield; const transition=impactTransitionForNeed(need,reportDate); if(transition) transitions.push(transition); }
   const diagnostics=yield* impactDiagnosticRowsSteps(needs,[...ruleMap.values()],reportDate), profile=impactProfile(needs), topics=impactTopicSummaries(needs), coaches=[...new Set(needs.map(function(need){ return need.coach; }))].sort(function(a,b){ return String(a).localeCompare(String(b)); });
   const analysis={reportDate:report.reportDate,recentLookbackDays:recentDays,needs:needs,episodes:needs.reduce(function(out,need){ return out.concat(need.episodes||[]); },[]),transitions:transitions,diagnostics:diagnostics,profile:profile,topics:topics,coaches:coaches,actionQueue:impactActionQueue(needs),positiveNeeds:impactPositiveNeeds(needs),builtAt:new Date().toISOString()};
-  if(state.report!==report) return null;
+  if(existingReport&&state.report!==report)return null;
   report.coachingImpact=analysis;
   needs.forEach(function(need){ const record=firstRecordByNeed.get(need.repKey+'::'+need.ruleId); if(record) record.coachingImpact=need; });
   return analysis;
@@ -5548,7 +5784,16 @@ renderReport=function(){
   if(!root) return;
   if(!report){ root.innerHTML='<div class="empty">Generate a report to view the executive summary.</div>'; return; }
   const rows=report.flagged||[], groups=simpleQualtricsCoachGroups(rows);
-  root.innerHTML='<div class="card"><h2 style="margin-bottom:10px">Executive Summary — '+esc(report.reportDate)+'</h2>'+weeklyStatsFilterNoteHtml(report)+simpleQualtricsOverallStripHtml(rows)+simpleQualtricsCorrectiveLegendHtml(rows)+simpleQualtricsExecutiveMatrixHtml(rows)+'</div>'+groups.map(function(group){ return '<section class="card" style="margin-top:12px"><h2 style="margin:0">'+esc(group.coach)+'</h2>'+simpleQualtricsCoachOverviewHtml(group.rows)+simpleQualtricsRuleTableHtml(group.rows)+simpleQualtricsFollowUpHtml(group.rows)+'</section>'; }).join('');
+  root.innerHTML='<div class="card"><h2 style="margin-bottom:10px">Executive Summary — '+esc(report.reportDate)+'</h2>'+weeklyStatsFilterNoteHtml(report)+simpleQualtricsOverallStripHtml(rows)+simpleQualtricsCorrectiveLegendHtml(rows)+simpleQualtricsExecutiveMatrixHtml(rows)+'</div><div class="card"><label>Coach preview<select id="reviewCoach"><option value="">Choose a coach</option>'+groups.map((group,index)=>'<option value="'+index+'">'+esc(group.coach)+'</option>').join('')+'</select></label><div id="reviewCoachDetail"></div></div>';
+  const picker=root.querySelector?.('#reviewCoach'),detail=root.querySelector?.('#reviewCoachDetail');
+  if(picker)picker.onchange=()=>{
+    const group=picker.value===''?null:groups[Number(picker.value)];
+    detail.replaceChildren();if(!group)return;
+    const show=items=>withReportCalculationCache(()=>simpleQualtricsCoachOverviewHtml(items)+simpleQualtricsRuleTableHtml(items)+simpleQualtricsFollowUpHtml(items));
+    const reps=[...new Map(group.rows.map(row=>[row.repKey,row.repName])).entries()].sort((a,b)=>a[1].localeCompare(b[1]));
+    detail.innerHTML='<label>Representative<select><option value="">All representatives</option>'+reps.map(([key,name])=>'<option value="'+esc(key)+'">'+esc(name)+'</option>').join('')+'</select></label><div>'+show(group.rows)+'</div>';
+    const people=detail.querySelector('select');people.onchange=()=>{detail.lastElementChild.innerHTML=show(people.value?group.rows.filter(r=>r.repKey===people.value):group.rows);};
+  };
 };
 makeEmailHtml=function(title,rows,isExec){
   rows=rows||[];
@@ -5567,9 +5812,11 @@ generateReport=async function(){
 };
 
 async function generateReport(){
+  await ensureDatedConcernHistory();
+  const evaluationRevision=state.evaluationRevision||0, sourceIndexes=state.indexes, initialSignature=emailEvaluationSignature();
   const weeklyFilterRunSignature=JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value}), weeklyStatsRunIndex=state.indexes?.weeklyByRep, weeklyFilterRunRevision=Number(state.weeklyStatsFilterRevision)||0;
   const coachRenameGeneration=Number(state.allStarCoachRenameGeneration||0);
-  const reportInputsCurrent=()=>coachRenameGeneration===Number(state.allStarCoachRenameGeneration||0)&&weeklyFilterRunRevision===(Number(state.weeklyStatsFilterRevision)||0)&&weeklyFilterRunSignature===JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value})&&weeklyStatsRunIndex===state.indexes?.weeklyByRep;
+  const reportInputsCurrent=()=>evaluationRevision===(state.evaluationRevision||0)&&sourceIndexes===state.indexes&&coachRenameGeneration===Number(state.allStarCoachRenameGeneration||0)&&weeklyFilterRunRevision===(Number(state.weeklyStatsFilterRevision)||0)&&weeklyFilterRunSignature===JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value})&&weeklyStatsRunIndex===state.indexes?.weeklyByRep;
   const performanceStarted=performance.now(), performanceTimings={}, performanceMark=(label,started)=>{ performanceTimings[label]=performance.now()-started; };
   const rulesById=new Map((state.rules||[]).map(rule=>[rule.id,rule])), ruleByFileId=new Map((state.dashboardFiles||[]).map(file=>[file.id,rulesById.get(file.ruleId)||matchRuleForFile(file.fileName)]));
   const selectedCoreRules=state.rules.filter(r=>isCoreDataRule(r)&&state.selectedOtherRuleIds.has(r.id));
@@ -5711,6 +5958,8 @@ async function generateReport(){
   }
   performanceMark('Coaching, history, and priority',performanceStageStarted);
   const audienceFlagged=allFlagged.filter(r=>reportAudienceAllowsCoach(r.coach,audience));
+  const unresolved=(state.coachAliasIndex?.unresolved||[]).filter(a=>state.coachAliasOverrides?.[a.key]!=='__keep__'&&allFlagged.some(row=>coachNameKey(row.coach)===a.key)&&(audience.scope==='all'||a.options.some(coach=>reportAudienceAllowsCoach(coach,audience))));
+  if(unresolved.length){setProgress(null);switchTab('keyfiles');els.coachAliasReview?.scrollIntoView({block:'center'});setStatus('Review these coach matches before generating: '+unresolved.map(a=>a.alias).join(', '));return;}
   const activeRules=[...new Map([...(state.dashboardFiles||[]).map(file=>ruleByFileId.get(file.id)),...selectedCoreRules].filter(Boolean).map(function(rule){ return [rule.id,rule]; })).values()];
   const followUpWatchlist=formerCorrectiveWatchlist(reportDate,activeRules,new Set(allFlagged.map(function(record){ return record.repKey+'::'+record.ruleId; }))).filter(item=>weeklyStatsActivityPasses(item.repKey,reportDate));
   const teamPopulationByCoach=reportTeamPopulationForRows(audienceFlagged,reportDate);
@@ -5730,7 +5979,15 @@ async function generateReport(){
   if(weeklyFilterRunRevision!==(Number(state.weeklyStatsFilterRevision)||0)||weeklyFilterRunSignature!==JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value})||weeklyStatsRunIndex!==state.indexes?.weeklyByRep){ markWeeklyStatsFilterResultsStale(); setProgress(null); toast('Weekly Stats, filter settings, or report date changed. Generate the report again.'); return; }
   const report={ runId:uid(), reportDate:ymd(reportDate), generatedAt:new Date().toISOString(), unmatched, flagged, allFlagged:audienceFlagged, byCoach:alarmSortedByCoach, byCoachAll, teamPopulationByCoach, followUpWatchlist:followUpWatchlist.filter(function(item){ return reportAudienceAllowsCoach(item.coach,audience); }), excludedCoaches, minPeople, urgencyCatalog:buildUrgencyCatalog(selectedCoreRules), audience:{...audience,label:reportAudienceLabel(audience)}, audienceExcludedRecords:allFlagged.length-audienceFlagged.length, hireDateFilter:normalizeHireDateSettings(hireCfg), hireDateExcludedRecords:hireDateExcluded.length, hireDateExcludedPeople:new Set(hireDateExcluded.map(r=>r.repKey)).size, weeklyStatsFilter:currentWeeklyStatsFilter(), weeklyStatsExcludedPeople:new Set(weeklyStatsExcluded.map(r=>r.repKey)).size };
   if(coachRenameGeneration!==Number(state.allStarCoachRenameGeneration||0)){setProgress(null);return;}
-  state.report=report; refreshReportConcernHistory(false); performanceStageStarted=performance.now(); try{ await runReportSteps(impactBuildAnalysisSteps(),()=>state.report===report&&reportInputsCurrent()); }catch(error){ if(state.report===report) report.weeklyStatsFilterStale=true; throw error; } performanceMark('Coaching impact',performanceStageStarted); setProgress(96,'Rendering report'); await new Promise(resolve=>setTimeout(resolve,0)); if(state.report!==report||!reportInputsCurrent()){if(state.report===report) markWeeklyStatsFilterResultsStale();setProgress(null);return;} performanceStageStarted=performance.now(); renderReport(); performanceMark('Report render',performanceStageStarted); switchTab('report'); setProgress(null);
+  performanceStageStarted=performance.now();
+  await runReportSteps(impactBuildAnalysisSteps(report),reportInputsCurrent);
+  performanceMark('Coaching impact',performanceStageStarted);
+  setProgress(96,'Building previews');await allStarBridgeYield();
+  if(!reportInputsCurrent()||initialSignature!==emailEvaluationSignature()){setProgress(null);toast('Report inputs changed. Review again to use current inputs.');return;}
+  report.evaluationSignature=initialSignature;report.evaluationRevision=evaluationRevision;
+  report.inputContext={sources:{...state.masterFileNames},scope:state.allStarScope||'all',rules:[...new Set([...selectedCoreRules,...ruleByFileId.values()].filter(Boolean).map(r=>r.title))]};
+  state.report=report;refreshReportConcernHistory(false);
+  performanceStageStarted=performance.now();renderReport();performanceMark('Report render',performanceStageStarted);switchTab('report');setProgress(null);
   performanceTimings.Total=performance.now()-performanceStarted; state.reportPerformance={timings:performanceTimings,generatedAt:new Date().toISOString()};
   if(new URLSearchParams(location.search).get('debug')==='1'){ const slowStages=Object.entries(performanceTimings).filter(([label,value])=>label!=='Total'&&value>=1000); console.groupCollapsed('Qualtrics Generate Report Performance'); console.table(performanceTimings); if(slowStages.length) console.warn('Unexpectedly expensive Generate Report stage(s)',Object.fromEntries(slowStages)); console.groupEnd(); }
   setStatus(`Generated ${report.audience.label}: ${flagged.length.toLocaleString()} representative-data-source record(s) identified for review.${report.audienceExcludedRecords?` Audience filter excluded ${report.audienceExcludedRecords.toLocaleString()} record(s).`:''}${hireCfg.filterEnabled?` Hire-date filter excluded ${report.hireDateExcludedPeople.toLocaleString()} representative(s).`:''} ${excludedCoaches.length ? excludedCoaches.length+' team(s) hidden by minimum people filter.' : ''}`);
@@ -5897,7 +6154,7 @@ function historyRowsForCurrentReport(){
 async function saveProblemHistory(){
   if(!state.report){ toast('Generate a report first.'); return; }
   const report=state.report;
-  try{ await queueConcernHistory(()=>incrementConcernAppearances(report.flagged,report)); refreshReportConcernHistory(); toast('Report recorded in Concern History. This report is counted once.'); }
+  try{ await queueConcernHistory(()=>{if(report!==state.report||(report.evaluationSignature&&!emailEvaluationCurrent(report)))throw Error('Inputs changed. Review the report again.');return incrementConcernAppearances(report.flagged,report);}); refreshReportConcernHistory(); toast('Report recorded in Concern History. This report is counted once.'); }
   catch(error){ toast(`Concern History could not be saved: ${error.message||error}. Use Save Concern History to retry.`); }
 }
 function emailRepRowInline(r){
@@ -6063,11 +6320,11 @@ function downloadExecutiveHistoryEmail(){
   const result=reviewExecutiveHistory(); if(!result) return;
   downloadBlob(new Blob([makeEml('Executive Coaching History Review - '+result.review.window.endDate,result.html)],{type:'message/rfc822'}),'Executive_History_'+result.review.window.endDate+'.eml');
 }
-function makeEml(subject, html){
+function makeEml(subject, html, stamp){
   subject=String(subject||'').replace(/[\r\n]+/g,' ');
-  const boundary='----=_NextPart_'+Math.random().toString(36).slice(2), related=boundary+'_images', images=[];
+  const boundary='----=_NextPart_'+(stamp?stamp.suffix:Math.random().toString(36).slice(2)), related=boundary+'_images', images=[];
   html=String(html).replace(/src="data:image\/png;base64,([A-Za-z0-9+/=]+)"/g,function(_,data){ const id='coaching-chart-'+(images.length+1)+'@coachtools'; images.push({id,data}); return 'src="cid:'+id+'"'; });
-  const parts=[`Subject: ${subject}`,`Date: ${new Date().toUTCString()}`,'MIME-Version: 1.0',`Content-Type: multipart/alternative; boundary="${boundary}"`,'',`--${boundary}`,'Content-Type: text/plain; charset="utf-8"','Content-Transfer-Encoding: 8bit','',subject,'Generated by Coaching Email Generator. Open the HTML version for tables and color coding.','',`--${boundary}`];
+  const parts=[`Subject: ${subject}`,`Date: ${(stamp?new Date(stamp.time):new Date()).toUTCString()}`,'MIME-Version: 1.0',`Content-Type: multipart/alternative; boundary="${boundary}"`,'',`--${boundary}`,'Content-Type: text/plain; charset="utf-8"','Content-Transfer-Encoding: 8bit','',subject,'Generated by Coaching Email Generator. Open the HTML version for tables and color coding.','',`--${boundary}`];
   if(images.length) parts.push(`Content-Type: multipart/related; boundary="${related}"`,'',`--${related}`);
   parts.push('Content-Type: text/html; charset="utf-8"','Content-Transfer-Encoding: 8bit','',html,'');
   if(images.length){
@@ -6079,29 +6336,490 @@ function makeEml(subject, html){
 async function exportEmails(){
   if(!state.report){ toast('Generate a report first.'); return; }
   if(state.report.weeklyStatsFilterStale){ toast('Generate the report again to apply the Weekly Stats filter before downloading.'); return; }
-  const report=state.report, filterSignature=JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value});
-  const current=()=>state.report===report&&!report.weeklyStatsFilterStale&&filterSignature===JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value});
+  const report=state.report, outputRevision=state.outputRevision||0;
+  if(report.evaluationSignature&&!emailEvaluationCurrent(report)){toast('Inputs changed. Review or generate again.');return;}
+  const filterSignature=JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value});
+  const current=()=>state.report===report&&(!report.evaluationSignature||report.evaluationRevision===(state.evaluationRevision||0))&&outputRevision===(state.outputRevision||0)&&!report.weeklyStatsFilterStale&&filterSignature===JSON.stringify({filter:currentWeeklyStatsFilter(),date:els.reportDate?.value});
   const pause=async(percent,message)=>{ setProgress(percent,message); await allStarBridgeYield(); if(current()) return true; toast('Report inputs changed. Generate the report again before downloading.'); return false; };
   refreshReportConcernHistory(false);
   if(!window.JSZip){ toast('JSZip is still loading. Try again in a moment.'); return; }
-  const ext = els.exportMsgExtension.checked ? 'msg' : 'eml'; const zip=new JSZip();
+  const ext = els.exportMsgExtension.checked ? 'msg' : 'eml';
+  const archive=typeof QualtricsEmailPackage==='undefined'?null:QualtricsEmailPackage.create(current);
+  const zip=archive?null:new JSZip();
+  const add=(name,subject,html)=>archive?archive.add(name,'report',[subject,html]):zip.file(name,makeEml(subject,html));
   try{
     if(!await pause(0,'Building executive email')) return;
-    const all=report.flagged; zip.file(`Executive_${report.reportDate}.${ext}`, makeEml(`Executive - Coaching Opportunity Review - ${report.reportDate}`, makeEmailHtml('Executive Coaching Opportunity Review', all, true)));
-    if(els.executiveHistoryInclude?.checked){ if(!await pause(0,'Building executive history email')) return; const historyEdition=makeExecutiveHistoryEmail(report.reportDate); zip.file(`Executive_History_${report.reportDate}.eml`,makeEml(`Executive Coaching History Review - ${report.reportDate}`,historyEdition.html)); }
+    const all=report.flagged; await add(`Executive_${report.reportDate}.${ext}`,`Executive - Coaching Opportunity Review - ${report.reportDate}`,makeEmailHtml('Executive Coaching Opportunity Review', all, true));
+    if(els.executiveHistoryInclude?.checked){ if(!await pause(0,'Building executive history email')) return; const historyEdition=makeExecutiveHistoryEmail(report.reportDate); await add(`Executive_History_${report.reportDate}.eml`,`Executive Coaching History Review - ${report.reportDate}`,historyEdition.html); }
     const coachEmails=[...report.byCoach.entries()].map(([coach,rows])=>({coach,rows,...summaryStats(rows)})).sort((a,b)=>compareAlarmStats(a,b) || String(a.coach).localeCompare(String(b.coach)));
     let completed=0;
     for(const item of coachEmails){
       if(!await pause((completed/Math.max(1,coachEmails.length))*90,'Building coach email '+(++completed)+' of '+coachEmails.length)) return;
-      zip.file(`${sanitizeFile(item.coach)}_${report.reportDate}.${ext}`, makeEml(`${item.coach} - Coaching Opportunity Review - ${report.reportDate}`, makeEmailHtml(`${item.coach} Coaching Opportunity Review`, item.rows)));
+      await add(`${sanitizeFile(item.coach)}_${report.reportDate}.${ext}`,`${item.coach} - Coaching Opportunity Review - ${report.reportDate}`,makeEmailHtml(`${item.coach} Coaching Opportunity Review`, item.rows));
     }
     if(!await pause(90,'Packaging email files')) return;
-    const blob=await zip.generateAsync({type:'blob'},metadata=>setProgress(90+metadata.percent*.1,'Packaging email files'));
-    if(!current()){ toast('Report inputs changed. Generate the report again before downloading.'); return; }
+    const progress=metadata=>setProgress(90+metadata.percent*.1,'Packaging email files');
+    const blob=await (archive?archive.finish(progress):zip.generateAsync({type:'blob'},progress));
+    if(!current()||(report.evaluationSignature&&!emailEvaluationCurrent(report))){ toast('Report inputs changed. Generate the report again before downloading.'); return; }
     downloadBlob(blob,`coaching_opportunity_emails_${report.reportDate}.zip`);
-  }finally{ setProgress(null); }
+  }catch(error){if(error.name==='AbortError')toast('Report inputs changed. Generate the report again before downloading.');else throw error;}
+  finally{archive?.close();setProgress(null);}
 }
+function studioDefinition(value){
+  return value?QualtricsWorkflow.fingerprint([value]):null;
+}
+function studioRuleRead(id){
+  return new Promise((resolve,reject)=>{
+    const request=state.db.transaction(STORES.rules).objectStore(STORES.rules).get(id);
+    request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+  });
+}
+function writeStudioRule(rule,expected){
+  return new Promise((resolve,reject)=>{
+    const tx=state.db.transaction(STORES.rules,'readwrite'),store=tx.objectStore(STORES.rules);
+    let problem;
+    tx.oncomplete=resolve;tx.onabort=()=>reject(problem||tx.error||Error('The rule could not be saved.'));
+    const read=store.get(rule.id);
+    read.onsuccess=()=>{
+      if(studioDefinition(read.result)!==expected){problem=Error('The saved rule changed. Keep this draft open and save it as a new rule, or discard it to reopen the latest version.');tx.abort();return;}
+      store.put(rule);
+    };
+  });
+}
+function mergeStudioFields(previous,value){
+  if(!value||typeof value!=='object'||Array.isArray(value))return value;
+  const merged={...previous};
+  for(const [key,item] of Object.entries(value))merged[key]=mergeStudioFields(previous?.[key],item);
+  return merged;
+}
+function studioFormValue(){
+  return mergeStudioFields(state.ruleStudio?.value,readRuleForm());
+}
+function updateStudioDraft(rule,options){
+  const draft=state.ruleStudio;draft.value=mergeStudioFields(draft.value,rule);draft.dirty=true;draft.revision++;
+  if(options.fullRender!==false){
+    renderHeaderOptions();renderCriteriaChips();renderCountRuleChips();renderCoachingLinkChips();renderCoachPhraseChips();renderStatAttachChips();renderStatRuleChips();renderStatCountRuleChips();renderCoachingCorrectiveRuleChips();updateRuleTypeVisibility();
+  }
+  refreshRuleStudioSummary();return rule;
+}
+function refreshRuleStudioSummary(){
+  const d=state.ruleStudio;if(!d)return;
+  const type=els.ruleType.value,show=id=>els[id]?.value||'…';
+  const summary=type==='statCount'?'Count '+show('statCountConditionHeader')+' '+show('statCountOperator')+' '+(els.statCountValue.value||'')+' in '+statCountSourceLabel(show('statCountSource'))+' for each '+show('statCountNameHeader')+'; minimum '+show('statCountMin')+' rows.':
+    type==='headerCount'?'Count rows per '+show('countNameHeader')+' in reports matching “'+show('ruleBaseName')+'”. Include people with at least '+show('countMin')+' rows.':
+    type==='statRule'?'Check '+(els.statRuleMetric.selectedOptions[0]?.textContent||'performance')+' against '+show('statRuleGoal')+' using '+(els.statRuleMinimumMode.value==='weeks'?show('statRuleMinWeeks')+' weeks':show('statRuleMinPct')+' of valued weeks')+'.':
+    type==='coachingCorrective'?'Find at least '+show('ccMinCoachingCount')+' coaching contacts in '+show('ccCoachingLookbackWeeks')+' weeks and '+(els.ccRequireChecklist.checked?'require':'review')+' matching checklist evidence in '+show('ccChecklistLookbackWeeks')+' weeks.':
+    'Find people by '+show('ruleAgentHeader')+' in reports matching “'+show('ruleBaseName')+'” using '+(show('ruleCriteriaLogic')==='or'?'any':'all')+' of the configured row conditions.';
+  $('ruleStudioSentence').textContent=summary;
+  $('ruleStudioState').textContent=d.dirty?'Unsaved draft. Your saved rule remains available for reports.':'Draft open. Save rule applies your changes.';
+}
+function renderStudioControls(){
+  const d=state.ruleStudio;
+  $('ruleStudioGuide').hidden=!d;$('cancelRuleDraft').hidden=!d;$('openRuleDraft').hidden=!!d;
+  $('saveRuleDraftCopy').hidden=true;
+  $('openRuleDraft').disabled=!state.currentRuleId||!state.db;
+  $('toggleRuleStudio').textContent=state.ruleStudioEnabled?'Advanced autosave editor':'Guided draft editor';
+  $('ruleStudioTitle').textContent=d?(d.isNew?'New rule draft':'Editing a draft'):'Rule editor';
+  els.saveRuleBtn.textContent=d?'Save rule':'Save Entire Rule';
+  els.deleteRuleBtn.hidden=!!d;els.duplicateRuleBtn.hidden=!!d;
+  for(const button of document.querySelectorAll('.ruleEditorBody button[id^="save"]')){
+    if(!button.dataset.originalText)button.dataset.originalText=button.textContent;
+    button.textContent=d?button.dataset.originalText.replace(/^Save/i,'Apply to draft —'):button.dataset.originalText;
+  }
+  refreshRuleStudioSummary();
+}
+function parkStudioDraft(){
+  autoSaveRuleEdit.cancel?.();
+  const d=state.ruleStudio;
+  if(d){d.value=studioFormValue();d.sampleRows=state.sampleRows;state.parkedRuleDrafts.set(d.value.id,d);}
+  state.ruleStudio=null;
+}
+async function beginRuleStudio(saved,template){
+  if(!state.db)return;
+  const request=++state.studioOpenRequest,returnId=state.ruleStudio?.returnId||state.currentRuleId;
+  if(!state.ruleStudio&&state.currentRuleId&&rulesetDraftDirty){
+    autoSaveRuleEdit.cancel?.();if(!await saveRuleObj(readRuleForm(),{fullRender:false,preview:false}))return;
+  }
+  parkStudioDraft();
+  const stored=saved?await studioRuleRead(saved.id):null;if(request!==state.studioOpenRequest)return;
+  const existing=saved&&state.parkedRuleDrafts.get(saved.id);
+  const value=existing?.value||normalizeRule(JSON.parse(JSON.stringify(stored||saved||{...newRule(),ruleType:template||'multiHeader'})));
+  state.ruleStudio=existing||{value,expected:studioDefinition(stored),returnId,isNew:!saved,dirty:!saved,revision:0,sampleRows:[]};
+  state.ruleStudioEnabled=true;state.parkedRuleDrafts.delete(value.id);
+  state.sampleRows=state.ruleStudio.sampleRows||[];
+  fillRuleForm(value);renderRules();renderStudioControls();
+  $('keyRuleTestResult').replaceChildren();els.ruleTitle.focus();
+}
+function leaveRuleStudio(discard){
+  ++state.studioOpenRequest;const d=state.ruleStudio;
+  if(d&&discard){autoSaveRuleEdit.cancel?.();state.parkedRuleDrafts.delete(d.value.id);state.ruleStudio=null;}
+  else parkStudioDraft();
+  state.keyRuleJob=null;$('keyRuleTestResult').replaceChildren();$('cancelKeyRuleTest').hidden=true;
+  state.sampleRows=[];const id=d?.isNew?d.returnId:d?.value.id||state.currentRuleId;
+  fillRuleForm(state.rules.find(r=>r.id===id)||null);renderRules();renderStudioControls();
+}
+async function saveStudioDraft(asNew=false){
+  const d=state.ruleStudio;if(!d||d.saving)return;
+  autoSaveRuleEdit.cancel?.();const rule=studioFormValue();
+  if(!ccCoachingPhraseValidation(rule,{mark:true,notify:true}).ok)return;
+  if(asNew){rule.id=uid();rule.title+=' Copy';}
+  d.saving=true;
+  try{
+    const saved=await saveRuleObj(rule,{fullRender:false,preview:false,commitStudio:true,expected:asNew?null:d.expected});
+    if(!saved||state.ruleStudio!==d)return;
+    state.parkedRuleDrafts.delete(d.value.id);state.ruleStudio=null;state.sampleRows=[];
+    fillRuleForm(saved);renderRules();renderStudioControls();renderOtherRulePicker();renderEmailWorkflowStatus();
+    setStatus('Saved '+saved.title+'.');toast('Rule saved.');
+    if(state.ruleStudioEnabled)await beginRuleStudio(saved);
+  }catch(error){$('ruleStudioState').textContent=String(error.message||error);$('saveRuleDraftCopy').hidden=false;}
+  finally{d.saving=false;}
+}
+function bindRuleStudio(){
+  state.parkedRuleDrafts=new Map();state.studioOpenRequest=0;state.ruleStudioEnabled=guidedQualtricsNavigation();
+  try{const mode=localStorage.getItem('qualtricsRuleStudioMode');if(mode)state.ruleStudioEnabled=mode==='guided';}catch{}
+  $('openRuleDraft').onclick=()=>beginRuleStudio(state.rules.find(r=>r.id===state.currentRuleId));
+  $('startRuleDraft').onclick=()=>beginRuleStudio(null,$('newRuleTemplate').value);
+  const newAdvanced=els.newRuleBtn.onclick;
+  els.newRuleBtn.onclick=()=>state.ruleStudioEnabled?beginRuleStudio(null,$('newRuleTemplate').value):newAdvanced();
+  $('cancelRuleDraft').onclick=async()=>{
+    leaveRuleStudio(true);
+    const saved=state.rules.find(rule=>rule.id===state.currentRuleId);
+    if(state.ruleStudioEnabled&&saved)await beginRuleStudio(saved);
+    setStatus('Draft discarded.');
+  };
+  $('toggleRuleStudio').onclick=async()=>{
+    const guided=!state.ruleStudioEnabled;
+    if(!guided)leaveRuleStudio(false);
+    state.ruleStudioEnabled=guided;
+    try{localStorage.setItem('qualtricsRuleStudioMode',guided?'guided':'advanced');}catch{}
+    if(guided&&state.currentRuleId)await beginRuleStudio(state.rules.find(r=>r.id===state.currentRuleId));
+    renderStudioControls();
+  };
+  els.saveRuleBtn.addEventListener('click',e=>{if(state.ruleStudio){e.stopImmediatePropagation();saveStudioDraft();}},true);
+  $('saveRuleDraftCopy').onclick=()=>saveStudioDraft(true);
+  $('ruleStudioGuide').addEventListener('click',event=>{
+    const step=event.target.closest('[data-rule-step]')?.dataset.ruleStep;if(!step)return;
+    const type=els.ruleType.value;
+    const controls={source:'ruleTitle',conditions:{multiHeader:'criteriaHeader',headerCount:'countNameHeader',statRule:'statRuleMetric',statCount:'statCountConditionHeader',coachingCorrective:'ccCoachingTopic'}[type],
+      qualifies:{multiHeader:'ruleCriteriaLogic',headerCount:'countMin',statRule:'statRuleMinimumMode',statCount:'statCountMin',coachingCorrective:'ccMinCoachingCount'}[type],message:'individualConcernEnabled',test:'sampleKeyRuleBtn'};
+    const field=$(controls[step]);if(!field)return;const section=field.closest('details');if(section)section.open=true;field.focus();field.scrollIntoView({block:'center'});
+  });
+  renderStudioControls();
+}
+function bindRuleMessagePreview(result,rule,date,exact,sources,people,records,current){
+  const picker=result.querySelector('[data-message-person]'),output=result.querySelector('[data-message-result]');
+  if(!picker)return;
+  let resolverPromise,request=0;
+  const roster=QualtricsIndividualMessages.buildRosterIndex(state.individualRosterRows||[]);
+  async function resolveMessages(){
+    const files=sources.map(source=>({fileName:source.name,ruleId:rule.id,rows:source.rows}));
+    let remaining=exact?Infinity:Math.max(0,500-files.reduce((sum,f)=>sum+f.rows.length,0));
+    for(const file of individualSelectedReportFiles()){
+      if(!remaining||files.some(f=>f.fileName===file.fileName))continue;
+      const rows=exact?file.rows:file.rows.slice(0,remaining);files.push({...file,rows});remaining-=rows.length;
+    }
+    const context=await buildIndividualRunContext({representatives:people},[rule],files,{get aborted(){return !current();}});
+    const resolver=createIndividualResolver(date,context);
+    if(isCoreDataRule(rule)||isHeaderCountRule(rule)){
+      const matches=new Map();
+      for(const person of people){
+        const record=records.get(person.repKey);
+        if(record)matches.set(person.repKey,{matched:true,missing:false,...individualLegacyRecordValue(rule,record)});
+      }
+      resolver.legacyCache.set(rule.id,matches);
+    }
+    return resolver;
+  }
+  const show=async()=>{
+    const sequence=++request;
+    if(!current()){output.textContent='Inputs changed. Test the rule again.';return;}
+    const person=people[Number(picker.value)];
+    output.textContent='Resolving individual message…';
+    try{
+      resolverPromise ||= resolveMessages();
+      const resolver=await resolverPromise;
+      if(!current()||sequence!==request)return;
+      const preview=QualtricsIndividualMessages.evaluateRepresentative({...person,fullName:person.repName},[rule],roster,resolver,individualTemplateFromForm());
+      output.innerHTML=preview.diagnostics.map(d=>'<div><strong>'+esc(d.side==='concern'?'Concern':'Strength')+'</strong> · '+esc(d.enabled?(d.missing?'Missing data':d.pass?'Qualifies':'Does not qualify'):'Disabled')+'<div>'+esc([d.condition,d.value,d.reason].filter(Boolean).join(' · '))+'</div></div>').join('')+
+        [preview.concernMessages,preview.strengthMessages].flat().map(message=>'<p>'+esc(message)+'</p>').join('')+preview.errors.map(message=>'<div>'+esc(message)+'</div>').join('');
+    }catch(error){if(current()&&sequence===request)output.textContent=error.message||String(error);}
+  };
+  picker.onchange=show;result.querySelector('[data-show-message]').onclick=show;
+}
+async function testQualtricsRule(exact=false){
+  if(state.ruleStudio){autoSaveRuleEdit.cancel?.();state.ruleStudio.value=studioFormValue();}
+  const rule=readRuleForm(),date=parseDate(els.reportDate?.value)||new Date(),audience=currentReportAudience(),job=uid(),revision=state.evaluationRevision||0,indexes=state.indexes;
+  const result=$('keyRuleTestResult'),cancel=$('cancelKeyRuleTest');
+  const originalRuleId=state.currentRuleId,draftRevision=state.ruleStudio?.revision;
+  const current=()=>state.keyRuleJob===job&&originalRuleId===state.currentRuleId&&draftRevision===state.ruleStudio?.revision&&revision===(state.evaluationRevision||0)&&indexes===state.indexes;
+  state.keyRuleJob=job;cancel.hidden=false;
+  result.textContent=exact?'Evaluating the full rule…':'Checking a sample…';
+  await allStarBridgeYield();
+  const population=exact?null:new Map();
+  if(population)for(const [key,row] of state.teamMap){
+    population.set(key,{repKey:key,key,repName:row.name||key,rawName:row.name||key,coach:row.coach,team:row.team});
+    if(population.size>=20)break;
+  }
+  const limited=rows=>exact?rows:rows.slice(0,500);
+  let records=[],coverage='',missing='';const sources=[];
+  try{
+    if(!current())return;
+    if(isStatRule(rule)){
+      const source=rule.statRule?.metric==='callQuality'?'qa':'weeklyStats';
+      if(!state.masterRows[source]?.length)missing='Load '+statCountSourceLabel(source)+'.';
+      records=await runReportSteps(buildStatRuleRecordsSteps(rule,date,population),current);coverage=exact?'All representatives':population.size+' sampled representatives and their indexed performance history';
+    }else if(isStatCountRule(rule)){
+      const source=rule.statCount?.source||'qa',rows=limited(statCountSourceRows(source));
+      if(!rows.length)missing='Load '+statCountSourceLabel(source)+'.';
+      records=await runReportSteps(buildStatCountRecordsSteps(rule,date,rows,population),current);coverage=rows.length+' source rows';
+    }else if(isCoachingCorrectiveRule(rule)){
+      const rows=limited(state.coachingRows);
+      if(!rows.length||(rule.coachingCorrective?.requireChecklist&&!state.checklistRows.length))missing='Check Documented Coaching and the required Checklist source.';
+      records=ccDescribeCoachingCorrectiveRecords(await runReportSteps(buildCoachingCorrectiveRecordsSteps(rule,date,rows),current),rule);coverage=rows.length+' coaching rows and linked evidence';
+    }else{
+      let count=0;
+      for(const source of previewSourceRowsForRule(rule)){
+        const rows=exact?source.rows:source.rows.slice(0,Math.max(0,500-count));count+=rows.length;sources.push({...source,rows});if(!exact&&count>=500)break;
+      }
+      coverage=count+' report rows';if(!sources.length)missing='Load a matching report or rule sample.';
+      if(isHeaderCountRule(rule)){
+        const found=await runReportSteps(buildHeaderCountRecordsSteps(rule,sources,population),current);
+        records=found.records.map(r=>({...r,matchedValues:r.count+' counted in '+found.countHeader+' (minimum '+found.threshold+')'}));
+      }else{
+        function* matches(){
+          const people=new Map();
+          for(const s of sources)for(const row of s.rows){
+            yield;if(!rowMeetsRule(row,rule))continue;const name=getAgentFromRow(row,rule);if(!name)continue;
+            const person=resolveIdentityFromRow(row,name),map=state.teamMap.get(person.key)||{};
+            if(!people.has(person.key))people.set(person.key,{repKey:person.key,repName:person.name,coach:map.coach||rowVal(row,['Coach','Manager','Supervisor','Team Lead','Job Coach'])||rowVal(row,['Team','Team Name','Coach Team','Sheet'])||'Unassigned',matchedValues:s.name+' · '+criteriaValueSummary(row,rule)});
+          }
+          return [...people.values()];
+        }
+        records=await runReportSteps(matches(),current);
+      }
+    }
+    if(!current())return;
+    const accepted=[],excluded=[];
+    for(const row of records){
+      const reason=!hireDatePassesReportFilter(row.repKey)?'Hire-date filter':!weeklyStatsActivityPasses(row.repKey,date)?'Recent Weekly Stats filter':!reportAudienceAllowsCoach(row.coach,audience)?'Outside report audience':'';
+      if(reason)excluded.push({...row,reason});else accepted.push(row);
+    }
+    const matches=new Map(records.map(record=>[record.repKey,record]));
+    const people=[],display=[];
+    const add=(person,outcome,explanation)=>{
+      people.push(person);
+      const examples=(person.examples||[]).map(e=>[e.date&&ymd(e.date),e.value].filter(value=>value!=null&&value!=='').join(' · '));
+      for(const row of (person.coachings||[]).slice(0,3))examples.push([row.date&&ymd(row.date),row.raw?.Description||row.type].filter(Boolean).join(' · '));
+      for(const raw of (person.sourceRows||[]).slice(0,3))examples.push([rule.countRule?.nameHeader,raw[rule.countRule?.nameHeader]].filter(Boolean).join(' · '));
+      display.push([person.repName,outcome,[explanation,...examples].join(' · ')]);
+    };
+    accepted.slice(0,50).forEach(r=>add(r,'Pass',r.matchedValues||'Threshold met'));
+    excluded.slice(0,20).forEach(r=>add(r,'Excluded',r.reason));
+    for(const [key,r] of state.teamMap){
+      if(display.length>=70)break;
+      if((exact||population.has(key))&&!matches.has(key))add({repKey:key,repName:r.name||key,coach:r.coach,team:r.team},exact?'No match':'No match in sample','The rule did not find qualifying evidence for this person.');
+    }
+    result.innerHTML='<strong>'+esc((exact?'Full rule preview':'Sample preview')+' · '+ymd(date)+' · '+reportAudienceLabel(audience))+'</strong><div>'+esc(coverage+' · '+accepted.length+' qualifying · '+excluded.length+' excluded by population filters')+'</div>'+(missing?'<div>'+esc(missing)+'</div>':'')+'<div class="tableWrap"><table><thead><tr><th>Representative</th><th>Result</th><th>Evidence</th></tr></thead><tbody>'+display.map(row=>'<tr>'+row.map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div><div class="sub">Up to 50 qualifying rows. Team minimums are applied after combining all selected rules in Review &amp; Generate.</div>'+
+      (people.length?'<label>Individual message for <select data-message-person>'+people.map((p,i)=>'<option value="'+i+'">'+esc(p.repName)+'</option>').join('')+'</select></label><button type="button" class="btn" data-show-message>Preview this message</button><div data-message-result aria-live="polite"></div>':'');
+    bindRuleMessagePreview(result,rule,date,exact,sources,people,matches,current);
+  }catch(error){if(current())result.textContent=error.message||String(error);}
+  finally{if(state.keyRuleJob===job){cancel.hidden=true;if(!current())result.textContent='Inputs changed. Test the rule again.';}}
+}
+
+
+function renderKeyFileSlots(){
+  const summary=$('keySlotSummary');if(!summary||typeof QualtricsKeyIntake==='undefined')return;
+  summary.innerHTML=Object.entries(QualtricsKeyIntake.slots).map(([id,slot])=>{
+    const info=state.keySlotInfo?.[id],file=state.masterFileNames[id],rows=state.masterRows[id]||[];
+    const range=info?.first&&info.last?ymd(info.first)+' to '+ymd(info.last):'No dated rows';
+    return '<div class="note"><strong>'+esc(slot.label)+'</strong><div>'+esc(file||'Missing')+'</div>'+(file?'<div class="sub">'+esc([info?.origin||'Loaded file',rows.length.toLocaleString()+' accepted',range].join(' · '))+'</div>':'')+'<button class="btn small" type="button" data-slot-replace="'+id+'">'+(file?'Replace':'Choose file')+'</button></div>';
+  }).join('');
+}
+function batchIssue(item,items){
+  if(item.skip)return '';
+  if(item.error)return item.error;
+  if(!item.slot)return 'Choose a destination.';
+  if(item.slot==='report')return 'Open this file in Report Files.';
+  if(items.some(other=>other!==item&&!other.skip&&other.slot===item.slot))return 'Two files target this slot. Change one destination or skip a file.';
+  if(!item.selected.length)return 'Select at least one worksheet.';
+  if(item.selected.some(s=>!s.representative))return 'Missing a representative-name header.';
+  if(item.slot==='qa'&&item.selected.some(s=>!s.evidence.qa.matched.length))return 'Missing a supported QA score column.';
+  if(item.slot==='checklist'&&item.selected.some(s=>!s.evidence.checklist.matched.length&&!s.headers.some(h=>/^(category|reason|incident|actiontype|disciplinetype)$/i.test(headerKey(h)))))return 'Missing incident or corrective columns. Verify the worksheet before applying.';
+  return '';
+}
+function renderBatchReview(){
+  const batch=state.keyBatch,review=$('keyBatchReview');if(!review)return;
+  review.replaceChildren();
+  const apply=$('applyKeyBatch'),cancel=$('cancelKeyBatch');
+  cancel.hidden=!batch;apply.hidden=!batch||batch.busy;
+  if(!batch)return;
+  const slots=QualtricsKeyIntake.slots;
+  for(const [i,item] of batch.items.entries()){
+    const row=document.createElement('div');row.className='note';row.dataset.keyItem=i;
+    const option=(v,title,selected)=>'<option value="'+esc(v)+'"'+(selected?' selected':'')+'>'+esc(title)+'</option>';
+    const sheetSummary=item.selected.map(s=>{const e=s.evidence[item.slot];return s.name+' · '+(s.representative||'No representative header')+(e?.matched.length?' · '+e.matched.join(', '):'');}).join(' / ');
+    const candidates=[...new Set(item.sheets.flatMap(s=>s.candidates))].map(id=>slots[id].label);
+    const previous=state.masterFileNames[item.slot];
+    row.innerHTML='<strong>'+esc(item.file.name)+'</strong><div class="sub">'+esc(candidates.length?'Possible sources: '+candidates.join(', '):'No distinctive key-file headers found.')+'</div><fieldset '+(batch.busy?'disabled':'')+'><legend>Review destination</legend><label>Slot<select data-edit="slot">'+option('','Choose destination',!item.slot)+Object.entries(slots).map(([id,slot])=>option(id,slot.label,id===item.slot)).join('')+option('report','Report Files',item.slot==='report')+'</select></label>'+item.sheets.map((s,idx)=>'<label><input type="checkbox" style="width:auto" data-sheet="'+idx+'" '+(item.selected.includes(s)?'checked':'')+'> '+esc(s.name)+'</label>').join('')+'<label><input type="checkbox" style="width:auto" data-edit="skip" '+(item.skip?'checked':'')+'> Skip this file</label></fieldset><div class="sub">'+esc(sheetSummary)+'</div>'+(previous?'<div>Replaces '+esc(previous)+'</div>':'')+(item.selected.length?'<details><summary>Inspect headers and sample</summary>'+item.selected.map(s=>'<div class="tableWrap"><table><thead><tr>'+s.headers.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+s.sample.map(r=>'<tr>'+s.headers.map((_,i)=>'<td>'+esc(r[i]??'')+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>').join('')+'</details>':'')+'<div>'+esc(item.skip?'Skipped':batchIssue(item,batch.items)||'Ready to apply')+'</div>';
+    if(!batch.busy){
+      const replacement=document.createElement('input');replacement.type='file';replacement.accept='.csv,.tsv,.txt,.xlsx,.xls';
+      const label=document.createElement('label');label.textContent='Replace this candidate';label.append(replacement);row.append(label);
+      replacement.onchange=()=>{if(replacement.files[0]){item.file=replacement.files[0];item.skip=false;discoverBatchFile(batch,item);}};
+      if(item.error){const retry=document.createElement('button');retry.className='btn';retry.textContent='Retry';retry.onclick=()=>discoverBatchFile(batch,item);row.append(retry);}
+      if(item.slot==='report'&&!item.skip){const route=document.createElement('button');route.className='btn';route.textContent='Add to Report Files';route.onclick=async()=>{batch.busy=true;renderBatchReview();try{await addDashboardFiles([item.file]);item.skip=true;switchTab('reportfiles');}finally{batch.busy=false;renderBatchReview();}};row.append(route);}
+    }
+    review.append(row);
+  }
+  const valid=batch.items.filter(item=>!item.skip&&!batchIssue(item,batch.items));
+  apply.disabled=!valid.length;apply.textContent=batch.items.some(item=>!item.skip&&batchIssue(item,batch.items))?'Apply valid files':'Apply files';
+}
+async function discoverBatchFile(batch,item){
+  const wasBusy=batch.busy;batch.busy=true;item.sheets=[];item.selected=[];item.error='';item.prepared=null;
+  try{
+    await QualtricsKeyIntake.run(item.file,null,chunk=>{if(chunk.sheet)item.sheets.push(chunk.sheet);},batch.controller.signal);
+    const candidates=[...new Set(item.sheets.flatMap(s=>s.candidates.filter(id=>s.evidence[id].score===s.evidence[s.candidates[0]].score)))];
+    item.slot=item.requested||((candidates.length===1)?candidates[0]:!candidates.length&&QualtricsWorkflow.matchingRules(item.file.name,state.rules).length?'report':'');
+    item.selected=item.sheets.filter(s=>item.slot&&s.candidates.includes(item.slot));
+    if(!item.selected.length&&item.sheets.length===1)item.selected=item.sheets.slice();
+  }catch(error){item.error=String(error.message||error);}
+  finally{batch.busy=wasBusy;if(state.keyBatch===batch)renderBatchReview();}
+}
+async function startKeyBatch(files,requested=''){
+  if(!files.length)return;
+  state.keyBatch?.controller.abort();
+  const batch={controller:new AbortController(),busy:true,items:Array.from(files,file=>({file,requested,slot:'',sheets:[],selected:[]}))};state.keyBatch=batch;
+  $('keyBatchStatus').textContent='Checking sheets and headers…';renderBatchReview();
+  for(const item of batch.items){if(batch.controller.signal.aborted)return;await discoverBatchFile(batch,item);}
+  if(state.keyBatch!==batch)return;batch.busy=false;renderBatchReview();$('keyBatchStatus').textContent='Review the proposed destinations, then apply your files.';
+}
+async function applyKeyBatch(){
+  const batch=state.keyBatch;if(!batch||batch.busy)return;
+  const valid=batch.items.filter(item=>!item.skip&&!batchIssue(item,batch.items));
+  if(!valid.length)return;
+  const baselineEpoch=state.keySlotEpoch||0;
+  const versions=new Map(valid.map(item=>[item.slot,state.keySlotInfo?.[item.slot]?.revision]));
+  batch.busy=true;renderBatchReview();
+  try{
+    for(const item of valid){
+      if(item.prepared)continue;
+      $('keyBatchStatus').textContent='Preparing '+item.file.name+'…';
+      try{
+        const sheets=item.selected.map(s=>({sheetName:s.name,headers:s.headers,rows:[]}));
+        const byName=new Map(sheets.map(s=>[s.sheetName,s]));
+        await QualtricsKeyIntake.run(item.file,item.selected,chunk=>{if(chunk.rows)byName.get(chunk.name).rows.push(...chunk.rows);},batch.controller.signal);
+        const loader={qa:loadQA,coaching:loadCoaching,checklist:loadChecklist,weeklyStats:loadWeeklyStats}[item.slot];
+        item.prepared=await loader({name:item.file.name,__selectedSheets:sheets},{stage:true,isCurrent:()=>!batch.controller.signal.aborted});
+        if(!item.prepared.accepted)throw Error('No rows had a usable representative name.');
+        if(!item.prepared.dated&&item.slot!=='qa')throw Error('No rows had a usable source date. Verify the date column or choose another worksheet.');
+      }catch(error){item.error=String(error.message||error);item.prepared=null;}
+    }
+    if(state.keyBatch!==batch||batch.controller.signal.aborted)return;
+    if(baselineEpoch!==(state.keySlotEpoch||0)||valid.some(item=>versions.get(item.slot)!==state.keySlotInfo?.[item.slot]?.revision)){for(const item of valid)item.prepared=null;throw Error('Sources changed during validation. Review the replacements and apply again.');}
+    if(valid.some(item=>item.error))throw Error('Some files need attention. Retry them or choose Apply valid files.');
+    for(const item of valid){item.prepared.apply();item.prepared=null;item.skip=true;}
+    rebuildDerivedMaps();renderOtherRulePicker();renderWeeklyColumnSelectors(currentRule());renderStatCountSelectors(currentRule());renderStatCountRuleChips();updateStatRuleFieldVisibility();updateCoachingCorrectiveFieldVisibility();renderStatRuleChips();renderCoachingCorrectiveRuleChips();
+    markRulePreviewStale('Key files changed. Test the rule again to see current evidence.');
+    $('keyBatchStatus').textContent=valid.length+' file(s) applied. '+((state.coachAliasIndex?.unresolved||[]).length?'Review overlapping coach names below.':'Ready for rules.');
+    if(batch.items.every(i=>i.skip)){batch.controller.abort();state.keyBatch=null;}
+  }catch(error){if(state.keyBatch===batch)$('keyBatchStatus').textContent=error.message||String(error);}
+  finally{batch.busy=false;renderBatchReview();}
+}
+function guidedQualtricsNavigation(){try{return localStorage.getItem('qualtricsGuidedNavigation')==='true';}catch{return false;}}
+function bindQualtricsNavigation(){
+  const control=$('toggleQualtricsWorkflow'),tabs=document.querySelector('nav.tabs');
+  function show(guided){
+    const order=guided?[['keyfiles','Data'],['rules','Rules'],['report','Review & Generate'],['history','History'],['reportfiles','Report Files'],['individual','Individual Messages']]:
+      [['keyfiles','1. Data / Key Files'],['reportfiles','2. Report Files'],['rules','3. Build Rules'],['report','4. Action Report'],['individual','5. Individual Messages'],['history','History']];
+    for(const [id,label] of order){const button=tabs.querySelector('[data-tab="'+id+'"]');button.textContent=label;tabs.append(button);}
+    control.setAttribute('aria-pressed',String(guided));control.textContent=guided?'Use classic workflow':'Try guided workflow';
+  }
+  show(guidedQualtricsNavigation());
+  control.onclick=()=>{
+    const guided=control.getAttribute('aria-pressed')!=='true';
+    try{localStorage.setItem('qualtricsGuidedNavigation',String(guided));}catch{}
+    show(guided);
+    if(guided===$('keyBatchTools').hidden)$('toggleKeyBatch').click();
+    if(state.ruleStudioEnabled!==guided)$('toggleRuleStudio').click();
+  };
+}
+function bindKeyFileWorkflow(){
+  const picker=$('keyBatchPicker'),drop=$('keyDropZone'),review=$('keyBatchReview');
+  let requested='';
+  picker.onchange=()=>{startKeyBatch([...picker.files],requested);requested='';picker.value='';};
+  $('keySlotSummary').onclick=e=>{const id=e.target.closest('[data-slot-replace]')?.dataset.slotReplace;if(id){requested=id;picker.click();}};
+  picker.oncancel=()=>{requested='';};
+  drop.ondragover=e=>e.preventDefault();drop.ondrop=e=>{e.preventDefault();startKeyBatch([...e.dataTransfer.files]);};
+  $('cancelKeyBatch').onclick=()=>{state.keyBatch?.controller.abort();state.keyBatch=null;renderBatchReview();$('keyBatchStatus').textContent='Import canceled. Previously loaded files are ready.';picker.focus();};
+  $('applyKeyBatch').onclick=applyKeyBatch;
+  review.onchange=e=>{
+    const row=e.target.closest('[data-key-item]'),batch=state.keyBatch,item=batch?.items[Number(row?.dataset.keyItem)];if(!item||batch.busy)return;
+    item.prepared=null;
+    if(e.target.dataset.edit==='skip')item.skip=e.target.checked;
+    else if(e.target.dataset.edit==='slot'){item.slot=e.target.value;item.error='';}
+    else if(e.target.hasAttribute('data-sheet')){const s=item.sheets[Number(e.target.dataset.sheet)];item.selected=item.selected.filter(x=>x!==s);if(e.target.checked)item.selected.push(s);item.selected.sort((a,b)=>item.sheets.indexOf(a)-item.sheets.indexOf(b));item.error='';}
+    const selector=e.target.hasAttribute('data-sheet')?'[data-sheet="'+e.target.dataset.sheet+'"]':'[data-edit="'+e.target.dataset.edit+'"]';renderBatchReview();review.querySelector('[data-key-item="'+row.dataset.keyItem+'"] '+selector)?.focus();
+  };
+  const toggle=$('toggleKeyBatch'),applyChoice=individual=>{$('keyBatchTools').hidden=individual;toggle.setAttribute('aria-expanded',String(!individual));toggle.textContent=individual?'Use batch review':'Use individual uploads';};
+  let individual=!guidedQualtricsNavigation();
+  try{const saved=localStorage.getItem('qualtricsIndividualUploads');if(saved!==null)individual=saved==='true';}catch{}
+  applyChoice(individual);bindQualtricsNavigation();
+  toggle.onclick=()=>{const individual=!$('keyBatchTools').hidden;if(individual&&state.keyBatch)$('cancelKeyBatch').click();applyChoice(individual);try{localStorage.setItem('qualtricsIndividualUploads',String(individual));}catch{}};
+  $('sampleKeyRuleBtn').onclick=()=>testQualtricsRule(false);$('fullKeyRuleBtn').onclick=()=>testQualtricsRule(true);$('cancelKeyRuleTest').onclick=()=>{state.keyRuleJob=null;$('keyRuleTestResult').textContent='Rule test canceled.';$('cancelKeyRuleTest').hidden=true;};
+  bindHistoryBrowser();
+  bindEmailRevisions();
+}
+function bindHistoryBrowser(){
+  state.previewHistoryImport=true;
+  let offset=0,requestId=0,anchors=[null];
+  async function render(){
+    const id=++requestId;
+    const details=$('historyBrowseMode').value==='details',term=$('historyBrowseSearch').value.toLowerCase(),coach=$('historyBrowseCoach').value.toLowerCase(),rule=$('historyBrowseRule').value.toLowerCase(),from=$('historyBrowseFrom').value,through=$('historyBrowseThrough').value;
+    const snapshot=state.concernHistoryLoad;
+    $('historyProvenance').textContent=snapshot?[snapshot.fileName,snapshot.sheetName,concernHistoryLoadedTimeLabel(snapshot.loadedAt)].filter(Boolean).join(' · '):'No history loaded.';
+    $('historyBrowseFilters').hidden=!details;
+    let records=[],total=0,more=false;
+    if(details&&state.db){
+      $('historyPageStatus').textContent='Loading appearances…';
+      try{
+        records=await new Promise((resolve,reject)=>{
+          const after=anchors[offset/50],entries=[];
+          const req=state.db.transaction(STORES.history).objectStore(STORES.history).openCursor(after==null?null:IDBKeyRange.lowerBound(after,true));
+          req.onerror=()=>reject(req.error);
+          req.onsuccess=()=>{
+            const cursor=req.result;
+            if(!cursor||id!==requestId){resolve(entries);return;}
+            const r=normalizeConcernHistoryRow(cursor.value);
+            if(r&&String(r.repName).toLowerCase().includes(term)&&(!from||r.reportDate>=from)&&(!through||r.reportDate<=through)&&String(r.coach||'').toLowerCase().includes(coach)&&String(r.ruleTitle||r.ruleId||'').toLowerCase().includes(rule)){
+              entries.push(r);if(entries.length===50)anchors[offset/50+1]=cursor.primaryKey;
+              if(entries.length>50){resolve(entries);return;}
+            }
+            cursor.continue();
+          };
+        });
+      }catch(error){if(id===requestId)$('historyPageStatus').textContent='Could not load history: '+error.message;return;}
+      if(id!==requestId)return;
+      more=records.length>50;records=records.slice(0,50);
+    }else{
+      const names=(snapshot?.names||[]).filter(r=>String(r.name).toLowerCase().includes(term));
+      total=names.length;offset=Math.max(0,Math.min(offset,Math.floor(Math.max(0,total-1)/50)*50));
+      records=names.slice(offset,offset+50);more=offset+records.length<total;
+    }
+    const columns=details?['Report date','Representative','Coach','Rule / topic','Appearance evidence']:['Representative','Concern count'];
+    const rows=records.map(r=>details?[r.reportDate,r.repName,r.coach,r.ruleTitle||r.ruleId,r.concernStatus||r.concern||'']: [r.name,r.count+'X']);
+    $('historyBrowseTable').innerHTML=rows.length?'<table><thead><tr>'+columns.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr>'+row.map(v=>'<td>'+esc(v||'—')+'</td>').join('')+'</tr>').join('')+'</tbody></table>':'<div class="empty">No matching '+(details?'dated appearances':'concern counts')+'.</div>';
+    $('historyPageStatus').textContent=rows.length?(offset+1)+'–'+(offset+rows.length)+(details?'':' of '+total.toLocaleString()):'0 matches';
+    $('historyBack').disabled=!offset;$('historyNext').disabled=!more;
+  }
+  state.renderHistoryBrowser=render;
+  for(const field of ['historyBrowseMode','historyBrowseSearch','historyBrowseFrom','historyBrowseThrough','historyBrowseCoach','historyBrowseRule'])$(field).addEventListener('input',debounce(()=>{offset=0;anchors=[null];render();},120));
+  $('historyBack').onclick=()=>{offset-=50;render();};$('historyNext').onclick=()=>{offset+=50;render();};
+  $('openExecutiveHistory').onclick=()=>{switchTab('report');$('executiveHistoryEdition').open=true;$('executiveHistoryMonths').focus();};
+  $('downloadHistoryHere').onclick=()=>withDatedHistory(exportProblemReps);
+}
+
+
 function renderEmailWorkflowStatus(){
+  if(els.emailReviewContext&&state.report?.inputContext){const r=state.report;els.emailReviewContext.textContent=[r.reportDate,r.audience.label,'Sources: '+Object.values(r.inputContext.sources).filter(Boolean).join(', '),'Rules: '+r.inputContext.rules.join(', '),r.flagged.length+' included findings',r.audienceExcludedRecords+' outside audience',r.excludedCoaches.length+' teams below minimum'].join(' · ');}
   const uploads=state.dashboardFiles||[], files=uploads.filter(file=>file.status==='matched'&&file.rows?.length), rules=(state.rules||[]).filter(rule=>isCoreDataRule(rule)&&state.selectedOtherRuleIds?.has(rule.id));
   const missing=new Set(), hasSource=source=>!!(state.masterRows?.[source]?.length||state[`${source}Rows`]?.length);
   for(const rule of rules){
@@ -6124,12 +6842,48 @@ function renderEmailWorkflowStatus(){
   if(els.saveHistoryBtn) els.saveHistoryBtn.disabled=!state.report||!!state.report.historySaved||!!state.emailWorkflowRunning;
   for(const id of ['generateReportBtn','reviewReportBtn','exportEmailCoachingNeedsBtn']) if(els[id]) els[id].disabled=!!state.emailWorkflowRunning||!!state.individualReviewRun||!!state.individualCoachingExportRun;
 }
+function emailEvaluationSignature(){
+  const controls=['reportDate','globalCoachLookback','historyWindowDays','historySortWeight','impactRecentLookbackDays','minTeamReportReps'];
+  return JSON.stringify({
+    controls:controls.map(id=>els[id]?.value),weekly:currentWeeklyStatsFilter(),audience:currentReportAudience(),
+    sources:state.keySlotInfo,scope:state.allStarScope,files:state.dashboardFiles.map(file=>[file.id,file.ruleId,file.fileName,file.rows?.length]),
+    rules:QualtricsWorkflow.fingerprint(state.rules.filter(rule=>state.selectedOtherRuleIds.has(rule.id)||state.dashboardFiles.some(file=>file.ruleId===rule.id||(!file.ruleId&&rule.baseName&&file.fileName.toLowerCase().includes(rule.baseName.toLowerCase()))))),selected:[...state.selectedOtherRuleIds].sort(),
+    settings:[state.reportSettings.orderEnabled,state.reportSettings.weightsEnabled,...[
+      ...state.dashboardFiles.map(file=>reportItemKeyForFile(file)),
+      ...state.rules.filter(rule=>state.selectedOtherRuleIds.has(rule.id)).map(rule=>reportItemKeyForRule(rule))
+    ].map((key,index)=>normalizeReportSetting(state.reportSettings.items[key],index+1))],
+    hiring:state.hireDateSettings,organizations:state.organizations,aliases:state.coachAliasOverrides,history:state.historyRevision||0
+  });
+}
+function emailEvaluationCurrent(report){
+  return !!report&&!report.weeklyStatsFilterStale&&report.evaluationRevision===(state.evaluationRevision||0)&&report.evaluationSignature===emailEvaluationSignature();
+}
+function bindEmailRevisions(){
+  const output=new Set(['emailIntroEditor','executiveHistoryMonths','executiveHistoryAppearances','executiveHistoryCoachings','executiveHistoryInclude','exportMsgExtension','actionExcludeInvalidNumericNames','urgencyCoverageGreen','urgencyCoverageYellow']);
+  const evaluation=new Set(['reportDate','globalCoachLookback','historyWindowDays','historySortWeight','impactRecentLookbackDays','minTeamReportReps','reportAudienceScope','reportAudienceValue','hideRepsWithoutRecentStats','weeklyStatsFilterWeeks','hireDateFilterMode','hireDateSource','hireDateRepColumn','hireDateColumn','hireDateFilterStart','hireDateFilterEnd']);
+  const changed=e=>{
+    const node=e.target;
+    if(node.closest?.('#ruleStudioTools,#keyRuleTestResult')||(state.ruleStudio&&node.closest?.('.ruleEditorBody')))return;
+    if(output.has(node.id)||node.closest?.('#emailIntroEditor'))state.outputRevision=(state.outputRevision||0)+1;
+    else if(evaluation.has(node.id)||(node.closest?.('#view-rules,#view-reportfiles')&&!/search/i.test(node.type||'')))state.evaluationRevision=(state.evaluationRevision||0)+1;
+  };
+  document.addEventListener('input',changed,true);document.addEventListener('change',changed,true);
+}
+function readGeneratorSetting(key){
+  return new Promise((resolve,reject)=>{const req=state.db.transaction(STORES.settings).objectStore(STORES.settings).get(key);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
+}
+async function withDatedHistory(action){
+  try{await ensureDatedConcernHistory();await action();}catch(error){toast('Could not open dated history: '+(error.message||error));}
+}
+
+
 async function runEmailWorkflow(download=false){
   if(state.emailWorkflowRunning||state.individualReviewRun||state.individualCoachingExportRun) return;
   state.emailWorkflowRunning=true; renderEmailWorkflowStatus();
   try{
     await queueConcernHistory(async()=>{
       const previous=state.report;
+      if(download&&previous?.evaluationSignature&&emailEvaluationCurrent(previous)){await exportEmails();return;}
       await generateReport();
       // Validation may return early. Never download an older report in its place.
       if(download&&state.report&&state.report!==previous) await exportEmails();
@@ -6173,6 +6927,7 @@ async function importProblemReps(file){
     const snapshot={version:2,fileName:String(parsed.fileName||file.name),sheetName:selected.sheet.sheetName,loadedAt:new Date().toISOString(),names:summary.names};
     const detailSheet=(parsed.sheets||[]).find(sheet=>/appearance\s*history/i.test(String(sheet.sheetName||'')));
     const details=(detailSheet?.rows||rows).map(normalizeConcernHistoryRow).filter(Boolean);
+    if(state.previewHistoryImport&&!window.confirm('Replace saved Concern History with '+summary.names.length+' representative counts and '+details.length+' dated appearances from '+snapshot.fileName+'?'))return;
     await commitConcernHistory(()=>snapshot,{replaceDetails:true,details});
     refreshReportConcernHistory(); state.concernHistoryExpanded=false;
     els.concernHistoryViewer?.classList.add('hidden'); els.concernHistoryStatusBtn?.setAttribute('aria-expanded','false');
@@ -6195,7 +6950,7 @@ const autoSaveRuleEdit = debounce(async ()=>{
   if(!state.db || !state.currentRuleId) return;
   const r=readRuleForm();
   await saveRuleObj(r,{fullRender:false,preview:false});
-  setStatus(`Auto-saved ${r.title}. Save or Refresh Preview to recalculate representatives.`);
+  if(!state.ruleStudio)setStatus(`Auto-saved ${r.title}. Save or Refresh Preview to recalculate representatives.`);
 }, 700);
 function resetNewRuleScratchFields(){
   state.currentHeaders=[];
@@ -6231,7 +6986,7 @@ async function openBlankRuleForm(){
   els.ruleTitle?.focus();
 }
 function flashBtn(btn){ if(!btn) return; btn.classList.remove('flash'); void btn.offsetWidth; btn.classList.add('flash'); setTimeout(()=>btn.classList.remove('flash'),900); }
-function switchTab(tab){ state.activeTab=tab; document.querySelectorAll('.tabBtn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab)); document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${tab}`)); impactRenderAllViews(); if(tab==='report'){ renderEmailWorkflowStatus(); renderConcernHistoryStatus(); } if(tab==='individual'){ renderIndividualDataSelection(); renderIndividualScope(); renderIndividualRosterStatus(); renderIndividualSummary(); renderIndividualReview(); } }
+function switchTab(tab){ state.activeTab=tab; document.querySelectorAll('.tabBtn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab)); document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${tab}`)); impactRenderAllViews(); if(tab==='history')state.renderHistoryBrowser?.(); if(tab==='report'){ renderEmailWorkflowStatus(); renderConcernHistoryStatus(); } if(tab==='individual'){ renderIndividualDataSelection(); renderIndividualScope(); renderIndividualRosterStatus(); renderIndividualSummary(); renderIndividualReview(); } }
 function metricSourceValidation(config,label='Stat'){
   if(config?.metric==='cashAppointmentRate'){
     const mode=config.cashSourceMode==='auto'?'consumerRatio':(config.cashSourceMode||'consumerRatio');
@@ -6247,14 +7002,19 @@ function metricSourceValidation(config,label='Stat'){
   return '';
 }
 function bind(){
+  bindKeyFileWorkflow();
   const editor=document.querySelector('.ruleEditorBody');
-  for(const event of ['input','change']) editor?.addEventListener(event,()=>{ rulesetDraftDirty=true; updateRulesetStatus(); });
+  for(const event of ['input','change']) editor?.addEventListener(event,e=>{
+    if(e.target.closest('#keyRuleTestResult'))return;
+    if(state.ruleStudio){state.ruleStudio.dirty=true;state.ruleStudio.revision++;refreshRuleStudioSummary();return;}
+    rulesetDraftDirty=true;updateRulesetStatus();
+  });
 
   Object.assign(els, Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(e=>[e.id,e])));
   bindIndividualMessages();
   for(const id of ['executiveHistoryMonths','executiveHistoryAppearances','executiveHistoryCoachings','executiveHistoryInclude']) if(els[id]) els[id].addEventListener('change',()=>{ saveExecutiveHistorySettings(); renderEmailWorkflowStatus(); });
-  if(els.reviewExecutiveHistoryBtn) els.reviewExecutiveHistoryBtn.onclick=reviewExecutiveHistory;
-  if(els.downloadExecutiveHistoryBtn) els.downloadExecutiveHistoryBtn.onclick=downloadExecutiveHistoryEmail;
+  if(els.reviewExecutiveHistoryBtn) els.reviewExecutiveHistoryBtn.onclick=()=>withDatedHistory(reviewExecutiveHistory);
+  if(els.downloadExecutiveHistoryBtn) els.downloadExecutiveHistoryBtn.onclick=()=>withDatedHistory(downloadExecutiveHistoryEmail);
   if(els.reportDate) els.reportDate.addEventListener('change',invalidateExecutiveHistoryPreview);
   els.testDocumentedCoachingBtn.onclick=()=>renderCoachingDiagnostics(false);
   els.testAllCoachingRulesBtn.onclick=()=>renderCoachingDiagnostics(true);
@@ -6327,7 +7087,7 @@ function bind(){
   for(const control of [els.hideRepsWithoutRecentStats,els.weeklyStatsFilterWeeks]) control?.addEventListener('change',refreshWeeklyStatsFilter);
   for(const control of [els.hideRepsWithoutRecentStats,els.weeklyStatsFilterWeeks]) control?.addEventListener('input',()=>{ markWeeklyStatsFilterResultsStale(); invalidateIndividualRunCache('weekly stats filter edited'); });
   if(els.globalCoachLookback) els.globalCoachLookback.addEventListener('change',()=>{ saveCoachLookbackWeeks(); invalidateIndividualRunCache('coaching weeks changed'); markRulePreviewStale('Coaching weeks changed. Refresh Preview or generate the report to update coaching counts.'); setStatus(`Matching coaching from the past ${currentCoachLookbackWeeks()} weeks will count, including the full report date. Generate the report to refresh results.`); });
-  els.generateReportBtn.onclick=()=>runEmailWorkflow(true); if(els.reviewReportBtn) els.reviewReportBtn.onclick=()=>runEmailWorkflow(false); els.saveHistoryBtn.onclick=saveProblemHistory; if(els.clearConcernHistoryBtn) els.clearConcernHistoryBtn.onclick=()=>queueConcernHistory(clearConcernHistory); els.exportEmailsBtn.onclick=exportEmails; if(els.exportUrgencyPdfBtn) els.exportUrgencyPdfBtn.onclick=exportUrgencyEmailPdf; els.exportProblemRepsBtn.onclick=exportProblemReps; els.importProblemRepsInput.onchange=e=>{ const file=e.target.files[0]; queueConcernHistory(()=>importProblemReps(file)); }; if(els.urgencyCoverageGreen) els.urgencyCoverageGreen.addEventListener('change',saveUrgencyCoverageControls); if(els.urgencyCoverageYellow) els.urgencyCoverageYellow.addEventListener('change',saveUrgencyCoverageControls);
+  els.generateReportBtn.onclick=()=>runEmailWorkflow(true); if(els.reviewReportBtn) els.reviewReportBtn.onclick=()=>runEmailWorkflow(false); els.saveHistoryBtn.onclick=saveProblemHistory; if(els.clearConcernHistoryBtn) els.clearConcernHistoryBtn.onclick=()=>queueConcernHistory(clearConcernHistory); els.exportEmailsBtn.onclick=exportEmails; if(els.exportUrgencyPdfBtn) els.exportUrgencyPdfBtn.onclick=exportUrgencyEmailPdf; els.exportProblemRepsBtn.onclick=()=>withDatedHistory(exportProblemReps); els.importProblemRepsInput.onchange=e=>{ const file=e.target.files[0]; queueConcernHistory(()=>importProblemReps(file)); }; if(els.urgencyCoverageGreen) els.urgencyCoverageGreen.addEventListener('change',saveUrgencyCoverageControls); if(els.urgencyCoverageYellow) els.urgencyCoverageYellow.addEventListener('change',saveUrgencyCoverageControls);
   if(els.concernHistoryStatusBtn) els.concernHistoryStatusBtn.onclick=()=>{ const opening=els.concernHistoryViewer.classList.contains('hidden'); els.concernHistoryViewer.classList.toggle('hidden',!opening); els.concernHistoryStatusBtn.setAttribute('aria-expanded',String(opening)); if(opening) renderConcernHistoryStatus(); };
   if(els.closeConcernHistoryViewerBtn) els.closeConcernHistoryViewerBtn.onclick=()=>{ els.concernHistoryViewer.classList.add('hidden'); els.concernHistoryStatusBtn.setAttribute('aria-expanded','false'); };
   if(els.expandConcernHistoryBtn) els.expandConcernHistoryBtn.onclick=()=>{ state.concernHistoryExpanded=!state.concernHistoryExpanded; renderConcernHistoryStatus(); };
@@ -6340,15 +7100,16 @@ function bind(){
   if(els.clearEmailIntroBtn) els.clearEmailIntroBtn.onclick=()=>{ els.emailIntroEditor.innerHTML=''; saveEmailIntro(); if(state.report) renderReport(); toast('Email opening-text editor cleared. The saved copy is still available to load.'); };
 }
 async function init(){
-  bind(); loadExecutiveHistorySettings(); loadCoachLookbackWeeks(); loadCoachAliasOverrides(); loadHireDateSettings(); loadEmailIntro(); loadOtherRuleSelection(); loadReportSettings(); loadReportAudienceSettings(); loadUrgencyCoverageControls(); els.reportDate.value=ymd(new Date()); loadWeeklyStatsFilter();
+  bind();bindRuleStudio(); loadExecutiveHistorySettings(); loadCoachLookbackWeeks(); loadCoachAliasOverrides(); loadHireDateSettings(); loadEmailIntro(); loadOtherRuleSelection(); loadReportSettings(); loadReportAudienceSettings(); loadUrgencyCoverageControls(); els.reportDate.value=ymd(new Date()); loadWeeklyStatsFilter();
   switchTab('keyfiles');
   rebuildCoachAliasIndex();
   renderHireDateControls(); renderCoreChips(); renderDashboardFileList(); renderUploadReadiness(); renderOtherRulePicker(); renderStatCountSelectors(currentRule()); updateStatCountFieldVisibility(); renderReportAudienceControls(); populateOrgSummarySelect(); markRulePreviewStale('Select a saved rule, then use Refresh Preview when ready.');
-  state.db=await openDB(); const [savedRules,savedHistory]=await Promise.all([getAll(STORES.rules),getAll(STORES.history)]); state.rules=savedRules.map(normalizeRule); state.history=savedHistory; rebuildConcernHistoryIndex(); await Promise.all([loadConcernHistorySnapshot(),loadIndividualMessageSettings()]); renderConcernHistoryStatus();
-  const attachmentRows=await getAll(STORES.settings); state.rulesetAttachment=attachmentRows.find(row=>row.key===RULESET_ATTACHMENT_KEY)?.attachment||null; updateRulesetStatus();
+  state.db=await openDB(); const savedRules=await getAll(STORES.rules);state.rules=savedRules.map(normalizeRule);state.historyDeferred=true; await Promise.all([loadConcernHistorySnapshot(),loadIndividualMessageSettings()]); renderConcernHistoryStatus();
+  state.rulesetAttachment=(await readGeneratorSetting(RULESET_ATTACHMENT_KEY))?.attachment||null; updateRulesetStatus();
   if(state.rules.length) state.currentRuleId=state.rules[0].id;
   renderRules(); renderOtherRulePicker(); if(state.currentRuleId) fillRuleForm(state.rules[0]); else fillRuleForm(null);
-  setStatus(`Ready. Loaded ${state.rules.length} saved rule set(s) and ${state.history.length} unique concern appearance(s).`);
+  if(state.ruleStudioEnabled&&state.rules[0])await beginRuleStudio(state.rules[0]);else renderStudioControls();
+  setStatus(`Ready. Loaded ${state.rules.length} saved rule set(s) and ${state.concernHistoryLoad?.totalAppearances||0} prior concern appearances.`);
   if(window.parent!==window) window.parent.postMessage({type:'qualtrics-generator-ready'},'*');
 }
 init().catch(err=>{ console.error(err); setStatus('Startup error: '+(err.message||err)); });

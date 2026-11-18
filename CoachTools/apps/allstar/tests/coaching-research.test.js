@@ -33,6 +33,28 @@ async function calculations(){
   assert.equal(E.eventSummary(sameSession,ids['Alice Able'],{start:'2026-09-01',end:'2026-09-06'},settings.coverage.documented_coaching,{topic:'Cash',field:'Type',value:'Skill',match:'is'}).count,0,'conditions cannot borrow fields from different source rows');
   console.log('PASS exact 0/1/2 cohorts, type/topic filtering, deduplication, paired movement, percentage points, missing endpoints and unknown coverage');
 }
+async function alignedRelationship(){
+  const cfg={...settings,groupBy:'all',activityWindow:'period',coverage:{documented_coaching:{complete:true,start:'2026-08-31',end:'2026-09-13'}}};
+  const counts=await E.research(observations,metric,{...cfg,measure:'coaching_count'},events);
+  const performance=await E.research(observations,metric,cfg,events);
+  const context={scope:'retail',identities:'fixture'};
+  counts.pairingContext=performance.pairingContext=context;
+  const aligned=E.alignResearchMeasures(counts,performance);
+  assert.equal(aligned.verified,true,aligned.reason);
+  assert.equal(aligned.coverage.matched,5);
+  const bob=aligned.points.find(p=>p.repId===ids['Bob Baker']&&p.start==='2026-08-31');
+  assert.equal(bob.x.value,2,'two distinct, same-person sessions');assert.equal(bob.y.value,50);
+  assert.ok(aligned.points.some(p=>p.x.value===0),'covered people without sessions retain a valid zero');
+  const changed=structuredClone(performance);
+  changed.data[0].contributions.push(changed.data[0].contributions[0]);
+  assert.equal(E.alignResearchMeasures(counts,changed).coverage.duplicates,1);
+  assert.equal(E.alignResearchMeasures(counts,{...performance,pairingContext:{...context,scope:'referral'}}).verified,false);
+  assert.equal(E.alignResearchMeasures({...counts,pairingContext:{...context,uncertain:true}},performance).verified,false);
+  const unknown=await E.research(observations,metric,{...cfg,measure:'coaching_count',coverage:{}},events);
+  unknown.pairingContext=context;const unpaired=E.alignResearchMeasures(unknown,performance);
+  assert.equal(unpaired.verified,false);assert.ok(unpaired.coverage.unknown>0);
+  console.log('PASS verified representative-week scatter, distinct session IDs, covered zeros, unknown coverage, repeated keys and mismatched scopes');
+}
 async function activity(){
   const cfg={...settings,groupBy:'coach',activityWindow:'trailing_week'};
   const total=await E.research(observations,metric,{...cfg,measure:'coaching_count'},events);
@@ -121,4 +143,4 @@ async function editorAndLoading(){
     console.log('PASS real sentence presets/settings and immediate loading before validation; controls recover after validation failure');
   }finally{h.close();}
 }
-(async()=>{await calculations();await activity();await integration();await editorAndLoading();})().catch(error=>{console.error(error);process.exitCode=1;});
+(async()=>{await calculations();await activity();await alignedRelationship();await integration();await editorAndLoading();})().catch(error=>{console.error(error);process.exitCode=1;});

@@ -14,7 +14,8 @@ const csv='Date,Sheet,Name,Consumer Appointment Rate\n2026-09-13,Alpha,Alice Abl
   await page.evaluate(()=>openModal('importModal'));
   await page.locator('#coachtoolsFiles').setInputFiles({name:'Retail Weekly Stats.csv',mimeType:'text/csv',buffer:Buffer.from(csv)});
   await page.locator('#coachtoolsImportAllBtn:enabled').waitFor();await page.locator('#coachtoolsImportAllBtn').click();
-  await page.waitForFunction(()=>state.data.weeklyRetail.rows.length===3&&!state.activeImportJob);
+  // Weekly intake stages the new rows before its shared-data commit completes.
+  await page.waitForFunction(()=>state.data.weeklyRetail.rows.length===3&&!state.activeImportJob&&!state.coachToolsBatchImportRunning&&!state.centralSyncStageActive);
   assert.equal(await page.evaluate(()=>state.data.weeklyRetail.config.calendar.reviewed),false);
   assert.deepEqual(await page.evaluate(async()=>{const m=datedStatsUploadedFields().find(m=>m.field==='Consumer Appointment Rate');return (await evaluateDatedStatsResearch({id:'update',datedStats:datedStatsSelectMetric({groupBy:'all'},m)})).data.map(p=>[p.label,p.value]);}),[['2026-09-13',50],['2026-09-20',55],['2026-09-27',60]]);
   // Clean Upload's same shared API, with unrestricted source selection.

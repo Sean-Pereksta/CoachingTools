@@ -46,10 +46,11 @@
     const raw=sources.filter(s=>!s.categorized&&!s.derived), loaded=raw.filter(s=>s.rowCount>0||s.headers?.length);
     const warningCount=asArray(app.categorized?.warnings).length;
     const identityCount=asArray(app.identityConflicts).length+asArray(app.quarantinedRepAliases).length;
-    const categorizedRows=sources.filter(s=>s.categorized).reduce((sum,s)=>sum+s.rowCount,0);
+    const categorized=sources.filter(s=>s.categorized);
+    const categorizedRows=categorized.some(s=>s.rowCount==null)?null:categorized.reduce((sum,s)=>sum+s.rowCount,0);
     const stale=!!(app.categorizationPending||app.categorized?.stale||Number(app.categorized?.latestDataRevision||0)>Number(app.categorized?.latestCategorizedRevision||0));
     const updated=loaded.map(s=>s.updatedAt).filter(Boolean).sort().pop()||'';
-    return {loaded:loaded.length,rows:loaded.reduce((sum,s)=>sum+s.rowCount,0),models:asArray(app.models).length,research:asArray(app.researchItems).length,warningCount,identityCount,categorizedRows,stale,updated};
+    return {loaded:loaded.length,rows:loaded.some(s=>s.rowCount==null)?null:loaded.reduce((sum,s)=>sum+s.rowCount,0),models:asArray(app.models).length,research:asArray(app.researchItems).length,warningCount,identityCount,categorizedRows,stale,updated};
   }
   function buildCatalog(app,sources,reportMetadata=[],chartMetadata=[],{includePeople=true}={}){
     const result=[], ids=new Set();
@@ -138,9 +139,10 @@
       if(options.getSources) return options.getSources();
       const app=getState(), sourceKeys=typeof allSourceKeys==='function'?allSourceKeys():[];
       return sourceKeys.map(source=>{
-        const meta=app.sourceMeta?.[source]||{}, derived=['monthly_opportunity','monthly_wiper'].includes(source), rows=(!derived||detailed)&&typeof getRowsRaw==='function'?getRowsRaw(source):null;
+        const meta=app.sourceMeta?.[source]||{}, derived=['monthly_opportunity','monthly_wiper'].includes(source);
+        const rowCount=typeof allStarCachedNavigationCount==='function'?allStarCachedNavigationCount(source):meta.rowCount??null;
         const categorized=typeof isCategorizedSource==='function'?isCategorizedSource(source):['date','nondate'].includes(source);
-        return {id:source,label:typeof labelSource==='function'?labelSource(source):source,rowCount:rows?rows.length:typeof importedSourceRowCount==='function'?importedSourceRowCount(source):null,headers:(!derived||detailed)&&typeof getHeaders==='function'?getHeaders(source):meta.normalizedHeaders||[],derived,available:derived&&typeof sourceHasImportedData==='function'&&sourceHasImportedData(source),fileName:meta.fileName||(typeof sourceFileName==='function'?sourceFileName(source):''),updatedAt:meta.lastImportedAt||meta.importedAt||'',categorized};
+        return {id:source,label:typeof labelSource==='function'?labelSource(source):source,rowCount,headers:(!derived||detailed)&&typeof getHeaders==='function'?getHeaders(source):meta.normalizedHeaders||[],derived,available:derived&&typeof sourceHasImportedData==='function'&&sourceHasImportedData(source),fileName:meta.fileName||(typeof sourceFileName==='function'?sourceFileName(source):''),updatedAt:meta.lastImportedAt||meta.importedAt||'',categorized};
       });
     }
     function chartMetadata(){
@@ -237,10 +239,10 @@
       const updated=summary.updated?new Date(summary.updated):null;
       const stat=(label,value,detail)=>`<div class="asStat"><span>${label}</span><strong>${value}</strong><small>${escape(detail)}</small></div>`;
       return `<div class="asPageHeading"><div><p class="asEyebrow">ALL-STAR WORKSPACE</p><h1>Start with your data. Find your next action.</h1><p>Update sources, run a model, or explore a question in Research.</p></div><button type="button" data-as-command="action:data" class="asPrimary">Update Data</button></div>
-        <div class="asStats">${stat('Loaded sources',number(summary.loaded),number(summary.rows)+' imported rows')}${stat('Models',number(summary.models),summary.models?'Saved and ready to configure':'Create your first model')}${stat('Research',number(summary.research),'Saved analyses')}${stat('Categorization',summary.stale?'Needs update':summary.categorizedRows?'Ready':'Not run',number(summary.categorizedRows)+' categorized rows')}</div>
+        <div class="asStats">${stat('Loaded sources',number(summary.loaded),summary.rows==null?'Row counts load for the selected scope':number(summary.rows)+' imported rows')}${stat('Models',number(summary.models),summary.models?'Saved and ready to configure':'Create your first model')}${stat('Research',number(summary.research),'Saved analyses')}${stat('Categorization',summary.stale?'Needs update':summary.categorizedRows==null?'Check scope':summary.categorizedRows?'Ready':'Not run',summary.categorizedRows==null?'Count loads for the selected scope':number(summary.categorizedRows)+' categorized rows')}</div>
         <section class="asCard"><h2>Quick start</h2><div class="asQuickActions">${[['action:data','1. Update Data'],['action:run','2. Run Model'],['action:research-new','Start Research'],['action:report-new','Create Report'],['action:messages','Open Messages']].map(([id,label])=>commandButton({id,label})).join('')}</div><p class="asMuted">New here? Load your files first. If models use categorized data, open Data and press Categorize Data after the upload.</p></section>
         <div class="asColumns"><section class="asCard"><h2>Recent work</h2>${cardsFor(recent,'The models, Research items, charts and reports you open appear here.')}<button type="button" data-as-command="action:history" class="asTextButton">View history</button></section><section class="asCard"><h2>Favorites</h2>${cardsFor(favorites,'Use the star beside an item in Search or Recent work to keep it here.')}<button type="button" data-as-open-palette class="asTextButton">Search everything</button></section></div>
-        <div class="asColumns"><section class="asCard"><h2>Data health</h2><ul class="asHealthList"><li><span>Data</span><strong>${summary.loaded?'Loaded':'Choose files to begin'}</strong></li><li><span>Models</span><strong>${summary.models?'Check readiness when selecting a model':'No models yet'}</strong></li><li><span>Categorization</span><strong>${summary.stale?'Update required':summary.categorizedRows?'Current':'Not yet created'}</strong></li><li><span>Mapping warnings</span><strong>${number(summary.warningCount)}</strong></li><li><span>Identity warnings</span><strong>${number(summary.identityCount)}</strong></li></ul><p class="asMuted">Model-specific blocking issues are checked in Run → View Details.</p><div class="asQuickActions"><button type="button" data-as-command="action:mapping">Review mappings</button><button type="button" data-as-command="action:teams">Review identities</button></div></section><section class="asCard"><h2>Loaded sources</h2><p class="asMuted">${updated&&!isNaN(updated)?'Last imported '+escape(updated.toLocaleString()):'Import time will appear after a new upload.'}</p><div class="asSourceList">${sources.filter(x=>!x.categorized&&!x.derived&&(x.rowCount||x.headers?.length)).map(source=>`<div class="asSourceRow">${commandButton({id:'source:'+source.id,label:source.label})}<span>${number(source.rowCount)} rows</span><small>${escape(source.fileName||'Connected data')}</small></div>`).join('')||'<p class="asEmptyState">No sources loaded. Choose Update Data to connect your coaching files.</p>'}</div></section></div>`;
+        <div class="asColumns"><section class="asCard"><h2>Data health</h2><ul class="asHealthList"><li><span>Data</span><strong>${summary.loaded?'Loaded':'Choose files to begin'}</strong></li><li><span>Models</span><strong>${summary.models?'Check readiness when selecting a model':'No models yet'}</strong></li><li><span>Categorization</span><strong>${summary.stale?'Update required':summary.categorizedRows==null?'Check scope':summary.categorizedRows?'Current':'Not yet created'}</strong></li><li><span>Mapping warnings</span><strong>${number(summary.warningCount)}</strong></li><li><span>Identity warnings</span><strong>${number(summary.identityCount)}</strong></li></ul><p class="asMuted">Model-specific blocking issues are checked in Run → View Details.</p><div class="asQuickActions"><button type="button" data-as-command="action:mapping">Review mappings</button><button type="button" data-as-command="action:teams">Review identities</button></div></section><section class="asCard"><h2>Loaded sources</h2><p class="asMuted">${updated&&!isNaN(updated)?'Last imported '+escape(updated.toLocaleString()):'Import time will appear after a new upload.'}</p><div class="asSourceList">${sources.filter(x=>!x.categorized&&!x.derived&&(x.rowCount||x.headers?.length)).map(source=>`<div class="asSourceRow">${commandButton({id:'source:'+source.id,label:source.label})}<span></span><small>${escape(source.fileName||'Connected data')}</small></div>`).join('')||'<p class="asEmptyState">No sources loaded. Choose Update Data to connect your coaching files.</p>'}</div></section></div>`;
     }
     function historyHtml(){
       const all=getNavigationCatalog(), recent=prefs.recent.map(entry=>{ const item=savedCommand(entry.id); return item?{...item,description:new Date(entry.at).toLocaleString()}:null; }).filter(Boolean);
@@ -265,7 +267,7 @@
     async function loadReportMetadata(force=false){
       if(reportsFlight) return reportsFlight;
       if(!force&&Date.now()-reportsLoadedAt<5000) return reports;
-      const list=options.actions?.listSavedReports||root.listSavedReports;
+      const list=options.actions?.listSavedReports||root.listSavedReportSummaries||root.listSavedReports;
       if(typeof list!=='function') return [];
       reportsFlight=Promise.resolve().then(()=>list()).then(values=>{
         // Discard report row snapshots; global search needs metadata only.
@@ -344,7 +346,10 @@
             else { call('openEditModel',null); break; }
             call('runModelColumnCheck'); break;
           case 'research': await call('openResearchWorkspace'); break;
-          case 'research-new': case 'chart-new': call('openResearchItemEditor',null); break;
+          case 'research-new':
+            if(root.AllStarResearchLibrary?.newQuestion)root.AllStarResearchLibrary.newQuestion();else call('openResearchItemEditor',null);
+            break;
+          case 'chart-new': call('openResearchItemEditor',null); break;
           case 'research-item': call('openResearchItemEditor',command.entityId); break;
           case 'metrics': await call('openMetricsPage'); break;
           case 'metric': call('openMetricEditor',command.entityId); break;

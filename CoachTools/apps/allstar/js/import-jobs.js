@@ -20,7 +20,7 @@ function importJobStage(job,stage){
 }
 function assertAllStarImportActive(){
   const job=state.activeImportJob;
-  if(job?.cancelled) throw Object.assign(new Error(job.cancelReason||`${job.label} import stopped during ${job.stage}.`),{cancelled:true});
+  if(job?.cancelled&&!job.committed) throw Object.assign(new Error(job.cancelReason||`${job.label} import stopped during ${job.stage}.`),{cancelled:true});
 }
 function cancelAllStarImport(reason='Import cancelled. The previous data was kept.'){
   const job=state.activeImportJob;
@@ -45,6 +45,8 @@ async function runAllStarImport(source,file,options,loader){
   const controls=[...document.querySelectorAll('#importModal input, #importModal button')].filter(node=>!node.dataset.close && node.id!=='allstarCancelImportBtn');
   const disabled=controls.map(node=>[node,node.disabled]); controls.forEach(node=>node.disabled=true);
   let stage,committed=false,watchdog;
+  const background=el('dataLayoutToggle')?.getAttribute?.('aria-pressed')==='true';
+  els.loadingOverlay?.classList.toggle('backgroundImport',background);
   showProgress(`Reading ${job.label}…`,0);
   const cancelButton=el('allstarCancelImportBtn');
   if(cancelButton){cancelButton.hidden=false;cancelButton.disabled=false;cancelButton.onclick=()=>cancelAllStarImport();}
@@ -111,20 +113,21 @@ async function runAllStarImport(source,file,options,loader){
     clearInterval(watchdog);
     state.activeImportJob=null;
     if(cancelButton) cancelButton.hidden=true;
+    els.loadingOverlay?.classList.remove('backgroundImport');
     disabled.forEach(([node,value])=>node.disabled=value);
     updateCategorizeImportButton(); hideProgress();
   }
 }
 
-async function readAllStarFileBuffer(file){
-  const job=state.activeImportJob;
+async function readAllStarFileBuffer(file,job=state.activeImportJob){
+  const check=()=>{if(job?.cancelled)throw Object.assign(new Error('File reading canceled.'),{cancelled:true});assertAllStarImportActive();};
   if(typeof FileReader==='undefined' || typeof Blob==='undefined' || !(file instanceof Blob)){
-    const buffer=await file.arrayBuffer(); assertAllStarImportActive(); return buffer;
+    const buffer=await file.arrayBuffer(); check(); return buffer;
   }
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
     const cleanup=()=>{ if(job) job.cancelRead=null; };
-    reader.onload=()=>{cleanup();try{assertAllStarImportActive();resolve(reader.result);}catch(error){reject(error);}};
+    reader.onload=()=>{cleanup();try{check();resolve(reader.result);}catch(error){reject(error);}};
     reader.onerror=()=>{cleanup();reject(reader.error||new Error('File reading failed.'));};
     reader.onabort=()=>{cleanup();reject(Object.assign(new Error(job?.cancelReason||'File reading stopped before completion.'),{cancelled:!!job?.cancelled}));};
     if(job) job.cancelRead=()=>reader.abort();
@@ -164,42 +167,90 @@ function readAllStarWorkerWorkbook(buffer,options,monthly){
   }
   return allStarMonthlyTextWorkbook(buffer,monthly)||XLSX.read(buffer,options);
 }
+function allStarPreviewWorkbook(workbook){
+  const preview={SheetNames:workbook.SheetNames,Sheets:{},Props:workbook.Props,__ranges:{}};
+  for(const name of workbook.SheetNames){
+    const sheet=workbook.Sheets[name],ref=sheet?.['!ref'];
+    const copy={};preview.Sheets[name]=copy;
+    if(!ref)continue;
+    const range=XLSX.utils.decode_range(ref);
+    preview.__ranges[name]=range;
+    const end={r:Math.min(59,range.e.r),c:Math.min(1023,range.e.c)};
+    copy['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:end});
+    for(let r=0;r<=end.r;r++)for(let c=0;c<=end.c;c++){
+      const key=XLSX.utils.encode_cell({r,c});
+      if(sheet[key])copy[key]=sheet[key];
+    }
+  }
+  return preview;
+}
 function allStarWorkbookWorker(){
-  self.onmessage=function(event){
+  let acknowledge;
+  const send=message=>new Promise(resolve=>{acknowledge=resolve;self.postMessage(message);});
+  self.onmessage=async function(event){
+    if(event.data.ack){acknowledge?.();return;}
     try{
-      const workbook=readAllStarWorkerWorkbook(event.data.buffer,event.data.options,self.CoachToolsMonthly);
-      if(event.data.options.allstarSharedFile){self.postMessage({workbook});return;}
+      const options=event.data.options,workbook=readAllStarWorkerWorkbook(event.data.buffer,options,self.CoachToolsMonthly);
+      if(options.allstarDiscovery){self.postMessage({workbook:allStarPreviewWorkbook(workbook)});return;}
       self.postMessage({stage:'worksheets',sheetNames:workbook.SheetNames,props:workbook.Props});
       for(let index=0;index<workbook.SheetNames.length;index++){
-        const name=workbook.SheetNames[index];
-        const raw=event.data.options.raw===true,worksheet=workbook.Sheets[name];
-        const rows=workbook.__coachToolsAoaBySheet?.[name]||XLSX.utils.sheet_to_json(worksheet,{header:1,defval:'',raw,...(raw?{range:0}:{})});
-        // Returning compact values in bounded messages avoids cloning hundreds
-        // of thousands of SheetJS cell objects onto the UI thread.
-        for(let offset=0;offset<rows.length;offset+=2000){
-          const batch=rows.slice(offset,offset+2000),formats={};
-          // Weekly imports distinguish a 0.56789 fraction with an Excel percent
-          // format from a plain numeric count. Keep that original unit metadata
-          // without sending unrelated cell objects, formulas and style tables.
-          if(raw&&event.data.options.cellNF) for(let r=0;r<batch.length;r++) for(let c=0;c<batch[r].length;c++){
-            const address=XLSX.utils.encode_cell({r:offset+r,c}),cell=worksheet?.[address];
-            if(cell?.z&&/%/.test(cell.z.replace(/"[^"]*"|\\./g,'')))formats[address]={z:cell.z};
+        const name=workbook.SheetNames[index],worksheet=workbook.Sheets[name];
+        if(options.allstarSharedFile){
+          // Keep cell types, formats, formulas, and worksheet metadata exact.
+          let cells={},count=0,bytes=0,since=performance.now();
+          for(const address in worksheet){
+            const cell=worksheet[address];cells[address]=cell;count++;
+            bytes+=64+address.length*2+(typeof cell?.v==='string'?cell.v.length*2:16)+(cell?.w?.length||0)*2+(cell?.f?.length||0)*2;
+            if(count>=2000||bytes>=262144||performance.now()-since>=12){
+              await send({sheet:name,cells});cells={};count=bytes=0;since=performance.now();
+            }
           }
-          self.postMessage({sheet:name,rows:batch,formats,progress:10+2*((index+Math.min(1,(offset+2000)/rows.length))/workbook.SheetNames.length)});
+          await send({sheet:name,cells});delete workbook.Sheets[name];continue;
         }
-        if(!rows.length) self.postMessage({sheet:name,rows:[]});
+        const raw=options.raw===true;
+        const direct=workbook.__coachToolsAoaBySheet?.[name];
+        const range=worksheet?.['!ref']?XLSX.utils.decode_range(worksheet['!ref']):null;
+        const first=raw?0:range?.s.r||0;
+        const length=direct?.length??(range?range.e.r-first+1:0);
+        // Bound the values materialized at once even for wide workbooks.
+        const windowRows=Math.max(1,Math.min(2000,Math.floor(8192/Math.max(1,range?range.e.c-range.s.c+1:1))));
+        for(let base=0;base<length;base+=windowRows){
+          const limit=Math.min(length,base+windowRows);
+          const rows=direct?direct.slice(base,limit):XLSX.utils.sheet_to_json(worksheet,{header:1,defval:'',raw,
+            range:{s:{r:first+base,c:range.s.c},e:{r:first+limit-1,c:range.e.c}}});
+          for(let offset=0;offset<rows.length;){
+            const start=offset,formats={};let bytes=0,since=performance.now();
+            do{
+              const row=rows[offset];
+              for(let c=0;c<row.length;c++){
+                bytes+=typeof row[c]==='string'?16+2*row[c].length:16;
+                if(raw&&options.cellNF){
+                  const local=XLSX.utils.encode_cell({r:base+offset,c});
+                  const cell=worksheet?.[XLSX.utils.encode_cell({r:first+base+offset,c:(range?.s.c||0)+c})];
+                  if(cell?.z&&/%/.test(cell.z.replace(/"[^"]*"|\\./g,'')))formats[local]={z:cell.z};
+                }
+              }
+              bytes+=32;offset++;
+            }while(offset<rows.length&&offset-start<2000&&bytes<262144&&performance.now()-since<12);
+            await send({sheet:name,rows:rows.slice(start,offset),formats,progress:10+2*((index+(base+offset)/length)/workbook.SheetNames.length)});
+          }
+        }
+        if(!length)await send({sheet:name,rows:[]});
         delete workbook.Sheets[name];
       }
       self.postMessage({complete:true});
     }catch(error){self.postMessage({error:String(error.message||error)});}
   };
 }
-async function parseAllStarWorkbook(buffer,parseOptions={}){
+
+
+async function parseAllStarWorkbook(buffer,parseOptions={},job=state.activeImportJob){
   assertAllStarImportActive();
+  if(job?.cancelled)throw Object.assign(new Error('Workbook parsing canceled.'),{cancelled:true});
   const readOptions={type:'array',cellDates:true,raw:false,...parseOptions};
   // Keep large SheetJS parsing off the UI thread. Portable builds contain the
   // same vendor source inline; hosted builds resolve their bundled vendor URL.
-  const fallback=()=>readAllStarWorkerWorkbook(buffer,readOptions,typeof window!=='undefined'?window.CoachToolsMonthly:null);
+  const fallback=()=>{const wb=readAllStarWorkerWorkbook(buffer,readOptions,typeof window!=='undefined'?window.CoachToolsMonthly:null);return readOptions.allstarDiscovery?allStarPreviewWorkbook(wb):wb;};
   if(typeof Worker==='undefined' || typeof Blob==='undefined') return fallback();
   const embedded=document.querySelector('script[data-allstar-vendor="xlsx.full.min.js"]');
   const carried=typeof window!=='undefined'?window.__ALLSTAR_IMPORT_WORKER_LIBRARIES__:null;
@@ -215,9 +266,8 @@ async function parseAllStarWorkbook(buffer,parseOptions={}){
   const monthly=document.querySelector('script[data-coachtools-source="shared/coachtools-monthly.js"]');
   const library=embedded?.textContent || carried?.xlsx || `importScripts(${JSON.stringify(new URL('../../vendor/xlsx.full.min.js',document.baseURI).href)});`;
   const monthlyLibrary=monthly?.textContent || carried?.monthly || (!embedded?.textContent?`importScripts(${JSON.stringify(new URL('../../shared/coachtools-monthly.js',document.baseURI).href)});`:'');
-  const code=library+'\n'+monthlyLibrary+'\n'+allStarMonthlyTextWorkbook.toString()+'\n'+readAllStarWorkerWorkbook.toString()+'\n('+allStarWorkbookWorker.toString()+')();';
+  const code=library+'\n'+monthlyLibrary+'\n'+allStarMonthlyTextWorkbook.toString()+'\n'+readAllStarWorkerWorkbook.toString()+'\n'+allStarPreviewWorkbook.toString()+'\n('+allStarWorkbookWorker.toString()+')();';
   const url=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));
-  const job=state.activeImportJob;
   return new Promise((resolve,reject)=>{
     let worker, settled=false, workbook={SheetNames:[],Sheets:{},__coachToolsAoaBySheet:{}};
     let timeout;
@@ -234,17 +284,25 @@ async function parseAllStarWorkbook(buffer,parseOptions={}){
         if(message.error){cleanup();reject(new Error(message.error));return;}
         if(message.workbook){cleanup();resolve(message.workbook);return;}
         if(message.stage==='worksheets'){workbook.SheetNames=message.sheetNames;workbook.Props=message.props;}
-        if(message.sheet){
+        if(message.cells){
+          Object.assign(workbook.Sheets[message.sheet]||(workbook.Sheets[message.sheet]={}),message.cells);
+          worker.postMessage({ack:true});
+        }else if(message.sheet){
           const rows=workbook.__coachToolsAoaBySheet[message.sheet]||(workbook.__coachToolsAoaBySheet[message.sheet]=[]);
           for(const row of message.rows) rows.push(row);
           if(message.formats&&Object.keys(message.formats).length) Object.assign(workbook.Sheets[message.sheet]||(workbook.Sheets[message.sheet]={}),message.formats);
           updateProgress(`Reading worksheet ${message.sheet} · ${rows.length.toLocaleString()} rows`,message.progress||10);
         }
-        if(message.complete){cleanup();resolve(workbook);}
+        if(message.rows)worker.postMessage({ack:true});
+        if(message.complete){if(readOptions.allstarSharedFile)delete workbook.__coachToolsAoaBySheet;cleanup();resolve(workbook);}
       };
       worker.onerror=event=>{cleanup();reject(new Error(event.message||'Workbook parser worker failed.'));};
       if(job) job.cancelRead=()=>{cleanup();reject(Object.assign(new Error(job.cancelReason||'Workbook parser cancelled.'),{cancelled:true}));};
       worker.postMessage({buffer,options:readOptions},[buffer]);
-    }catch(error){cleanup();reject(error);}
+    }catch(error){
+      cleanup();
+      if(!worker&&buffer.byteLength&&!job?.cancelled)resolve(Promise.resolve().then(fallback));
+      else reject(error);
+    }
   });
 }

@@ -7,6 +7,13 @@
   let expanded=false;
   try{expanded=localStorage.getItem(preferenceKey)==='all';}catch(_){}
   const byId=id=>document.getElementById(id);
+  let library=false,testGeneration=0;
+  try{library=localStorage.getItem('allStarRuleLibrary.v1')==='true';}catch(_){}
+  function editorId(model){
+    if(!library||!active)return null;
+    const v=view();if(!model.criteria.some(c=>c.id===v.selected))v.selected=model.criteria[0]?.id;
+    return v.selected;
+  }
   function view(){
     const key=state.editModel?.id;
     if(!views.has(key)) views.set(key,{selected:null,sections:new Map()});
@@ -46,7 +53,7 @@
     els.modelList.querySelectorAll('.modelRow').forEach((row,i)=>{
       const model=state.models[i];if(!model)return;
       const sources=sourceSummary(model),missing=sources.filter(s=>!getHeaders(s).length);
-      const note=document.createElement('p');note.className='hint';note.textContent=`${model.criteria.length} criteria · ${sources.map(labelSource).join(' · ')||'No source selected'} · ${missing.length?missing.length+' sources need loaded headers':'Review configuration before running'}`;row.appendChild(note);
+      const note=document.createElement('p');note.className='hint';note.textContent=`${model.criteria.length} criteria · ${sources.map(labelSource).join(' · ')||'No source selected'} · ${missing.length?missing.length+' sources need loaded headers':'Sources available'}`;row.appendChild(note);
       const actions=row.querySelector('.row'),more=document.createElement('details');more.className='modelCriterionMore';more.innerHTML='<summary>More</summary><div class="row"></div>';
       row.querySelectorAll('[data-export-model],[data-delete-model]').forEach(n=>more.querySelector('.row').appendChild(n));
       const run=document.createElement('button');run.type='button';run.className='smallBtn';run.textContent='Run';run.onclick=()=>runSaved(model.id);actions.append(run,more);
@@ -69,6 +76,9 @@
     els.criteriaList.querySelectorAll('[data-model-found-preview-for]').forEach(box=>{if(!box.classList.contains('hidden'))box.textContent='Criterion definition changed. Preview again to update these matching rows.';});
   }
   function focusCriterion(cid){
+    if(library&&cid&&cid!==view().selected){
+      view().selected=cid;renderEditModel();return;
+    }
     view().selected=cid;
     els.criteriaList.querySelectorAll('[data-crit]').forEach(box=>{
       const selected=box.dataset.crit===cid;
@@ -140,17 +150,43 @@
     els.criteriaList?.querySelectorAll('[data-crit]').forEach(box=>{
       const c=getEditCriterion(box.dataset.crit); if(!c) return;
       const hit=(!q||`${c.name} ${describe(c)}`.toLowerCase().includes(q))&&(scope==='all'||(scope==='display'?c.scoreType==='display':scope==='filters'?(c.filters||[]).length>0:c.scoreType!=='display'));
-      box.hidden=!hit;
+      box.hidden=!library&&!hit;
     });
+    byId('criterionLibraryList')?.querySelectorAll('[data-library-rule]').forEach(button=>{
+      const c=getEditCriterion(button.dataset.libraryRule);
+      button.hidden=(!c||!matchesRule(c,q,scope));
+    });
+  }
+  function matchesRule(c,q,scope){
+    return (!q||`${c.name} ${describe(c)}`.toLowerCase().includes(q))&&(scope==='all'||(scope==='display'?c.scoreType==='display':scope==='filters'?(c.filters||[]).length>0:c.scoreType!=='display'));
+  }
+  function renderLibrary(){
+    let list=byId('criterionLibraryList');
+    if(!list){
+      const layout=document.createElement('div');layout.id='criterionLibraryLayout';
+      list=document.createElement('nav');list.id='criterionLibraryList';list.setAttribute('aria-label','Model rules');
+      els.criteriaList.before(layout);layout.append(list,els.criteriaList);
+      list.addEventListener('click',e=>{const b=e.target.closest('[data-library-rule]');if(b)focusCriterion(b.dataset.libraryRule);});
+    }
+    list.hidden=!library;list.parentElement.classList.toggle('usingRuleLibrary',library);if(!library)return;
+    const criteria=state.editModel.criteria;
+    const signature=JSON.stringify(criteria.map(c=>[c.id,c.name]));
+    if(list.dataset.signature!==signature){
+      list.dataset.signature=signature;
+      list.innerHTML=criteria.map(c=>`<button type="button" data-library-rule="${esc(c.id)}">${esc(c.name||'Untitled rule')}</button>`).join('');
+    }
+    list.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.libraryRule===view().selected)));
   }
   function decorate(){
     if(!active||!state.editModel) return;
     invalidate();
     const body=els.editModelModal.querySelector('.modalBody');
+    renderLibrary();
     if(!byId('modelWorkspace')){
       const host=document.createElement('section'); host.id='modelWorkspace'; host.className='modelWorkspace';
       host.innerHTML='<div class="modelWorkspaceHead"><div><strong>Model workspace</strong><p class="hint">Choose sources, define criteria, then check the results before running a report.</p></div><span id="modelWorkspaceStatus" role="status"></span></div><nav aria-label="Model sections"><button type="button" data-model-jump="modelNameInput">Overview</button><button type="button" data-model-jump="sourceSettingsPanel">Sources</button><button type="button" data-model-section="all">Criteria</button><button type="button" data-model-section="scoring">Scoring</button><button type="button" data-model-section="display">Display fields</button><button type="button" data-model-section="filters">Filters</button><button type="button" data-model-jump="modelWorkspacePreview">Preview</button><button type="button" data-model-jump="modelWorkspaceSummary">Health</button></nav><div id="modelWorkspaceSummary"></div><div class="modelWorkspaceSearch"><label>Find a criterion<input id="modelCriterionSearch" type="search" placeholder="Name, source, or column"></label><label>Show<select id="modelCriterionScope"><option value="all">All criteria</option><option value="scoring">Scoring criteria</option><option value="display">Display fields</option><option value="filters">Criteria with filters</option></select></label></div><div id="modelWorkspacePreview"><button id="modelSamplePreviewBtn" type="button">Preview sample</button> <button id="modelFullRunBtn" type="button">Run saved model</button><p class="hint">Preview up to 30 representatives (or teams for team-only models) using the current unsaved definition and all available dates. Sample ranks are relative to this sample. Reports and saved results are unchanged.</p><div id="modelSamplePreviewResult" role="status"></div></div>';
       body.prepend(host);
+      mountRuleTools(host);
       const readiness=document.createElement('details');readiness.className='modelSettingSection';readiness.id='modelReadiness';readiness.innerHTML='<summary>Readiness and field warnings</summary><button type="button" class="smallBtn" id="modelReviewConfigBtn">Check configuration</button><div id="modelReadinessBody" class="modelSettingContent">Check when ready to review missing fields and source requirements.</div>';host.appendChild(readiness);byId('modelReviewConfigBtn').onclick=reviewHealth;
       body.appendChild(byId('modelWorkspacePreview'));
       const sources=document.createElement('details');sources.className='modelSettingSection';sources.innerHTML='<summary>Source settings <span class="hint">Existing mappings and layout controls</span></summary>';
@@ -178,6 +214,7 @@
     }
     els.criteriaList?.querySelectorAll('[data-crit]').forEach((box,i)=>{
       const c=getEditCriterion(box.dataset.crit); if(!c) return;
+      i=state.editModel.criteria.indexOf(c);
       const row=box.querySelector('.row');
       groupControls(box,c);
       const title=document.createElement('strong');title.className='modelCriterionName';title.textContent=c.name;row.children[0].after(title);
@@ -186,11 +223,115 @@
       const actions=more.querySelector('.row');row.querySelectorAll('[data-remove-crit],[data-copy-crit]').forEach(n=>actions.appendChild(n));
       actions.insertAdjacentHTML('beforeend',`<button type="button" class="smallBtn" data-model-move="-1" aria-label="Move ${esc(c.name)} up" ${i===0?'disabled':''}>↑</button><button type="button" class="smallBtn" data-model-move="1" aria-label="Move ${esc(c.name)} down" ${i===(state.editModel.criteria.length-1)?'disabled':''}>↓</button><button type="button" class="smallBtn" data-model-research>Research this criterion</button>`);
       row.appendChild(more);
+      const test=document.createElement('button');test.type='button';test.textContent='Test rule';test.onclick=()=>openRuleTest(box,c);row.insertBefore(test,more);
       const note=document.createElement('p');note.className='modelCriterionExplanation hint';note.textContent=describe(c);row.after(note);
     });
     if(!state.editModel.criteria.some(c=>c.id===view().selected))view().selected=state.editModel.criteria[0]?.id;
     focusCriterion(view().selected);
     summary(); filter();
+  }
+  function mountRuleTools(host){
+    const tools=document.createElement('div');tools.className='row';
+    tools.innerHTML='<label><input type="checkbox" id="useRuleLibrary"> Rule library view</label><label>New rule <select id="ruleTemplate"><option value="single">Summarize a column</option><option value="checklistCount">Count matching rows</option><option value="multi">Compare or divide values</option><option value="metric">Use a saved metric</option><option value="displayColumn">Add a display column</option></select></label><label id="ruleMetricChoice" hidden>Metric <select id="ruleTemplateMetric"></select></label><button type="button" id="addRuleTemplate">Add rule</button><button type="button" id="saveModelCopy">Save as a new model</button>';
+    host.appendChild(tools);const toggle=byId('useRuleLibrary');toggle.checked=library;
+    toggle.onchange=()=>{library=toggle.checked;try{localStorage.setItem('allStarRuleLibrary.v1',String(library));}catch(_){}renderEditModel();};
+    byId('ruleTemplate').onchange=()=>{
+      const useMetric=byId('ruleTemplate').value==='metric';byId('ruleMetricChoice').hidden=!useMetric;
+      if(useMetric)byId('ruleTemplateMetric').innerHTML=(state.metrics||[]).map(m=>`<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');
+    };
+    byId('addRuleTemplate').onclick=()=>{
+      syncEditModelFields();const type=byId('ruleTemplate').value,c=emptyCriterion();
+      c.name=byId('ruleTemplate').selectedOptions?.[0]?.textContent||'New rule';
+      if(type==='metric'){
+        const metric=(state.metrics||[]).find(m=>m.id===byId('ruleTemplateMetric').value);if(!metric)return alert('Create a metric first or choose another rule.');
+        if(typeof isDatedStatsSource==='function'&&isDatedStatsSource(metric.source)){c.calcType='datedStats';c.datedStatsMetricId=metric.id;c.scoreType='display';c.zeroCanWin=true;}
+        else c.column='@'+metric.id;
+        c.source=metric.source;c.name=metric.name;
+      }else{
+        c.calcType=type;
+        if(type==='checklistCount'){c.source='documented_coaching';c.checkColumn='Description';c.checkDateColumn='Coaching Date';}
+        if(type==='displayColumn'){c.audience='rep';alignDisplayColumnCriterion(c);}
+      }
+      state.editModel.criteria.push(c);view().selected=c.id;renderEditModel();
+    };
+    byId('saveModelCopy').onclick=()=>{
+      syncEditModelFields();const original=state.editModel,originalId=state.editOriginalId;
+      const name=prompt('Name the new model',original.name+' copy');if(!name?.trim())return;
+      const copy={...clonePlain(original),id:id(),name:name.trim()};state.editModel=copy;state.editOriginalId=null;
+      els.modelNameInput.value=copy.name;saveEditModel(false);
+      if(!findModel(copy.id)){state.editModel=original;state.editOriginalId=originalId;}
+      renderEditModel();
+    };
+  }
+  function openRuleTest(box,criterion){
+    syncEditModelFields();box.querySelector('.ruleTestPanel')?.remove();
+    const panel=document.createElement('section');panel.className='ruleTestPanel';box.appendChild(panel);
+    const kinds=['rep','team'].filter(k=>criterionAppliesToKind(criterion,k)),teams=knownCoachNames();
+    const entries=kinds.flatMap(k=>k==='rep'?allRepEntries(state.editModel,teams):teamEntries(teams));
+    panel.innerHTML=`<h3>Test ${esc(criterion.name)}</h3><div class="row"><label>Representative or team <select data-target>${entries.map((entry,i)=>`<option value="${i}">${entry.kind==='team'?'Team':'Representative'} · ${esc(entry.name)}</option>`).join('')}</select></label><label>Period start <input type="date" data-start></label><label>Period end <input type="date" data-end></label><label>Test population <select data-population><option value="exact">All eligible entities</option><option value="sample">Sample up to 30 entities</option></select></label><button type="button" data-run>Test rule</button><button type="button" data-cancel hidden>Cancel test</button></div><p class="hint">Ranks use all available ${kinds.length===1?(kinds[0]==='team'?'teams':'representatives'):'teams or representatives'} in the current data scope. This test scores one rule.</p><div data-output role="status"></div>`;
+    const get=selector=>panel.querySelector(selector),out=get('[data-output]'),run=get('[data-run]'),cancel=get('[data-cancel]');
+    get('[data-start]').value=els.runStartDate?.value||'';get('[data-end]').value=els.runEndDate?.value||'';run.disabled=!entries.length;
+    if(!entries.length)out.textContent='Load a representative or team in the current scope before testing.';
+    const stop=()=>{testGeneration++;out.textContent='Test canceled.';run.disabled=!entries.length;cancel.hidden=true;};
+    cancel.onclick=stop;panel.onchange=stop;
+    run.onclick=async()=>{
+      const entry=entries[Number(get('[data-target]').value)||0],start=parseDateOnly(get('[data-start]').value),end=parseDateOnly(get('[data-end]').value);
+      if(start&&end&&start>end){out.textContent='Choose an end date on or after the start date.';return;}
+      const token=++testGeneration,version=revision,data=reportInputVersion(),rule=clonePlain(criterion);
+      const model={...clonePlain(state.editModel),criteria:[rule]},current=()=>token===testGeneration&&version===revision&&data===reportInputVersion()&&panel.isConnected&&els.editModelModal.classList.contains('open');
+      const opts={_inlineProgress:true,start,end,qaDateMode:els.runQADateSelect?.value||'interaction',qaTeamScoreMode:els.runQATeamScoreMode?.value||'assignedReps',selectedTeamNames:teams,_sourceRowsCache:new Map(),_entryRowsCache:new Map(),_qaSheetTeamRowsCache:new Map(),_criterionFilteredRowsCache:new Map(),_assertCurrent:()=>{if(!current())throw Error('Test inputs changed. Run the test again.');}};
+      run.disabled=true;cancel.hidden=false;out.textContent='Preparing sources…';
+      try{
+        await yieldToBrowser();opts._assertCurrent();
+        await ensureSelectedModelPreparedForRun(model,opts);opts._assertCurrent();
+        out.textContent='Calculating rule…';
+        const pool=entries.filter(e=>e.kind===entry.kind),sample=get('[data-population]').value==='sample';
+        const comparison=sample?[entry,...pool.filter(e=>e!==entry).slice(0,29)]:pool;
+        const pack=await computeEntriesAsync(model,comparison,entry.kind,opts,{label:'Testing rule'});
+        opts._assertCurrent();const row=pack.rows.find(r=>r.entry===entry);
+        let trace='';
+        if(isRowPullCriterion(rule)){
+          const selection=checklistRuleSelection(rule,entry,opts),{source,rows,scopedCount,filteredCount}=selection;
+          const headers=getHeaders(source),fields=[...new Set([rule.checkColumn,...ensureRowPullConditions(rule).map(c=>c.column)].filter(Boolean))];
+          const resolved=fields.map(field=>[field,findHeader(headers,[plainHeaderName(field)])]);
+          trace=`<p>${esc(labelSource(source))} · ${(getRowsRaw(source)||[]).length} source rows · ${scopedCount} for ${esc(entry.name)} in period · ${filteredCount} after filters · ${rows.length} after conditions</p><p>${resolved.map(([cfg,actual])=>esc(cfg)+' → '+esc(actual||'Missing header')).join(' · ')}</p><details><summary>Evidence · first ${Math.min(10,rows.length)} matching rows</summary>${rows.slice(0,10).map(r=>`<p>${resolved.map(([,col])=>esc(r[col]??'')).join(' · ')}</p>`).join('')}</details>`;
+        }
+        if(!trace){
+          const sources=rule.calcType==='multi'?[[rule.leftSource,rule.leftColumn],[rule.rightSource,rule.rightColumn]]:
+            [[rule.calcType==='custom'?rule.customSource:rule.source,rule.calcType==='displayColumn'?rule.lookupReturnColumn||rule.column:rule.column]];
+          if(entry.kind==='team'&&rule.trueValueEnabled){
+            const diagnostics=opts.trueValueDiagnostics?.find(d=>d.team===canonicalCoachName(entry.name)&&d.criterion===rule.name);
+            if(diagnostics)trace=`<p>${esc(labelSource(diagnostics.source))} · ${esc(diagnostics.column||rule.trueValueColumn)} · ${esc(diagnostics.reason||diagnostics.rawValue||'')}</p>`;
+          }else if(rule.calcType==='datedStats'){
+            const detail=row.entry.datedStatsTrends?.[rule.id];
+            trace=`<p>${esc(detail?.metric?.name||'Dated metric')} · ${esc(detail?.trend?.validPeriods??0)} valid periods</p>`;
+          }else for(let [source,field] of sources){
+            let scoped,filtered,label='in scope and period',columns=[field];
+            if(rule.calcType==='displayColumn'&&Number(rule.lookupVersion)>=2){
+              const displayOpts={...opts,start:null,end:null,dateColumn:''};
+              scoped=lookupRowsForDisplay(rule,entry,source,resolveColumn(source,rule.lookupMatchColumn),displayOpts);
+              filtered=applyFilters(scoped,rule.filters,source,displayOpts);columns=[rule.lookupMatchColumn,field];label='matching the lookup (all dates)';
+            }else if(rule.calcType==='qaScore'||source==='qa'||isCustomQAStyleSource(source)){
+              if(directQATeamScoreMode(rule,entry,opts))source=activeDirectQASource();
+              scoped=qaRowsForEntry({...rule,filters:[]},entry,opts);filtered=qaRowsForEntry(rule,entry,opts);
+              columns=[qaScoreColumnForCriterion(source,rule)];
+            }else{
+              const display=rule.calcType==='displayColumn',extra=isCustomWeeklyStatSource(source)?customSource(source)?.columns||{}:{};
+              const ctx=display?{...opts,start:null,end:null,dateColumn:''}:{...opts,dateBasis:extra.dateBasis,weekStart:extra.weekStart};
+              if(display&&entry.kind==='team')scoped=TEAM_TOTAL_SOURCE_KEYS.includes(source)?[teamTotalsRowForTeam(teamTotalsDataset(source),entry.team||entry.name)].filter(Boolean):[];
+              else scoped=rowsForEntry(source,entry,ctx);
+              filtered=applyFilters(scoped,rule.filters,source,ctx);if(display)label='matching the lookup (all dates)';
+            }
+            const headers=getHeaders(source)||[];
+            const actual=columns.filter(Boolean).map(col=>[col,findHeader(headers,[plainHeaderName(col)])||(col.startsWith('_')?col:'')]);
+            trace+=`<p>${esc(labelSource(source))} · ${(getRowsRaw(source)||[]).length} source rows · ${scoped.length} ${label} · ${filtered.length} after filters</p><p>${actual.map(([cfg,physical])=>esc(cfg)+' → '+esc(physical||(findMetricByRef(cfg)?'Saved metric':'Missing header'))).join(' · ')}</p><details><summary>Evidence · first ${Math.min(10,filtered.length)} matching rows</summary>${filtered.slice(0,10).map(r=>`<p>${[r._rep,...actual.map(([,col])=>r[col])].filter(v=>v!==undefined).map(esc).join(' · ')}</p>`).join('')}</details>`;
+          }
+        }
+        out.innerHTML=`<p>${sample?'Sample':'Exact test'} · ${pack.rows.length} ${entry.kind==='team'?'teams':'representatives'}</p><p><strong>${esc(entry.name)}</strong> · ${esc(ymd(start)||'First available date')} – ${esc(ymd(end)||'last available date')}</p><p>Result ${Number.isFinite(row.values[rule.id])?esc(fmt(row.values[rule.id],rule.format)):valueDisplay(row,rule)} · ${rule.scoreType==='display'?'Display only':'Score '+scoreDisplay(row,rule)} · ${esc(row.eligible?'Eligible under this rule':row.autofails.concat(row.minimumFails).join(' · '))}</p>${trace}`;
+      }catch(error){if(token===testGeneration)out.textContent=error.message||String(error);}
+      finally{if(token===testGeneration){run.disabled=false;cancel.hidden=true;}}
+    };
+    get('[data-target]').focus();
   }
   async function preview(){
     if(previewBusy) return; syncEditModelFields();
@@ -248,10 +389,13 @@
     renderEditModel=function(...args){
       const scroll=els.editModelModal.querySelector('.modalBody').scrollTop;
       const current=document.activeElement,field=current?.dataset.cfield,cid=current?.closest('[data-crit]')?.dataset.crit;
-      const before=new Set([...els.criteriaList.querySelectorAll('[data-crit]')].map(n=>n.dataset.crit));
+      const previous=view().ids;
+      const ids=state.editModel.criteria.map(c=>c.id);
+      if(previous){const added=ids.find(id=>!previous.includes(id));if(added)view().selected=added;}
+      view().ids=ids;
       els.criteriaList.querySelectorAll('[data-model-group]').forEach(n=>{if(n.closest('.modelCriterionBody').dataset.all!=='true')view().sections.set(n.closest('[data-crit]').dataset.crit+':'+n.dataset.modelGroup,n.open);});
       const result=render(...args);
-      const added=state.editModel.criteria.find(c=>!before.has(c.id));if(added&&before.size)view().selected=added.id;
+
       decorate();
       if(cid&&field) [...els.criteriaList.querySelectorAll('[data-crit]')].find(n=>n.dataset.crit===cid)?.querySelector(`[data-cfield="${field}"]`)?.focus();
       els.editModelModal.querySelector('.modalBody').scrollTop=scroll;
@@ -260,8 +404,8 @@
     const list=renderModelList;renderModelList=function(...args){const result=list(...args);overview();return result;};renderModelList();
     const foundPreview=renderModelCriterionPreview;renderModelCriterionPreview=function(...args){return '<p class="hint">Current criterion draft · all available dates · matching source rows. Matching a filter does not guarantee a usable scoring value.</p>'+foundPreview(...args);};
     const editEvent=event=>{
-      if(event.target.closest('#modelWorkspace')||event.target.closest('#modelWorkspacePreview'))return;
-      syncEditModelFields();invalidate();clearTimeout(timer);timer=setTimeout(()=>{summary();els.criteriaList.querySelectorAll('[data-crit]').forEach(box=>{const c=getEditCriterion(box.dataset.crit);box.querySelector('.modelCriterionExplanation').textContent=describe(c);box.querySelector('.modelCriterionName').textContent=c.name;});},220);
+      if(event.target.closest('#modelWorkspace,#modelWorkspacePreview,.ruleTestPanel'))return;
+      syncEditModelFields();invalidate();clearTimeout(timer);timer=setTimeout(()=>{summary();els.criteriaList.querySelectorAll('[data-crit]').forEach(box=>{const c=getEditCriterion(box.dataset.crit);box.querySelector('.modelCriterionExplanation').textContent=describe(c);box.querySelector('.modelCriterionName').textContent=c.name;});renderLibrary();filter();},220);
     };
     els.editModelModal.addEventListener('input',editEvent);els.editModelModal.addEventListener('change',editEvent);
     const save=saveEditModel;saveEditModel=function(exit){
@@ -275,5 +419,5 @@
       if(event.target.closest('[data-model-research]')) researchCriterion(box.dataset.crit);
     });
   }
-  window.AllStarModelWorkspace={init,describe,moveCriterion,preview,focusCriterion,sourceSummary};
+  window.AllStarModelWorkspace={editorId,init,describe,moveCriterion,preview,focusCriterion,sourceSummary};
 })();

@@ -70,7 +70,21 @@
     if(metric.formula!==undefined)result.formula=String(metric.formula||'');
     return result;
   }
-  const api={editHistory,searchFields,formulaOperand,buildFormula,extraFilter,numericMetric,metricMetadata};
+  function snapshotDisplay(item,result){
+    const rows=Array.isArray(result.data)?result.data:[],columns=result.columns||[];
+    if(item.datedStats||item.outputType==='conversation'||!rows.length)return 'saved';
+    if(item.outputType==='scatter'&&(result.joinDiagnostics?.calls>0||result.lineage?.sources?.length>1))return 'unverified';
+    const units=columns.map(c=>c.unit||c.displayFormat||(c.showAsPercent?'percent':''));
+    if(columns.length>1&&units.some(unit=>!unit))return 'table';
+    if(rows.length===1&&columns.length===1&&typeof rows[0]?.values?.[0]==='number')return 'number';
+    if(!rows.some(row=>row.values?.some(value=>value!=null&&value!=='')))return 'table';
+    const chartable=rows.every(row=>Array.isArray(row.values)&&row.values.every(value=>value==null||value===''||typeof value==='number'&&Number.isFinite(value)));
+    if(!chartable)return 'table';
+    if(new Set(units).size>1)return columns.length<=6&&rows.length<=50?'panels':'table';
+    if(!['line','scatter','histogram','box','heatmap'].includes(item.outputType)&&rows.length>50)return 'table';
+    return 'saved';
+  }
+  const api={editHistory,searchFields,formulaOperand,buildFormula,extraFilter,numericMetric,metricMetadata,snapshotDisplay};
   root.AllStarResearchWorkspace=api;
   if(typeof document==='undefined'||typeof state==='undefined')return;
   const byId=id=>document.getElementById(id);
@@ -324,7 +338,7 @@
     const modal=byId('researchModal'),toolbar=modal?.querySelector('.researchToolbar');if(!toolbar)return;
     toolbar.insertAdjacentHTML('beforeend','<button class="dark" type="button" id="rwAnalysisBoard">Charts / Analysis board</button>');byId('rwAnalysisBoard').onclick=()=>root.AllStarCharts?.openBoard();
     const tools=document.createElement('details');tools.className='rwWorkspaceTools';tools.innerHTML='<summary>Research tools</summary><div class="rwToolsMenu"></div>';
-    const menu=tools.querySelector('div');[...toolbar.children].filter(control=>!['addResearchItemBtn','renderAllResearchBtn','stopResearchRenderBtn','rwAnalysisBoard','researchDiagnosticsBtn','researchCanvasStatus','addCalculatedResearchBtn'].includes(control.id)).forEach(control=>menu.appendChild(control));toolbar.appendChild(tools);
+    const menu=tools.querySelector('div');[...toolbar.children].filter(control=>!['researchNewQuestionBtn','researchLibraryToggle','addResearchItemBtn','renderAllResearchBtn','stopResearchRenderBtn','rwAnalysisBoard','researchDiagnosticsBtn','researchCanvasStatus','addCalculatedResearchBtn'].includes(control.id)).forEach(control=>menu.appendChild(control));toolbar.appendChild(tools);
     const browse=document.createElement('nav');browse.className='rwBrowseBar';browse.setAttribute('aria-label','View Research items');
     browse.innerHTML='<label>View<select id="rwCanvasView"><option value="cards">Cards</option><option value="list">List</option><option value="focus">One item</option></select></label><label class="rwItemPickerLabel">View item<select id="rwItemPicker"><option value="">Choose an item…</option></select></label><button type="button" class="smallBtn" id="rwPreviousItem" hidden>Previous</button><button type="button" class="smallBtn" id="rwNextItem" hidden>Next</button><label class="rwSearchLabel">Find analysis<input type="search" id="rwResearchSearch" placeholder="Title, source, or chart type"></label><button type="button" class="smallBtn" id="rwClearSearch" hidden>Clear search</button><span id="rwViewCount" class="hint" role="status" aria-live="polite"></span>';
     toolbar.after(browse);
@@ -403,10 +417,11 @@
   const previousRenderFilters=renderResearchFiltersEditor;
   renderResearchFiltersEditor=function(){previousRenderFilters();els.researchFilters?.querySelectorAll('[data-rf="op"]').forEach(select=>{const filter=state.editingResearchFilters[Number(select.dataset.i)];if(findMetricByRef(filter?.field))return;EXTRA_OPS.forEach(operator=>{if(![...select.options].some(option=>option.value===operator)){const option=document.createElement('option');option.value=operator;option.textContent=operator;select.appendChild(option);}});if(EXTRA_OPS.includes(filter?.op))select.value=filter.op;});};
   const previousCurrentItem=currentResearchItemFromEditor;
-  currentResearchItemFromEditor=function(){const item=previousCurrentItem();const prior=(state.researchItems||[]).find(existing=>existing.id===item.id);const guided=guidedConfigFromForm();return {...(prior||{}),...item,...guided,guidedEnabled:item.guidedEnabled};};
+currentResearchItemFromEditor=function(){const item=previousCurrentItem();const prior=(state.researchItems||[]).find(existing=>existing.id===item.id);const guided=guidedConfigFromForm();return {...(prior||{}),...item,...guided,guidedEnabled:item.guidedEnabled,questionKind:prior?.questionKind||byId("researchEditorModal")?.dataset.questionKind||undefined};};
   const previousOpenEditor=openResearchItemEditor;
   openResearchItemEditor=function(itemId){
     if(byId('researchEditorModal')?.classList.contains('open'))capture();init();closePicker();previousOpenEditor(itemId);
+    byId('researchEditorModal').dataset.questionKind=state.newResearchQuestion?.questionKind||'';
     // A stable draft id avoids a new id each time the unsaved editor is inspected.
     if(!els.researchEditId.value)els.researchEditId.value=id();editingId=itemId||'';openedExisting=!!itemId;
     refreshMode(state.editingGuidedResearchActive?'guided':'advanced');const snapshot=controlsSnapshot();history.reset(snapshot);baseline=JSON.stringify(snapshot);updateSaveState();
@@ -415,8 +430,319 @@
   const previousCloseModal=closeModal;
   closeModal=function(modalId){hideHeaderSuggestions();if(modalId==='researchEditorModal'){clearTimeout(captureTimer);capture();closePicker();setResearchFullscreen(modalId,false);}if(modalId==='researchModal'){if(researchDrag)finishResearchDrag(false);exitItemFullscreen(false);setResearchFullscreen(modalId,false);}return previousCloseModal(modalId);};
   const previousSave=saveResearchItemFromEditor;
-  saveResearchItemFromEditor=async function(){capture();const key=els.researchEditId.value;const result=await previousSave();if(!byId('researchEditorModal')?.classList.contains('open')&&(state.researchItems||[]).some(item=>item.id===key)){baseline=JSON.stringify(controlsSnapshot());openedExisting=true;notice('Saved');try{const draft=readStored(DRAFT_KEY,null);if(draft?.itemId===editingId)localStorage.removeItem(DRAFT_KEY);}catch(_){}}return result;};
+  saveResearchItemFromEditor=async function(options){capture();const key=els.researchEditId.value;const result=await previousSave(options);if(!byId('researchEditorModal')?.classList.contains('open')&&(state.researchItems||[]).some(item=>item.id===key)){baseline=JSON.stringify(controlsSnapshot());openedExisting=true;notice('Saved');try{const draft=readStored(DRAFT_KEY,null);if(draft?.itemId===editingId)localStorage.removeItem(DRAFT_KEY);}catch(_){}}return result;};
   if(typeof bindResearchCanvasActions==='function'){const previousBind=bindResearchCanvasActions;bindResearchCanvasActions=function(scope){previousBind(scope);enhanceCanvas();};}
   api.init=init;api.refresh=()=>{refreshMode(state.editingGuidedResearchActive?'guided':'advanced');scheduleCapture();};api.openFieldPicker=openPicker;api.fieldEntries=fieldEntries;api.openFormulaBuilder=formulaBuilder;api.refreshHealth=refreshHealth;api.duplicate=duplicateResearch;
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+})(typeof window==='undefined'?globalThis:window);
+
+// The library works from saved definitions. Only opening a snapshot reads its row chunks.
+(function(root){
+  if(typeof document==='undefined')return;
+  const node=id=>document.getElementById(id),selection=new Set(),statuses=new Map();
+  const preference='allstar.research.library.v1';
+  let active=false,shownId='',request=0,comparing=false,displayed=[];
+  try{active=localStorage.getItem(preference)==='true';}catch(_){}
+  function itemById(id){return (state.researchItems||[]).find(item=>item.id===id);}
+  function label(item){return item.questionKind||item.datedStats?.mode?.replace(/_/g,' ')||item.outputType||'Table';}
+  function list(){
+    const host=node('researchLibraryItems');if(!host)return;
+    const q=node('researchLibrarySearch').value.trim().toLowerCase();
+    const rows=(state.researchItems||[]).filter(item=>[item.title,labelSource(item.source),label(item)].join(' ').toLowerCase().includes(q));
+    host.innerHTML=rows.map(item=>{
+      const id=esc(item.id),title=esc(item.title||'Untitled Research');
+      const stamp=item.renderedResult?.renderedAt;
+      const status=statuses.get(item.id)||(stamp?'Snapshot saved '+new Date(stamp).toLocaleString():item.renderedResult?'Saved snapshot':'Definition only');
+      return `<div class="rwLibraryRow"><input type="checkbox" data-lib-check="${id}" aria-label="Select ${title} for calculation" ${selection.has(item.id)?'checked':''}><div><strong>${title}</strong><span>${esc(label(item))} · ${esc(labelSource(item.source))}</span><span>${esc(status)}</span><div class="row"><button type="button" class="smallBtn" data-lib-open="${id}" ${item.renderedResult?'':'disabled'}>View snapshot</button><button type="button" class="smallBtn" data-lib-run="${id}">Run on current data</button><button type="button" class="smallBtn" data-lib-edit="${id}">Edit</button></div></div></div>`;
+    }).join('')||'<p>No matching saved Research.</p>';
+  }
+  function refresh(){
+    const library=node('researchLibrary');if(!library)return;
+    library.hidden=!active;node('researchCanvas').hidden=active;
+    node('researchModal')?.classList.toggle('rwLibraryActive',active);
+    node('renderAllResearchBtn').textContent=active?'Run all':'Render All';
+    node('researchLibraryToggle').setAttribute('aria-pressed',String(active));
+    if(!active)return;
+    invalidateMissing();
+    list();
+    if(!comparing&&(!shownId||!itemById(shownId))){shownId='';node('researchLibraryDetail').textContent='Choose a saved snapshot to view its result.';}
+  }
+  function invalidateMissing(){
+    if(!displayed.some(id=>!itemById(id)?.renderedResult))return;
+    displayed=[];comparing=false;shownId='';request++;
+    const host=node('researchLibraryDetail');if(host)host.textContent='Choose a saved snapshot to view its result.';
+    for(const id of selection)if(!itemById(id))selection.delete(id);
+    statuses.clear();if(active)list();
+  }
+  async function view(id){
+    const item=itemById(id);if(!item)return;
+    comparing=false;displayed=[id];
+    const generation=++request;shownId=id;
+    const host=node('researchLibraryDetail');host.textContent='Opening saved snapshot…';
+    const result=item.renderedResult?.result||await researchRenderedResultGet(id);
+    if(generation!==request||!active||!itemById(id))return;
+    if(!result){host.textContent='No stored result is available. Run this definition on current data.';return;}
+    const definition={...(result.snapshotDefinition||item),outputType:result.snapshotDefinition?.outputType||item.renderedResult?.outputType||item.outputType};
+    definition._frozenSnapshot={source:labelSource(definition.source),date:item.renderedResult?.renderedAt};
+    const view=root.AllStarResearchWorkspace.snapshotDisplay(definition,result);
+    host.innerHTML=`<h3>${esc(definition.title||'Research')}</h3><p>Snapshot saved ${esc(item.renderedResult.renderedAt||result.savedAt||'')}. ${esc(result.description||'')}</p>`;
+    const display=document.createElement('div');host.appendChild(display);
+    if(result.joinDiagnostics?.calls){
+      const coverage=document.createElement('details');coverage.innerHTML='<summary>Full-run join coverage</summary>'+researchJoinSummaryHtml(result.joinDiagnostics);host.appendChild(coverage);
+    }
+    if(view==='unverified'){
+      const note=document.createElement('p');note.textContent='The saved result does not verify one independently aggregated value on each side of the same person and period. Inspect the mappings, or select two saved snapshots for independent summaries.';display.before(note);
+      const mapping=document.createElement('button');mapping.type='button';mapping.textContent='Review source mappings';
+      mapping.onclick=()=>{openResearchItemEditor(id);const panel=node('researchSourceMappingPanel');if(panel){panel.open=true;panel.querySelector('select,button,summary')?.focus();}};note.after(mapping);
+    }
+    if(view==='saved')display.innerHTML=renderResearchResultByDisplay(definition,result);
+    else if(view==='number'){
+      const row=result.data[0],col=result.columns[0];display.innerHTML=`<div class="guidedSummaryCards"><div class="guidedSummaryCard"><strong>${esc([row.label,col.displayTitle||col.label].filter(Boolean).join(' · '))}</strong><span>${esc(String(formatResearchValue(row.values[0],definition,col)))}</span><small>${esc(col.mode||definition.valueMode||'')} · ${esc(String(row.rows??'Unknown'))} supporting rows</small></div></div>`;
+    }else if(view==='panels'){
+      const dated=result.data.every(row=>/^\d{4}-\d{2}-\d{2}$/.test(row.label));
+      for(const [index,column] of result.columns.entries()){
+        const panel=document.createElement('section'),unit=column.unit||column.displayFormat||(column.showAsPercent?'percent':'');
+        const panelItem={...definition,id:definition.id+'-measure-'+index,title:[column.displayTitle||column.label,unit].filter(Boolean).join(' · '),valueField:column.field,outputType:dated?'line':'bar',showPercent:['percentage','percent'].includes(unit),barOrientation:'horizontal',panelField:''};
+        const values={...result,columns:[column],data:result.data.map(row=>({...row,values:[row.values[index]],cells:row.cells?[row.cells[index]]:undefined,pointDetails:row.pointDetails?[row.pointDetails[index]]:undefined}))};
+        panel.innerHTML=`<h4>${esc(panelItem.title)}</h4>`+renderResearchVisualization(panelItem,values);display.appendChild(panel);
+      }
+    }else showResultTable(display,result);
+    if(view!=='saved'){
+      const restore=document.createElement('button');restore.type='button';restore.textContent='Use saved display';
+      restore.onclick=()=>{display.innerHTML=renderResearchResultByDisplay(definition,result);bindResearchCanvasActions(display);restore.remove();};
+      display.after(restore);
+    }
+    if(Array.isArray(result.data)&&definition.outputType!=='conversation'){
+      const button=document.createElement('button');button.type='button';button.textContent='Export full result CSV';
+      button.onclick=()=>exportSnapshotCsv(definition,result);host.prepend(button);
+    }
+    if(!definition.datedStats&&Array.isArray(result.data)){
+      if(!['table','unverified'].includes(view)&&definition.outputType!=='table'){
+        const table=document.createElement('details');table.innerHTML='<summary>View table</summary><div></div>';
+        table.addEventListener('toggle',()=>{if(table.open&&!table.lastChild.children.length)showResultTable(table.lastChild,result);});
+        host.appendChild(table);
+      }
+      if(result.lineage){
+        const evidence=document.createElement('details'),l=result.lineage;
+        evidence.innerHTML=`<summary>Calculation evidence</summary><dl><dt>Grain</dt><dd>${esc(l.grain||'Source records')}</dd><dt>Population</dt><dd>${esc(String(l.population??'Unknown'))}</dd><dt>Dates</dt><dd>${esc([l.startDate,l.endDate].filter(Boolean).join(' through ')||'All loaded dates')}</dd><dt>Sources at calculation</dt><dd>${(l.sources||[]).map(s=>esc(labelSource(s.source))+' · '+Number(s.rows||0).toLocaleString()+' rows').join('<br>')}</dd></dl>`;
+        host.appendChild(evidence);
+      }
+    }
+    bindResearchCanvasActions(host);
+  }
+  function showResultTable(host,result){
+    host.innerHTML='<label>Find result rows<input type="search"></label><div class="tableWrap"></div><div class="row"><button type="button">Previous</button><span role="status"></span><button type="button">Next</button></div>';
+    const search=host.querySelector('input'),table=host.querySelector('.tableWrap'),[prev,next]=host.querySelectorAll('button'),status=host.querySelector('[role=status]');
+    let page=0,rows=result.data;
+    function paint(){
+      const start=page*50;
+      table.innerHTML=`<table><thead><tr><th>Group</th><th>Series</th>${result.columns.map(c=>`<th>${esc(c.displayTitle||c.label||c.field||'Value')} ${esc(c.unit||'')}</th>`).join('')}</tr></thead><tbody>${rows.slice(start,start+50).map(r=>`<tr><th>${esc(r.label)}</th><td>${esc([r.secondary,r.panel].filter(Boolean).join(' · '))}</td>${r.values.map((v,i)=>`<td>${esc(String(r.cells?.[i]?.text??v??'Missing'))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+      status.textContent=rows.length?`${start+1}–${Math.min(start+50,rows.length)} of ${rows.length}`:'No matching rows';
+      prev.disabled=!page;next.disabled=start+50>=rows.length;
+    }
+    prev.onclick=()=>{page--;paint();};next.onclick=()=>{page++;paint();};
+    search.oninput=()=>{const q=search.value.trim().toLowerCase();page=0;rows=q?result.data.filter(r=>[r.label,r.secondary,r.panel,...r.values].join(' ').toLowerCase().includes(q)):result.data;paint();};paint();
+  }
+  async function compareSnapshots(){
+    const selected=[...selection].map(itemById).filter(Boolean);
+    if(selected.length!==2||selected.some(i=>!i.renderedResult)){setResearchCanvasStatus('Select two definitions with saved snapshots.');return;}
+    const generation=++request;comparing=true;shownId='';displayed=selected.map(item=>item.id);
+    const host=node('researchLibraryDetail');host.textContent='Opening both snapshots…';
+    const snapshots=await Promise.all(selected.map(item=>item.renderedResult.result||researchRenderedResultGet(item.id)));
+    if(generation!==request||!active)return;
+    host.innerHTML='<h3>Independent source summaries</h3><p>Each column uses its own saved population, dates and units. No records are paired between columns.</p><div class="rwSnapshotPair"></div>';
+    const pair=host.lastChild;
+    if(snapshots.every(result=>result?.definition?.settings)){
+      const aligned=window.AllStarDatedStats.alignResearchMeasures(...snapshots),panel=document.createElement('section');
+      const titles=snapshots.map((r,i)=>r.definition.settings.measure==='coaching_count'?'Distinct coaching sessions':r.definition.metric?.name||selected[i].title);
+      showDatedResearchRelationship(panel,{...aligned,xLabel:titles[0],yLabel:titles[1]});host.prepend(panel);
+    }
+    selected.forEach((item,i)=>{
+      const result=snapshots[i],panel=document.createElement('section'),definition=result?.snapshotDefinition||item;
+      panel.innerHTML=`<h4>${esc(definition.title||'Research')}</h4><p>${esc(labelSource(definition.source))} · ${esc(item.renderedResult.renderedAt||'Saved snapshot')}</p>`;
+      pair.appendChild(panel);
+      if(!result?.data){panel.append(document.createTextNode('No saved value rows are available.'));return;}
+      if(definition.datedStats){
+        const table={columns:[{label:'Value'},{label:'Unit'},{label:'Eligible representatives'},{label:'Numerator'},{label:'Denominator'}],data:result.data.map(p=>({label:p.label,secondary:p.line,values:[p.value,p.unit,p.eligibleRepresentatives,p.numerator,p.denominator]}))};
+        const body=document.createElement('div');panel.appendChild(body);showResultTable(body,table);
+      }else{
+        const context=document.createElement('p');context.textContent=[result.lineage?.grain,(result.lineage?.startDate||result.lineage?.endDate)?[result.lineage?.startDate,result.lineage?.endDate].filter(Boolean).join(' through '):'All loaded dates'].filter(Boolean).join(' · ');panel.appendChild(context);
+        const body=document.createElement('div');panel.appendChild(body);showResultTable(body,result);
+      }
+    });
+    setResearchCanvasStatus('Showing two independently calculated snapshots.');
+  }
+  function exportSnapshotCsv(definition,result){
+    const dated=!!definition.datedStats,columns=result.columns||[];
+    const header=dated?['Period','Group','Value','Unit','Eligible reps','Missing reps','Numerator','Denominator']:['Group','Series','Panel',...columns.map((c,i)=>c.displayTitle||c.label||c.field||'Value '+(i+1))];
+    const context=JSON.stringify(result.lineage||result.definition||definition.datedStats||{source:definition.source});
+    const rows=result.data.map(row=>dated?[row.label,row.line,row.value,row.unit,row.eligibleRepresentatives,row.missingRepresentatives,row.numerator,row.denominator]:[row.label,row.secondary,row.panel,...row.values]);
+    const quote=value=>{let s=String(value??'');if(typeof value==='string'&&/^[=+@\t\r-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
+    const csv=[header.concat('Calculation context'),...rows.map(row=>row.concat(context))].map(row=>row.map(quote).join(',')).join('\r\n');
+    downloadText((definition.title||'Research').replace(/[\\/:*?"<>|]/g,'-')+'.csv','\uFEFF'+csv);
+  }
+  async function run(ids){
+    if(!ids.length){setResearchCanvasStatus('Choose a saved definition to run.');return;}
+    const token=newResearchRenderToken('library');state.researchRenderAllToken=token;setResearchRenderAllRunning(true);
+    let completed=0,failed=0;
+    try{
+      for(const id of ids){
+        if(token.cancelled)break;
+        const item=itemById(id);if(!item)continue;
+        statuses.set(id,'Running');list();setResearchCanvasStatus('Running '+item.title);await yieldToBrowser();
+        try{
+          researchRequireCommittedInputs();
+          const key=researchSnapshotKey(item);
+          if(!item.datedStats)await ensureResearchExecutionIndexes(item,{token});
+          researchThrowIfCancelled(token);
+          const result=item.outputType==='conversation'?evaluateResearchRawRows(item):await evaluateResearchItemAsync(item,{token});
+          researchThrowIfCancelled(token);
+          if(!itemById(id)||researchSnapshotKey(itemById(id))!==key)throw new Error('Inputs changed. Run again.');
+          const saved=await researchSaveRenderedResult(item,result,{token,inputKey:key});
+          researchThrowIfCancelled(token);
+          researchRequireCommittedInputs();
+          if(!saved)throw new Error('Could not store this result. Check storage and run again.');
+          completed++;statuses.delete(id);
+          if(active&&(ids.length===1||shownId===id))await view(id);
+        }catch(error){
+          if(state.researchRenderAllToken!==token)break;
+          if(token.cancelled||error.name==='AbortError'){statuses.set(id,'Stopped. Previous snapshot retained.');if(token.cancelled)break;}
+          else {failed++;statuses.set(id,error.message||'Run failed.');}
+        }
+        await yieldToBrowser();
+      }
+    }finally{
+      if(state.researchRenderAllToken===token){
+        state.researchRenderAllToken=null;setResearchRenderAllRunning(false);
+        setResearchCanvasStatus(`${token.cancelled?'Stopped':'Finished'} · ${completed} saved · ${failed} failed`);
+      }
+      if(state.researchRenderToken===token)state.researchRenderToken=null;
+      list();
+    }
+  }
+  function init(){
+    const toggle=node('researchLibraryToggle');if(!toggle)return;
+    toggle.onclick=()=>{
+      active=!active;request++;
+      if(state.researchRenderToken)state.researchRenderToken.cancelled=true;
+      try{localStorage.setItem(preference,String(active));}catch(_){}
+      refresh();if(!active)renderResearchCanvasAsync({reason:'cards'});
+    };
+    node('researchNewQuestionBtn').onclick=openResearchQuestion;
+    node('researchSaveDefinitionBtn').onclick=()=>saveResearchItemFromEditor({definitionOnly:true});
+    node('researchLibrarySearch').oninput=list;
+    node('researchCompareSnapshots').onclick=compareSnapshots;
+    node('researchRunSelected').onclick=()=>run([...selection].filter(id=>itemById(id)));
+    node('researchRunStale').onclick=()=>{
+      const ids=state.researchItems.filter(item=>!item.renderedResult?.inputKey||item.renderedResult.inputKey!==researchSnapshotKey(item)).map(item=>item.id);
+      if(ids.length)run(ids);else setResearchCanvasStatus('All saved snapshots are current.');
+    };
+    const host=node('researchLibraryItems');
+    host.onchange=event=>{const input=event.target.closest('[data-lib-check]');if(input){if(input.checked)selection.add(input.dataset.libCheck);else selection.delete(input.dataset.libCheck);}};
+    host.onclick=event=>{const d=event.target.closest('button')?.dataset;if(d?.libOpen)view(d.libOpen);if(d?.libRun)run([d.libRun]);if(d?.libEdit)openResearchItemEditor(d.libEdit);};
+    refresh();
+  }
+  root.AllStarResearchLibrary={enabled:()=>active,refresh,run,invalidateMissing,showTable:showResultTable,exportCsv:exportSnapshotCsv,newQuestion:async()=>{await openResearchWorkspace();openResearchQuestion();}};
+  function openResearchQuestion(){
+    const dialog=document.createElement('dialog');dialog.className='rwQuestionDialog';
+    const intents=['Compare groups','Show a trend','Before and after','Find a relationship','Show a distribution','Find records or people'];
+    const options=entries=>entries.map(([value,label])=>`<option value="${esc(String(value))}">${esc(label)}</option>`).join('');
+    const sources=concreteResearchSources().filter(s=>{
+      if(['monthly_opportunity','monthly_wiper'].includes(s.value))return !!state.sourceMeta[s.value]?.rowCount;
+      if([NONDATED_SOURCE,DATED_SOURCE].includes(s.value))return !!state.categorized[s.value===DATED_SOURCE?'dated':'nondated']?.rows?.length;
+      return !!getHeaders(s.value)?.length;
+    });
+    dialog.setAttribute('aria-labelledby','rwQuestionTitle');
+    dialog.innerHTML=`<h2 id="rwQuestionTitle">New Research</h2><form method="dialog"><label>What do you want to answer?<select name="intent">${options(intents.map(i=>[i,i]))}</select></label><div class="rwQuestionFields">
+      <label>Source<select name="source">${options(sources.map(s=>[s.value,s.label]))}</select></label>
+      <label>Find a measure<input name="search" type="search" placeholder="Column, metric, or model"></label>
+      <label>Measure<select name="measure"></select></label><label>Compare by<select name="group"></select></label>
+      <label>Population<select name="population"></select></label><label>Time<select name="time"></select></label>
+      <label data-question-window>From<input type="date" name="from"></label><label data-question-window>Through<input type="date" name="through"></label>
+      </div><p data-question-summary role="status"></p><div class="row"><button type="button" class="green" data-question-open>Continue</button><button type="button" data-question-calculated>Calculated number</button><button type="button" data-question-advanced>Advanced</button><button>Cancel</button></div></form>`;
+    document.body.appendChild(dialog);
+    const form=dialog.querySelector('form'),c=form.elements,summary=dialog.querySelector('[data-question-summary]'),next=dialog.querySelector('[data-question-open]');
+    let measures=[],available=[],headers=[],numeric=[],date='',weekly=[];
+    const intent=()=>c.intent.value,source=()=>c.source.value,selected=()=>available[Number(c.measure.value)];
+    function load(){
+      const src=source();headers=src?(getHeaders(src)||[]).filter(h=>h&&!h.startsWith('_')):[];
+      const rows=src?(getRowsRaw(src)||[]):[],count=Math.min(64,rows.length),sample=[];
+      for(let i=0;i<count;i++)sample.push(rows[Math.floor(i*rows.length/count)]);
+      const fields=src?researchMappedSourceFields(src):{};
+      date=headers.includes(fields.date)?fields.date:'';
+      weekly=isDatedStatsSource(src)?datedStatsAvailableMetrics(src):[];
+      if(weekly.length)date=datedStatsConfig(src).dateField;
+      numeric=headers.filter(h=>{
+        if([date,fields.rep,fields.coach].includes(h))return false;
+        const values=sample.map(r=>r[h]).filter(v=>v!=null&&String(v).trim()!=='');
+        return values.length&&values.every(v=>!(v instanceof Date)&&Number.isFinite(toNum(v)));
+      });
+      const numbers=new Set(numeric);
+      measures=[{label:'Record count',field:'',mode:'count',unit:'records'},...headers.map(field=>({field,label:field,mode:numbers.has(field)?'avg':'count',unit:numbers.has(field)?'average of values':'records per category'}))];
+      for(const metric of state.metrics||[])if(metric.source===src&&metric.dataCategory!=='datedStats')measures.push({label:metric.name,field:'@'+metric.name,mode:'avg',unit:metric.displayFormat||'saved metric'});
+      for(const model of state.models||[])for(const criterion of model.criteria||[])if(criterion.source===src)measures.push({label:model.name+' / '+criterion.name,field:`model(${JSON.stringify(model.id)},${JSON.stringify(criterion.id)})`,mode:'avg',unit:'model criterion'});
+      c.search.value='';filterMeasures();configure();
+    }
+    function filterMeasures(){
+      const q=c.search.value.trim().toLowerCase(),kind=intent();
+      let entries=measures;
+      if(kind==='Show a distribution'||kind==='Find a relationship')entries=entries.filter(m=>numeric.includes(m.field));
+      if(kind==='Find a relationship'&&weekly.length&&datedStatsConfig(source()).calendar?.reviewed&&datedStatsConfig(source()).calendar.frequency==='week'){
+        entries=[...weekly.filter(metric=>!metric.directField&&metric.output!=='summary').map(metric=>({label:metric.name+' versus coaching sessions',metric,paired:true,field:metric.field,mode:metric.aggregation,unit:metric.kind==='percentage'?'%':metric.kind})),...entries];
+      }
+      if(kind==='Before and after'||kind==='Show a trend'&&weekly.length)entries=weekly.filter(m=>kind!=='Before and after'||!m.directField&&datedStatsConfig(source()).calendar?.frequency==='week'&&datedStatsConfig(source()).calendar?.reviewed).map(metric=>({label:metric.name,metric,field:metric.field,mode:metric.aggregation,unit:metric.kind==='percentage'?'%':metric.kind}));
+      else if(kind==='Show a trend')entries=entries.filter(m=>m.mode!=='count'||!m.field);
+      else if(kind==='Find records or people')entries=entries.filter(m=>headers.includes(m.field));
+      available=entries.filter(m=>m.label.toLowerCase().includes(q));
+      c.measure.innerHTML=options(available.map((m,i)=>[i,m.label+' · '+m.unit]));
+    }
+    function configure(){
+      const m=selected(),kind=intent(),prior=c.group.value;
+      const groups=m?.metric?[['all','All eligible representatives'],['coach','Assigned coach'],['representative','Representative'],['organization','Organization'],['manager','Manager']]:kind==='Find a relationship'?numeric.filter(h=>h!==m?.field).map(h=>[h,h]):kind==='Show a distribution'||kind==='Find records or people'?[['','Source records']]:kind==='Show a trend'?[['', 'One series'],['_team','Coach'],['_rep','Representative']]:[['_team','Coach or team'],['_rep','Representative'],...headers.map(h=>[h,h])];
+      c.group.innerHTML=options(groups);if(groups.some(g=>g[0]===prior))c.group.value=prior;
+      if(m?.paired)c.group.innerHTML=options([['all','One pair per representative and reporting week']]);
+      const pops=[['','All in current scope'],...(state.orgs||[]).map(o=>['org/'+o.id,o.name]),...(!m?.metric?(state.researchGroups||[]).map(g=>['group/'+g.id,g.name]):[])];
+      const previousPopulation=c.population.value;c.population.innerHTML=options(pops);if(pops.some(p=>p[0]===previousPopulation))c.population.value=previousPopulation;
+      const times=kind==='Before and after'?[['periods','Reviewed reporting weeks']]:m?.metric?[[m.metric.directField?'dates':'periods',m.metric.directField?'Use source dates':'Choose report periods']]:date?[['dates','Use source dates'],...(!['Show a trend'].includes(kind)?[['snapshot','Use all loaded rows']]:[])]:[['snapshot','Use loaded snapshot']];
+      const previousTime=c.time.value;c.time.innerHTML=options(times);if(times.some(t=>t[0]===previousTime))c.time.value=previousTime;
+      describe();
+    }
+    function describe(){
+      const m=selected(),kind=intent(),group=c.group.selectedOptions[0]?.textContent||'',time=c.time.selectedOptions[0]?.textContent||'',pop=c.population.selectedOptions[0]?.textContent;
+      const hasDates=c.time.value!=='snapshot'&&!!date;
+      dialog.querySelectorAll('[data-question-window]').forEach(label=>label.hidden=!hasDates);
+      if(hasDates&&c.from.value&&c.through.value&&c.from.value>c.through.value){next.disabled=true;summary.textContent='Choose an end date on or after the start date.';return;}
+      const problem=!source()?'Add a source in Update Data to build this question.':kind==='Show a trend'&&!date?'Choose a source with a mapped date.':!m?(kind==='Before and after'?'Choose a Weekly Stats source with a saved metric and reviewed weekly calendar.':'No matching measure is available for this question.'):kind==='Find a relationship'&&!c.group.value?'Choose a source with two numeric columns.':'';
+      const pivot=kind==='Compare groups'&&m?.mode==='count'&&m.field&&m.field!==c.group.value&&!numeric.includes(c.group.value);
+      const chart=({'Compare groups':pivot?'Category count heatmap':'Ranked bars','Show a trend':'Line chart','Before and after':'Paired change by coaching week','Find a relationship':'Scatter plot','Show a distribution':'Histogram','Find records or people':'Record table'})[kind];
+      const range=hasDates?[c.from.value,c.through.value].filter(Boolean).join(' through '):'';
+      next.disabled=!!problem;summary.textContent=problem||[chart,m.label+' · '+m.unit,group,pop,time,range,m?.paired?'Match canonical representatives on identical reporting weeks. Compare distinct coaching sessions with one weekly performance value. Confirm event coverage in the editor.':''].filter(Boolean).join(' · ');
+    }
+    c.source.onchange=()=>{c.time.value='';load();};c.intent.onchange=()=>{filterMeasures();configure();};c.search.oninput=()=>{filterMeasures();configure();};c.measure.onchange=configure;
+    c.group.onchange=c.population.onchange=c.time.onchange=c.from.oninput=c.through.oninput=describe;
+    const opener=document.activeElement;dialog.addEventListener('close',()=>{dialog.remove();if(!dialog.dataset.routed)opener?.focus();},{once:true});
+    const route=fn=>{dialog.dataset.routed='true';dialog.close();fn();};
+    dialog.querySelector('[data-question-calculated]').onclick=()=>route(()=>root.AllStarSentenceWorkspace?.open(null,'calculated'));
+    dialog.querySelector('[data-question-advanced]').onclick=()=>route(()=>{state.newResearchQuestion={guidedEnabled:false};try{openResearchItemEditor(null);}finally{delete state.newResearchQuestion;}});
+    next.onclick=()=>{
+      if(next.disabled)return;
+      const m=selected(),kind=intent(),src=source(),pop=c.population.value,group=c.group.value;
+      const dates=c.time.value==='snapshot'?{}:{startDate:c.from.value,endDate:c.through.value};
+      const title=[kind,m.label,c.group.selectedOptions[0]?.textContent].filter(Boolean).join(' · ');
+      if(m.metric){
+        const settings=datedStatsSelectMetric({...dates,mode:kind==='Before and after'?'before_after':'fixed',groupBy:group,orgIds:pop.startsWith('org/')?[pop.slice(4)]:[]},m.metric);
+        if(m.paired)settings.relationship='sessions_performance';
+        return route(()=>openDatedStatsResearchEditor(null,src,{title,questionKind:kind,datedStats:settings}));
+      }
+      const outputType=({'Compare groups':'bar','Show a trend':'line','Find a relationship':'scatter','Show a distribution':'histogram','Find records or people':'conversation'})[kind];
+      const categorical=kind==='Compare groups'&&m.mode==='count'&&m.field;
+      const item={title,questionKind:kind,guidedEnabled:false,populationFilterVersion:2,source:src,outputType,analysisGrain:'rows',dateColumn:c.time.value==='snapshot'?'':date,valueMode:m.mode,valueField:m.field,columns:[{field:m.field,mode:m.mode,label:m.label}],groupField:kind==='Show a trend'?date:kind==='Show a distribution'?m.field:group,barOrientation:'horizontal',sort:kind==='Compare groups'?'yDesc':kind==='Show a trend'?'dateAsc':'default',populationScope:pop.startsWith('org/')?{includeOrgs:[pop.slice(4)]}:pop.startsWith('group/')?{includeResearchGroups:[pop.slice(6)]}:{},zeroDenominator:'blank',missingBehavior:'missing'};
+      Object.assign(item,dates);
+      if(categorical&&m.field!==group){item.useSecondaryGroup=true;item.secondaryGroupField=m.field;if(!numeric.includes(group))item.outputType='heatmap';}
+      if(kind==='Show a trend'&&group){item.useSecondaryGroup=true;item.secondaryGroupField=group;}
+      route(()=>{state.newResearchQuestion=item;try{openResearchItemEditor(null);}finally{delete state.newResearchQuestion;}});
+    };
+    load();dialog.showModal();
+  }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })(typeof window==='undefined'?globalThis:window);

@@ -112,5 +112,16 @@ const metadata = fingerprint => ({
   const external = await api.getCurrent('qa', { includeRecord: true });
   assert.equal(external.id, third.dataset.id);
   assert.equal(external.data.workbook.data.QA.aoa[1][0], 99, 'A second window upload must invalidate warmed data.');
+  const large = dataset(85);
+  large.workbook.data.QA.aoa.push(...Array.from({length: 4400}, (_, i) => [i]));
+  large.workbook.sheets.push('Empty');
+  large.workbook.data.Empty = {aoa: [], sheetNote: 'kept'};
+  large.meta.totalRows = large.workbook.data.QA.aoa.length;
+  await api.importDataset('qa', large, {...metadata('large'), fileSize: 24 * 1024 * 1024});
+  const editable = await api.getCurrent('qa', {includeRecord: true, editableStream: true});
+  assert.equal(editable.chunked, true);
+  assert.deepEqual(structuredClone(editable.data.workbook), large.workbook);
+  editable.data.workbook.data.QA.aoa[1][0] = 0;
+  assert.equal((await api.getCurrent('qa')).workbook.data.QA.aoa[1][0], 85);
   console.log('Storage prefetch race tests passed: replacement overlap and external refresh.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
