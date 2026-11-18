@@ -354,7 +354,8 @@
 
   async function discoverFile(file, options) {
     await statsSettingsReady;
-    const workbook = await readWorkbook(file);
+    const sampleOnly=!!(options?.discoverySamples && file.size>=1024*1024 && root.CoachToolsWorkbookReader);
+    const workbook = sampleOnly?await root.CoachToolsWorkbookReader(file,true):await readWorkbook(file);
     const sheets = workbook.SheetNames || [];
     const data = {};
     const ranges = {};
@@ -401,6 +402,14 @@
         ? { id: requestedType, confidence: 'high', reason: 'manual+headers', classificationMethod: 'manual+headers', candidates: [requestedType], validation, detectedPeriod: detectPeriod(file, requestedType) }
         : { id: null, predictedId: requestedType, confidence: 'needs-review', reason: 'header-validation-failed', classificationMethod: 'manual', candidates: [requestedType], validation, needsReview: true, detectedPeriod: detectPeriod(file, requestedType) };
     } else classification = classifyFile(file, parsed, options);
+    if(sampleOnly){
+      // Deep headers and reviewed monthly bundles need the full reader. Ordinary
+      // files only retain their header sample until the user confirms the batch.
+      const monthly=sheets.some(name=>root.CoachToolsMonthly?.detect(data[name].aoa));
+      if(monthly||!classification.id)return discoverFile(file,{...options,discoverySamples:false});
+      parsed.meta.totalRows=Object.values(workbook.__ranges||{}).reduce((n,r)=>n+r.e.r-r.s.r+1,0);
+      return {file,parsed,classification,previewOnly:true,discovery:{ranges:workbook.__ranges||{},ownershipValues:[]},rawWorkbook:null};
+    }
     if (!classification.id) {
       // Unusual exports can place headers below the lightweight discovery window.
       for (const name of sheets) data[name] = { aoa: trimAOAInPlace(root.XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '' })) };
@@ -1059,13 +1068,15 @@
     const recognized = [], needsReview = [], errors = [];
     const list = Array.from(files || []);
     for (let index = 0; index < list.length; index += 1) {
+      if(options?.isCancelled?.())return {recognized:[],needsReview:[],errors:[]};
       const file = list[index];
       try {
-        const entry = await discoverFile(file, options && options.onProgress ? { onProgress: progress => options.onProgress({ ...progress, fileIndex: index, fileCount: list.length }) } : null);
+        const entry = await discoverFile(file, {discoverySamples:options?.discoverySamples,onProgress:options?.onProgress && (progress=>options.onProgress({...progress,fileIndex:index,fileCount:list.length}))});
         if (entry.classification.id) recognized.push(entry);
         else needsReview.push(entry);
       } catch (error) { errors.push({ file, error }); }
     }
+    if(options?.isCancelled?.())return {recognized:[],needsReview:[],errors:[]};
     const analysis = await reviewMonthlyEntries({ recognized, needsReview, errors },options);
     return options?.manualSourceSelection ? resolveUnidentifiedFiles(analysis, options) : analysis;
   }

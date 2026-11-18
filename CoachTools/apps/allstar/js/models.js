@@ -201,7 +201,7 @@ function parseQuotedPhrases(text){
   return {ok:true,phrases,warning:''};
 }
 function normalizeRowPullConnector(conn, idx){ return idx===0 ? 'base' : (['and','or','andSeparate'].includes(conn)?conn:'and'); }
-function rowPullConnectorLabel(conn){ return ({and:'AND',or:'OR',andSeparate:'AND separate row (same representative)'})[conn]||'AND'; }
+function rowPullConnectorLabel(conn){ return ({and:'AND · same row',or:'OR · any condition',andSeparate:'AND · separate row for the same representative'})[conn]||'AND'; }
 function normalizeRowPullCondition(cond, fallback, idx=0){
   cond={...(cond||{})};
   const connector=normalizeRowPullConnector(cond.connector, idx);
@@ -638,7 +638,7 @@ function finishAllStarStartupProgress(job,text='Ready.'){
   updateProgress(text,100,{force:true,jobDirect:true,job}); job.complete=true;
   state.startup.diagnostics={...(state.startup.diagnostics||{}),progressRegressions:job.regressions,preventedProgressRegressions:job.preventedRegressions,progressUpdates:job.updates.slice(-30)};
   state.progressJob=null;
-  setTimeout(()=>{ if(!state.lifecycle?.closing && !activeAllStarProgressJob()) hideProgress({force:true}); },180);
+  hideProgress({force:true});
   return true;
 }
 function cancelAllStarProgressJob(reason='cancelled'){
@@ -1017,25 +1017,52 @@ function makeResearchSourceIndex(source, rows){
   const headers=getHeaders(source)||[], descHeaders=source==='documented_coaching'?sourceDescriptionHeaders(source):headers;
   return {source,dateReader:sourceIndexDateReader(source),entityTable:ensureResearchCanonicalEntityTable(),version:state.dataIndex?.version||0,rows,headers,descriptionHeaders:descHeaders,byRep:new Map(),byTeam:new Map(),byTeamKey:new Map(),byCoach:new Map(),byCoachKey:new Map(),bySourceName:new Map(),byCategory:new Map(),byDate:new Map(),byDateBucket:new Map(),byWeek:new Map(),byMonth:new Map(),byHeader:new Map(),byHeaderName:new Map(),byColumnValue:new Map(),byWord:new Map(),byRepWord:new Map(),byRepSortedDate:new Map(),byTeamSortedDate:new Map(),byRowId:new Map(),dateValues:[],dateSortedRows:[],searchText:new WeakMap(),tokens:new WeakMap(),rowMeta:new WeakMap(),lazyIndexes:new Map(),reps:new Map(),perf:{rowsIndexed:0,lazyBuilds:[]}};
 }
+function researchIndexReaders(source){
+  const buckets=new Map(),identities=new Map(),teams=new Map();
+  const configured=researchSourceMappings()[source]?.rep&&researchMappedSourceFields(source).rep;
+  const repColumn=configured||detectIdentityColumn({},source,'rep').column;
+  const options={source,roster:ensureRosterIndex(),skipTeamBuild:sourceSkipsTeamBuild(source)};
+  const dates=ms=>{
+    if(!Number.isFinite(ms))return {day:'',month:'',week:''};
+    if(buckets.has(ms))return buckets.get(ms);
+    const entry={day:researchDayBucket(ms),month:researchMonthBucket(ms),week:ymd(startOfWeekDate(new Date(ms),'sunday'))};
+    if(buckets.size<4096)buckets.set(ms,entry);return entry;
+  };
+  const rep=row=>{
+    if(row._researchPopulationAnchor||isDatedStatsSource(source)||rowSourceKey(row,source)!==source)return getRepIdentity(row,source);
+    const raw=repColumn?row[repColumn]:(row._rep||row._repKey||'');
+    if(identities.has(raw))return identities.get(raw);
+    const identity=getRepIdentity(row,source);
+    if(identities.size<10000)identities.set(raw,identity);return identity;
+  };
+  const teamKeys=name=>{
+    if(teams.has(name))return teams.get(name);
+    const entry={identity:normalizeIdentityName(name),coach:nameKey(name)||normalizeResearchText(name),team:normalizeResearchText(name),canonical:coachNameKey(name)||normalizeIdentityName(name)||'(blank team)'};
+    if(teams.size<10000)teams.set(name,entry);return entry;
+  };
+  return {dates,rep,teamKeys,options};
+}
 function addResearchIndexedRow(idx,source,row,rowId){
-  const key=isDatedStatsSource(source)?weeklySourceRowIdentity(row,source).repKey:(row._repKey||''), team=rowTeam(row,{source}), coach=team, ms=idx.dateReader?idx.dateReader(row):rowDateMillisForSource(source,row), day=researchDayBucket(ms), month=researchMonthBucket(ms), week=Number.isFinite(ms)?ymd(startOfWeekDate(new Date(ms),'sunday')):'';
+  const readers=idx.buildReaders||(idx.buildReaders=researchIndexReaders(source));
+  const key=isDatedStatsSource(source)?weeklySourceRowIdentity(row,source).repKey:(row._repKey||''), team=rowTeam(row,readers.options), coach=team, ms=idx.dateReader?idx.dateReader(row):rowDateMillisForSource(source,row);
+  const {day,month,week}=readers.dates(ms), teamKeys=readers.teamKeys(team);
   state.researchBuildingRowMeta=state.researchBuildingRowMeta instanceof WeakMap?state.researchBuildingRowMeta:new WeakMap(); state.researchBuildingRowMeta.set(row,{source,rowId});
   idx.rowMeta.set(row,{rowId,source});
-  const canonical=researchCanonicalEntityForRow(row,source,team,idx.entityTable);
+  const rep=readers.rep(row),canonical=researchCanonicalEntityForRow(row,source,team,idx.entityTable,rep,team?teamKeys.canonical:'');
   if(team && !row._team) row._team=team;
   pushMapArray(idx.byRep,key,row); pushMapArray(idx.byTeam,team,row); pushMapArray(idx.byCoach,coach,row);
-  if(team) pushMapArray(idx.byTeamKey,normalizeIdentityName(team),row);
-  if(coach) pushMapArray(idx.byCoachKey,normalizeIdentityName(coach),row);
+  if(team) pushMapArray(idx.byTeamKey,teamKeys.identity,row);
+  if(coach) pushMapArray(idx.byCoachKey,teamKeys.identity,row);
   const sourceName=String(row.Source||row.source||row._source||source||'').trim(), categoryName=String(row.Category||row.category||row._category||row.Type||row.type||'').trim();
   if(sourceName) pushMapArray(idx.bySourceName,normalizeResearchText(sourceName),row);
   if(categoryName) pushMapArray(idx.byCategory,normalizeResearchText(categoryName),row);
   if(day) pushMapArray(idx.byDate,day,row); if(day) pushMapArray(idx.byDateBucket,day,row); if(week){ pushMapArray(idx.byDateBucket,week,row); pushMapArray(idx.byWeek,week,row); } if(month){ pushMapArray(idx.byDateBucket,month,row); pushMapArray(idx.byMonth,month,row); }
   idx.byRowId.set(rowId,row);
   if(Number.isFinite(ms)){ idx.dateValues[rowId]=ms; idx.dateSortedRows.push(row); }
-  idx.rowMeta.set(row,{rowId,source,repKey:key,entityId:canonical.entityId,entityNumber:canonical.entityNumber,teamId:canonical.teamId,teamNumber:canonical.teamNumber,coachKey:nameKey(coach)||normalizeResearchText(coach),teamKey:normalizeResearchText(team),dateMs:ms});
+  idx.rowMeta.set(row,{rowId,source,repKey:key,repIdentity:rep.normalizedName,entityId:canonical.entityId,entityNumber:canonical.entityNumber,teamId:canonical.teamId,teamNumber:canonical.teamNumber,coachKey:teamKeys.coach,teamKey:teamKeys.team,dateMs:ms});
   if(key && Number.isFinite(ms)) pushMapArray(idx.byRepSortedDate,key,row);
   if(team && Number.isFinite(ms)) pushMapArray(idx.byTeamSortedDate,team,row);
-  if(key && row._rep){ const rep={kind:'rep',key,name:cleanName(row._rep),team}; idx.reps.set(key,mergeRepDisplay(idx.reps.get(key),rep)); }
+  if(key && row._rep){ const existing=idx.reps.get(key);if(!existing?.team||!existing.name){const entry={kind:'rep',key,name:cleanName(row._rep),team};idx.reps.set(key,mergeRepDisplay(existing,entry));} }
   idx.perf.rowsIndexed++;
 }
 function researchEntityTableSignature(){
@@ -1066,11 +1093,11 @@ function ensureResearchCanonicalEntityTable(){
   });
   return table;
 }
-function researchCanonicalEntityForRow(row,source,knownTeam='',preparedTable=null){
-  const table=preparedTable||ensureResearchCanonicalEntityTable(), rawTeam=knownTeam||rowTeam(row)||'', teamKey=coachNameKey(rawTeam)||normalizeIdentityName(rawTeam)||'(blank team)';
+function researchCanonicalEntityForRow(row,source,knownTeam='',preparedTable=null,knownRep=null,knownTeamKey=''){
+  const table=preparedTable||ensureResearchCanonicalEntityTable(), rawTeam=knownTeam||rowTeam(row)||'', teamKey=knownTeamKey||coachNameKey(rawTeam)||normalizeIdentityName(rawTeam)||'(blank team)';
   let teamId=table.teamIdByKey.get(teamKey);
   if(!teamId){ teamId=researchStableEntityId('team',teamKey); table.teamIdByKey.set(teamKey,teamId); table.teamsById.set(teamId,{teamId,teamNumber:table.nextTeamId++,key:teamKey,name:canonicalCoachName(rawTeam)||rawTeam||'(blank team)',aliases:new Set(rawTeam?[rawTeam]:[])}); }
-  const team=table.teamsById.get(teamId), rep=getRepIdentity(row,source), repKey=rep.normalizedName||row?._repKey||'';
+  const team=table.teamsById.get(teamId), rep=knownRep||getRepIdentity(row,source), repKey=rep.normalizedName||row?._repKey||'';
   if(!repKey) return {entityId:'',entityNumber:0,teamId,teamNumber:team.teamNumber};
   let entity=table.byRepKey.get(repKey);
   if(!entity){
@@ -1083,6 +1110,7 @@ function researchCanonicalEntityForRow(row,source,knownTeam='',preparedTable=nul
   return {entityId:entity.entityId,entityNumber:entity.entityNumber,teamId:entity.teamId||teamId,teamNumber:entity.teamNumber||team.teamNumber};
 }
 function finalizeResearchSourceIndex(idx,source){
+  delete idx.buildReaders;
   const count=idx?.rows?.length||0, entityNumbers=new Uint32Array(count), teamNumbers=new Uint32Array(count), dateValues=new Float64Array(count), allRowsBitset=new Uint32Array(Math.ceil(count/32));
   dateValues.fill(NaN);
   for(let i=0;i<count;i++){ const meta=idx.rowMeta.get(idx.rows[i])||{}; entityNumbers[i]=meta.entityNumber||0; teamNumbers[i]=meta.teamNumber||0; if(Number.isFinite(meta.dateMs)) dateValues[i]=meta.dateMs; allRowsBitset[i>>>5]|=1<<(i&31); }
@@ -1269,7 +1297,8 @@ function renderEditModel(){
   els.modelTiebreakerInput.value=m.tiebreaker||'overallScore';
   if(els.sourceSettingsPanel) els.sourceSettingsPanel.innerHTML = modelSourceSettingsHtml(m);
   if(els.columnCheckResults) els.columnCheckResults.innerHTML = '';
-  els.criteriaList.innerHTML = (m.criteria||[]).map((c,i)=>criterionHtml(c,i)).join('');
+  const selected=window.AllStarModelWorkspace?.editorId?.(m);
+  els.criteriaList.innerHTML=(m.criteria||[]).map((c,i)=>!selected||selected===c.id?criterionHtml(c,i):'').join('');
   bindModelSourceSettings();
   bindCriteriaEditors();
   bindDatedStatsCriteria();
@@ -1549,14 +1578,18 @@ function sourcesUsedByModel(model){
 function requiredColumnsForModel(model){
   ensureSourceSettings(model);
   const req=new Map();
-  const used=new Set(sourcesUsedByModel(model));
+  const used=new Set(requiredRunSourcesForModel(model));
   (model.criteria||[]).forEach(c=>{
     if(c.calcType==='single' || c.calcType==='displayColumn'){
       if(c.calcType==='displayColumn'){
         addRequired(req,c.source,`${c.name} match column`,c.lookupMatchColumn);
         if(c.displayCalculation!=='count') addRequired(req,c.source,`${c.name} return column`,c.lookupReturnColumn||c.column);
         if(['latest','earliest'].includes(c.lookupSelection)) addRequired(req,c.source,`${c.name} record date column`,c.lookupDateColumn);
-      }else addRequired(req,c.source,`${c.name} column`,c.column);
+      }else{
+        const metric=typeof findMetricByRef==='function'&&findMetricByRef(c.column);
+        if(metric){if(!req.has(metric.source||c.source))req.set(metric.source||c.source,[]);}
+        else addRequired(req,c.source,`${c.name} column`,c.column);
+      }
       if(c.calcType==='single' && ['dateWithin','dateWithinPercent','valueWithin','valueWithinPercent'].includes(c.aggregate)) addRequired(req,c.source,`${c.name} compare column`,c.withinCompareColumn);
     }
     if(c.calcType==='multi'){

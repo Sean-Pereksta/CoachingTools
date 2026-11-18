@@ -181,7 +181,7 @@ function importedSourceRowCount(source){
     if(!state.data.retail.monthlyBundle&&!state.data.referral.monthlyBundle)return 0;
     return null; // derived monthly population is compiled only by a report/user action
   }
-  return (getRowsRaw(source)||[]).length;
+  return (getRowsUnscoped(source)||[]).length;
 }
 function invalidateSourceHealthCaches(){weeklyIdentityContexts.clear();coreSourceHealthCache.clear();if(typeof datedStatsDirectCategories!=='undefined')datedStatsDirectCategories.clear();}
 function sourceHealthRevision(){const v=state.versions||{};return [v.data||0,v.roster||0,v.aliases||0,v.teams||0,v.mappings||0].join('|');}
@@ -209,11 +209,11 @@ function renderCoreSourceStatus(){
   // scripts. The normal startup render will fill these cards once rows are ready.
   if(typeof isDatedStatsSource!=='function')return;
   document.querySelectorAll('[data-source-status]').forEach(box=>{
-    const source=box.dataset.sourceStatus,area=source==='retail_sv2'?'retail':source==='referral_sv2'?'referral':'',data=area?state.data[area]:state.data[source],rows=getRowsRaw(source)||[],meta=state.sourceMeta[source]||{};
+    const source=box.dataset.sourceStatus,area=source==='retail_sv2'?'retail':source==='referral_sv2'?'referral':'',data=area?state.data[area]:state.data[source],rows=getRowsUnscoped(source)||[],meta=state.sourceMeta[source]||{};
     const summary=data?.monthlySummary;
     const cached=coreSourceHealthCache.get(source),health=cached?.rows===rows&&cached.revision===sourceHealthRevision()?cached.result:null;
     const reps=summary?.repCount??health?.representativeCount,coaches=summary?.teamCount??health?.teamCount,managers=summary?.managerCount;
-    box.innerHTML=rows.length?`<strong class="good">Loaded</strong><div>${rows.length.toLocaleString()} rows${Number.isFinite(reps)?` · ${reps} representatives`:''}${Number.isFinite(coaches)?` · ${coaches} coaches`:''}${area&&Number.isFinite(managers)?` · ${managers} manager groups`:''}</div>${area?`<div class="hint">Opportunity file: ${esc(data.monthlyBundle?(data.monthlyBundle.opportunity?.name||'Not supplied (optional for Referral)'):(sourceFileName(source)||'Imported source'))}<br>Wiper file(s): ${(summary?.files||[]).map(f=>esc(f.name)).join(', ')||esc(sourceFileName(area+'_wiper')||'None')}</div>`:''}<div class="hint">Last updated: ${esc(meta.lastImportedAt||summary?.importedAt||'Unavailable')}</div><details data-source-health-details><summary>Review representatives and coaches</summary><div data-source-health-result class="hint">Open to calculate identity details.</div></details>`:'<div class="hint">No data loaded</div>';
+    box.innerHTML=rows.length?`<strong class="good">Loaded</strong><div>${rows.length.toLocaleString()} rows${Number.isFinite(reps)?` · ${reps} representatives`:''}${Number.isFinite(coaches)?` · ${coaches} coaches`:''}${area&&Number.isFinite(managers)?` · ${managers} manager groups`:''}</div>${area?`<div class="hint">Opportunity file: ${esc(data.monthlyBundle?(data.monthlyBundle.opportunity?.name||'Not supplied (optional for Referral)'):(sourceFileName(source)||'Imported source'))}<br>Wiper file(s): ${(summary?.files||[]).map(f=>esc(f.name)).join(', ')||esc(sourceFileName(area+'_wiper')||'None')}</div>`:''}<div class="hint">Last updated: ${esc(meta.lastImportedAt||summary?.importedAt||'Unavailable')}</div><details data-source-health-details><summary>Inspect source · representatives and coaches</summary><div data-source-health-result class="hint">Open to calculate identity details.</div></details>`:'<div class="hint">No data loaded</div>';
     const details=box.querySelector('[data-source-health-details]');details?.addEventListener('toggle',()=>{if(details.open)reviewCoreSourceHealth(source,details.querySelector('[data-source-health-result]')).catch(error=>{details.querySelector('[data-source-health-result]').textContent=error.message;});});
   });
 }

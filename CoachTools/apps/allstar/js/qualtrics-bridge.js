@@ -90,11 +90,50 @@ async function buildQualtricsCorePayload(isCurrent=()=>true){
     checklist:{fileName:state.data.checklist.fileName||'All-Star Checklist',sheetName:'Checklist',headers:qualtricsBridgeHeaders('checklist',checklistRows,['All-Star Representative Key','Associate Name','Job Coach','Incident Date']),rows:checklistRows}
   }};
 }
+function qualtricsScope(){
+  return typeof allStarGlobalScopeKey==='function'?allStarGlobalScopeKey():'all';
+}
+function qualtricsSourceRevision(){
+  const versions=state.versions||{};
+  return [versions.data,versions.retail,versions.referral,versions.roster,versions.aliases,versions.teams,versions.mappings].join(':');
+}
+function qualtricsTransferCurrent(kind,operationId,scope,revision){
+  return operationId===state[kind==='weekly'?'qualtricsWeeklyBuildToken':'qualtricsCoreBuildToken']&&scope===qualtricsScope()&&revision===qualtricsSourceRevision()&&els.qualtricsEmailModal.classList.contains('open');
+}
+async function streamQualtricsFiles(kind,operationId,files,extra){
+  const scope=qualtricsScope(),revision=qualtricsSourceRevision();
+  const current=()=>qualtricsTransferCurrent(kind,operationId,scope,revision);
+  const post=(type,values,ports=[])=>els.qualtricsEmailFrame.contentWindow.postMessage({type,kind,operationId,scope,revision,...values},'*',ports);
+  const headers=Object.fromEntries(files.map(f=>[f.slot,{fileName:f.fileName,sheetName:f.sheetName,headers:f.headers}]));
+  const channel=new MessageChannel();let expected=0,pending,timeout;
+  channel.port1.onmessage=({data})=>{if(data.operationId===operationId&&data.sequence===expected&&pending){const done=pending;pending=null;clearTimeout(timeout);done();}};
+  const check=()=>{if(!current())throw Error('Source or scope changed. Reopen or refresh the connection.');};
+  async function send(slot,rows){
+    check();const sequence=++expected;
+    await new Promise((resolve,reject)=>{pending=resolve;timeout=setTimeout(()=>reject(Error('Source transfer timed out. Refresh the connection.')),15000);post('allstar-source-chunk',{slot,sequence,rows});});
+  }
+  try{
+    check();post('allstar-source-start',{payload:{...extra,operationId,scope,revision,files:headers}},[channel.port2]);
+    for(const f of files){
+      let buffer=[],bytes=0,started=performance.now();
+      for(const input of f.rows){
+        const row=qualtricsBridgeRow(input,f.slot,f.label||'');
+        if(Object.keys(row).length){buffer.push(row);for(const [h,value] of Object.entries(row))bytes+=(h.length+String(value).length)*2+16;}
+        if(buffer.length>=350||bytes>=192*1024||performance.now()-started>=12){await send(f.slot,buffer);buffer=[];bytes=0;started=performance.now();}
+      }
+      if(buffer.length)await send(f.slot,buffer);
+    }
+    check();post('allstar-source-finish',{sequence:expected});
+  }catch(error){post('allstar-source-cancel',{});throw error;}
+  finally{clearTimeout(timeout);channel.port1.close();}
+}
+
 async function sendQualtricsHireDateSource(request={}){
   if(!state.qualtricsReady||!els.qualtricsEmailFrame?.contentWindow) return;
+  const scope=qualtricsScope(),revision=qualtricsSourceRevision();
   const sourceKey=String(request.sourceKey||''), source=allSourceKeys().includes(sourceKey)?sourceKey:'';
   const requestedRep=String(request.repColumn||''), requestedHire=String(request.hireDateColumn||'');
-  if(!source||!requestedRep||!requestedHire){ els.qualtricsEmailFrame.contentWindow.postMessage({type:'allstar-hire-date-source',payload:{requestId:request.requestId||'',sourceKey,repColumn:requestedRep,hireDateColumn:requestedHire,rows:[]}},'*'); return; }
+  if(!source||!requestedRep||!requestedHire){ els.qualtricsEmailFrame.contentWindow.postMessage({type:'allstar-hire-date-source',payload:{scope,revision,requestId:request.requestId||'',sourceKey,repColumn:requestedRep,hireDateColumn:requestedHire,rows:[]}},'*'); return; }
   const repColumn=resolveColumn(source,requestedRep)||requestedRep, hireDateColumn=resolveColumn(source,requestedHire)||requestedHire, rawRows=getRowsRaw(source)||[], rows=[], seen=new Set();
   if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=`Connecting representative names and hire dates from ${labelSource(source)} without running a report…`;
   for(let i=0;i<rawRows.length;i++){
@@ -105,14 +144,9 @@ async function sendQualtricsHireDateSource(request={}){
     }
     if(i&&i%2000===0) await new Promise(resolve=>setTimeout(resolve,0));
   }
-  els.qualtricsEmailFrame.contentWindow.postMessage({type:'allstar-hire-date-source',payload:{requestId:request.requestId||'',sourceKey,sourceLabel:labelSource(source),repColumn:requestedRep,hireDateColumn:requestedHire,rows}},'*');
+  if(scope!==qualtricsScope()||revision!==qualtricsSourceRevision())return;
+  els.qualtricsEmailFrame.contentWindow.postMessage({type:'allstar-hire-date-source',payload:{scope,revision,requestId:request.requestId||'',sourceKey,sourceLabel:labelSource(source),repColumn:requestedRep,hireDateColumn:requestedHire,rows}},'*');
   if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=`Connected ${rows.length.toLocaleString()} representative/hire-date pair${rows.length===1?'':'s'} from ${labelSource(source)}. No preview or report ran.`;
-}
-async function buildQualtricsWeeklyPayload(){
-  const stats=qualtricsStatRows(els.qualtricsStatsSource?.value||'auto'), rows=await qualtricsBridgeRowsDeferred(stats.rows,'stats',stats.label);
-  let headers=[];
-  if(stats.key==='combined_sv2') headers=[...(getHeaders('retail_sv2')||[]),...(getHeaders('referral_sv2')||[])]; else headers=getHeaders(stats.key)||[];
-  return {sentAt:new Date().toISOString(),statsSource:stats.label,files:{stats:{fileName:`All-Star ${stats.label}`,sheetName:'Weekly Stats',headers:[...new Set([...headers,...Object.keys(rows[0]||{}),'All-Star Representative Key','Agent Name','Team','Coach','Date Column','All-Star Source'])],rows}}};
 }
 async function sendQualtricsCoreFiles(force=false){
   if(!state.qualtricsReady||!els.qualtricsEmailFrame?.contentWindow){ if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent='Opening the Qualtrics email workspace…'; return; }
@@ -124,21 +158,28 @@ async function sendQualtricsCoreFiles(force=false){
   const token=id(); state.qualtricsCoreBuildToken=token; state.qualtricsCorePendingSignature=signature;
   if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent='Preparing the three automatic source connections in responsive batches. No preview or report is running…';
   try{
-    const payload=await buildQualtricsCorePayload(()=>state.qualtricsCoreBuildToken===token); if(state.qualtricsCoreBuildToken!==token) return; const f=payload.files;
-    if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=`Connecting ${f.qa.rows.length.toLocaleString()} KPI, ${f.coaching.rows.length.toLocaleString()} coaching, and ${f.checklist.rows.length.toLocaleString()} checklist rows without running a report…`;
-    els.qualtricsEmailFrame.contentWindow.postMessage({type:'allstar-core-files',payload},'*');
+    const sources=[['qa','qa','90-day KPI',['Agent Name','Team','Coach','Interaction Start Time','Score %']],['coaching','documented_coaching','Documented Coaching',['Associate Name','Job Coach','Date']],['checklist','checklist','Checklist',['Associate Name','Job Coach','Incident Date']]];
+    const files=sources.map(([slot,source,sheetName,extra])=>{
+      const rows=getRowsRaw(source)||[];
+      return {slot,fileName:state.data[source].fileName||'All-Star '+sheetName,sheetName,headers:qualtricsBridgeHeaders(source,rows,['All-Star Representative Key',...extra]),rows};
+    });
+    const count=files[1].rows.length;
+    await streamQualtricsFiles('core',token,files,{organizations:qualtricsScopedOrganizations(),lookupSources:qualtricsHireDateSourceCatalog(),diagnostics:{documentedCoaching:{rawRows:count,normalizedRows:count}}});
   }catch(err){ if(state.qualtricsCoreBuildToken!==token) return; state.qualtricsCorePendingSignature=''; if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=`Could not prepare the connected sources: ${err?.message||err}`; }
 }
 async function sendQualtricsWeeklyStats(){
   if(!state.qualtricsReady||!els.qualtricsEmailFrame?.contentWindow){ if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent='Wait for the Qualtrics email workspace to finish opening, then load Weekly Stats.'; return; }
   if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent='Preparing the selected Weekly Stats in responsive batches because you pressed Load…';
-  const payload=await buildQualtricsWeeklyPayload(), stats=payload.files.stats; state.savedQualtricsStatsSource=els.qualtricsStatsSource?.value||'auto'; saveRunSettings();
-  if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=`Loading ${stats.rows.length.toLocaleString()} ${payload.statsSource} rows because you pressed Load Selected Weekly Stats…`;
-  els.qualtricsEmailFrame.contentWindow.postMessage({type:'allstar-weekly-stats',payload},'*');
+  const token=id();state.qualtricsWeeklyBuildToken=token;
+  const selection=els.qualtricsStatsSource?.value||'auto',stats=qualtricsStatRows(selection);
+  const headers=stats.key==='combined_sv2'?[...getHeaders('retail_sv2'),...getHeaders('referral_sv2')]:getHeaders(stats.key);
+  state.savedQualtricsStatsSource=selection;saveRunSettings();
+  try{await streamQualtricsFiles('weekly',token,[{slot:'stats',rows:stats.rows,label:stats.label,fileName:'All-Star '+stats.label,sheetName:'Weekly Stats',headers:[...new Set([...headers,'All-Star Representative Key','Agent Name','Team','Coach','Date Column','All-Star Source'])]}],{statsSource:stats.label});}
+  catch(error){if(state.qualtricsWeeklyBuildToken===token&&els.qualtricsBridgeStatus)els.qualtricsBridgeStatus.textContent=error.message;}
 }
 function clearQualtricsEmailData(){
   if(!confirm('Clear all source rows, manually loaded report files, previews, and generated report data from the Qualtrics email workspace? Saved rules and settings will be kept.')) return;
-  state.qualtricsAutoConnectSuppressed=true;
+  state.qualtricsWeeklyBuildToken=id();state.qualtricsAutoConnectSuppressed=true;
   state.qualtricsCoreConnectedSignature='';
   state.qualtricsCorePendingSignature='';
   state.qualtricsCoreBuildToken=id();
@@ -255,6 +296,14 @@ function loadQualtricsGeneratorFrame(){
 }
 function openQualtricsEmailWorkspace(){
   populateQualtricsStatsSources(); openModal('qualtricsEmailModal');
+  if(!state.qualtricsCloseObserver&&els.qualtricsEmailModal){
+    state.qualtricsCloseObserver=new MutationObserver(()=>{
+      if(els.qualtricsEmailModal.classList.contains('open'))return;
+      state.qualtricsWeeklyBuildToken=id();state.qualtricsCoreBuildToken=id();state.qualtricsCorePendingSignature='';
+      els.qualtricsEmailFrame?.contentWindow?.postMessage({type:'allstar-source-closed'},'*');
+    });
+    state.qualtricsCloseObserver.observe(els.qualtricsEmailModal,{attributeFilter:['class']});
+  }
   if(!state.qualtricsLoaded){
     state.qualtricsLoaded=true;
     loadQualtricsGeneratorFrame().catch(err=>{
@@ -268,7 +317,14 @@ function openQualtricsEmailWorkspace(){
 
 function handleQualtricsMessage(event){
   if(event.source!==els.qualtricsEmailFrame?.contentWindow) return; const data=event.data||{};
+  if(data.type==='qualtrics-source-publish-check'){
+    const port=event.ports[0];
+    port?.postMessage({operationId:data.operationId,current:qualtricsTransferCurrent(data.kind,data.operationId,data.scope,data.revision)});port?.close();return;
+  }
   if(data.type==='qualtrics-generator-ready'){ clearTimeout(qualtricsGeneratorReadyTimer); qualtricsGeneratorReadyTimer=null; state.qualtricsReady=true; installQualtricsActionEmailNameFilter(); sendQualtricsCoreFiles(false); return; }
+  if(data.operationId&&data.type.startsWith('qualtrics-key-files')&&data.operationId!==state.qualtricsCoreBuildToken)return;
+  if(data.operationId&&data.type.startsWith('qualtrics-weekly')&&data.operationId!==state.qualtricsWeeklyBuildToken)return;
+  if(data.scope&&data.scope!==qualtricsScope())return;
   if(data.type==='qualtrics-hire-date-source-request'){ sendQualtricsHireDateSource(data); return; }
   if(data.type==='qualtrics-key-files-progress'){ if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=data.message||'Connecting All-Star data…'; return; }
   if(data.type==='qualtrics-key-files-complete'){ const c=data.counts||{}; state.qualtricsCoreConnectedSignature=state.qualtricsCorePendingSignature||qualtricsCoreSourceSignature(); state.qualtricsCorePendingSignature=''; if(els.qualtricsBridgeStatus) els.qualtricsBridgeStatus.textContent=`Connected: ${Number(c.qa||0).toLocaleString()} KPI · ${Number(c.coaching||0).toLocaleString()} coaching · ${Number(c.checklist||0).toLocaleString()} checklist. Weekly Stats remain manual. Nothing was previewed or generated.`; return; }

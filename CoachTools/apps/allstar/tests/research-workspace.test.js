@@ -6,6 +6,13 @@ const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../js/research-workspace.js'),'utf8');
 const pure=vm.createContext({});vm.runInContext(source,pure);
 const api=pure.AllStarResearchWorkspace;
+const snapshot=(columns,values,outputType='bar')=>api.snapshotDisplay({outputType},{columns,data:values.map(row=>({values:row}))});
+assert.equal(snapshot([{unit:'percent'},{unit:'count'}],[[0,3],[null,2]]),'panels');
+assert.equal(snapshot([{unit:'percent'},{}],[[0,3],[1,2]]),'table');
+assert.equal(snapshot([{}],[['comment'],[null]]),'table');
+assert.equal(snapshot([{unit:'count'}],[[0]]),'number');
+assert.equal(snapshot([{unit:'count'}],[[null]]),'table');
+assert.equal(api.snapshotDisplay({outputType:'scatter'},{data:[{values:[1]}],columns:[{unit:'count'}],joinDiagnostics:{calls:1}}),'unverified');
 const history=api.editHistory(3);history.reset({field:'original',rules:[{a:1}]});
 const changed={field:'changed',rules:[{a:2}]};history.push(changed);changed.rules[0].a=99;
 assert.equal(history.undo().field,'original');assert.equal(history.redo().rules[0].a,2);
@@ -34,6 +41,7 @@ const {createHarness,plain}=require('./modernization-compatibility.test.js');
 async function integration(){
  const h=createHarness();
  try{
+  assert.equal(h.run("researchItemForLocalStorage({id:'legacy',renderedResult:{version:1,result:{data:['saved before migration']}}}).renderedResult.result.data[0]"),'saved before migration','Saving another definition preserves unmigrated inline snapshots');
   h.run(`window.AllStarResearchWorkspace.init();
     state.data.retail.headers.sv2=['Representative','Team','Apps','Opps','Category'];
     state.data.retail.sv2=[

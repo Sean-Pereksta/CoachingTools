@@ -167,8 +167,9 @@ function wire(){
   if(els.addResearchColumnBtn) els.addResearchColumnBtn.onclick=()=>{ state.editingResearchColumns.push({label:'Value',mode:'count',field:''}); renderResearchColumnsEditor(); }; if(els.researchGroupMultiAdd) els.researchGroupMultiAdd.onchange=renderResearchGroupAxisItemsEditor; if(els.researchGroupMultiAddBtn) els.researchGroupMultiAddBtn.onclick=()=>{ const v=(els.researchGroupMultiAddInput.value||'').trim(); if(!v) return; state.editingResearchGroupAxisItems=state.editingResearchGroupAxisItems||[]; state.editingResearchGroupAxisItems.push({id:id(),expression:v,label:'',conditionResult:'true'}); els.researchGroupMultiAddInput.value=''; renderResearchGroupAxisItemsEditor(); };
   if(els.previewResearchFoundBtn) els.previewResearchFoundBtn.onclick=()=>{ if(state.editingGuidedResearchActive) syncGuidedResearchToAdvanced(); const validation=state.editingGuidedResearchActive?validateGuidedResearch(false):{ok:true,errors:[]}; if(!validation.ok){ alert(validation.errors.join('\n')); return; } renderResearchFoundPreview(); };
   if(els.saveResearchItemBtn) els.saveResearchItemBtn.onclick=saveResearchItemFromEditor;
-  if(els.coachtoolsFiles) els.coachtoolsFiles.onchange=e=>{ const files=Array.from(e.target.files||[]); if(files.length) stageCoachToolsImportFiles(files); };
-  if(els.coachtoolsImportAllBtn) els.coachtoolsImportAllBtn.onclick=importCoachToolsBatch;
+  if(els.coachtoolsFiles) els.coachtoolsFiles.onchange=e=>{ const files=Array.from(e.target.files||[]); e.target.value=''; if(files.length) stageCoachToolsImportFiles(files); };
+  if(els.coachtoolsImportAllBtn) els.coachtoolsImportAllBtn.onclick=()=>importCoachToolsBatch();
+  wireAllstarBatchReview();
   if(el('monthlyManagersBtn'))el('monthlyManagersBtn').onclick=openMonthlyManagerReport;
   for(const [id,area,readOnly] of [['monthlyRetailBtn','retail',false],['monthlyReferralBtn','referral',false],['monthlyMixedBtn','mixed',false],['monthlyRetailSettingsBtn','retail',true],['monthlyReferralSettingsBtn','referral',true]]) if(el(id)) el(id).onclick=()=>openMonthlyImport(area,readOnly);
   renderMonthlyImportSummary();

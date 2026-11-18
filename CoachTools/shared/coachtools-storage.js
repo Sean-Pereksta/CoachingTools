@@ -517,6 +517,23 @@
     if (chunks.length !== Number(record.chunkCount)) throw new Error(`Dataset ${record.datasetType || record.id} is incomplete (${chunks.length} of ${record.chunkCount} chunks).`);
     return { ...record, data: assembleDataFromChunks(record.dataShape, chunks) };
   }
+  async function streamEditableDataset(record) {
+    if (!record?.chunked) return record;
+    if (!record.dataShape?.workbook || !record.chunkCount) throw new Error('Dataset has incomplete workbook metadata.');
+    const data = record.dataShape;
+    let received = 0;
+    // The editable management copy retains every stored sheet. Consumers apply
+    // their selected view scope when they query the copy. Pin the version so
+    // a replacement cannot mix chunks from two different imports.
+    for await (const chunk of streamRows(record.datasetType, {datasetId:record.id, includeEmpty:true})) {
+      const sheet = data.workbook.data[chunk.sheetName];
+      if (!sheet || chunk.index !== received || sheet.aoa.length !== chunk.rowStart) throw new Error('The saved worksheet is incomplete.');
+      for (const row of chunk.rows) sheet.aoa.push(row);
+      received++;
+    }
+    if (received !== record.chunkCount) throw new Error('Dataset changed before its workbook could be restored.');
+    return {...record, data, dataShape:undefined};
+  }
   async function readableDuplicate(db, records) {
     for (const record of (records || []).slice().sort((a,b) => String(b.importedAt).localeCompare(String(a.importedAt)))) {
       if (record.supersededBy) continue;
@@ -807,16 +824,16 @@
     if (options && options.metadataOnly) return compactMetadata(pointer);
     const cacheKey = `${pointer.datasetId || ''}:${Number(pointer.version) || 0}`;
     const cached = currentData.get(datasetType);
-    if (cached && cached.key === cacheKey) return options && options.includeRecord ? cached.record : cached.record.data || null;
+    if (!options?.editableStream && cached && cached.key === cacheKey) return options && options.includeRecord ? cached.record : cached.record.data || null;
     const diagnostics = root.CoachToolsDiagnostics;
     if (diagnostics) diagnostics.start(`${datasetType} IndexedDB read`);
     const db = await openDatabase();
     try {
       const storedRecord = await idbRequest(db.transaction(DATASET_STORE, 'readonly').objectStore(DATASET_STORE).get(pointer.datasetId));
-      const record = await materializeDatasetRecord(db, storedRecord);
+      const record = options?.editableStream ? await streamEditableDataset(storedRecord) : await materializeDatasetRecord(db, storedRecord);
       const current = currentPointers.get(datasetType);
       if (!current || `${current.datasetId || ''}:${Number(current.version) || 0}` !== cacheKey) return getCurrent(datasetType, options);
-      if (record) cacheCurrentRecord(datasetType, record);
+      if (record && !options?.editableStream) cacheCurrentRecord(datasetType, record);
       return options && options.includeRecord ? record || null : record && record.data || null;
     } catch (error) {
       // Weekly replacement may remove old chunks while a background read is

@@ -474,12 +474,6 @@
       event.preventDefault();
       openApp(app);
     });
-    tile.addEventListener('keydown', event => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        openApp(app);
-      }
-    });
     tile.addEventListener('contextmenu', event => {
       event.preventDefault();
       selectApp(app);

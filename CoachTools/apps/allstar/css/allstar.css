@@ -171,6 +171,11 @@ button.green:hover,button.dark:hover,button.red:hover,button.gray:hover{transfor
 .importSection>.panelTitle{border-color:#e2e8f0;color:#7f1d1d}
 .updateDataPrimary{display:grid;grid-template-columns:auto auto minmax(260px,1fr);gap:8px;align-items:center}
 .fileAction{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:8px 12px;border:1px solid #111827;border-radius:8px;background:#fff;color:#111827;font-size:13px;font-weight:800;cursor:pointer}
+.updateDataPrimary:focus-within .fileAction{outline:3px solid #185ba6;outline-offset:2px}
+#allstarBatchDrop{border:1px dashed #929baa;border-radius:8px;padding:12px;margin-bottom:8px}
+.batchTableFrame{overflow:auto}.batchTable{width:100%;border-collapse:collapse;text-align:left}.batchTable caption{text-align:left;font-weight:700;padding:6px}.batchTable th,.batchTable td{padding:6px;border-bottom:1px solid #cbd5df;overflow-wrap:anywhere}.batchTable [hidden]{display:none}
+.loadingOverlay.backgroundImport.open{inset:auto 1rem 1rem auto;width:min(22rem,calc(100vw - 2rem));height:auto;background:transparent;backdrop-filter:none}.backgroundImport .loadingCard{width:100%;padding:12px}.backgroundImport .loadingDiagnostics:empty{display:none}
+.batchReviewBody{display:grid;gap:8px;min-width:0}.batchSample{overflow:auto;max-height:15rem}.batchSample td{padding:3px 6px;white-space:nowrap}
 .fileAction:hover{background:#f1f5f9}
 .visuallyHiddenFile{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
 .primaryDataAction{min-height:38px;padding-inline:16px}

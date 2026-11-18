@@ -61,7 +61,7 @@
     <div id="loadingText" class="loadingText">Preparing...</div>
     <div class="loadingBarTrack"><div id="loadingBarFill" class="loadingBarFill"></div></div>
     <div id="loadingPct" class="loadingPct">0%</div>
-    <button id="allstarCancelImportBtn" class="dark hidden" type="button">Cancel import</button>
+    <button id="allstarCancelImportBtn" class="dark" type="button" hidden>Cancel import</button>
     <div id="loadingDiagnostics" class="loadingDiagnostics" aria-live="polite"></div>
     <div id="loadingActions" class="loadingActions hidden"><button id="loadingRetryBtn" type="button">Retry</button><button id="loadingTroubleshootBtn" class="dark" type="button">Open Troubleshooting</button><button id="loadingContinueBtn" class="dark" type="button">Continue with available data</button></div>
   </div>
@@ -115,7 +115,7 @@
 
 <div id="importModal" class="modalBackdrop">
   <div class="modal">
-    <div class="modalHead"><div class="modalTitle">Import Data</div><button class="dark" data-close="importModal">Close</button></div>
+    <div class="modalHead"><div class="modalTitle">Update Data</div><button id="dataLayoutToggle" type="button" class="smallBtn gray" aria-pressed="false">Batch review layout</button><button class="dark" data-close="importModal">Close</button></div>
     <div class="modalBody">
       <section class="panel importSection coreSourcesSection"><div class="panelTitle">Data Sources · Individual Uploads</div><div class="grid2 importUploadGrid">
           <div class="panel sourceStatusCard"><div class="panelTitle">Retail Monthly Stats</div><span class="hint">Replace / Add File</span><input id="retailFile" type="file" accept=".xlsx,.xls,.csv"><div id="retailFileName" class="fileName"></div><div data-source-status="retail_sv2"></div><button type="button" class="smallBtn" data-monthly-area="retail">Choose Opportunity + Wiper files</button></div>
@@ -136,12 +136,13 @@
 
       <section class="panel importSection updateDataSection">
         <div class="panelTitle">Update Data</div>
-        <div class="updateDataPrimary">
-          <label class="fileAction" for="coachtoolsFiles">Choose CoachingTools Files</label>
+        <div id="allstarBatchDrop" class="updateDataPrimary">
+          <label class="fileAction" for="coachtoolsFiles">Add files</label>
           <input id="coachtoolsFiles" class="visuallyHiddenFile" type="file" accept=".xlsx,.xls,.csv" multiple data-coachtools-auto-import="false">
-          <button id="coachtoolsImportAllBtn" class="green primaryDataAction" type="button" disabled>Update CoachingTools Data</button>
-          <span id="coachtoolsImportSummary" class="checkResultMeta">Choose weekly, monthly, QA, MyOne, Checklist, and Comp Coaching files together.</span>
+          <button id="coachtoolsImportAllBtn" class="green primaryDataAction" type="button" disabled>Import reviewed files</button>
+          <span id="coachtoolsImportSummary" role="status" class="checkResultMeta">Drop weekly, monthly, QA, MyOne, Checklist, or Comp Coaching files here.</span>
         </div>
+        <div class="row"><span id="allstarIntakeScope"></span><button type="button" id="allstarImportFromShared" class="dark smallBtn">Import from CoachTools</button><button type="button" id="allstarCancelBatch" class="gray smallBtn" hidden>Cancel batch</button></div>
         <div id="coachtoolsImportReview" class="checkResultList"></div>
         <details class="importDetails specializedUploads"><summary>Specialized Sources</summary><div class="grid2 importUploadGrid">
           <div class="panel"><div class="panelTitle">Direct QA Team Score Override</div><input id="qaDirectFile" type="file" accept=".xlsx,.xls,.csv"><div id="qaDirectFileName" class="fileName"></div><div class="row"><button id="clearQADirectFileBtn" class="gray smallBtn" type="button">Clear Direct Override</button></div><div class="checkResultMeta">Optional. Direct QA team-score mode uses this upload first, then falls back to QA Stats. It never uses the categorized dated database.</div></div>
@@ -171,6 +172,7 @@
       <section class="panel importSection" id="coachNameManagement"></section>
       <section class="panel importSection dataToolsSection">
         <div class="panelTitle">Data Tools</div>
+        <label><input type="checkbox" id="allstarWorkerStorage"> Use background saving for large imports</label>
         <div class="dataToolGrid">
           <button id="openTroubleshootBtn" class="dark" type="button">Troubleshoot Headers</button>
           <button id="fixTeamsBtn" class="dark" type="button">Fix Teams</button>
@@ -545,34 +547,36 @@
 
 <div id="runModal" class="modalBackdrop">
   <div class="modal">
-    <div class="modalHead"><div class="modalTitle">Run All-Star Report</div><button class="dark" data-close="runModal">Close</button></div>
+    <div class="modalHead"><div class="modalTitle">Run All-Star Report</div><label><input type="checkbox" id="reportFocusedMode"> Focused report view</label><button class="dark" data-close="runModal">Close</button></div>
     <div class="modalBody">
       <div class="runModeTabs" role="tablist" aria-label="Report run mode">
         <button id="runSingleTab" class="runModeTab active" type="button" role="tab" aria-selected="true">Single</button>
         <button id="runMultiTab" class="runModeTab" type="button" role="tab" aria-selected="false">Multi</button>
       </div>
       <div id="allstarRunPanel">
-      <div class="grid4">
-        <div class="field"><label>Model</label><select id="runModelSelect"></select></div>
-        <div class="field"><label>Start Date</label><input id="runStartDate" type="date"></div>
-        <div class="field"><label>End Date</label><input id="runEndDate" type="date"></div>
-        <div class="field"><label>View</label><select id="runViewSelect"><option value="both">Both</option><option value="team">Teams</option><option value="rep">Representatives</option></select></div>
+      <div class="row" style="align-items:center"><button id="executeRunBtn" class="green" type="button">Run report</button><button id="recentRunsBtn" type="button">Recent runs</button><span id="reportStage" role="status" aria-live="polite"></span><button id="reportCancel" type="button" hidden>Cancel run</button></div>
+      <div class="grid3">
+        <div class="field"><label for="runModelSelect">Model</label><select id="runModelSelect"></select></div>
+        <div class="field"><label for="runStartDate">Period start</label><input id="runStartDate" type="date"></div>
+        <div class="field"><label for="runEndDate">Period end</label><input id="runEndDate" type="date"></div>
+        </div><details id="reportOptions" class="workflowPanel" open><summary><strong>Report options</strong></summary><div class="grid4">
+        <div class="field"><label for="runViewSelect">View</label><select id="runViewSelect"><option value="both">Both</option><option value="team">Teams</option><option value="rep">Representatives</option></select></div>
         <div id="qaDateField" class="field hidden"><label>QA Date Source</label><select id="runQADateSelect"><option value="interaction">Interaction Start Time</option><option value="assigned">Assigned Date</option></select></div>
         <div id="qaTeamScoreModeField" class="field hidden"><label>QA Team Scores</label><select id="runQATeamScoreMode"><option value="assignedReps">Average assigned representatives</option><option value="sheetTeam">Direct raw QA upload: Assigned Date + QA Team + Score</option></select></div>
         <div class="field"><label><input id="hideNoScoreReps" type="checkbox"> Hide representatives with no score</label><select id="hideNoScoreThreshold" class="hidden"><option value="all">All categories</option><option value="1">1 category</option><option value="2">2 categories</option><option value="3">3 categories</option><option value="4">4 categories</option><option value="5">5 categories</option></select></div>
         <div class="field"><label><input id="rankRepresentativesWithinTeam" type="checkbox"> Rank representatives within each team</label><span class="hint">Team pages recalculate criterion ranks and scores inside each team, allowing multiple #1 representatives. Total Representatives always keeps the overall ranking across every selected team.</span></div>
-      </div>
+      </div></details>
       <details class="workflowPanel">
-        <summary><strong>Presets &amp; report history</strong></summary>
+        <summary><strong>Saved presets</strong></summary>
         <div class="workflowPresetGrid">
           <div class="field"><label>Run preset</label><select id="runPresetSelect"><option value="">Choose preset…</option></select></div>
           <div class="field"><label>Preset date behavior</label><select id="runPresetDateMode"><option value="fixed">Fixed dates</option><option value="currentWeek">Current week</option><option value="previousWeek">Previous week</option><option value="lastDays">Last X days</option><option value="currentMonth">Current month</option><option value="previousMonth">Previous month</option><option value="all">All available dates</option></select></div>
           <div id="runPresetLastDaysWrap" class="field hidden"><label>Days</label><input id="runPresetLastDays" type="number" min="1" max="365" value="30"></div>
           <div class="field"><label>Optional report note</label><input id="runReportNote" placeholder="Model change, coaching launch, roster update…"></div>
         </div>
-        <div class="runWorkflowActions"><button id="applyRunPresetBtn" class="dark" type="button">Apply Preset</button><button id="saveRunPresetBtn" class="green" type="button">Save Current as Preset</button><button id="deleteRunPresetBtn" class="gray" type="button">Delete Preset</button><button id="recentRunsBtn" class="dark" type="button">Recent Runs</button></div>
+        <div class="runWorkflowActions"><button id="applyRunPresetBtn" class="dark" type="button">Apply Preset</button><button id="saveRunPresetBtn" class="green" type="button">Save Current as Preset</button><button id="deleteRunPresetBtn" class="gray" type="button">Delete Preset</button></div>
       </details>
-      <div id="runReadiness" class="runReadiness"><div id="runReadinessTitle" class="runReadinessTitle">Selected model preparation will start after this window opens.</div><div id="runReadinessDetail">Required source count: 0 · Ready sources: 0 · Preparing sources: 0</div><div id="runReadinessMeta" class="runReadinessMeta"><span class="badge">Global rebuild avoided</span></div><div class="runWorkflowActions"><button id="runCheckModelBtn" class="smallBtn dark" type="button">Check Model</button><button id="runViewPreflightBtn" class="smallBtn" type="button">View Details</button></div><div id="runPreflightDetails" class="runPreflightDetails hidden"></div></div>
+      <div id="runReadiness" class="runReadiness"><div id="runReadinessTitle" class="runReadinessTitle">Selected model preparation will start after this window opens.</div><div id="runReadinessDetail">Required source count: 0 · Ready sources: 0 · Preparing sources: 0</div><div id="reportInputs"></div><div id="runReadinessMeta" class="runReadinessMeta"><span class="badge">Global rebuild avoided</span></div><div class="runWorkflowActions"><button id="runCheckModelBtn" class="smallBtn dark" type="button">Check Model</button><button id="runViewPreflightBtn" class="smallBtn" type="button">View Details</button></div><div id="runPreflightDetails" class="runPreflightDetails hidden"></div></div>
       <div id="singleRunSelectionPanel">
       <div class="runTeamPanel">
         <div class="runPanelTitle"><span>Teams to Include</span><span id="teamCountBadge" class="teamCount">0 selected</span></div>
@@ -596,12 +600,12 @@
         <div class="runPanelTitle"><span>Organizations to Run Separately</span><span id="multiRunOrgBadge" class="teamCount">0 selected</span></div>
         <div class="teamPickerBar"><input id="multiRunOrgSearch" placeholder="Search organizations..."><button id="multiRunSelectVisibleBtn" class="green" type="button">Select Visible</button><button id="multiRunClearBtn" class="gray" type="button">Clear</button></div>
         <div id="multiRunOrgGrid" class="multiRunGrid"></div>
-        <div id="multiRunSummary" class="multiRunSummary">Choose two or more organizations. Every organization will use the same model, dates, view, QA settings, no-score setting, and saved PDF options.</div>
+        <div id="multiReportStatus" aria-live="polite"></div><div id="multiRunSummary" class="multiRunSummary">Choose two or more organizations. Every organization will use the same model, dates, view, QA settings, no-score setting, and saved PDF options.</div>
         <div class="hint">Multi runs are sequential: generate → export PDF → generate → export PDF. Each PDF filename starts with its organization name.</div>
       </div>
       </div>
     </div>
-    <div class="modalFoot"><button id="executeRunBtn" class="green">Run Single Report</button></div>
+    <div class="modalFoot"><button type="button" data-close="runModal">Close setup</button></div>
   </div>
 </div>
 
@@ -635,7 +639,9 @@
     <div class="modalHead"><div class="modalTitle">Research</div><button class="dark" data-close="researchModal">Close</button></div>
     <div class="modalBody">
       <div class="researchToolbar">
-        <button id="addResearchItemBtn" class="green" type="button">Add New Item</button>
+        <button id="researchNewQuestionBtn" class="green" type="button">New Research</button>
+        <button id="researchLibraryToggle" type="button" aria-pressed="false">Saved library</button>
+        <button id="addResearchItemBtn" type="button">Add New Item</button>
         <button id="exportResearchBtn" class="dark" type="button">Export Research TXT</button>
         <button id="renderAllResearchBtn" class="green" type="button">Render All</button>
         <button id="researchDiagnosticsBtn" class="smallBtn" type="button">Diagnostics</button>
@@ -653,6 +659,14 @@
         <div class="rwPopupHead"><h3 id="researchDiagnosticsTitle">Performance diagnostics</h3><button type="button" data-rw-close-diagnostics>Close</button></div>
         <div id="researchDiagnosticsBody" class="hint">Run or refresh a Research item to see source preparation, cohort filtering, joining, grouping, calculation, sorting, rendering, and persistence timings.</div>
       </dialog>
+      <section id="researchLibrary" class="rwLibrary" aria-label="Saved Research" hidden>
+        <aside><label>Find saved Research<input id="researchLibrarySearch" type="search"></label>
+          <div class="row"><button id="researchRunSelected" type="button">Run selected</button><button id="researchRunStale" type="button">Run stale</button></div>
+          <button id="researchCompareSnapshots" type="button">View two snapshots side by side</button>
+          <div id="researchLibraryItems"></div>
+        </aside>
+        <div id="researchLibraryDetail" aria-label="Selected Research"></div>
+      </section>
       <div id="researchCanvas" class="researchCanvas"></div>
     </div>
   </div>
@@ -861,7 +875,7 @@
     <div id="guidedCalculationPreview" class="guidedCalculationPreview"><div class="researchSectionTitle">Calculation Plan</div><div id="guidedCalculationStatus" class="hint">Complete the guided question to verify the calculation.</div><div id="guidedCalculationGrid" class="guidedCalculationGrid"></div></div>
     <div id="researchFoundPreview" class="researchPreviewBox hidden"></div>
     </div>
-    <div class="modalFoot"><button id="previewResearchFoundBtn" class="dark" type="button">Run preview · small sample</button><button id="saveResearchItemBtn" class="green" type="button">Save &amp; Run Research</button></div>
+    <div class="modalFoot"><button id="previewResearchFoundBtn" class="dark" type="button">Run preview · small sample</button><button id="researchSaveDefinitionBtn" type="button">Save definition</button><button id="saveResearchItemBtn" class="green" type="button">Save &amp; Run Research</button></div>
   </div>
 </div>
 
