@@ -40,8 +40,16 @@ function harness(options = {}) {
   const calls = { folders: 0, filePickers: [], imported: [], analyzed: [], saved: [], input: 0, scans: 0 };
   const local = new Map([[BASELINE_KEY, JSON.stringify(baseline)]]);
   const input = { removeAttribute() {}, click() { calls.input++; }, addEventListener() {} };
+  const dialog = { open: false, showModal() { this.open = true; }, close() { this.open = false; } };
+  const prompt = {
+    cleanUploadStep: dialog,
+    cleanUploadStepTitle: {},
+    cleanUploadStepDetail: {},
+    cleanUploadStepOkay: {},
+    cleanUploadStepFiles: {}
+  };
   const document = events({ readyState: 'complete',
-    getElementById: id => id === 'quickDataInput' ? input : null,
+    getElementById: id => id === 'quickDataInput' ? input : prompt[id] || null,
     querySelector: () => ({}),
     createElement: () => ({ dataset: {}, click() { calls.scans++; }, remove() {} }),
     body: { appendChild() {} }
@@ -92,7 +100,16 @@ function harness(options = {}) {
     analyzeFiles: async files => { calls.analyzed.push(...files); return { recognized: files.map(file => ({ file, classification: { id: 'qa' } })), errors: [], needsReview: [] }; },
     saveRecognizedEntry: async entry => { calls.saved.push(entry.file); return { status: 'saved' }; }
   };
-  return { context, calls, selected, disk, api: context.CoachToolsRememberedData,
+  const api = context.CoachToolsRememberedData;
+  const continueUpload = () => prompt.cleanUploadStepOkay.onclick();
+  return { context, calls, selected, disk, api, dialog, prompt, continueUpload,
+    async completeCleanUpload() {
+      const upload = api.cleanUploadFromDirectory();
+      continueUpload();
+      await tick();
+      if (dialog.open) continueUpload();
+      await upload;
+    },
     click(action) { document.dispatchEvent({ type: 'click', target: { closest: () => ({ dataset: { action } }) }, preventDefault() {}, stopImmediatePropagation() {} }); }
   };
 }
@@ -100,8 +117,25 @@ function harness(options = {}) {
 test('Clean Upload click remembers the exact folder; first Update reads it without a second picker', async () => {
   const h = harness();
   h.click('clean-upload-data');
+  assert.equal(h.dialog.open, true);
+  assert.match(h.prompt.cleanUploadStepTitle.textContent, /Step 1 of 2/);
+  assert.match(h.prompt.cleanUploadStepDetail.textContent, /select only the Storage folder/);
+  assert.equal(h.prompt.cleanUploadStepFiles.hidden, true);
+  assert.equal(h.calls.folders, 0);
+  assert.equal(h.calls.filePickers.length, 0);
+
+  h.continueUpload();
   await tick();
   assert.equal(h.calls.folders, 1);
+  assert.equal(h.dialog.open, true);
+  assert.match(h.prompt.cleanUploadStepTitle.textContent, /Step 2 of 2/);
+  assert.match(h.prompt.cleanUploadStepDetail.textContent, /Selected exports/);
+  assert.equal(h.prompt.cleanUploadStepFiles.hidden, false);
+  assert.equal(h.calls.filePickers.length, 0);
+
+  h.continueUpload();
+  await tick();
+  assert.equal(h.dialog.open, false);
   assert.equal(h.calls.input, 0);
   assert.equal(h.calls.filePickers[0].startIn, h.selected);
   assert.equal(h.calls.filePickers[0].multiple, true);
@@ -116,7 +150,7 @@ test('successful later Clean Upload replaces the folder and survives reload', as
   const old = folder('Old exports');
   const h = harness({ disk: { handle: old } });
   await tick();
-  await h.api.cleanUploadFromDirectory();
+  await h.completeCleanUpload();
   const reload = harness({ disk: h.disk });
   await reload.api.runUpdate();
   assert.equal(reload.calls.folders, 0);
@@ -128,25 +162,49 @@ for (const option of ['abortFolder', 'abortFiles', 'cancelImport']) {
     const old = folder('Old exports');
     const h = harness({ disk: { handle: old }, [option]: true });
     await tick();
-    await h.api.cleanUploadFromDirectory();
+    await h.completeCleanUpload();
     assert.equal(h.disk.handle, old);
     await h.api.runUpdate();
     assert.deepEqual(h.calls.saved, [old.file]);
   });
 }
 
+test('cancelling either instruction closes the prompt without changing the saved folder', async () => {
+  const old = folder('Old exports');
+  const h = harness({ disk: { handle: old } });
+  await tick();
+
+  const firstUpload = h.api.cleanUploadFromDirectory();
+  h.dialog.oncancel({ preventDefault() {} });
+  await firstUpload;
+  assert.equal(h.dialog.open, false);
+  assert.equal(h.calls.folders, 0);
+
+  const secondUpload = h.api.cleanUploadFromDirectory();
+  h.continueUpload();
+  await tick();
+  h.dialog.oncancel({ preventDefault() {} });
+  await secondUpload;
+  assert.equal(h.dialog.open, false);
+  assert.equal(h.calls.folders, 1);
+  assert.equal(h.calls.filePickers.length, 0);
+  assert.equal(h.calls.imported.length, 0);
+  assert.equal(h.disk.handle, old);
+  assert.equal(h.api.isBusy(), false);
+});
+
 test('files outside the chosen directory are rejected before import', async () => {
   const old = folder('Old exports');
   const h = harness({ disk: { handle: old }, outsideFile: folder('Other folder').fileHandle });
   await tick();
-  await h.api.cleanUploadFromDirectory();
+  await h.completeCleanUpload();
   assert.equal(h.calls.imported.length, 0);
   assert.equal(h.disk.handle, old);
 });
 
 test('late startup folder read cannot overwrite the newly connected folder', async () => {
   const h = harness({ delayLoad: true });
-  await h.api.cleanUploadFromDirectory();
+  await h.completeCleanUpload();
   h.disk.handle = folder('Stale startup handle');
   h.calls.releaseLoad();
   await tick();
@@ -156,7 +214,7 @@ test('late startup folder read cannot overwrite the newly connected folder', asy
 
 test('localhost Update uses the selected folder instead of launcher storage', async () => {
   const h = harness({ protocol: 'http:' });
-  await h.api.cleanUploadFromDirectory();
+  await h.completeCleanUpload();
   await h.api.runUpdate();
   assert.equal(h.calls.scans, 0);
   assert.deepEqual(h.calls.saved, [h.selected.file]);
