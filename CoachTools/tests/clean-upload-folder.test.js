@@ -40,13 +40,19 @@ function harness(options = {}) {
   const calls = { folders: 0, filePickers: [], imported: [], analyzed: [], saved: [], input: 0, scans: 0 };
   const local = new Map([[BASELINE_KEY, JSON.stringify(baseline)]]);
   const input = { removeAttribute() {}, click() { calls.input++; }, addEventListener() {} };
-  const dialog = { open: false, showModal() { this.open = true; }, close() { this.open = false; } };
+  const dialog = {
+    open: false,
+    showModal() { this.open = true; },
+    close() { this.open = false; },
+    setAttribute(name, value) { this[name] = value; }
+  };
   const prompt = {
     cleanUploadStep: dialog,
     cleanUploadStepTitle: {},
-    cleanUploadStepDetail: {},
     cleanUploadStepOkay: {},
-    cleanUploadStepFiles: {}
+    cleanUploadStepFolder: {},
+    cleanUploadStepFiles: {},
+    cleanUploadStepDirectory: {}
   };
   const document = events({ readyState: 'complete',
     getElementById: id => id === 'quickDataInput' ? input : prompt[id] || null,
@@ -119,7 +125,8 @@ test('Clean Upload click remembers the exact folder; first Update reads it witho
   h.click('clean-upload-data');
   assert.equal(h.dialog.open, true);
   assert.match(h.prompt.cleanUploadStepTitle.textContent, /Step 1 of 2/);
-  assert.match(h.prompt.cleanUploadStepDetail.textContent, /select only the Storage folder/);
+  assert.equal(h.dialog['aria-describedby'], 'cleanUploadFolderDirections');
+  assert.equal(h.prompt.cleanUploadStepFolder.hidden, false);
   assert.equal(h.prompt.cleanUploadStepFiles.hidden, true);
   assert.equal(h.calls.folders, 0);
   assert.equal(h.calls.filePickers.length, 0);
@@ -129,7 +136,9 @@ test('Clean Upload click remembers the exact folder; first Update reads it witho
   assert.equal(h.calls.folders, 1);
   assert.equal(h.dialog.open, true);
   assert.match(h.prompt.cleanUploadStepTitle.textContent, /Step 2 of 2/);
-  assert.match(h.prompt.cleanUploadStepDetail.textContent, /Selected exports/);
+  assert.equal(h.dialog['aria-describedby'], 'cleanUploadFileDirections');
+  assert.equal(h.prompt.cleanUploadStepDirectory.textContent, 'Selected exports');
+  assert.equal(h.prompt.cleanUploadStepFolder.hidden, true);
   assert.equal(h.prompt.cleanUploadStepFiles.hidden, false);
   assert.equal(h.calls.filePickers.length, 0);
 
