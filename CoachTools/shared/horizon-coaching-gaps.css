@@ -332,3 +332,83 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .weekOrb, #coachReportCard .reportTile { transition: none; }
 }
+
+/* Signals stay on the representative card, outside its scrollable timeline. */
+#coachReportCard .grade .badge { white-space: normal; text-align: center; }
+#gapList .gapMuted + ul { margin-top: 8px; }
+.repRow.recentConcern { background: #fff5f4; border-color: #eac8c5; }
+.repRow.recentImprovement { background: #f1faf4; border-color: #c7e3d1; }
+.repRow.recentConcern .repHead, .repRow.recentImprovement .repHead { background: transparent; }
+.repHead:has(.recentAlertAnchor) { padding-right: 35px; }
+.recentAlertAnchor { position: absolute; top: 0; right: 0; z-index: 2; }
+.recentAlertBtn, .recentFollowupBtn {
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+.recentAlertBtn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid #e1c48c;
+  border-radius: 7px;
+  background: #fff2d9;
+  color: #814914;
+  font-size: 16px;
+}
+.recentAlertTip {
+  display: none;
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 5px);
+  right: 0;
+  width: max-content;
+  max-width: min(260px, 65vw);
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: #172c42;
+  color: #fff;
+  box-shadow: 0 4px 12px #0f253d2b;
+  font-size: 12px;
+}
+.recentAlertTip span { display: block; margin-top: 3px; color: #deebf7; font-size: 11px; }
+.recentAlertAnchor:hover .recentAlertTip,
+.recentAlertAnchor:focus-within .recentAlertTip { display: block; }
+.recentAlertBtn:focus-visible, .recentFollowupBtn:focus-visible { outline: 2px solid #285e9f; outline-offset: 2px; }
+.recentFollowup { display: flex; align-items: center; gap: 7px 10px; flex-wrap: wrap; margin-top: 8px; color: #724e4a; font-size: 12px; }
+.recentFollowupBtn {
+  padding: 4px 9px;
+  border: 1px solid #e9beba;
+  border-radius: 999px;
+  background: #fde8e6;
+  color: #912d2b;
+}
+.recentFollowupBtn:hover { background: #fbdcd8; }
+
+#itemModalOverlay.recentTrendDialog .modalPanel { width: min(840px, 96vw) !important; max-height: min(92vh, 92dvh); }
+#itemModalOverlay.recentTrendDialog .modalBody { gap: 10px; overscroll-behavior: contain; }
+.recentTrendSummary > .pill:first-child { background: #fff0ee; border-color: #efc4c0; color: #902f32; }
+.recentTrendChart {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid #dbe7ef;
+  border-radius: 10px;
+  background: #fbfdff;
+}
+.recentTrendChart text { fill: #4e637b; font: 14px system-ui,sans-serif; text-anchor: middle; }
+.recentTrendChart .trendWeek, .recentTrendChart .trendValue { fill: #203f61; font-weight: 700; }
+.recentTrendChart .trendGrid { stroke: #dce7f2; }
+.recentTrendChart .trendGoal { stroke: #788a9e; stroke-width: 1.3; stroke-dasharray: 5 4; }
+.recentTrendChart .trendAxisLabel { text-anchor: end; }
+.recentTrendChart .trendGoalLabel { text-anchor: start; }
+.recentTrendChart .trendSeries { stroke: #2c68b5; stroke-width: 3; fill: none; }
+.recentTrendChart .trendPoint { fill: #2c68b5; stroke: #fff; stroke-width: 2; }
+.recentTrendChart .trendPoint.below { fill: #bc4346; }
+.recentTrendActivity h3 { margin: 1px 0 2px; font-size: 16px; color: #1c405b; }
+.recentTrendActivity .coachList { margin-top: 7px; }
+@media (max-width: 480px) {
+  #itemModalOverlay.recentTrendDialog { padding: 8px; }
+  .recentTrendChart text { font-size: 17px; }
+}
