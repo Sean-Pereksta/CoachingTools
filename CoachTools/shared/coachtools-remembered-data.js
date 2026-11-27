@@ -277,12 +277,17 @@
       && typeof $('cleanUploadStep')?.showModal === 'function';
   }
 
-  function confirmCleanUploadStep(title, detail, showFiles = false) {
+  function confirmCleanUploadStep(directory) {
     const dialog = $('cleanUploadStep');
     const confirm = $('cleanUploadStepOkay');
-    $('cleanUploadStepTitle').textContent = title;
-    $('cleanUploadStepDetail').textContent = detail;
+    const showFiles = Boolean(directory);
+    $('cleanUploadStepTitle').textContent = showFiles
+      ? 'Step 2 of 2 · Select the report files'
+      : 'Step 1 of 2 · Select the Storage folder';
+    $('cleanUploadStepFolder').hidden = showFiles;
     $('cleanUploadStepFiles').hidden = !showFiles;
+    $('cleanUploadStepDirectory').textContent = directory?.name || 'Storage';
+    dialog.setAttribute('aria-describedby', showFiles ? 'cleanUploadFileDirections' : 'cleanUploadFolderDirections');
     dialog.showModal();
 
     return new Promise(resolve => {
@@ -305,18 +310,11 @@
     let savedFolder = null;
     let rememberFolder = null;
     try {
-      if (!await confirmCleanUploadStep(
-        'Step 1 of 2 · Select the Storage folder',
-        'Click OK, then select only the Storage folder and click Select Folder. A second window will open afterward so you can choose the files to upload.'
-      )) return;
+      if (!await confirmCleanUploadStep()) return;
       const directory = await root.showDirectoryPicker({ id: 'coachtools-storage', mode: 'read' });
 
       // A fresh click keeps the file picker tied to user activation after folder selection.
-      if (!await confirmCleanUploadStep(
-        'Step 2 of 2 · Select the report files',
-        `Click OK to open “${directory.name}”. Select the individual files you want to upload, then click Open. You can select more than one file.`,
-        true
-      )) return;
+      if (!await confirmCleanUploadStep(directory)) return;
       const handles = await root.showOpenFilePicker({
         id: 'coachtools-clean-upload', startIn: directory, multiple: true,
         types: [{ description: 'CoachTools data files', accept: {
