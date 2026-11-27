@@ -6199,7 +6199,7 @@ function paintRepModal(){
         </div>
         <div class="timelineMeta">
           <div class="mono">Hover segments for coaching + checklist details</div>
-          <div class="mono">Blue hatch=coaching • Orange hatch=corrective</div>
+          <div class="mono">Blue bar marks coaching · Colored outlines mark checklist activity</div>
         </div>
       </div></div>
     </div>
@@ -8911,7 +8911,7 @@ function render(){
             ${stackRowsHtml.join('')}
           </div>
           <div class="timelineMeta">
-            <div class="mono">${reportWeekLabel(weeks[0])} → ${reportWeekLabel(weeks[weeks.length-1])} • <span class="mono" style="color:var(--muted);font-weight:900">Blue hatch=coaching • Orange hatch=corrective (hover/click name)</span></div>
+            <div class="mono">${reportWeekLabel(weeks[0])} → ${reportWeekLabel(weeks[weeks.length-1])} • <span class="mono" style="color:var(--muted);font-weight:900">Blue bar marks coaching · Colored outlines mark checklist activity</span></div>
             <div class="mono">${secondaryKpiDef ? `Goals: ${(goalFrac*100).toFixed(1)}% / ${(getGoalFracForKpi(secondaryKpiKey)*100).toFixed(1)}%` : `Goal: ${(goalFrac*100).toFixed(1)}%`}</div>
           </div>
         </div></div>
