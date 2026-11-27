@@ -273,7 +273,30 @@
   function canChooseCleanUploadFolder() {
     return typeof root.showDirectoryPicker === 'function'
       && typeof root.showOpenFilePicker === 'function'
-      && typeof root.CoachToolsSmartImport?.importFiles === 'function';
+      && typeof root.CoachToolsSmartImport?.importFiles === 'function'
+      && typeof $('cleanUploadStep')?.showModal === 'function';
+  }
+
+  function confirmCleanUploadStep(title, detail, showFiles = false) {
+    const dialog = $('cleanUploadStep');
+    const confirm = $('cleanUploadStepOkay');
+    $('cleanUploadStepTitle').textContent = title;
+    $('cleanUploadStepDetail').textContent = detail;
+    $('cleanUploadStepFiles').hidden = !showFiles;
+    dialog.showModal();
+
+    return new Promise(resolve => {
+      function finish(confirmed) {
+        dialog.oncancel = confirm.onclick = null;
+        dialog.close();
+        resolve(confirmed);
+      }
+      confirm.onclick = () => finish(true);
+      dialog.oncancel = event => {
+        event.preventDefault();
+        finish(false);
+      };
+    });
   }
 
   async function cleanUploadFromDirectory() {
@@ -282,9 +305,18 @@
     let savedFolder = null;
     let rememberFolder = null;
     try {
-      // File inputs cannot expose their parent folder. Acquire read access here,
-      // then keep explicit file selection and the existing coach/scope chooser.
+      if (!await confirmCleanUploadStep(
+        'Step 1 of 2 · Select the Storage folder',
+        'Click OK, then select only the Storage folder and click Select Folder. A second window will open afterward so you can choose the files to upload.'
+      )) return;
       const directory = await root.showDirectoryPicker({ id: 'coachtools-storage', mode: 'read' });
+
+      // A fresh click keeps the file picker tied to user activation after folder selection.
+      if (!await confirmCleanUploadStep(
+        'Step 2 of 2 · Select the report files',
+        `Click OK to open “${directory.name}”. Select the individual files you want to upload, then click Open. You can select more than one file.`,
+        true
+      )) return;
       const handles = await root.showOpenFilePicker({
         id: 'coachtools-clean-upload', startIn: directory, multiple: true,
         types: [{ description: 'CoachTools data files', accept: {
