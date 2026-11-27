@@ -41,6 +41,10 @@
     return count ? `${number.format(count)} ${word} ${gap.count < 0 ? 'short' : 'above'}` : 'Met';
   }
   function badge(value, status) { return text('span',value,'weeklyBadge ' + status); }
+  function performanceBadge(classification) {
+    const colors = {'Overperformed':'up','In-line performance':'inline','Underperformed':'down'};
+    return badge(classification,colors[classification] || 'flat');
+  }
   function stat(label, value, sub, status='flat') {
     const card = text('div',undefined,'weeklyStat');
     card.append(text('span',label,'weeklyEyebrow'),text('strong',value,status),text('small',sub));
@@ -102,7 +106,7 @@
         focusedRep = row.key;
         paintDialog();
         ui('weeklyRepFocus')?.focus();
-      },'weeklyLink'),badge(pp(row[field]),tone(row[field])),text('span',row.classification,'weeklyClassification'));
+      },'weeklyLink'),badge(pp(row[field]),tone(row[field])),performanceBadge(row.classification));
       panel.append(line);
     }
     return panel;
@@ -165,7 +169,7 @@
     const grid = table(['Representative','Prior week','Selected week','Team impact','Normal rate','Performance','To goal','Vs prior result']);
     for (const row of report.rows) {
       const selected = addRow(grid.body,[row.name,pct(row.beforeRate),pct(row.afterRate),pp(row.contribution),
-        row.normWeeks ? `${pct(row.norm)} · ${row.normWeeks} wk` : '—',row.classification,
+        row.normWeeks ? `${pct(row.norm)} · ${row.normWeeks} wk` : '—',performanceBadge(row.classification),
         badge(gapLabel(row.goalGap,context.unit),tone(Math.sign(row.goalGap?.count))),
         badge(gapLabel(row.priorGap,context.unit),tone(Math.sign(row.priorGap?.count)))]);
       if (row.key === focusedRep) selected.className = 'weeklyFocusedRep';

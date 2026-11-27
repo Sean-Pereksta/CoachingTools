@@ -1,0 +1,106 @@
+header#topbar .impactHelpButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.impactHelpButton span {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 1px solid #dfc68e;
+  border-radius: 50%;
+  color: #fae2b5;
+  font-size: 10px;
+}
+
+.impactHelp {
+  width: min(790px, calc(100vw - 26px));
+}
+
+.impactHelpHeader {
+  display: grid;
+  grid-template-columns: 106px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  padding: 14px 17px;
+  background: linear-gradient(110deg, #eae0fb, #faf0fc 65%, #fff0d9);
+  border-bottom: 1px solid var(--wk-line);
+}
+
+.impactHelpHeader h2 {
+  margin: 0 0 5px;
+  font-size: 23px;
+}
+
+.impactHelpHeader p {
+  margin: 0;
+  color: var(--wk-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.impactHelpArt {
+  display: block;
+  width: 100%;
+  height: 74px;
+  object-fit: contain;
+}
+
+.impactHelpGuide {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px;
+}
+
+.impactHelpGuide section {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--wk-line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.impactHelpGuide h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.impactHelpGuide p {
+  margin: 8px 0 0;
+  color: var(--wk-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.impactHelpSteps, .impactHelpBadges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  color: var(--wk-accent);
+}
+
+.impactHelpSteps span:not(.weeklyCalendar) {
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: var(--wk-soft);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.impactHelpSteps .weeklyCalendar {
+  width: 29px;
+  height: 24px;
+  flex-basis: 29px;
+}
+
+@media (max-width: 600px) {
+  .impactHelpHeader {grid-template-columns: 58px minmax(0, 1fr) auto; gap: 7px; padding: 10px;}
+  .impactHelpHeader h2 {font-size: 17px;}
+  .impactHelpArt {height: 54px;}
+  .impactHelpGuide {grid-template-columns: 1fr; padding: 10px;}
+}

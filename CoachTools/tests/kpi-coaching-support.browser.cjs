@@ -6,7 +6,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = path.resolve(__dirname, '..');
-const mime = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.png':'image/png'};
+const mime = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.png':'image/png','.webp':'image/webp'};
 const host = '<!doctype html><script src="/shared/coachtools-storage.js"></script><script src="/shared/coachtools-identity.js"></script><script src="/shared/coachtools-app-data.js"></script>';
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
@@ -77,6 +77,16 @@ async function noHorizontalOverflow(frame){return frame.evaluate(() => ({scroll:
     const base='http://127.0.0.1:'+server.address().port;
     let frame=await fixture(page,base);
     await frame.selectOption('#coachSel','Coach Alpha');await frame.selectOption('#timeSel','10');
+    await frame.getByRole('button',{name:'Help',exact:true}).click();
+    const help = frame.getByRole('dialog',{name:'How to use KPI Impact'});
+    assert.equal(await help.isVisible(),true);
+    assert.match(await help.innerText(),/58% against their usual 50% is in line/);
+    assert.match(await help.innerText(),/3 weeks before[\s\S]*3 weeks after/);
+    const legend = await help.locator('.impactHelpBadges .weeklyBadge').evaluateAll(badges=>badges.map(badge=>[badge.textContent,getComputedStyle(badge).backgroundColor]));
+    assert.deepEqual(legend,[['Overperformed','rgb(226, 243, 233)'],['In-line performance','rgb(229, 238, 255)'],['Underperformed','rgb(252, 231, 237)']]);
+    assert.ok(await help.locator('.impactHelpArt').evaluate(async image=>{await image.decode();return image.naturalWidth>0;}));
+    await page.keyboard.press('Escape');
+    assert.equal(await help.isVisible(),false);
     assert.match(await frame.locator('#weeklyDate option').first().innerText(),/Nov 8.*Nov 14.*↑.*1\.7 pp/);
     assert.match(await frame.locator('#weeklyGoalGap').innerText(),/52 appointments short/);
     assert.match(await frame.locator('#weeklyPriorGap').innerText(),/10 appointments above/);
@@ -86,6 +96,9 @@ async function noHorizontalOverflow(frame){return frame.evaluate(() => ({scroll:
     await frame.selectOption('#weeklyDate',weekOptions[0]);
     await frame.click('#weeklyExpand');
     assert.match(await frame.locator('#weeklyDashboardBody').innerText(),/Biggest upward drivers[\s\S]*Growing Gia[\s\S]*Overperformed/);
+    const weeklyRows = frame.locator('#weeklyDashboardBody tbody');
+    assert.equal(await weeklyRows.locator('tr').filter({hasText:'Growing Gia'}).locator('.weeklyBadge.up').filter({hasText:'Overperformed'}).count(),1);
+    assert.equal(await weeklyRows.locator('tr').filter({hasText:'Pending Pat'}).locator('.weeklyBadge.inline').filter({hasText:'In-line performance'}).count(),1);
     await frame.click('#weeklyTabCoaching');
     assert.match(await frame.locator('#weeklyDashboardBody').innerText(),/\+20\.0 pp/);
     await frame.locator('.weeklyNoteList summary').first().click();
@@ -208,6 +221,11 @@ async function noHorizontalOverflow(frame){return frame.evaluate(() => ({scroll:
     if(screenshot){await page.setViewportSize({width:1440,height:1600});await page.screenshot({path:screenshot,fullPage:true});}
     await page.setViewportSize({width:390,height:844});
     const mobile=await noHorizontalOverflow(frame);
+    await frame.getByRole('button',{name:'Help',exact:true}).click();
+    const mobileHelp=frame.getByRole('dialog',{name:'How to use KPI Impact'});
+    const helpBounds=await mobileHelp.boundingBox();
+    assert.ok(helpBounds.x>=0 && helpBounds.x+helpBounds.width<=391,'Help fits a mobile viewport.');
+    await mobileHelp.getByRole('button',{name:'Close',exact:true}).click();
     if(mobile.scroll>mobile.width+1)console.error('Mobile overflowing elements',await frame.evaluate(()=>[...document.querySelectorAll('body *')].filter(element=>{const b=element.getBoundingClientRect();return b.right>document.documentElement.clientWidth+2&&b.width>0;}).map(element=>({tag:element.tagName,id:element.id,cls:element.className,right:Math.round(element.getBoundingClientRect().right),width:Math.round(element.getBoundingClientRect().width)})).slice(0,12)));
     assert.ok(mobile.scroll<=mobile.width+1,JSON.stringify(mobile));
     if(screenshot){await frame.locator('.supportPerson').first().scrollIntoViewIfNeeded();await page.screenshot({path:screenshot.replace(/\.png$/, '-mobile.png'),fullPage:true});}

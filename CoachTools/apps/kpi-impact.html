@@ -215,6 +215,7 @@ aside.side.filterDrawer.show{transform:translateX(0)}
 <link rel="stylesheet" href="../shared/kpi-coaching-support.css">
 <link rel="stylesheet" href="../shared/kpi-impact-table.css">
 <link rel="stylesheet" href="../shared/kpi-weekly.css">
+<link rel="stylesheet" href="../shared/kpi-impact-help.css">
 </head>
 
 <body>
@@ -282,6 +283,7 @@ aside.side.filterDrawer.show{transform:translateX(0)}
     </div>
 
     <div class="commandActions">
+      <button class="btn impactHelpButton" id="openImpactHelp" type="button" aria-haspopup="dialog" aria-controls="impactHelp"><span aria-hidden="true">?</span> Help</button>
       <button class="btn" id="includeAllTop" type="button" title="Restore every representative in the selected team">Include all</button>
       <button class="btn iconBtn" id="filterDrawerBtn" type="button">☰ Filters</button>
       <button class="btn" id="reloadCache" type="button">Reload Data</button>
@@ -531,6 +533,47 @@ aside.side.filterDrawer.show{transform:translateX(0)}
     <button class="btn" id="weeklyTabCoaching" type="button" aria-pressed="false">Coaching impact</button>
   </nav>
   <div id="weeklyDashboardBody" class="weeklyDashboardBody"></div>
+</dialog>
+
+<dialog id="impactHelp" class="weeklyDashboard impactHelp" aria-labelledby="impactHelpTitle">
+  <div class="impactHelpHeader">
+    <img class="impactHelpArt" src="../icons/horizon/kpi-impact-help.webp" alt="" width="220" height="118" />
+    <div>
+      <h2 id="impactHelpTitle">How to use KPI Impact</h2>
+      <p>Check what moved, see which reps drove the change, and review what happened after coaching.</p>
+    </div>
+    <form method="dialog"><button class="btn" type="submit" autofocus>Close</button></form>
+  </div>
+  <div class="impactHelpGuide">
+    <section>
+      <h3>Start with the team and KPI</h3>
+      <div class="impactHelpSteps" aria-hidden="true"><span>Coach</span><b>→</b><span>KPI</span><b>→</b><span>Window</span></div>
+      <p>Choose a coach, KPI, and reporting window. Click <strong>Goal</strong> to change the target. Team Rate uses everyone in the report. Included Team Rate reflects the reps you’ve included, and Exclusion Change shows the difference.</p>
+      <p>Use <strong>Table</strong> or <strong>Cards</strong> to view reps and open notes for their latest matching coaching.</p>
+    </section>
+    <section>
+      <h3>Read the weekly change</h3>
+      <div class="impactHelpSteps" aria-hidden="true"><span class="weeklyCalendar"></span><span>Prior week</span><b>→</b><span>Selected week</span></div>
+      <p>Pick a date range in <strong>Weekly Changes</strong>. The dropdown shows each week’s change from the preceding week. Click <strong>Expand</strong> to see which reps drove the team’s movement.</p>
+      <p><strong>To goal</strong> and <strong>Vs prior result</strong> show how many appointments or wiper sales the team was short of or above each rate, using the selected week’s volume.</p>
+    </section>
+    <section>
+      <h3>Read the rep performance badges</h3>
+      <div class="impactHelpBadges">
+        <span class="weeklyBadge up">Overperformed</span>
+        <span class="weeklyBadge inline">In-line performance</span>
+        <span class="weeklyBadge down">Underperformed</span>
+      </div>
+      <p>The badge compares the rep’s result with their own volume-weighted rate from prior weeks. Green means at least 10 percentage points above normal. Red means at least 10 points below. Blue covers everything in between. A rep at 58% against their usual 50% is in line.</p>
+      <p>Weeks without measured volume are skipped. A rep without a measured baseline shows <strong>No baseline</strong>.</p>
+    </section>
+    <section>
+      <h3>Review coaching and follow-through</h3>
+      <div class="impactHelpSteps" aria-hidden="true"><span>3 weeks before</span><b>→</b><span>Coaching</span><b>→</b><span>3 weeks after</span></div>
+      <p><strong>Coaching Type</strong> controls which records count. Click <strong>Coaching Coverage</strong> or <strong>Attention Reps</strong> to see which below-goal weeks had matching coaching and which reps had at least two misses.</p>
+      <p>In <strong>Expand → Coaching impact</strong>, choose Appt Rate, Call Quality, or Wiper coaching. Compare the weighted before-and-after results and click <strong>View coachings</strong> to open notes. The coaching week itself is skipped.</p>
+    </section>
+  </div>
 </dialog>
 
 <script src="../shared/kpi-coaching-support-core.js"></script>
@@ -3170,6 +3213,7 @@ function openImpactCoachingSummary(attentionOnly){
 }
 document.getElementById('inspectImpactCoverage').addEventListener('click',()=>openImpactCoachingSummary(false));
 document.getElementById('inspectImpactAttention').addEventListener('click',()=>openImpactCoachingSummary(true));
+document.getElementById('openImpactHelp').addEventListener('click',()=>document.getElementById('impactHelp').showModal());
 
 document.getElementById('reloadCache').onclick = ()=>{ refreshFromCache(); saveWorkspace(); };
 document.getElementById('refreshBtn').onclick = ()=> renderAll();

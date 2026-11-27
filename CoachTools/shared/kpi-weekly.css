@@ -18,6 +18,7 @@ main.workspace{grid-template-rows:auto auto auto minmax(0,1fr)}
 .weeklyBadge{display:inline-block;white-space:nowrap;padding:3px 6px;font-size:10px;font-weight:800;border-radius:12px;color:#4d4265;background:#eeebf5}
 .weeklyBadge.up{background:#e2f3e9;color:var(--wk-up)}
 .weeklyBadge.down{background:#fce7ed;color:var(--wk-down)}
+.weeklyBadge.inline{background:#e5eeff;color:#254f94}
 .weeklySnapshot strong.up,.weeklyDashboard strong.up{color:var(--wk-up)}
 .weeklySnapshot strong.down,.weeklyDashboard strong.down{color:var(--wk-down)}
 .weeklyExpand{margin-left:auto;white-space:nowrap}
@@ -48,7 +49,6 @@ main.workspace{grid-template-rows:auto auto auto minmax(0,1fr)}
 .weeklyListRow{display:grid;grid-template-columns:minmax(85px,1fr) auto minmax(90px,auto);align-items:center;gap:7px;padding:5px 0;border-top:1px solid #f2edf7}
 .weeklyLink{font:inherit;font-weight:750;border:0;background:none;color:var(--wk-accent);text-align:left;padding:0;cursor:pointer}
 .weeklyLink:hover{text-decoration:underline}
-.weeklyClassification{color:var(--wk-muted);font-size:11px}
 .weeklyEmpty{margin:8px 0;color:var(--wk-muted)}
 .weeklyTableWrap{overflow:auto;border:1px solid var(--wk-line);border-radius:9px;background:#fff}
 .weeklyTableWrap table{width:100%;border-collapse:collapse;font-size:11px}
