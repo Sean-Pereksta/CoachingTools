@@ -1604,7 +1604,7 @@
       <button id="panelChevron" class="filterToggleBtn" type="button" title="Open filters" aria-expanded="false">Filters <span class="filterCountBadge" id="filterCountBadge">0</span></button>
       <button id="resetReportFilters" type="button" class="btn">Reset filters</button>
       <button class="iconBtn" id="settingsBtn" type="button" title="Settings">⚙</button>
-      <button class="iconBtn" id="helpBtn" type="button" title="Help" aria-label="Open quick instructions">?</button>
+      <button class="iconBtn" id="helpBtn" type="button" aria-haspopup="dialog" aria-controls="helpModalOverlay"><span class="gapsHelpArt help" aria-hidden="true"></span>Help</button>
     </div>
   </div>
   <div id="barMeta" class="srOnly">—</div>
@@ -2301,46 +2301,79 @@
 </div>
 
 <div id="helpModalOverlay" class="modalOverlay" aria-hidden="true">
-  <div class="modalPanel" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle" style="width:min(680px, 96vw)">
+  <div class="modalPanel" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
     <div class="modalHead">
-      <div>
-        <div id="helpModalTitle" class="modalTitle">Quick Help</div>
-        <div class="modalSub">Fast guide for first-time users.</div>
+      <div class="gapsHelpHeading">
+        <span class="gapsHelpArt help" aria-hidden="true"></span>
+        <h2 id="helpModalTitle" class="modalTitle">Coaching Gaps help</h2>
       </div>
-      <div class="modalActions">
-        <button class="btn" id="helpModalClose" type="button">Close</button>
-      </div>
+      <button class="btn" id="helpModalClose" type="button">Close</button>
     </div>
-    <div class="modalBody">
-      <div class="helpSection">
-        <h4>Tabs</h4>
-        <ul class="helpList">
-          <li><strong>Individual Coach:</strong> Shows each rep’s timeline, coaching, and performance.</li>
-          <li><strong>Team Report:</strong> Shows team-level summaries and compares teams.</li>
-          <li><strong>Team Analysis:</strong> Shows a deeper breakdown of the selected team.</li>
-        </ul>
-      </div>
-      <div class="helpSection">
-        <h4>Filters</h4>
-        <ul class="helpList">
-          <li><strong>Mode:</strong> Switches between Retail and Referral data.</li>
-          <li><strong>Team:</strong> Chooses which team to view.</li>
-          <li><strong>KPI:</strong> Picks the main metric being reviewed.</li>
-          <li><strong>Multi View KPI:</strong> Adds another KPI for comparison.</li>
-          <li><strong>Goal %:</strong> Sets the target percentage for success.</li>
-          <li><strong>Start / End:</strong> Limits the date range.</li>
-          <li><strong>Min KPI Coverage %:</strong> Requires enough KPI data before showing results.</li>
-          <li><strong>Sort:</strong> Changes how reps are ordered.</li>
-          <li><strong>Opportunity Gate:</strong> Filters out low-volume data.</li>
-          <li><strong>Types:</strong> Chooses which coaching types to include.</li>
-          <li><strong>Documented Coaching Filter:</strong> Lets you exclude certain coaching categories or wording.</li>
-          <li><strong>Checklist Item:</strong> Filters checklist issues you want to track.</li>
-          <li><strong>Keyword Phrase:</strong> Matches checklist descriptions by phrase.</li>
-          <li><strong>SLA Aging:</strong> Colors checklist items by how old they are.</li>
-          <li><strong>Data Docks:</strong> Selects which saved local data sources the dashboard should use.</li>
-          <li><strong>Refresh:</strong> Rebuilds the report using current filters.</li>
-        </ul>
-      </div>
+    <nav class="gapsHelpNav" aria-label="Coaching Gaps help">
+      <button type="button" data-help-pane="guide" aria-controls="helpGuide" aria-pressed="true">Guide</button>
+      <button type="button" data-help-pane="search" aria-controls="helpSearch" aria-pressed="false">Coaching not appearing? Search here</button>
+    </nav>
+    <div class="modalBody gapsHelpBody">
+      <section id="helpGuide" class="gapsHelpPane">
+        <section class="helpSection">
+          <h3>Set up your report</h3>
+          <div class="helpStartGrid">
+            <article class="helpStartCard"><span class="gapsHelpArt coach" aria-hidden="true"></span><div><h3>Select a coach</h3><p>Choose <strong>Retail</strong> or <strong>Referral</strong>, then select the coach in the <strong>Coach / Team</strong> dropdown. The <strong>Coach</strong> tab shows individual timelines for that team.</p></div></article>
+            <article class="helpStartCard"><span class="gapsHelpArt focus" aria-hidden="true"></span><div><h3>Use Quick Focus</h3><p>Choose <strong>Cash</strong>, <strong>Call Quality</strong>, or <strong>Wipers</strong> to select a KPI and its matching documented coaching and checklist filters. See the active rules in <strong>Filters</strong>.</p></div></article>
+            <article class="helpStartCard"><span class="gapsHelpArt calendar" aria-hidden="true"></span><div><h3>Set the time frame</h3><p>Use <strong>Start</strong> and <strong>End</strong> to set the report range. Each timeline column is one reporting week, Sunday through Saturday. Use <strong>Min KPI Coverage</strong> to require enough weeks with scores.</p></div></article>
+          </div>
+        </section>
+        <section class="helpSection">
+          <h3>Red weeks and grades</h3>
+          <p>A red week means the selected KPI was below its goal. <strong>Red Weeks Missing Coaching</strong> checks for matching coaching in that week and the weeks immediately before and after it.</p>
+          <ol class="helpWeekDiagram" aria-label="Which weeks qualify when checking a single red week">
+            <li class="outside"><strong>Two weeks before</strong><span>Outside window</span></li>
+            <li class="qualifies"><strong>Prior week</strong><span>Qualifies</span></li>
+            <li class="qualifies red"><strong>Red week</strong><span>Qualifies</span></li>
+            <li class="qualifies"><strong>Following week</strong><span>Qualifies</span></li>
+            <li class="outside"><strong>Two weeks after</strong><span>Outside window</span></li>
+          </ol>
+          <p>A recent red week can show <strong>Follow-up needed</strong> while there is still time to coach. If the needed weeks are outside the selected dates, expand the range to verify follow-up.</p>
+          <h4>How the Coach Report Card gets its grade</h4>
+          <p>The grade is the percentage of qualifying streaks that received matching coaching. A streak is <strong>two or more consecutive below-goal weeks</strong>. One matching coaching during the streak or the week immediately after it earns credit. This example shows a two-week streak.</p>
+          <ol class="helpWeekDiagram" aria-label="Which weeks earn grade credit for a two-week below-goal streak">
+            <li class="outside"><strong>Week before streak</strong><span>Outside window</span></li>
+            <li class="qualifies red"><strong>Red week 1</strong><span>Qualifies</span></li>
+            <li class="qualifies red"><strong>Red week 2</strong><span>Qualifies</span></li>
+            <li class="qualifies"><strong>Following week</strong><span>Qualifies</span></li>
+            <li class="outside"><strong>Two weeks after</strong><span>Outside window</span></li>
+          </ol>
+          <p><strong>Example</strong> · If 3 of 4 qualifying streaks received coaching in time, the score is 75/100. <strong>No qualifying streaks</strong> means there is nothing to grade. Click the card to see the streaks and coaching dates.</p>
+        </section>
+        <section class="helpSection">
+          <h3>Read the timeline icons</h3>
+          <p>Hover for a label or click an icon to open the record.</p>
+          <ul class="helpIconList">
+            <li><span class="weekIcon coaching" aria-hidden="true"></span><div><strong>Coaching</strong><span>Documented coaching notes and coaching type.</span></div></li>
+            <li><span class="weekIcon checklist" aria-hidden="true"></span><div><strong>Checklist</strong><span>A standard checklist item, with status and turnaround.</span></div></li>
+            <li><span class="weekIcon corrective" aria-hidden="true"></span><div><strong>Corrective</strong><span>A warning recorded in the checklist. Both clipboard shapes use any assigned checklist color.</span></div></li>
+            <li><span class="weekIcon monitorUnread" aria-hidden="true"></span><div><strong>Unreviewed monitor</strong><span>Red outline.</span></div></li>
+            <li><span class="weekIcon monitorReviewed" aria-hidden="true"></span><div><strong>Reviewed monitor</strong><span>Green outline and a check mark.</span></div></li>
+            <li><span class="weekIcon monitorUnknown" aria-hidden="true"></span><div><strong>Unknown review status</strong><span>Gray headset. No review status was recorded.</span></div></li>
+            <li><span class="helpAlertSample" aria-hidden="true">!</span><div><strong>Concern on another KPI</strong><span>Opens a five-week trend and related records.</span></div></li>
+          </ul>
+        </section>
+      </section>
+      <section id="helpSearch" class="gapsHelpPane" hidden>
+        <section class="helpSection">
+          <h3>Search documented coaching</h3>
+          <p>Search a rep’s coaching records in your workspace, including records hidden by the current report filters. Leave the dates blank to search all available dates.</p>
+          <form id="helpCoachingForm" class="gapsHelpSearchForm">
+            <label>Representative<input id="helpCoachingRep" type="search" list="helpCoachingNames" placeholder="Search by rep name" required autocomplete="off"></label>
+            <datalist id="helpCoachingNames"></datalist>
+            <label>Start date<input id="helpCoachingStart" type="date"></label>
+            <label>End date<input id="helpCoachingEnd" type="date"></label>
+            <button class="btn primary" type="submit">Search</button>
+          </form>
+          <p id="helpCoachingStatus" class="helpSearchStatus" role="status" aria-live="polite">Select a result to see its details and why it appears or is hidden.</p>
+          <div id="helpCoachingResults"></div>
+        </section>
+      </section>
     </div>
   </div>
 </div>
@@ -3740,11 +3773,17 @@ function openHelpModal(){
   HELP_MODAL.open = true;
   els.helpModalOverlay.classList.add('show');
   els.helpModalOverlay.setAttribute('aria-hidden','false');
+  resetHelpCoachingSearch();
+  showHelpPane('guide');
+  els.helpModalClose.focus({preventScroll:true});
 }
 function closeHelpModal(){
   HELP_MODAL.open = false;
   els.helpModalOverlay.classList.remove('show');
   els.helpModalOverlay.setAttribute('aria-hidden','true');
+  helpCoachingRows = [];
+  helpCoachingEls.results.replaceChildren();
+  els.helpBtn.focus({preventScroll:true});
 }
 function openSettingsModal(){
   SETTINGS_MODAL.open = true;
@@ -4495,22 +4534,20 @@ function addTermsToSet(setObj, raw){
   for(const term of terms) setObj.add(term);
   return terms.length;
 }
+function coachingFilterDecision(c){
+  const types = c.types || [];
+  const desc = String(c.desc || '').toLowerCase();
+  const typeText = types.map(type=>String(type || '').toLowerCase()).join(' ');
+  const matches = term=>desc.includes(term) || typeText.includes(term);
+  return {
+    typeEnabled:types.some(type=>enabledTypes.has(type)),
+    excluded:[...excludedCoachingTerms].find(matches),
+    included:includedCoachingTerms.size === 0 || [...includedCoachingTerms].some(matches)
+  };
+}
 function coachingPassesFilters(c){
-  const typeOk = (c.types||[]).some(t=> enabledTypes.has(t));
-  if(!typeOk) return false;
-  const descLower = String(c.desc || '').toLowerCase();
-  const typeLower = (c.types||[]).map(t=>String(t||'').toLowerCase()).join(' ');
-  for(const term of excludedCoachingTerms){
-    if(descLower.includes(term) || typeLower.includes(term)) return false;
-  }
-  if(includedCoachingTerms.size > 0){
-    let hit = false;
-    for(const term of includedCoachingTerms){
-      if(descLower.includes(term) || typeLower.includes(term)){ hit = true; break; }
-    }
-    if(!hit) return false;
-  }
-  return true;
+  const decision = coachingFilterDecision(c);
+  return decision.typeEnabled && !decision.excluded && decision.included;
 }
 function paintCoachingWordChips(){
   const chips = [];
@@ -9152,6 +9189,186 @@ function render(){
     });
   });
 }
+
+/* =================== Help and documented coaching search =================== */
+const HELP_COACHING_PAGE_SIZE = 20;
+const helpCoachingEls = {
+  guide:document.getElementById('helpGuide'),
+  search:document.getElementById('helpSearch'),
+  names:document.getElementById('helpCoachingNames'),
+  rep:document.getElementById('helpCoachingRep'),
+  start:document.getElementById('helpCoachingStart'),
+  end:document.getElementById('helpCoachingEnd'),
+  form:document.getElementById('helpCoachingForm'),
+  status:document.getElementById('helpCoachingStatus'),
+  results:document.getElementById('helpCoachingResults')
+};
+let helpCoachingPage = 0;
+let helpCoachingRows = [];
+
+function showHelpPane(pane){
+  const search = pane === 'search';
+  helpCoachingEls.guide.hidden = search;
+  helpCoachingEls.search.hidden = !search;
+  for(const button of els.helpModalOverlay.querySelectorAll('[data-help-pane]')){
+    button.setAttribute('aria-pressed', String(button.dataset.helpPane === pane));
+  }
+  els.helpModalOverlay.querySelector('.modalBody').scrollTop = 0;
+  if(search) helpCoachingEls.rep.focus({preventScroll:true});
+}
+
+function resetHelpCoachingSearch(){
+  helpCoachingRows = [];
+  helpCoachingPage = 0;
+  const names = [...new Set(coachings.map(row=>row.rep))].sort((a,b)=>a.localeCompare(b));
+  helpCoachingEls.names.innerHTML = names.map(name=>`<option value="${escAttr(name)}"></option>`).join('');
+  helpCoachingEls.results.replaceChildren();
+  helpCoachingEls.status.textContent = 'Select a result to see its details and why it appears or is hidden.';
+}
+
+function coachingVisibilityContext(){
+  const { weeks } = getSelectedWindow();
+  return {
+    weeks:new Set(weeks),
+    teamReps:new Map([...teamIndex.keys()].map(rep=>[personKey(rep),rep])),
+    eligibleReps:new Set((reportDetail?.scopedSummaries || []).map(rep=>rep.repKey)),
+    repSearch:els.repSearch.value.trim().toLowerCase()
+  };
+}
+
+function coachingVisibilityReasons(row, context){
+  const reasons = [];
+  const filters = coachingFilterDecision(row);
+  if(!filters.typeEnabled){
+    reasons.push(`Coaching type is unchecked in Filters. Recorded type: ${row.types.join(', ') || 'Unspecified'}.`);
+  }
+  if(filters.excluded){
+    reasons.push(`Matches the excluded coaching keyword “${filters.excluded}”.`);
+  }
+  if(!filters.included){
+    const rule = activePreset ? `The active ${presetLabel()} Quick Focus` : 'The active coaching filter';
+    reasons.push(`${rule} requires one of these words or phrases in the type or description: ${[...includedCoachingTerms].join(', ')}.`);
+  }
+  if(!context.weeks.size){
+    reasons.push('Select a start and end date for the report.');
+  }else if(!context.weeks.has(row.wk)){
+    reasons.push(`The coaching week (${reportWeekRange(row.wk)}) falls outside the report’s Start and End dates.`);
+  }
+
+  if(reportView !== 'individual'){
+    reasons.push('Open the Coach tab to see the representative’s individual timeline.');
+  }else if(!selectedTeam){
+    reasons.push('Select a coach in the Coach / Team dropdown.');
+  }else if(!context.teamReps.has(row.repKey)){
+    reasons.push(`This representative has no weekly stats under ${selectedTeam} in the current ${mode === 'retail' ? 'Retail' : 'Referral'} view. Check the selected coach and mode.`);
+  }else{
+    const rep = context.teamReps.get(row.repKey);
+    if(context.repSearch && !rep.toLowerCase().includes(context.repSearch)){
+      reasons.push(`Hidden by the Representative search “${els.repSearch.value.trim()}”.`);
+    }
+    if(reportDetail && !context.eligibleReps.has(row.repKey)){
+      reasons.push(`This representative has too few scored weeks for the ${fmtPct0(reportDetail.minCovFrac)} minimum KPI coverage setting.`);
+    }
+  }
+  return reasons;
+}
+
+function helpCoachingResult(row, context){
+  const reasons = coachingVisibilityReasons(row, context);
+  return `<details class="reportRecord helpCoachingRecord">
+    <summary>
+      <strong>${escAttr(row.rep)}</strong><span>${escAttr(mmddyy(row.date))} · ${escAttr(row.types.join(', ') || 'Unspecified')}</span>
+      <span class="helpResultBadge${reasons.length ? ' filtered' : ''}">${reasons.length ? 'Hidden by report rules' : 'Visible on timeline'}</span>
+    </summary>
+    <div class="helpCoachingDetail">
+      ${reasons.length ? `<h4>Why this coaching is hidden</h4><ul>${reasons.map(reason=>`<li>${escAttr(reason)}</li>`).join('')}</ul>`
+        : '<p>This coaching matches the current timeline. Look for the blue coaching icon in its reporting week.</p>'}
+      <p class="helpRecordMeta">Reporting week ${escAttr(reportWeekRange(row.wk))}${row.coach ? ' · Coach '+escAttr(row.coach) : ''}</p>
+      <div class="coachItemDesc">${escAttr(row.desc || 'No description recorded.')}</div>
+    </div>
+  </details>`;
+}
+
+function paintHelpCoachingResults(){
+  const { results, status } = helpCoachingEls;
+  if(!helpCoachingRows.length){
+    status.textContent = coachings.length ? 'No matching documented coaching was found.' : 'No documented coaching records are loaded in this workspace.';
+    results.innerHTML = `<div class="helpMissingCoaching">
+      <h4>If you expected to find this coaching</h4>
+      <ol>
+        <li>Check the rep’s spelling and the search dates. You can leave both dates blank.</li>
+        <li>Check that the most recent uploaded <strong>Documented Coaching</strong> file contains the record.</li>
+        <li>If the coaching happened after that upload, it can appear once a newer file includes it.</li>
+        <li>If the latest upload contains the record and the search still cannot find it, reach out to <strong>Sean</strong>.</li>
+      </ol>
+    </div>`;
+    return;
+  }
+  const count = helpCoachingRows.length;
+  const start = helpCoachingPage * HELP_COACHING_PAGE_SIZE;
+  const end = Math.min(count, start + HELP_COACHING_PAGE_SIZE);
+  const context = coachingVisibilityContext();
+  status.textContent = `Showing ${start + 1}–${end} of ${count} coaching ${count === 1 ? 'record' : 'records'}. Select a result for its details.`;
+  results.innerHTML = `<div class="coachList">${helpCoachingRows.slice(start,end).map(row=>helpCoachingResult(row,context)).join('')}</div>
+    ${count > HELP_COACHING_PAGE_SIZE ? `<div class="helpResultPages">
+      <button class="btn" type="button" data-help-page="-1" ${start === 0 ? 'disabled' : ''}>Previous</button>
+      <button class="btn" type="button" data-help-page="1" ${end === count ? 'disabled' : ''}>Next</button>
+    </div>` : ''}`;
+}
+
+helpCoachingEls.form.addEventListener('submit', event=>{
+  event.preventDefault();
+  const name = personKey(helpCoachingEls.rep.value);
+  const tokens = name.split(/[,\s]+/).filter(Boolean);
+  if(!tokens.length){
+    helpCoachingEls.status.textContent = 'Enter a representative name.';
+    helpCoachingEls.results.replaceChildren();
+    helpCoachingEls.rep.focus();
+    return;
+  }
+  const start = parseDate(helpCoachingEls.start.value);
+  const end = parseDate(helpCoachingEls.end.value);
+  if(start && end && start > end){
+    helpCoachingEls.status.textContent = 'Choose an end date on or after the start date.';
+    helpCoachingEls.results.replaceChildren();
+    helpCoachingEls.end.focus();
+    return;
+  }
+  const from = start ? localCalendarDay(start) : -Infinity;
+  const through = end ? localCalendarDay(end) : Infinity;
+  helpCoachingRows = coachings.filter(row=>{
+    const day = localCalendarDay(row.date);
+    return day >= from && day <= through && tokens.every(token=>row.repKey.includes(token));
+  });
+  helpCoachingPage = 0;
+  paintHelpCoachingResults();
+});
+
+els.helpModalOverlay.addEventListener('click', event=>{
+  const pane = event.target.closest('[data-help-pane]');
+  if(pane) showHelpPane(pane.dataset.helpPane);
+  const page = event.target.closest('[data-help-page]');
+  if(page && !page.disabled){
+    helpCoachingPage += Number(page.dataset.helpPage);
+    paintHelpCoachingResults();
+    helpCoachingEls.results.querySelector('summary')?.focus();
+  }
+});
+
+els.helpModalOverlay.addEventListener('keydown', event=>{
+  if(event.key !== 'Tab') return;
+  const controls = [...els.helpModalOverlay.querySelectorAll('button:not([disabled]), input:not([disabled]), summary')]
+    .filter(control=>control.getClientRects().length);
+  const first = controls[0];
+  const last = controls[controls.length - 1];
+  if(event.shiftKey && document.activeElement === first){
+    event.preventDefault();
+    last.focus();
+  }else if(!event.shiftKey && document.activeElement === last){
+    event.preventDefault();
+    first.focus();
+  }
+});
 
 /* =================== Events =================== */
 els.settingsBtn.addEventListener('click', ()=> openSettingsModal());
