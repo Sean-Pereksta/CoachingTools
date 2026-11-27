@@ -46,13 +46,15 @@
       const firstHeader=findHeader(row,['First Name','FirstName','Given Name']);
       const lastHeader=findHeader(row,['Last Name','LastName','Surname','Family Name']);
       const emailHeader=findHeader(row,['Username','User Name','Email','Email Address','Work Email']);
+      const supervisorHeader=Object.keys(row||{}).find(header=>key(header)==='supervisor');
       const firstName=cleanText(firstHeader?row[firstHeader]:'');
       const lastName=cleanText(lastHeader?row[lastHeader]:'');
       const email=cleanText(emailHeader?row[emailHeader]:'');
+      const supervisor=cleanText(supervisorHeader?row[supervisorHeader]:'');
       const fullName=[firstName,lastName].filter(Boolean).join(' ');
       const normalizedName=normalizeName(fullName);
       if(!normalizedName) continue;
-      entries.push({firstName,lastName,fullName,email,normalizedName,row});
+      entries.push({firstName,lastName,fullName,email,supervisor,normalizedName,row});
     }
     return entries;
   }
@@ -421,7 +423,7 @@
     else if(!hasBehavior&&!hasGeneric) status=anyMissingMetric?'Missing Metric':'No Qualifying Behavior';
     const sendReady=status==='Ready'&&(hasBehavior||hasGeneric);
     return {
-      repKey:rep.repKey||rep.key||normalizeName(fullName),fullName,email:emailMatch.email||'',emailMatch,
+      repKey:rep.repKey||rep.key||normalizeName(fullName),fullName,email:emailMatch.email||'',emailMatch,supervisor:emailMatch.entry?.supervisor||'',
       coach:rep.coach||rep.coachName||'',team:rep.team||rep.teamName||'',organizationNames:rep.organizationNames||[],
       concern,strength,concerns:rankedConcerns,strengths:rankedStrengths,
       qualifyingConcernCount:allRankedConcerns.length,qualifyingStrengthCount:allRankedStrengths.length,

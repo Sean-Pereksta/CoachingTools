@@ -5,11 +5,12 @@
   if(root) root.QualtricsWorkflow=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
-  const EMAIL_COLUMNS=Object.freeze(['Name','Email','Header','Concern Areas','Strengths','Footer']);
+  const EMAIL_BODY_COLUMNS=Object.freeze(['Header','Concern Areas','Strengths','Footer']);
+  const EMAIL_COLUMNS=Object.freeze(['Name','Supervisor','Email',...EMAIL_BODY_COLUMNS]);
   const join=parts=>parts.filter(Boolean).join('\n\n');
   function emailFields(result,template={}){
     return {
-      Name:result.fullName||'', Email:result.email||'',
+      Name:result.fullName||'', Supervisor:result.supervisor||'', Email:result.email||'',
       Header:join([result.greeting,template.genericPlacement!=='after'?result.genericMessage:'']),
       'Concern Areas':join([result.concernHeading,result.areasToFocusOn||(result.concernMessages||[]).join('\n\n')]),
       Strengths:join([result.strengthHeading,result.strengthSection||(result.strengthMessages||[]).join('\n\n')]),
@@ -93,5 +94,5 @@
     const cell=value=>{ let text=String(value??''); if(/^[\s]*[=+@-]/.test(text)) text="'"+text; return '"'+text.replace(/"/g,'""')+'"'; };
     return '\ufeff'+[COACHING_NEEDS_COLUMNS,...(rows||[]).map(row=>COACHING_NEEDS_COLUMNS.map(column=>row[column]))].map(row=>row.map(cell).join(',')).join('\r\n');
   }
-  return {EMAIL_COLUMNS,emailFields,fingerprint,rulesetStatus,matchingRules,matchesSearch,invalidateSearch,COACHING_NEEDS_COLUMNS,coachingNeedsRows,coachingNeedsCsv};
+  return {EMAIL_COLUMNS,EMAIL_BODY_COLUMNS,emailFields,fingerprint,rulesetStatus,matchingRules,matchesSearch,invalidateSearch,COACHING_NEEDS_COLUMNS,coachingNeedsRows,coachingNeedsCsv};
 });

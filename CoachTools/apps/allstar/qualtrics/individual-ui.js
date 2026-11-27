@@ -533,7 +533,7 @@ function individualEmailWorkspace(results){
   if(!results.length) return '<div class="empty">No representatives match this filter.</div>';
   const selected=results.find(result=>result.repKey===state.individualPreviewRepKey)||results[0];
   const fields=QualtricsWorkflow.emailFields(selected,state.individualTemplate);
-  return `<div class="messageWorkspace"><aside class="messagePeople" aria-label="Representatives">${results.map(result=>`<button type="button" class="messagePerson" data-message-person="${esc(result.repKey)}" aria-pressed="${result===selected}"><strong>${esc(result.fullName)}</strong><small>${esc(result.email||'Missing email')}</small><small>${result.concerns?.length||0} Concern Areas • ${result.strengths?.length||0} Strengths</small><small class="${result.sendReady?'statusReady':'statusBlocked'}">${result.sendReady?'✓ Ready':'! Needs Review'} — ${esc(result.status)}</small></button>`).join('')}</aside><article class="messagePaper"><h2>${esc(selected.fullName)}</h2><div class="sub">${esc(selected.email||'Missing email')}</div>${QualtricsWorkflow.EMAIL_COLUMNS.slice(2).map(column=>`<section><h3>${esc(column)}</h3>${esc(fields[column])||'<span class="muted">No content</span>'}</section>`).join('')}${selected.errors.length?`<div class="note dangerText">${selected.errors.map(esc).join('<br>')}</div>`:''}<details><summary>Supporting rule and roster evidence</summary>${individualDiagnosticHtml(selected)}${individualMatchHtml(selected)}</details></article></div>`;
+  return `<div class="messageWorkspace"><aside class="messagePeople" aria-label="Representatives">${results.map(result=>`<button type="button" class="messagePerson" data-message-person="${esc(result.repKey)}" aria-pressed="${result===selected}"><strong>${esc(result.fullName)}</strong><small>${esc(result.email||'Missing email')}</small><small>${result.concerns?.length||0} Concern Areas • ${result.strengths?.length||0} Strengths</small><small class="${result.sendReady?'statusReady':'statusBlocked'}">${result.sendReady?'✓ Ready':'! Needs Review'} — ${esc(result.status)}</small></button>`).join('')}</aside><article class="messagePaper"><h2>${esc(selected.fullName)}</h2><div class="sub">${esc(selected.email||'Missing email')}</div>${QualtricsWorkflow.EMAIL_BODY_COLUMNS.map(column=>`<section><h3>${esc(column)}</h3>${esc(fields[column])||'<span class="muted">No content</span>'}</section>`).join('')}${selected.errors.length?`<div class="note dangerText">${selected.errors.map(esc).join('<br>')}</div>`:''}<details><summary>Supporting rule and roster evidence</summary>${individualDiagnosticHtml(selected)}${individualMatchHtml(selected)}</details></article></div>`;
 }
 function individualExportCategories(){
   if(!state.individualExportCategories) state.individualExportCategories=new Set(QualtricsIndividualMessages.EXPORT_CATEGORIES);
@@ -574,7 +574,7 @@ function exportFinalIndividualEmails(){
   if(!rows.length){ toast('No send-ready individual messages are available.'); return; }
   if(!window.XLSX){ toast('Excel export library is unavailable.'); return; }
   const wb=XLSX.utils.book_new(), sheet=XLSX.utils.json_to_sheet(rows,{header:QualtricsWorkflow.EMAIL_COLUMNS.slice()});
-  sheet['!cols']=[{wch:26},{wch:36},{wch:55},{wch:65},{wch:65},{wch:55}];
+  sheet['!cols']=[{wch:26},{wch:28},{wch:36},{wch:55},{wch:65},{wch:65},{wch:55}];
   XLSX.utils.book_append_sheet(wb,sheet,'Email Messages');
   XLSX.writeFile(wb,`qualtrics_final_email_${ymd(new Date())}.xlsx`);
   toast(`Exported ${rows.length} send-ready messages. Nothing was sent.`);
@@ -614,7 +614,7 @@ function renderIndividualPreflight(){
 }
 function individualExportRows(){
   return (state.individualResults||[]).map(result=>({
-    Representative:result.fullName,Coach:result.coach||'',Team:result.team||'',Organization:(result.organizationNames||[]).join(' | '),ReviewPriority:QualtricsIndividualMessages.reviewCategory(result),Email:result.email,
+    Representative:result.fullName,Supervisor:result.supervisor||'',Coach:result.coach||'',Team:result.team||'',Organization:(result.organizationNames||[]).join(' | '),ReviewPriority:QualtricsIndividualMessages.reviewCategory(result),Email:result.email,
     GreetingMessageWrapper:result.greeting||'',AreasToFocusOn:result.areasToFocusOn||(result.concernMessages||[]).join('\n\n'),StrengthSection:result.strengthSection||(result.strengthMessages||[]).join('\n\n'),GenericMessage:result.genericMessage||'',Closing:result.closing||'',CompleteMessage:result.message,
     IncludedConcernCount:(result.concerns||[]).length,QualifyingConcernCount:result.qualifyingConcernCount??(result.concerns||[]).length,ConcernRules:(result.concerns||[]).map(item=>item.title).join(' | '),IncludedStrengthCount:(result.strengths||[]).length,QualifyingStrengthCount:result.qualifyingStrengthCount??(result.strengths||[]).length,StrengthRules:(result.strengths||[]).map(item=>item.title).join(' | '),Status:result.status,SendReady:result.sendReady?'Yes':'No',Errors:result.errors.join(' | '),MatchStatus:result.emailMatch.status,NormalizedName:result.emailMatch.normalizedName
   }));
