@@ -556,6 +556,48 @@ button:focus-visible, input:focus-visible {
 .suite-dialog form { position: absolute; top: 11px; right: 11px; }
 .dialog-close { width: 32px; height: 32px; border: 0; border-radius: 9px; background: rgba(255, 255, 255, .06); color: var(--muted); cursor: pointer; font-size: 18px; }
 .suite-dialog h2 { margin: 0 35px 12px 0; font-size: 23px; letter-spacing: -.03em; }
+
+.clean-upload-example {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .04);
+  font-size: 14px;
+}
+.clean-upload-example-folder,
+.clean-upload-example-files li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.clean-upload-example-folder::before {
+  content: '';
+  width: 20px;
+  height: 14px;
+  border-radius: 2px 4px 3px 3px;
+  background: linear-gradient(#f6d891, #c99243);
+  clip-path: polygon(0 0, 42% 0, 54% 22%, 100% 22%, 100% 100%, 0 100%);
+}
+.clean-upload-example-files {
+  list-style: none;
+  margin: 7px 0 0 9px;
+  padding: 0 0 0 13px;
+  border-left: 1px solid var(--line-strong);
+}
+.clean-upload-example-files li {
+  margin: 4px 0;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: rgba(96, 195, 178, .15);
+}
+.clean-upload-example-files li::before {
+  content: '';
+  width: 11px;
+  height: 14px;
+  border-radius: 2px;
+  background: #a4d9cf;
+  clip-path: polygon(0 0, 65% 0, 100% 35%, 100% 100%, 0 100%);
+}
 .dialog-note { color: var(--muted); font-size: 10px; line-height: 1.55; }
 .about-mark { width: 50px; height: 50px; margin-bottom: 17px; border-radius: 14px; }
 .about-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 20px 0; }
