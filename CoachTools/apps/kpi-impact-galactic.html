@@ -106,7 +106,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:#10383c}iframe{width:1
       };
 
       function outcomeTiming(rep,points){
-        const cs=(coachingByRepKey.get(personKey(rep))||[]).filter(c=>c?.date instanceof Date&&!isNaN(c.date));
+        const cs=filteredCoachingsForRep(rep).filter(c=>c?.date instanceof Date&&!isNaN(c.date));
         const ordered=(points||[]).filter(p=>Number.isFinite(p.repRate));
         if(!cs.length||!ordered.length) return {one:NaN,two:NaN,n:0};
         const deltas1=[],deltas2=[];

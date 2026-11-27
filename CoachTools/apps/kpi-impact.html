@@ -262,6 +262,18 @@ aside.side.filterDrawer.show{transform:translateX(0)}
         <input id="customWeeks" type="number" min="1" step="1" placeholder="Weeks" style="width:74px;display:none" aria-label="Custom weeks" />
       </div>
 
+      <details id="coachingTypeFilter" class="coachingTypeFilter">
+        <summary>Coaching Type <span id="coachingTypeCount">Unavailable</span></summary>
+        <div class="coachingTypeMenu">
+          <div class="coachingTypeActions">
+            <button class="btn" id="typesAllBtn" type="button">Select all</button>
+            <button class="btn" id="typesNoneBtn" type="button">Unselect all</button>
+          </div>
+          <div id="typeChips" class="coachingTypeOptions" aria-label="Documented coaching types"></div>
+          <p>Selected types count in Team Impact and Team Breakdown.</p>
+        </div>
+      </details>
+
       <div class="sourceToggles">
         <label class="pill" title="Include Retail data"><input type="checkbox" id="incRetail" checked /> Retail</label>
         <label class="pill" title="Include Referral data"><input type="checkbox" id="incReferral" checked /> Referral</label>
@@ -301,25 +313,26 @@ aside.side.filterDrawer.show{transform:translateX(0)}
         <div id="rateDiff" class="summaryValue diff">—</div>
         <div class="summarySub">Included rate minus full team</div>
       </div>
-      <div class="summaryCard">
-        <div class="summaryLabel">Goal</div>
-        <div id="summaryGoal" class="summaryValue">—</div>
-        <div id="summaryGoalSub" class="summarySub">No mapped goal</div>
-      </div>
-      <div class="summaryCard">
-        <div class="summaryLabel">Coaching Coverage</div>
-        <div id="summaryCoverage" class="summaryValue">—</div>
-        <div id="summaryCoverageSub" class="summarySub">Below-goal weeks coached</div>
-      </div>
-      <div class="summaryCard">
-        <div class="summaryLabel">Attention Reps</div>
-        <div id="summaryAttention" class="summaryValue">—</div>
-        <div id="summaryAttentionSub" class="summarySub">Current coaching opportunities</div>
-      </div>
+      <button type="button" class="summaryCard summaryAction" id="editImpactGoal" aria-haspopup="dialog">
+        <span class="summaryLabel">Goal <span class="summaryActionCue">Edit</span></span>
+        <span id="summaryGoal" class="summaryValue">—</span>
+        <span id="summaryGoalSub" class="summarySub">Choose a KPI</span>
+      </button>
+      <button type="button" class="summaryCard summaryAction" id="inspectImpactCoverage" aria-haspopup="dialog">
+        <span class="summaryLabel">Coaching Coverage <span class="summaryActionCue">›</span></span>
+        <span id="summaryCoverage" class="summaryValue">—</span>
+        <span id="summaryCoverageSub" class="summarySub">Below-goal weeks coached</span>
+      </button>
+      <button type="button" class="summaryCard summaryAction" id="inspectImpactAttention" aria-haspopup="dialog">
+        <span class="summaryLabel">Attention Reps <span class="summaryActionCue">›</span></span>
+        <span id="summaryAttention" class="summaryValue">—</span>
+        <span id="summaryAttentionSub" class="summarySub">Current coaching opportunities</span>
+      </button>
     </div>
 
     <div class="viewTabs" role="tablist" aria-label="Impact views">
       <button class="viewTab active" id="mainTabImpacts" type="button" role="tab" aria-selected="true" aria-controls="impactTabPanel">Team Impact</button>
+      <span class="impactGoalGap" id="teamImpactGoalGap" aria-live="polite" hidden></span>
       <button class="viewTab" id="mainTabTeam" type="button" role="tab" aria-selected="false" aria-controls="teamTabPanel">Team Breakdown · Last 5 Weeks</button>
       <button class="viewTab" id="mainTabSupport" type="button" role="tab" aria-selected="false" aria-controls="supportTabPanel">Coaching Support</button>
       <span class="muted" id="contextHint">—</span>
@@ -401,14 +414,6 @@ aside.side.filterDrawer.show{transform:translateX(0)}
         <label class="drawerOption" style="margin-top:10px"><input type="checkbox" id="attendance3WeeksOnly"><span>Recent attendance only<small>Only show reps with stats in the last 21 days of the active data set.</small></span></label>
       </div>
     </div>
-    <div class="card box">
-      <div class="head">Documented Coaching Categories</div>
-      <div class="body">
-        <div class="muted filterHelp">Choose which coaching categories count toward rep cards and the five-week team breakdown.</div>
-        <div class="grid2" style="margin-top:9px"><button class="btn" id="typesAllBtn">Select all</button><button class="btn" id="typesNoneBtn">Clear all</button></div>
-        <div class="chips filterTypeChips" id="typeChips"><span class="muted">Load coachings to enable type filters.</span></div>
-      </div>
-    </div>
   </div>
 </aside>
 
@@ -418,7 +423,7 @@ aside.side.filterDrawer.show{transform:translateX(0)}
     <div class="modalHeadRow">
       <div>
         <div id="coachingSettingsTitle" class="modalTitle">Documented Coaching Settings</div>
-        <div class="modalSub">Use this only when the coaching cache key needs to be changed or reloaded. Category filters now live in the Filters box.</div>
+        <div class="modalSub">Change or reload the coaching data source. Use Coaching Type in the top bar to choose which entries count.</div>
       </div>
       <div class="modalActions">
         <button class="btn dark" id="coachingSettingsClose" type="button">Close ✕</button>
@@ -474,6 +479,31 @@ aside.side.filterDrawer.show{transform:translateX(0)}
     <div class="modalBody" id="heatmapModalBody"></div>
   </div>
 </div>
+
+<dialog id="impactGoalDialog" class="impactDialog" aria-labelledby="impactGoalTitle">
+  <div class="impactDialogHeader">
+    <h2 id="impactGoalTitle">Edit KPI goal</h2>
+    <form method="dialog"><button class="btn" type="submit">Close</button></form>
+  </div>
+  <form id="impactGoalForm">
+    <p id="impactGoalMetric"></p>
+    <label for="impactGoalValue">Goal (%)</label>
+    <input id="impactGoalValue" type="number" min="0" max="100" step="0.01" required autofocus />
+    <div class="impactDialogActions">
+      <button class="btn primary" type="submit">Save goal</button>
+      <button class="btn" id="impactGoalReset" type="button">Reset to default</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="impactDetailDialog" class="impactDialog" aria-labelledby="impactDetailTitle">
+  <div class="impactDialogHeader">
+    <h2 id="impactDetailTitle"></h2>
+    <form method="dialog"><button class="btn" type="submit" autofocus>Close</button></form>
+  </div>
+  <p id="impactDetailContext"></p>
+  <div id="impactDetailRows"></div>
+</dialog>
 
 <script src="../shared/kpi-coaching-support-core.js"></script>
 <script src="../shared/kpi-coaching-support.js"></script>
@@ -906,6 +936,7 @@ let coachingCandidates = [];
 let coachings = [];
 let coachingTypes = new Set();
 let enabledTypes = new Set();
+let coachingTypeSelection = null;
 let coachingByRepKey = new Map();
 let lastCoachingLoadedKey = null;
 
@@ -924,7 +955,7 @@ function saveWorkspace(){
       includeReferral: !!document.getElementById('incReferral')?.checked,
       attendance3WeeksOnly,
       sort: document.getElementById('sortSel')?.value || 'abs',
-      enabledTypes: Array.from(enabledTypes),
+      coachingTypeSelection,
       excluded: Array.from(excluded),
       quickFilter: activeQuickFilter,
       repSearchTerm
@@ -934,6 +965,7 @@ function saveWorkspace(){
 }
 function restoreStaticWorkspace(){
   const state = readWorkspace();
+  if(Array.isArray(state.coachingTypeSelection)) coachingTypeSelection = state.coachingTypeSelection;
   const timeSel = document.getElementById('timeSel');
   const customWeeks = document.getElementById('customWeeks');
   const retail = document.getElementById('incRetail');
@@ -969,11 +1001,12 @@ function restoreDataWorkspace(){
   }
   workspaceRestored = true;
 }
-function restoreCoachingWorkspace(){
-  const state = readWorkspace();
-  if(Array.isArray(state.enabledTypes) && coachingTypes.size){
-    enabledTypes = new Set(state.enabledTypes.filter(t=>coachingTypes.has(t)));
-  }
+function coachingRecordTypes(coaching){
+  const types = splitTypes(coaching.coachingType);
+  return types.length ? types : coaching.types || [];
+}
+function matchesCoachingType(coaching){
+  return coachingRecordTypes(coaching).some(type => enabledTypes.has(type));
 }
 
 function personKey(name){
@@ -1008,19 +1041,7 @@ function rebuildCoachingIndex(){
   }
 }
 function latestCoachingForRep(repName){
-  if(!coachings.length) return null;
-  if(coachingTypes.size && enabledTypes.size===0) return null;
-
-  const k = personKey(repName);
-  const arr = coachingByRepKey.get(k);
-  if(!arr || !arr.length) return null;
-
-  for(const c of arr){
-    if(!coachingTypes.size) return c;
-    const match = c.types.some(t=>enabledTypes.has(t));
-    if(match) return c;
-  }
-  return null;
+  return coachingByRepKey.get(personKey(repName))?.find(matchesCoachingType) || null;
 }
 function coachingSortTime(repName){
   const c = latestCoachingForRep(repName);
@@ -1073,11 +1094,7 @@ function coachingCountForRep(repName){
   // arr is sorted newest -> oldest
   for(const c of arr){
     if(c.date < start) break;
-    if(!coachingTypes.size){
-      n++;
-      continue;
-    }
-    if((c.types || []).some(t=>enabledTypes.has(t))) n++;
+    if(matchesCoachingType(c)) n++;
   }
   return n;
 }
@@ -1311,6 +1328,16 @@ function setRepCoachingsMode(mode){
   repCoachingModal.mode = mode;
   paintRepCoachingsModal();
 }
+function weeklyGoalMarkup(rep){
+  const weeks = lastHeatmapModel?.weekly || [];
+  const items = [];
+  for(const week of weeks){
+    const entry = week.rows.find(row=>row.rep===rep);
+    const gap = countToGoal(entry, week.goalConfig);
+    if(gap) items.push(`<li>${fmtWeekLabel(week.weekKey)} <span class="impactGoalGap ${gap.tone}">${gap.text}</span></li>`);
+  }
+  return items.length ? `<details class="impactWeeklyGoals"><summary>Distance to goal by week</summary><ul>${items.join('')}</ul></details>` : '';
+}
 function paintRepCoachingsModal(){
   const rep = repCoachingModal.rep;
   const body = document.getElementById('repCoachModalBody');
@@ -1329,9 +1356,11 @@ function paintRepCoachingsModal(){
     return;
   }
 
+  body.insertAdjacentHTML('beforeend', weeklyGoalMarkup(rep) + repTrendMarkup(rep));
+
   if(!coachings.length){
     meta.textContent = 'Coachings not loaded';
-    body.innerHTML = `${repTrendMarkup(rep)}<div class="muted" style="font-weight:900">No coaching dock found/loaded yet.</div>`;
+    body.insertAdjacentHTML('beforeend', '<div class="muted">No coaching dock found/loaded yet.</div>');
     return;
   }
 
@@ -1347,7 +1376,7 @@ function paintRepCoachingsModal(){
       shown = [];
       note = 'Filtered view: no coaching types are selected in the main filter.';
     }else if(coachingTypes.size){
-      shown = all.filter(c => (c.types || []).some(t => enabledTypes.has(t)));
+      shown = all.filter(matchesCoachingType);
       note = 'Filtered view: using the coaching type filter from the main page.';
     }else{
       shown = all;
@@ -1361,15 +1390,13 @@ function paintRepCoachingsModal(){
   meta.textContent = `${note}  Showing ${shown.length} of ${total} coaching(s).`;
 
   if(!total){
-    body.innerHTML = `${repTrendMarkup(rep)}<div class="muted" style="font-weight:900">No coaching records found for this rep in the loaded coaching dock.</div>`;
+    body.insertAdjacentHTML('beforeend', '<div class="muted">No coaching records found for this rep in the loaded coaching dock.</div>');
     return;
   }
   if(!shown.length){
-    body.innerHTML = `${repTrendMarkup(rep)}<div class="muted" style="font-weight:900">No coachings match the current filter for this rep.</div>`;
+    body.insertAdjacentHTML('beforeend', '<div class="muted">No coachings match the current filter for this rep.</div>');
     return;
   }
-
-  body.insertAdjacentHTML('beforeend', repTrendMarkup(rep));
 
   const list = document.createElement('div');
   list.className = 'coachList';
@@ -1601,21 +1628,22 @@ function computeTeamMetrics(set, excludeNames=new Set()){
     const rep = String(r.Name||'').trim();
     if (!rep || isTotalName(rep) || excludeNames.has(rep)) return;
     const a = toNum(r[set.A]); const o = toNum(r[set.B]);
-    const e = byRep.get(rep) || {apps:0, opps:0};
+    const e = byRep.get(rep) || {apps:0, opps:0, goalCountsComplete:true};
     if (Number.isFinite(a)) e.apps += a;
     if (Number.isFinite(o)) e.opps += o;
+    if((o>0 && !Number.isFinite(a)) || (a>0 && !(o>0))) e.goalCountsComplete = false;
     byRep.set(rep, e);
   });
   let A=0,B=0;
   const byRepRows=[];
   byRep.forEach((e,rep)=>{
     const repRate = (e.opps>0) ? (e.apps/e.opps) : NaN;
-    byRepRows.push({rep, apps:e.apps, opps:e.opps, repRate});
+    byRepRows.push({rep, apps:e.apps, opps:e.opps, repRate, goalCountsComplete:e.goalCountsComplete});
     if (Number.isFinite(e.apps)) A += e.apps;
     if (Number.isFinite(e.opps)) B += e.opps;
   });
   const rate = (B>0) ? (A/B) : NaN;
-  return {apps:A, opps:B, rate, byRep:byRepRows};
+  return {apps:A, opps:B, rate, byRep:byRepRows, goalCountsComplete:byRepRows.every(row=>row.goalCountsComplete)};
 }
 function computeImpacts(set, excludedNow){
   const base = computeTeamMetrics(set, excludedNow);
@@ -1629,6 +1657,7 @@ function computeImpacts(set, excludedNow){
       rep:r.rep,
       apps:r.apps,
       opps:r.opps,
+      goalCountsComplete:r.goalCountsComplete,
       repRate:r.repRate,
       weightShare:(base.opps>0 ? (r.opps/base.opps) : 0),
       impact,
@@ -1694,28 +1723,44 @@ function paintTeamSummary(orig, curr){
   d.classList.toggle('good', delta>0);
   d.classList.toggle('bad', delta<0);
 }
-function paintExecutiveSummary(original, current, heatmapModel){
-  const goal = metricGoalConfig(effectiveSet());
-  const goalEl = document.getElementById('summaryGoal');
-  const goalSub = document.getElementById('summaryGoalSub');
-  if(goalEl) goalEl.textContent = goal ? fmtPct1(goal.goal) : '—';
-  if(goalSub) goalSub.textContent = goal ? goal.label : 'No mapped goal for this KPI';
+let summaryCoachingModel = null;
+function coachingReviewMessage(model){
+  if(!model?.goalConfig) return 'Set a KPI goal to review coaching.';
+  if(model.typeFilterBlocked) return 'No coaching types selected.';
+  return 'Coaching data unavailable.';
+}
+function paintExecutiveSummary(current, heatmapModel){
+  summaryCoachingModel = heatmapModel;
+  const set = effectiveSet();
+  const goal = metricGoalConfig(set);
+  const canReviewCoaching = !!goal && heatmapModel.coachingLoaded && !heatmapModel.typeFilterBlocked;
+  document.getElementById('editImpactGoal').disabled = !set;
+  document.getElementById('summaryGoal').textContent = goal ? fmtGoalPercent(goal.goal) + '%' : '—';
+  document.getElementById('summaryGoalSub').textContent = goal?.label || (set ? 'Set a goal for this KPI' : 'Choose a KPI');
+
+  const gapBadge = document.getElementById('teamImpactGoalGap');
+  const gap = countToGoal(current, goal);
+  gapBadge.hidden = !gap;
+  gapBadge.textContent = gap?.text || '';
+  gapBadge.className = 'impactGoalGap' + (gap ? ' '+gap.tone : '');
+  gapBadge.title = gap ? 'Included team · ' + gap.title : '';
 
   const coverageEl = document.getElementById('summaryCoverage');
-  const coverageSub = document.getElementById('summaryCoverageSub');
-  if(coverageEl){
-    coverageEl.textContent = Number.isFinite(heatmapModel?.overallCoverage) ? fmtPct1(heatmapModel.overallCoverage) : 'N/A';
-    coverageEl.classList.toggle('good', Number.isFinite(heatmapModel?.overallCoverage) && heatmapModel.overallCoverage >= .75);
-    coverageEl.classList.toggle('bad', Number.isFinite(heatmapModel?.overallCoverage) && heatmapModel.overallCoverage < .4);
-    coverageEl.classList.toggle('warn', Number.isFinite(heatmapModel?.overallCoverage) && heatmapModel.overallCoverage >= .4 && heatmapModel.overallCoverage < .75);
-  }
-  if(coverageSub) coverageSub.textContent = heatmapModel ? `${heatmapModel.totalCovered} of ${heatmapModel.totalNeeded || 0} below-goal weeks coached` : 'Below-goal weeks coached';
+  const rate = canReviewCoaching ? heatmapModel.overallCoverage : NaN;
+  coverageEl.textContent = fmtPct1(rate);
+  coverageEl.classList.toggle('good', Number.isFinite(rate) && rate >= .75);
+  coverageEl.classList.toggle('bad', Number.isFinite(rate) && rate < .4);
+  coverageEl.classList.toggle('warn', Number.isFinite(rate) && rate >= .4 && rate < .75);
+  document.getElementById('summaryCoverageSub').textContent = canReviewCoaching
+    ? `${heatmapModel.totalCovered} of ${heatmapModel.totalNeeded} below-goal weeks coached`
+    : coachingReviewMessage(heatmapModel);
 
-  const attention = heatmapModel?.repSummaries?.filter(r=>r.hasCoachingOpportunity).length || 0;
+  const attention = canReviewCoaching ? heatmapModel.repSummaries.filter(r=>r.hasCoachingOpportunity).length : null;
   const attentionEl = document.getElementById('summaryAttention');
-  if(attentionEl){ attentionEl.textContent = String(attention); attentionEl.classList.toggle('bad', attention>0); }
-  const attentionSub = document.getElementById('summaryAttentionSub');
-  if(attentionSub) attentionSub.textContent = attention ? 'More than one missed coaching opportunity' : 'No repeat missed-coaching concerns';
+  attentionEl.textContent = attention === null ? '—' : String(attention);
+  attentionEl.classList.toggle('bad', attention > 0);
+  document.getElementById('summaryAttentionSub').textContent = canReviewCoaching
+    ? '2+ below-goal weeks without matching coaching' : coachingReviewMessage(heatmapModel);
 }
 function updateRepCount(total, excl, visibleTotal=total){
   const suffix = attendance3WeeksOnly ? ` • ${visibleTotal} with 3-week attendance` : '';
@@ -1732,7 +1777,7 @@ function daysBetween(a,b){
 function coachingRecencyInfo(repName){
   const c = latestCoachingForRep(repName);
   if(!c) return { text:'—', ageDays:null, type:null, date:null, has:false };
-  let type = (coachingTypes.size ? (c.types.find(t=>enabledTypes.has(t)) || c.types[0]) : (c.types[0]||'')) || '';
+  const type = coachingRecordTypes(c).filter(t=>enabledTypes.has(t)).join(', ');
   const today = new Date();
   const ageDays = daysBetween(today, c.date);
   const text = `${mmddyy(c.date)} • ${type}`;
@@ -1772,9 +1817,7 @@ function fmtWeekLabel(key){
 function filteredCoachingsForRep(repName){
   const k = personKey(repName);
   const arr = coachingByRepKey.get(k) || [];
-  if(!coachingTypes.size) return arr.slice();
-  if(enabledTypes.size===0) return [];
-  return arr.filter(c => (c.types || []).some(t => enabledTypes.has(t)));
+  return arr.filter(matchesCoachingType);
 }
 function latestCoachingBefore(repName, endDate){
   const arr = filteredCoachingsForRep(repName);
@@ -1797,13 +1840,39 @@ function coachingsForRepWeek(repName, weekKey){
   const arr = filteredCoachingsForRep(repName);
   return arr.filter(c => c.wk === weekKey);
 }
-function metricGoalConfig(set){
+function metricGoalDefaults(set){
+  if(!set?.A || !set?.B) return null;
   const hay = `${set?.A || ''} ${set?.B || ''}`.toLowerCase().replace(/\s+/g,' ');
-  if(hay.includes('consumer') && hay.includes('appoint')) return { key:'consumer', label:'Consumer Appointment Rate', goal:0.47 };
-  if(hay.includes('insurance') && hay.includes('appoint')) return { key:'insurance', label:'Insurance Appointment Rate', goal:0.92 };
-  if(hay.includes('commercial')) return { key:'commercial', label:'Commercial Appointment Rate', goal:0.85 };
-  if(hay.includes('wiper')) return { key:'wiper', label:'Wiper Rate', goal:0.23 };
-  return null;
+  const countPair = !/rate|percent|pct|%/i.test(hay);
+  const unit = countPair && /appoint|app(s|t)?\b/i.test(set.A) && /\bopp/i.test(set.B) ? 'appointments' : '';
+  if(hay.includes('consumer') && hay.includes('appoint')) return { key:'consumer', label:'Consumer Appointment Rate', goal:0.47, unit };
+  if(hay.includes('insurance') && hay.includes('appoint')) return { key:'insurance', label:'Insurance Appointment Rate', goal:0.92, unit };
+  if(hay.includes('commercial')) return { key:'commercial', label:'Commercial Appointment Rate', goal:0.85, unit };
+  if(hay.includes('wiper')) return { key:'wiper', label:'Wiper Rate', goal:0.23, unit:countPair && /wiper/i.test(set.A) && /wiper/i.test(set.B) ? 'sales' : '' };
+  return { key:'custom:'+JSON.stringify([set.A,set.B]), label:'Custom KPI', goal:null, unit };
+}
+function readImpactGoals(){
+  try{ return JSON.parse(localStorage.getItem('impactTool.goals.v1') || '{}') || {}; }catch(e){ return {}; }
+}
+function metricGoalConfig(set){
+  const config = metricGoalDefaults(set);
+  if(!config) return null;
+  const custom = readImpactGoals()[config.key];
+  if(Number.isFinite(custom) && custom>=0 && custom<=1) return {...config, goal:custom};
+  return config.goal===null ? null : config;
+}
+function fmtGoalPercent(rate){
+  return String(Number((rate * 100).toFixed(2)));
+}
+function countToGoal(metrics, goal){
+  if(!goal?.unit || !Number.isFinite(goal.goal) || !Number.isFinite(metrics?.apps) || !Number.isFinite(metrics?.opps) || metrics.opps<=0 || metrics.apps<0 || metrics.goalCountsComplete===false) return null;
+  const target = Math.ceil(goal.goal * metrics.opps - 1e-9);
+  const delta = metrics.apps - target;
+  const count = Math.abs(delta).toLocaleString(undefined, {maximumFractionDigits:2});
+  const unit = Math.abs(delta)===1 ? goal.unit.slice(0,-1) : goal.unit;
+  const tone = delta<0 ? 'below' : delta>0 ? 'above' : 'met';
+  const text = delta===0 ? 'Goal met' : `${count} ${unit} ${delta<0 ? 'short' : 'above goal'}`;
+  return {tone, text, title:`${metrics.apps.toLocaleString()} achieved · ${target.toLocaleString()} needed at ${fmtGoalPercent(goal.goal)}%`};
 }
 function metricVolumeLabels(set){
   return metricGoalConfig(set)?.key==='wiper'
@@ -1906,11 +1975,12 @@ function buildWeeklyHeatmapModel(set, includedNames, bottomHalfSetGlobal, weeksO
     const rep = String(r.Name || '').trim();
     if(!wk || !rep || !includedNames.includes(rep)) return;
     const repMap = grouped.get(wk) || new Map();
-    const cur = repMap.get(rep) || { rep, apps:0, opps:0, rows:0, sourceRows:[] };
+    const cur = repMap.get(rep) || { rep, apps:0, opps:0, rows:0, sourceRows:[], goalCountsComplete:true };
     const a = toNum(r[set?.A]);
     const b = toNum(r[set?.B]);
     if(Number.isFinite(a)) cur.apps += a;
     if(Number.isFinite(b)) cur.opps += b;
+    if((b>0 && !Number.isFinite(a)) || (a>0 && !(b>0))) cur.goalCountsComplete = false;
     cur.rows += 1;
     cur.sourceRows.push(r);
     repMap.set(rep, cur);
@@ -1985,7 +2055,7 @@ function buildWeeklyHeatmapModel(set, includedNames, bottomHalfSetGlobal, weeksO
         isPriority: needsCoaching,
         needsCoaching,
         isStrongPerformer,
-        isPriorityMiss: needsCoaching && !coached
+        isPriorityMiss: coachingLoaded && !typeFilterBlocked && needsCoaching && !coached
       };
     });
 
@@ -2030,7 +2100,7 @@ function buildWeeklyHeatmapModel(set, includedNames, bottomHalfSetGlobal, weeksO
     const priorityRows = ranked.filter(r => r.needsCoaching);
     const neededRows = priorityRows;
     const coveredCount = priorityRows.filter(r => r.coached).length;
-    const missedCount = priorityRows.filter(r => !r.coached).length;
+    const missedCount = priorityRows.filter(r => r.isPriorityMiss).length;
     const coachedNonPriority = ranked.filter(r => !r.isPriority && r.coached).length;
     const coverageRate = priorityRows.length ? (coveredCount / priorityRows.length) : NaN;
     let coverageState = 'na';
@@ -2293,6 +2363,7 @@ function detailItemMarkup(entry){
   const percentileTone = detailToneClass('percentile', entry.percentile);
   const impactTone = detailToneClass('impact', entry.impact);
   const rateTone = detailToneClass('delta', rateDelta);
+  const gap = countToGoal(entry, entry.goalConfig);
   const perfTone = entry.goalConfig ? entry.performanceState === 'strong' ? 'good' : entry.performanceState === 'info' ? 'warn' : entry.performanceState === 'weak' ? 'bad' : '' : percentileTone;
   const badges = [
     entry.isPriority ? `<span class="tag urgent">Below Goal</span>` : entry.isStrongPerformer ? `<span class="tag good">Above Goal</span>` : `<span class="tag">Near Goal</span>`,
@@ -2306,6 +2377,7 @@ function detailItemMarkup(entry){
     </div>
     <div class="heatDetailMetrics">
       <span class="tag ${rateTone || ''}">Rate: ${Number.isFinite(entry.repRate) ? fmtPct1(entry.repRate) : '—'}</span>
+      ${gap ? `<span class="impactGoalGap ${gap.tone}">${gap.text}</span>` : ''}
       <span class="tag ${rateTone || ''}">Vs team: ${Number.isFinite(rateDelta) ? (rateDelta >= 0 ? '+' : '') + fmtPct2(rateDelta) : '—'}</span>
       <span class="tag ${impactTone || ''}">Impact: ${Number.isFinite(entry.impact) ? fmtPct2(entry.impact) : '—'}</span>
       <span class="tag">Need: ${Number.isFinite(entry.needScorePct) ? entry.needScorePct.toFixed(0) : '0'}</span>
@@ -2431,8 +2503,8 @@ function quickFilterMatches(r, teamRate){
   const belowGoal = Number.isFinite(r.repRate) && (goal ? r.repRate < goal.goal : (Number.isFinite(teamRate) && r.repRate < teamRate));
   const topPerformer = Number.isFinite(r.repRate) && (goal ? r.repRate > goal.goal + .05 : (Number.isFinite(teamRate) && r.repRate >= teamRate));
   if(activeQuickFilter === 'needs') return !off && Number.isFinite(r.impact) && r.impact > 0;
-  if(activeQuickFilter === 'notCoached') return !off && coachings.length > 0 && nWin === 0;
-  if(activeQuickFilter === 'overdue') return !off && coachings.length > 0 && (rec.ageDays === null || rec.ageDays > 42);
+  if(activeQuickFilter === 'notCoached') return !off && enabledTypes.size > 0 && nWin === 0;
+  if(activeQuickFilter === 'overdue') return !off && enabledTypes.size > 0 && (rec.ageDays === null || rec.ageDays > 42);
   if(activeQuickFilter === 'belowGoal') return !off && belowGoal;
   if(activeQuickFilter === 'top') return !off && topPerformer;
   if(activeQuickFilter === 'excluded') return off;
@@ -2454,7 +2526,8 @@ function paintAttentionRow(cardData){
     const nWin = coachingCountForRep(r.rep);
     const btn = document.createElement('button');
     btn.type='button'; btn.className='attentionItem';
-    const coachTxt = !coachings.length ? 'Coaching not loaded' : rec.has ? `Last coached ${Math.max(0,Math.round(rec.ageDays))}d ago · ${nWin} in window` : `No coaching · ${nWin} in window`;
+    const coachTxt = !coachings.length ? 'Coaching not loaded' : !enabledTypes.size ? 'No coaching types selected'
+      : rec.has ? `Last coached ${Math.max(0,Math.round(rec.ageDays))}d ago · ${nWin} in window` : 'No matching coaching';
     btn.innerHTML = `<div class="attentionName">${r.rep}</div><div class="attentionMeta"><span class="attentionDrag">Team drag ${fmtPct2(Math.abs(r.impact))}</span><span>${coachTxt}</span></div>`;
     btn.addEventListener('click',()=>openRepCoachings(r.rep));
     row.appendChild(btn);
@@ -2474,10 +2547,22 @@ function paintRepGrid(rows, teamRate, allNames, maxVal, bottomHalfSet, cardTrend
   paintAttentionRow(cardData);
 
   const search = repSearchTerm.trim().toLowerCase();
-  const shown = cardData.filter(r=>quickFilterMatches(r,teamRate)).filter(r=>!search || String(r.rep).toLowerCase().includes(search));
+  const set = effectiveSet();
+  const goal = metricGoalConfig(set);
+  const coachingEmpty = !coachings.length ? 'Coaching data unavailable' : !enabledTypes.size ? 'No coaching types selected' : 'No matching coaching';
+  const shown = cardData.filter(r=>quickFilterMatches(r,teamRate))
+    .filter(r=>!search || String(r.rep).toLowerCase().includes(search))
+    .map(row=>{
+      const entry = latestCoachingForRep(row.rep);
+      return {...row, goalGap:countToGoal(row, goal), coaching:entry && {
+        date:mmddyy(entry.date), type:coachingRecordTypes(entry).join(', '), description:entry.desc
+      }};
+    });
   window.KpiImpactTable?.render(shown, {
     onInclude(rep, included){ if(included) excluded.delete(rep); else excluded.add(rep); saveWorkspace(); renderAll(); },
-    onOpen: openRepCoachings
+    onOpen: openRepCoachings,
+    onNote: openImpactCoachingNote,
+    coachingEmpty
   });
   if(!shown.length){
     grid.innerHTML = `<div class="emptyState">No representatives match the current filters.</div>`;
@@ -2487,13 +2572,12 @@ function paintRepGrid(rows, teamRate, allNames, maxVal, bottomHalfSet, cardTrend
   shown.forEach(r=>{
     const off = r.isExcluded || excluded.has(r.rep);
     const rec = coachingRecencyInfo(r.rep);
-    const urgent = (!off && coachings.length > 0 && (rec.ageDays===null || rec.ageDays>42));
+    const urgent = (!off && enabledTypes.size > 0 && (rec.ageDays===null || rec.ageDays>42));
     const stale  = (!off && !urgent && rec.ageDays!==null && rec.ageDays>21);
     const impact = impactPresentation(r.impact);
     const scoreInfo = needCoachingScore(r.rep,r.impact);
     const nWin = coachingCountForRep(r.rep);
     const rateDelta = Number.isFinite(r.repRate) && Number.isFinite(teamRate) ? r.repRate-teamRate : NaN;
-    const goal = metricGoalConfig(effectiveSet());
     const goalDelta = Number.isFinite(r.repRate) && goal ? r.repRate-goal.goal : NaN;
     const trendText = trendTextForRepFromMap(cardTrendMap,r.rep);
 
@@ -2519,6 +2603,7 @@ function paintRepGrid(rows, teamRate, allNames, maxVal, bottomHalfSet, cardTrend
     const teamCompare=Number.isFinite(rateDelta)?`${rateDelta>=0?'+':''}${fmtPct2(rateDelta)} vs team`:'No team comparison';
     const goalCompare=Number.isFinite(goalDelta)?`${goalDelta>=0?'+':''}${fmtPct2(goalDelta)} vs goal`:'';
     compare.innerHTML=`<div class="repVsTeam">${teamCompare}</div><div class="repSub">${goalCompare}</div>`;
+    if(r.goalGap) compare.appendChild(window.KpiImpactTable.goalBadge(r.goalGap));
     metric.appendChild(rate); metric.appendChild(compare);
 
     const bar=document.createElement('div'); bar.className='barWrap';
@@ -2529,14 +2614,20 @@ function paintRepGrid(rows, teamRate, allNames, maxVal, bottomHalfSet, cardTrend
     bar.appendChild(fill);bar.appendChild(avg);
 
     const info=document.createElement('div'); info.className='repInfoGrid';
-    const coachingText=!coachings.length?'Not loaded':rec.has?`${Math.max(0,Math.round(rec.ageDays))}d ago`:'None';
-    const infoData=[['Coaching',coachingText],['In window',coachings.length?`${nWin} coaching${nWin===1?'':'s'}`:'—'],['Trend',trendText.replace(/^Trend:\s*/, '')]];
+    const lastCoaching = document.createElement('div');
+    lastCoaching.className = 'repInfo';
+    const lastCoachingLabel = document.createElement('div');
+    lastCoachingLabel.className = 'k';
+    lastCoachingLabel.textContent = 'Most recent coaching';
+    lastCoaching.append(lastCoachingLabel, window.KpiImpactTable.coachingDetails(r, coachingEmpty, openImpactCoachingNote));
+    info.appendChild(lastCoaching);
+    const infoData=[['In window',coachings.length?`${nWin} coaching${nWin===1?'':'s'}`:'—'],['Trend',trendText.replace(/^Trend:\s*/, '')]];
     infoData.forEach(([k,v])=>{const d=document.createElement('div');d.className='repInfo';d.innerHTML=`<div class="k">${k}</div><div class="v">${v}</div>`;info.appendChild(d);});
 
     const footer=document.createElement('div'); footer.className='cardFooter';
     const xb=document.createElement('label');xb.className='xbox';const cb=document.createElement('input');cb.type='checkbox';cb.checked=!off;const txt=document.createElement('span');txt.textContent=off?'Excluded':'Included';
     cb.onchange=()=>{if(cb.checked)excluded.delete(r.rep);else excluded.add(r.rep);saveWorkspace();renderAll();};xb.appendChild(cb);xb.appendChild(txt);footer.appendChild(xb);
-    const volumeLabels=metricVolumeLabels(effectiveSet());
+    const volumeLabels=metricVolumeLabels(set);
     const volumes=document.createElement('span');volumes.className='plainTrendLine';volumes.textContent=`${Number.isFinite(r.apps)?r.apps.toFixed(0):'—'} ${volumeLabels.shortNumerator} · ${Number.isFinite(r.opps)?r.opps.toFixed(0):'—'} ${volumeLabels.shortDenominator}`;footer.appendChild(volumes);
 
     card.appendChild(top);card.appendChild(metric);card.appendChild(bar);card.appendChild(info);card.appendChild(footer);grid.appendChild(card);
@@ -2656,7 +2747,7 @@ function renderAll(){
     ? cardTrendModel
     : buildWeeklyHeatmapModel(set, heatmapNames, bottomHalfSet, 5);
   paintHeatmap(heatmapModel);
-  paintExecutiveSummary(originalAll, base, heatmapModel);
+  paintExecutiveSummary(base, heatmapModel);
   paintRepGrid(rowsSorted, base.rate, visibleNames, maxVal, bottomHalfSet, cardTrendModel);
   saveWorkspace();
 }
@@ -2689,29 +2780,46 @@ metricModeSel.onchange = ()=>{
    ========================= */
 function repaintTypeChips(){
   const wrap = document.getElementById('typeChips');
-  wrap.innerHTML = '';
-  if(!coachingTypes.size){
-    wrap.innerHTML = `<span class="muted" style="font-weight:900">Load coachings to enable type filters.</span>`;
+  const sorted = Array.from(coachingTypes).sort((a,b)=>a.localeCompare(b));
+  const selectedCount = enabledTypes.size;
+  document.getElementById('coachingTypeCount').textContent = !sorted.length ? 'Unavailable'
+    : selectedCount===sorted.length ? 'All types'
+    : selectedCount ? `${selectedCount} of ${sorted.length}` : 'None selected';
+  document.getElementById('typesAllBtn').disabled = !sorted.length;
+  document.getElementById('typesNoneBtn').disabled = !sorted.length;
+
+  const previous = [...wrap.querySelectorAll('input')];
+  if(previous.length && previous.length===sorted.length && previous.every((input,i)=>input.value===sorted[i])){
+    previous.forEach(input=>{ input.checked = enabledTypes.has(input.value); });
     return;
   }
-  const sorted = Array.from(coachingTypes).sort((a,b)=>a.localeCompare(b));
-  for(const t of sorted){
-    const on = enabledTypes.has(t);
-    const chip = document.createElement('span');
-    chip.className = 'typeChip' + (on ? ' on' : '');
-    chip.textContent = t;
-    chip.onclick = ()=>{
-      if(enabledTypes.has(t)) enabledTypes.delete(t);
-      else enabledTypes.add(t);
-      repaintTypeChips();
-      saveWorkspace();
-      renderAll();
-      if(document.getElementById('repCoachModalOverlay').classList.contains('show') && repCoachingModal.mode==='filtered'){
-        paintRepCoachingsModal();
-      }
-    };
-    wrap.appendChild(chip);
+  wrap.replaceChildren();
+  if(!sorted.length){
+    wrap.textContent = 'Load Documented Coaching to see available types.';
+    return;
   }
+  for(const type of sorted){
+    const label = document.createElement('label');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = type;
+    checkbox.checked = enabledTypes.has(type);
+    checkbox.addEventListener('change',()=>{
+      const selection = new Set(coachingTypeSelection || coachingTypes);
+      if(checkbox.checked) selection.add(type);
+      else selection.delete(type);
+      setCoachingTypeSelection([...selection]);
+    });
+    label.append(checkbox, document.createTextNode(type));
+    wrap.appendChild(label);
+  }
+}
+function setCoachingTypeSelection(selection){
+  coachingTypeSelection = selection;
+  enabledTypes = new Set(selection===null ? coachingTypes : selection.filter(type=>coachingTypes.has(type)));
+  repaintTypeChips();
+  renderAll();
+  if(repCoachingModal.rep && repCoachingModal.mode==='filtered') paintRepCoachingsModal();
 }
 function populateCoachingKeySelect(){
   coachingCandidates = findCoachingCandidates();
@@ -2762,9 +2870,8 @@ function loadCoachings(opts={silent:false}){
 
   coachings = canonicalizeDocumentedCoachings(dock);
   coachingTypes = new Set();
-  for(const c of coachings) for(const t of c.types) coachingTypes.add(t);
-  enabledTypes = new Set(coachingTypes);
-  restoreCoachingWorkspace();
+  for(const c of coachings) for(const type of coachingRecordTypes(c)) coachingTypes.add(type);
+  enabledTypes = new Set(coachingTypeSelection===null ? coachingTypes : coachingTypeSelection.filter(type=>coachingTypes.has(type)));
   rebuildCoachingIndex();
   repaintTypeChips();
 
@@ -2874,7 +2981,7 @@ function refreshFromCache(){
 function setMainTab(which){
   const tabs = [['impacts','mainTabImpacts','impactTabPanel'],['team','mainTabTeam','teamTabPanel'],['support','mainTabSupport','supportTabPanel']];
   const selected=which==='calculator' ? 'support' : which;
-  const active = tabs.some(t=>t[0]===selected) ? selected : 'support';
+  const active = tabs.some(t=>t[0]===selected) ? selected : 'impacts';
   document.querySelector('main.workspace').dataset.activeView=active;
   tabs.forEach(([key,buttonId,panelId])=>{
     const button=document.getElementById(buttonId), selected=key===active;
@@ -2895,7 +3002,85 @@ document.querySelector('.viewTabs').addEventListener('keydown',event=>{
   const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
   tabs[next].click(); tabs[next].focus();
 });
-try{ setMainTab(localStorage.getItem('impactTool.activeTab')); }catch(e){ setMainTab('support'); }
+try{ setMainTab(localStorage.getItem('impactTool.activeTab')); }catch(e){ setMainTab('impacts'); }
+
+const impactGoalDialog = document.getElementById('impactGoalDialog');
+const impactGoalValue = document.getElementById('impactGoalValue');
+let editingImpactGoal = null;
+document.getElementById('editImpactGoal').addEventListener('click',()=>{
+  const set = effectiveSet();
+  editingImpactGoal = metricGoalDefaults(set);
+  if(!editingImpactGoal) return;
+  const current = metricGoalConfig(set);
+  impactGoalValue.value = current ? fmtGoalPercent(current.goal) : '';
+  document.getElementById('impactGoalMetric').textContent = editingImpactGoal.goal===null ? `${set.A} ÷ ${set.B}` : editingImpactGoal.label;
+  const reset = document.getElementById('impactGoalReset');
+  reset.disabled = !Object.hasOwn(readImpactGoals(),editingImpactGoal.key);
+  reset.textContent = editingImpactGoal.goal===null ? 'Clear custom goal' : 'Reset to default';
+  impactGoalDialog.showModal();
+});
+function saveImpactGoal(rate){
+  const goals = readImpactGoals();
+  if(rate===null) delete goals[editingImpactGoal.key];
+  else goals[editingImpactGoal.key] = rate;
+  localStorage.setItem('impactTool.goals.v1',JSON.stringify(goals));
+  impactGoalDialog.close();
+  renderAll();
+}
+document.getElementById('impactGoalForm').addEventListener('submit', event=>{
+  event.preventDefault();
+  if(editingImpactGoal && impactGoalValue.checkValidity()) saveImpactGoal(impactGoalValue.valueAsNumber / 100);
+});
+document.getElementById('impactGoalReset').addEventListener('click',()=>saveImpactGoal(null));
+
+const impactDetailDialog = document.getElementById('impactDetailDialog');
+function setImpactDetails(title, context){
+  document.getElementById('impactDetailTitle').textContent = title;
+  document.getElementById('impactDetailContext').textContent = context;
+  const body = document.getElementById('impactDetailRows');
+  body.replaceChildren();
+  return body;
+}
+function openImpactCoachingNote(row){
+  const body = setImpactDetails(`${row.rep} · Coaching notes`, `${row.coaching.date} · ${row.coaching.type}`);
+  const description = document.createElement('p');
+  description.className = 'impactCoachingDescription';
+  description.textContent = row.coaching.description || 'No description recorded.';
+  body.appendChild(description);
+  impactDetailDialog.showModal();
+}
+function openImpactCoachingSummary(attentionOnly){
+  const model = summaryCoachingModel;
+  if(!model) return;
+  const title = attentionOnly ? 'Attention Reps' : 'Coaching Coverage';
+  const context = attentionOnly ? 'Representatives with at least two below-goal weeks without matching coaching.'
+    : `${model.totalCovered} of ${model.totalNeeded} below-goal rep-weeks had matching coaching.`;
+  const available = model.goalConfig && model.coachingLoaded && !model.typeFilterBlocked;
+  const body = setImpactDetails(title, available ? `Last five reported weeks. ${context}` : coachingReviewMessage(model));
+  if(available){
+    const reps = model.repSummaries.filter(rep=> attentionOnly ? rep.hasCoachingOpportunity : rep.neededCount>0);
+    for(const rep of reps){
+      const detail = document.createElement('section');
+      detail.className = 'impactDetailRep';
+      const heading = document.createElement('h3');
+      heading.textContent = rep.rep;
+      const label = document.createElement('p');
+      label.textContent = `${rep.coachedWhenNeeded} of ${rep.neededCount} weeks coached · ${rep.missedWeeks} missed`;
+      const weeks = document.createElement('ul');
+      for(const week of rep.entries.filter(entry=>entry.isPriority)){
+        const item = document.createElement('li');
+        item.textContent = `${fmtWeekLabel(week.weekKey)} · ${fmtPct1(week.repRate)} · ${week.coached ? 'Coached' : 'No matching coaching'}`;
+        weeks.appendChild(item);
+      }
+      detail.append(heading,label,weeks);
+      body.appendChild(detail);
+    }
+    if(!reps.length) body.textContent = attentionOnly ? 'No representatives had repeat missed weeks.' : 'No below-goal weeks in this period.';
+  }
+  impactDetailDialog.showModal();
+}
+document.getElementById('inspectImpactCoverage').addEventListener('click',()=>openImpactCoachingSummary(false));
+document.getElementById('inspectImpactAttention').addEventListener('click',()=>openImpactCoachingSummary(true));
 
 document.getElementById('reloadCache').onclick = ()=>{ refreshFromCache(); saveWorkspace(); };
 document.getElementById('refreshBtn').onclick = ()=> renderAll();
@@ -2929,24 +3114,20 @@ document.getElementById('incRetail').addEventListener('change', ()=>{saveWorkspa
 document.getElementById('incReferral').addEventListener('change', ()=>{saveWorkspace();refreshFromCache();});
 
 document.getElementById('loadCoachingsBtn').onclick = ()=> loadCoachings({silent:false});
-document.getElementById('typesAllBtn').onclick = ()=>{
-  enabledTypes = new Set(coachingTypes);
-  repaintTypeChips();
-  saveWorkspace();
-  renderAll();
-  if(document.getElementById('repCoachModalOverlay').classList.contains('show') && repCoachingModal.mode==='filtered'){
-    paintRepCoachingsModal();
+document.getElementById('typesAllBtn').onclick = ()=>setCoachingTypeSelection(null);
+document.getElementById('typesNoneBtn').onclick = ()=>setCoachingTypeSelection([]);
+
+const coachingTypeFilter = document.getElementById('coachingTypeFilter');
+document.addEventListener('click',event=>{
+  if(!coachingTypeFilter.contains(event.target)) coachingTypeFilter.open = false;
+});
+coachingTypeFilter.addEventListener('keydown',event=>{
+  if(event.key==='Escape' && coachingTypeFilter.open){
+    event.stopPropagation();
+    coachingTypeFilter.open = false;
+    coachingTypeFilter.querySelector('summary').focus();
   }
-};
-document.getElementById('typesNoneBtn').onclick = ()=>{
-  enabledTypes = new Set();
-  repaintTypeChips();
-  saveWorkspace();
-  renderAll();
-  if(document.getElementById('repCoachModalOverlay').classList.contains('show') && repCoachingModal.mode==='filtered'){
-    paintRepCoachingsModal();
-  }
-};
+});
 
 document.getElementById('autoSetSel').addEventListener('change', e=>{
   const i = parseInt(e.target.value,10);

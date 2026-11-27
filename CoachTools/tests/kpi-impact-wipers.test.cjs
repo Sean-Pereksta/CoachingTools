@@ -15,7 +15,7 @@ function harness(){
     'let allRows=[],headers=[],autoSets=[]; function rowsInScope(){return allRows;}' +
     source.slice(source.indexOf('function computeHeaders('), source.indexOf('function preferConsumerSet(')) +
     source.slice(source.indexOf('function computeTeamMetrics('), source.indexOf('function computeImpacts(')) +
-    source.slice(source.indexOf('function metricGoalConfig('), source.indexOf('function calcPercentile(')) +
+    source.slice(source.indexOf('function metricGoalDefaults('), source.indexOf('function calcPercentile(')) +
     `globalThis.api={
       load:(rows,source)=>normalizeWiperRows(canonicalizeStatsRowsFromDock({sheets:{'Coach Alpha':rows}},source),source),
       raw:(rows,source)=>canonicalizeStatsRowsFromDock({sheets:{'Coach Alpha':rows}},source),
@@ -25,11 +25,24 @@ function harness(){
       sets:()=>autoSets,
       metrics:computeTeamMetrics,
       goal:metricGoalConfig,
+      gap:countToGoal,
       labels:metricVolumeLabels
     };`, context);
   return context.api;
 }
 const row = fields=>({Name:'Alex Reed',Date:'2026-11-01',...fields});
+
+test('converts goals to whole appointments or sales at the measured opportunity volume',()=>{
+  const h = harness();
+  const cash = h.goal({A:'Consumer Appointments',B:'Consumer Opportunities'});
+  const wipers = h.goal({A:'Wipers Accepted',B:'Wipers Offered'});
+  assert.equal(h.gap({apps:172,opps:400},cash).text,'16 appointments short');
+  assert.equal(h.gap({apps:47,opps:101},cash).text,'1 appointment short');
+  assert.equal(h.gap({apps:48,opps:101},cash).text,'Goal met');
+  assert.equal(h.gap({apps:26,opps:100},wipers).text,'3 sales above goal');
+  assert.equal(h.gap({apps:0,opps:0},wipers),null);
+  assert.equal(h.gap({apps:0,opps:100,goalCountsComplete:false},wipers),null);
+});
 
 test('automatically discovers referral Accepted / Offered, ignores rate headers, and preserves appointment KPIs',()=>{
   const h = harness();

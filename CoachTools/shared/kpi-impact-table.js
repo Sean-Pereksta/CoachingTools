@@ -7,11 +7,11 @@
   }
 
   const STORAGE_KEY = 'impactTool.layout.v1';
-  let layout = 'cards';
+  let layout = 'table';
   let currentRows = [];
   let callbacks = {};
   try {
-    if (window.localStorage.getItem(STORAGE_KEY) === 'table') layout = 'table';
+    if (window.localStorage.getItem(STORAGE_KEY) === 'cards') layout = 'cards';
   } catch (_) {}
 
   function node(tag, className, value) {
@@ -44,7 +44,7 @@
       const select = node('select');
       select.id = 'impactLayout';
       select.setAttribute('aria-label', 'Team member view');
-      for (const [value, text] of [['cards', 'Cards'], ['table', 'Table']]) {
+      for (const [value, text] of [['table', 'Table'], ['cards', 'Cards']]) {
         const option = node('option', '', text);
         option.value = value;
         select.appendChild(option);
@@ -74,6 +74,30 @@
     return Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
   }
 
+  function goalBadge(gap) {
+    const badge = node('span', 'impactGoalGap ' + gap.tone, gap.text);
+    badge.title = gap.title;
+    return badge;
+  }
+
+  function coachingDetails(entry, emptyText, onNote) {
+    const coaching = entry.coaching;
+    const details = node('div', 'impactLastCoaching');
+    if (!coaching) {
+      details.appendChild(node('span', 'muted', emptyText || 'No matching coaching'));
+      return details;
+    }
+    details.appendChild(node('strong', '', coaching.date));
+    details.appendChild(node('span', '', coaching.type));
+    const note = node('button', 'impactCoachingNote', 'View notes');
+    note.type = 'button';
+    note.setAttribute('aria-haspopup', 'dialog');
+    note.setAttribute('aria-label', 'View coaching notes for ' + entry.rep);
+    note.addEventListener('click', () => onNote?.(entry));
+    details.appendChild(note);
+    return details;
+  }
+
   function render(rows, handlers) {
     currentRows = Array.isArray(rows) ? rows : [];
     callbacks = handlers || {};
@@ -84,8 +108,9 @@
     table.appendChild(node('caption', '', 'Team members in the current search, filter and sort order. Team impact shows the rate change if a person is removed.'));
     const head = node('thead');
     const headings = node('tr');
-    for (const title of ['Representative', 'KPI rate', 'Numerator', 'Opportunities', 'Team impact', 'Included']) {
-      const heading = node('th', '', title);
+    const titles = ['Representative', 'KPI rate', 'Numerator', 'Opportunities', 'Team impact', 'Distance to goal', 'Most recent coaching', 'Included'];
+    for (const title of titles) {
+      const heading = node('th', title === 'Most recent coaching' ? 'impactCoachingHeading' : '', title);
       heading.scope = 'col';
       headings.appendChild(heading);
     }
@@ -95,7 +120,7 @@
     if (!currentRows.length) {
       const row = node('tr');
       const empty = node('td', 'impactTableEmpty', 'No representatives match the current filters.');
-      empty.colSpan = 6;
+      empty.colSpan = titles.length;
       row.appendChild(empty);
       body.appendChild(row);
     }
@@ -128,6 +153,12 @@
           : 'Removing this person would ' + (entry.impact > 0 ? 'raise' : 'lower') + ' the team rate by ' + points.toFixed(2) + ' percentage points.';
       }
       row.appendChild(impact);
+      const gap = node('td', 'impactTableNumber', entry.goalGap ? undefined : '—');
+      if (entry.goalGap) gap.appendChild(goalBadge(entry.goalGap));
+      row.appendChild(gap);
+      const coaching = node('td', 'impactCoachingCell');
+      coaching.appendChild(coachingDetails(entry, callbacks.coachingEmpty, row => callbacks.onNote?.(row)));
+      row.appendChild(coaching);
       const inclusion = node('td', 'impactTableInclusion');
       const checkbox = node('input');
       checkbox.type = 'checkbox';
@@ -145,6 +176,6 @@
     applyLayout();
   }
 
-  window.KpiImpactTable = Object.freeze({ init, render });
+  window.KpiImpactTable = Object.freeze({ init, render, goalBadge, coachingDetails });
   init();
 })();

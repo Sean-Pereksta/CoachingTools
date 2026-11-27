@@ -3,7 +3,7 @@
 
   const doc=root.document, STORAGE_KEY='impactTool.coachingSupport.v1';
   const categories=[['needs-support','Needs support','No matching coaching in this review window.'],['stagnant','Supported but stagnant','Follow-up performance has not met the growth threshold.'],['growing','Supported but growing','Follow-up performance meets the growth threshold.'],['follow-up','Awaiting follow-up','More weekly data is needed after the latest coaching.'],['on-track','On track','At goal or maintaining performance after coaching.'],['insufficient','Needs more data','No measurable current KPI is available.']];
-  let context=null, scopeKey='', state=null, model=null, mounted=false, opener=null;
+  let context=null, scopeKey='', state=null, model=null, mounted=false, opener=null, goalOverridden=false;
   const byId=id=>doc.getElementById(id);
   const percent=value=>Number.isFinite(value)?(value*100).toFixed(1)+'%':'—';
   const pp=value=>Number.isFinite(value)?Math.abs(value*100).toFixed(1)+' pp':'—';
@@ -12,7 +12,17 @@
   function date(value){if(!value)return 'Not recorded';const parsed=new Date(String(value).slice(0,10)+'T12:00:00');return Number.isNaN(parsed.getTime())?String(value):parsed.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});}
   function node(tag,className,text){const result=doc.createElement(tag);if(className)result.className=className;if(text!==undefined)result.textContent=String(text);return result;}
   function readSaved(){try{const saved=JSON.parse(root.localStorage.getItem(STORAGE_KEY)||'{}');return saved&&typeof saved==='object'?saved:{};}catch(_){return {};}}
-  function save(){try{const saved=readSaved();saved[scopeKey]={...state};const keys=Object.keys(saved);while(keys.length>20)delete saved[keys.shift()];root.localStorage.setItem(STORAGE_KEY,JSON.stringify(saved));}catch(_){}}
+  function save(){
+    try{
+      const saved=readSaved();
+      const entry={...state};
+      if(!goalOverridden) delete entry.goal;
+      saved[scopeKey]=entry;
+      const keys=Object.keys(saved);
+      while(keys.length>20) delete saved[keys.shift()];
+      root.localStorage.setItem(STORAGE_KEY,JSON.stringify(saved));
+    }catch(_){}
+  }
   function defaults(){return {topic:'',coachingType:'',correctiveType:'',correctiveIncident:'',goal:context.goal&&Number.isFinite(context.goal.goal)?String(Number((context.goal.goal*100).toFixed(2))):'',growth:'1',search:'',status:'all',need:'all',correctiveStatus:'all'};}
   function mount(){
     const host=byId('coachingSupportWorkspace');if(!host)return false;
@@ -38,7 +48,7 @@
       <details class="supportMethod"><summary>How these groups are calculated</summary><div><p><strong>Current value</strong> is the latest measured week. The window average uses total results divided by total opportunities. <strong>Trend</strong> compares the weighted older half with the weighted newer half of measured weeks.</p><p><strong>Support response</strong> uses records matching both your selected coaching topic and coaching type. It compares complete measured weeks before and after the latest matching coaching in this review window. The coaching week is excluded. Without both a before and an after week, the person stays in Awaiting follow-up. Growing means the improvement meets your selected threshold; stagnant includes flat or declining performance.</p><p><strong>Level of need</strong> is the current gap from the KPI goal: high is 10 or more percentage points below, moderate is 5 to under 10, and low is under 5. A growing person can still have a substantial gap.</p><p><strong>Correctives</strong> use the corrective type and optional incident you explicitly select. Checklist incidents are separate from coaching topics. Open and served records are distinguished. Corrective since coaching means a matching corrective was recorded on or after the latest regular coaching; it describes timing. Documented-coaching correctives must also match the selected topic and do not count as regular coaching.</p><p>These groups describe recorded performance and support. They do not establish that coaching caused a change or that coaching led to a corrective.</p></div></details>
       <dialog id="supportPersonDialog" class="supportDialog" aria-labelledby="supportDialogTitle"><div class="supportDialogHead"><div><span class="supportEyebrow">Representative detail</span><h2 id="supportDialogTitle"></h2><p id="supportDialogSubtitle"></p></div><button type="button" id="supportDialogClose" aria-label="Close representative details">Close <span aria-hidden="true">×</span></button></div><div id="supportDialogBody" class="supportDialogBody"></div></dialog>`;
     [['supportTopic','topic'],['supportCoachingType','coachingType'],['supportCorrectiveType','correctiveType'],['supportCorrectiveIncident','correctiveIncident'],['supportGrowthThreshold','growth'],['supportStatus','status'],['supportNeed','need'],['supportCorrectiveStatus','correctiveStatus']].forEach(([id,key])=>byId(id).addEventListener('change',event=>{state[key]=event.target.value;save();paint();}));
-    byId('supportGoal').addEventListener('input',event=>{state.goal=event.target.value;save();paint();});
+    byId('supportGoal').addEventListener('input',event=>{state.goal=event.target.value;goalOverridden=true;save();paint();});
     byId('supportSearch').addEventListener('input',event=>{state.search=event.target.value;save();paint();});
     byId('supportResetFilters').addEventListener('click',()=>{Object.assign(state,{search:'',status:'all',need:'all',correctiveStatus:'all'});syncControls();save();paint();});
     const dialog=byId('supportPersonDialog');
@@ -161,7 +171,21 @@
   function render(next){
     context=next;if(!mount())return;
     const nextKey=JSON.stringify([context.coach||'',context.metricKey||context.goal?.label||'']);
-    if(nextKey!==scopeKey){scopeKey=nextKey;const preset=defaults(),saved=readSaved()[scopeKey];state={...preset};if(saved&&typeof saved==='object'){for(const key of Object.keys(preset))if(typeof saved[key]==='string')state[key]=saved[key];}if(!categories.some(item=>item[0]===state.status)&&state.status!=='all')state.status='all';if(!['all','high','moderate','low','at-goal','unknown'].includes(state.need))state.need='all';if(!['all','recorded','none','after-support'].includes(state.correctiveStatus))state.correctiveStatus='all';if(!['1','2','5'].includes(state.growth))state.growth='1';}
+    const preset=defaults();
+    if(nextKey!==scopeKey){
+      scopeKey=nextKey;
+      const saved=readSaved()[scopeKey];
+      state={...preset};
+      goalOverridden=typeof saved?.goal==='string';
+      for(const key of Object.keys(preset)){
+        if(typeof saved?.[key]==='string') state[key]=saved[key];
+      }
+      if(!categories.some(item=>item[0]===state.status)&&state.status!=='all')state.status='all';
+      if(!['all','high','moderate','low','at-goal','unknown'].includes(state.need))state.need='all';
+      if(!['all','recorded','none','after-support'].includes(state.correctiveStatus))state.correctiveStatus='all';
+      if(!['1','2','5'].includes(state.growth))state.growth='1';
+    }
+    if(!goalOverridden)state.goal=preset.goal;
     syncControls();paint();
   }
   root.KpiCoachingSupport=Object.freeze({render});
