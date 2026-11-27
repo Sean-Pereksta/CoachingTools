@@ -177,16 +177,36 @@
     </div>
   </section>
 
-  <dialog id="cleanUploadStep" class="suite-dialog" aria-labelledby="cleanUploadStepTitle" aria-describedby="cleanUploadStepDetail">
+  <dialog id="cleanUploadStep" class="suite-dialog" aria-labelledby="cleanUploadStepTitle">
     <p class="eyebrow">Clean Upload</p>
     <h2 id="cleanUploadStepTitle"></h2>
-    <p id="cleanUploadStepDetail"></p>
-    <div class="clean-upload-example" aria-hidden="true">
-      <span class="clean-upload-example-folder">Storage</span>
-      <ul id="cleanUploadStepFiles" class="clean-upload-example-files" hidden>
-        <li>Report 1.csv</li>
-        <li>Report 2.xlsx</li>
-      </ul>
+    <div id="cleanUploadStepFolder">
+      <ol id="cleanUploadFolderDirections" class="clean-upload-directions">
+        <li>After clicking OK, select the <strong>Storage</strong> folder itself. Leave all files unselected.</li>
+        <li>Click <strong>Select Folder</strong> at the bottom of the picker window. The next notice will show which files to select.</li>
+      </ol>
+      <figure class="clean-upload-example" aria-hidden="true">
+        <figcaption>Folder picker example</figcaption>
+        <div class="clean-upload-example-folder">Storage</div>
+        <div class="clean-upload-example-footer"><span>Select Folder</span></div>
+      </figure>
+    </div>
+    <div id="cleanUploadStepFiles" hidden>
+      <ol id="cleanUploadFileDirections" class="clean-upload-directions">
+        <li>After clicking OK, the picker opens in <strong id="cleanUploadStepDirectory"></strong>. Hold <kbd>Ctrl</kbd> and click each of the four files in your team's column.</li>
+        <li>Click <strong>Open</strong> at the bottom of the picker window.</li>
+      </ol>
+      <table class="clean-upload-file-list">
+        <thead>
+          <tr><th scope="col">Referral</th><th scope="col">Retail</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>All Evaluations</td><td>All Evaluations</td></tr>
+          <tr><td>All Items</td><td>All Items</td></tr>
+          <tr><td>MyOne2view</td><td>MyOne2view</td></tr>
+          <tr><td><strong>Referral Weekly</strong></td><td><strong>Retail Weekly</strong></td></tr>
+        </tbody>
+      </table>
     </div>
     <div class="panel-actions">
       <button id="cleanUploadStepOkay" class="command-button" type="button" autofocus>OK</button>
