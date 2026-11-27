@@ -28,17 +28,22 @@ assert.equal(engine.normalizeTemplate().maxConcerns,1);assert.equal(engine.DEFAU
 assert.equal(engine.normalizeTemplate({maxConcerns:0,maxStrengths:0}).maxConcerns,0,'saved unlimited stays unlimited');
 assert.equal(engine.normalizeTemplate({header:'Saved before limits existed'}).maxConcerns,0,'legacy settings retain unlimited behavior');
 assert.equal(engine.normalizeTemplate({maxConcerns:4,maxStrengths:5}).maxStrengths,5);
-const representative={repKey:'rep',fullName:'Alex Able'};
-const roster=[{'First Name':'Alex','Last Name':'Able',Username:'alex@example.com'}];
+const representative={repKey:'rep',fullName:'Alex Able',coach:'Job Coach'};
+const roster=[{'First Name':'Alex','Last Name':'Able',Username:'alex@example.com',Supervisor:' Sam Rivera ','Supervisor Email':'sam@example.com'}];
 const evaluationRules=Array.from({length:4},(_,i)=>({id:String(i),title:'Rule '+i,individualMessage:{concern:{enabled:true,sourceType:'stat',source:'score',operator:'lt',threshold:'50',message:'Concern '+i},strength:{enabled:true,sourceType:'stat',source:'score',operator:'gte',threshold:'1',message:'Strength '+i}}}));
 const resolver={resolveVariable(){return {missing:true};},resolveObservation(){return {value:20,raw:20,formatted:'20',missing:false};}};
 const result=engine.evaluateAll({representatives:[representative],rules:evaluationRules,rosterRows:roster,resolver,template:{...engine.DEFAULT_TEMPLATE,includeGeneric:true,genericMessage:'Weekly note'}}).results[0];
+assert.equal(result.supervisor,'Sam Rivera');
+for(const rosterRows of [[],[{...roster[0],Supervisor:undefined}],[roster[0],{...roster[0],Supervisor:'Pat Lee'}]]){
+  const {results:[review]}=engine.evaluateAll({representatives:[representative],rules:evaluationRules,rosterRows,resolver});
+  assert.equal(workflow.emailFields(review).Supervisor,'','missing or ambiguous roster supervisors export blank');
+}
 assert.equal(result.concerns.length,1);assert.equal(result.strengths.length,2);assert.equal(result.qualifyingConcernCount,4,'limits do not alter qualifying counts');
 for(const placement of ['before','after']){
   const evaluated=engine.evaluateAll({representatives:[representative],rules:evaluationRules,rosterRows:roster,resolver,template:{...engine.DEFAULT_TEMPLATE,includeGeneric:true,genericMessage:'Weekly note',genericPlacement:placement}}).results[0];
   const fields=workflow.emailFields(evaluated,{genericPlacement:placement});
   assert.deepEqual(Object.keys(fields),workflow.EMAIL_COLUMNS);
-  assert.equal(workflow.EMAIL_COLUMNS.slice(2).map(key=>fields[key]).filter(Boolean).join('\n\n'),evaluated.message,'preview/export preserves the fully rendered message and generic placement');
+  assert.equal(workflow.EMAIL_BODY_COLUMNS.map(key=>fields[key]).filter(Boolean).join('\n\n'),evaluated.message,'preview/export preserves the fully rendered message and generic placement');
 }
 let written,notices=[];
 const context=vm.createContext({state:{rules,dashboardFiles:[{id:'f',ruleId:'a',status:'matched'}],individualResults:[result,{...result,sendReady:false,email:''}],individualTemplate:{genericPlacement:'before'}},QualtricsWorkflow:workflow,QualtricsIndividualMessages:engine,XLSX:{...XLSX,writeFile(wb){written=wb;}},window:{XLSX},toast:message=>notices.push(message),ymd:()=> '2026-09-08',console});
@@ -63,7 +68,14 @@ context.exportFinalIndividualEmails();
 const bytes=XLSX.write(written,{type:'buffer',bookType:'xlsx'}), roundTrip=XLSX.read(bytes,{type:'buffer'});
 assert.deepEqual(roundTrip.SheetNames,['Email Messages']);
 const rows=XLSX.utils.sheet_to_json(roundTrip.Sheets['Email Messages'],{header:1});
-assert.deepEqual(rows[0],workflow.EMAIL_COLUMNS);assert.equal(rows.length,2,'only send-ready people are exported');assert.equal(rows[1][0],'Alex Able');
+assert.deepEqual(rows[0],['Name','Supervisor','Email','Header','Concern Areas','Strengths','Footer']);
+assert.equal(rows.length,2,'only send-ready people are exported');
+assert.deepEqual(rows[1].slice(0,3),['Alex Able','Sam Rivera','alex@example.com']);
+context.exportIndividualReview();
+const reviewBook=XLSX.read(XLSX.write(written,{type:'buffer',bookType:'xlsx'}),{type:'buffer'});
+const reviewRows=XLSX.utils.sheet_to_json(reviewBook.Sheets['Individual Messages'],{header:1});
+assert.deepEqual(reviewRows[0].slice(0,3),['Representative','Supervisor','Coach']);
+assert.deepEqual(reviewRows[1].slice(0,3),['Alex Able','Sam Rivera','Job Coach']);
 written=null;context.state.individualResultsStale=true;context.exportFinalIndividualEmails();assert.equal(written,null,'stale review cannot export');
 const nav=html.slice(html.indexOf('<nav class="tabs">'),html.indexOf('</nav>'));
 for(const tab of ['orgsummary','coachprofiles','overallcoaching','topicimpact']) assert.ok(!nav.includes(`data-tab="${tab}"`));
