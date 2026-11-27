@@ -231,7 +231,8 @@ window.COACHTOOLS_MANIFEST = {
         "weeklyRetail",
         "weeklyReferral",
         "documentedCoaching",
-        "checklist"
+        "checklist",
+        "qa"
       ],
       "favorite": false,
       "featured": false,

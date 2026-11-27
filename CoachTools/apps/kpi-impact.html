@@ -13,7 +13,7 @@
 <meta name="coachtools-icon" content="icons/horizon/kpi-impact.png" />
 <meta name="coachtools-initials" content="KI" />
 <meta name="coachtools-keywords" content="kpi, impact, retail, referral, coaching, trend" />
-<meta name="coachtools-data" content="weeklyRetail, weeklyReferral, documentedCoaching, checklist" />
+<meta name="coachtools-data" content="weeklyRetail, weeklyReferral, documentedCoaching, checklist, qa" />
 <meta name="coachtools-order" content="50" />
 <meta name="coachtools-version" content="1.0" />
 
@@ -214,6 +214,7 @@ aside.side.filterDrawer.show{transform:translateX(0)}
 <link rel="stylesheet" href="../shared/horizon-kpi-impact.css">
 <link rel="stylesheet" href="../shared/kpi-coaching-support.css">
 <link rel="stylesheet" href="../shared/kpi-impact-table.css">
+<link rel="stylesheet" href="../shared/kpi-weekly.css">
 </head>
 
 <body>
@@ -296,6 +297,20 @@ aside.side.filterDrawer.show{transform:translateX(0)}
 
 <div class="content" id="content">
   <main class="workspace">
+    <section id="kpiWeekly" class="weeklySnapshot" aria-labelledby="weeklyTitle">
+      <div class="weeklyIdentity">
+        <span class="weeklyCalendar" aria-hidden="true"></span>
+        <div><h2 id="weeklyTitle">Weekly changes</h2><p id="weeklyContext">Included team</p></div>
+      </div>
+      <label class="weeklyPick"><span>Week to review</span><select id="weeklyDate" disabled><option>Loading weeks…</option></select></label>
+      <div class="weeklyPick weeklyPrevious"><span>Compared with</span><strong id="weeklyCompareDate">—</strong></div>
+      <div class="weeklyCompactResults">
+        <div><span>Team rate</span><strong id="weeklyTeamMove">—</strong><span id="weeklyTrend" class="weeklyBadge flat">—</span></div>
+        <div><span>To goal</span><strong id="weeklyGoalGap">—</strong></div>
+        <div><span>Vs prior result</span><strong id="weeklyPriorGap">—</strong></div>
+      </div>
+      <button class="btn weeklyExpand" id="weeklyExpand" type="button" aria-haspopup="dialog" disabled>Expand <span aria-hidden="true">↗</span></button>
+    </section>
     <div class="summaryStrip" aria-label="Team summary">
       <div class="summaryCard">
         <div class="summaryLabel">Team Rate</div>
@@ -505,9 +520,24 @@ aside.side.filterDrawer.show{transform:translateX(0)}
   <div id="impactDetailRows"></div>
 </dialog>
 
+<dialog id="weeklyDashboard" class="weeklyDashboard" aria-labelledby="weeklyDashboardTitle">
+  <div class="weeklyDialogHeader">
+    <span class="weeklyCalendar" aria-hidden="true"></span>
+    <div><h2 id="weeklyDashboardTitle">Weekly changes</h2><p id="weeklyDashboardDates"></p></div>
+    <form method="dialog"><button class="btn" type="submit" autofocus>Close</button></form>
+  </div>
+  <nav class="weeklyDialogTabs" aria-label="Dashboard view">
+    <button class="btn" id="weeklyTabWeekly" type="button" aria-pressed="true">Weekly</button>
+    <button class="btn" id="weeklyTabCoaching" type="button" aria-pressed="false">Coaching impact</button>
+  </nav>
+  <div id="weeklyDashboardBody" class="weeklyDashboardBody"></div>
+</dialog>
+
 <script src="../shared/kpi-coaching-support-core.js"></script>
 <script src="../shared/kpi-coaching-support.js"></script>
 <script src="../shared/kpi-impact-table.js"></script>
+<script src="../shared/kpi-weekly-core.js"></script>
+<script src="../shared/kpi-weekly-view.js"></script>
 <script>
 function setHeaderH(){
   const hb = document.getElementById('topbar');
@@ -617,7 +647,7 @@ function findDockKey(suffix){
 }
 const sharedData = window.CoachToolsScopedLoader.create({
   data:window.CoachToolsAppData,
-  types:['weeklyRetail','weeklyReferral','documentedCoaching','checklist'], apply:()=>refreshFromCache(),
+  types:['weeklyRetail','weeklyReferral','documentedCoaching','checklist','qa'], apply:()=>refreshFromCache(),
   onError:error=>console.error('[KPI Impact] Shared data refresh failed.',error)
 });
 function loadDockObjByKey(key){
@@ -626,7 +656,8 @@ function loadDockObjByKey(key){
     'coachtools:indexeddb:weeklyRetail':'weeklyRetail',
     'coachtools:indexeddb:weeklyReferral':'weeklyReferral',
     'coachtools:indexeddb:documentedCoaching':'documentedCoaching',
-    'coachtools:indexeddb:checklist':'checklist'
+    'coachtools:indexeddb:checklist':'checklist',
+    'coachtools:indexeddb:qa':'qa'
   };
   return types[key] ? sharedData.peek(types[key]) : null;
 }
@@ -2637,6 +2668,63 @@ function paintRepGrid(rows, teamRate, allNames, maxVal, bottomHalfSet, cardTrend
 /* =========================
    Render
    ========================= */
+let weeklyQADock = null;
+let weeklyQARows = [];
+function getWeeklyQARows(people){
+  const dock = loadDockObjByKey('coachtools:indexeddb:qa');
+  if(dock !== weeklyQADock){
+    weeklyQADock = dock;
+    weeklyQARows = [];
+    for(const pack of extractRowArrays(dock,'')){
+      for(const row of pack.rows){
+        const raw = pickField(row,['score%','scorepct','score','qascore','qa%']);
+        const name = String(pickField(row,['agentname','agent','csr','associate','rep','name']) ?? '').trim();
+        const date = parseAnyDate(pickField(row,['interactionstarttime','interactionstart','starttime','interactiontime','scoreddate','date']));
+        const score = toNum(raw);
+        if(!name || !date || !Number.isFinite(score) || score<0) continue;
+        const results = Math.min(1, String(raw).includes('%') || score>1 ? score/100 : score);
+        weeklyQARows.push({key:personKey(name),name,date,results,volume:1});
+      }
+    }
+  }
+  return weeklyQARows.filter(row=>people.has(row.key)).map(row=>({...row,name:people.get(row.key)}));
+}
+function renderWeeklyImpact(set, weeks){
+  if(!window.KpiWeeklyView) return;
+  const rows = attendanceReferenceRows().filter(row=>selectedSheet && !excluded.has(String(row.Name || '').trim()));
+  const people = new Map(rows.map(row=>[personKey(row.Name),String(row.Name || '').trim()]));
+  const goal = metricGoalConfig(set);
+  const metric = metricGoalDefaults(set);
+  const activeTopic = metric?.key;
+  const metricRows = pair => pair ? rows.map(row=>{
+    const name = String(row.Name || '').trim();
+    return {key:personKey(name),name,date:row._d,results:toNum(row[pair.A]),volume:toNum(row[pair.B])};
+  }) : [];
+  const events = [];
+  for(const [key, name] of people){
+    for(const coaching of coachingByRepKey.get(key) || []){
+      if(matchesCoachingType(coaching)) events.push({...coaching,key,rep:name,type:coachingRecordTypes(coaching).join(', ')});
+    }
+  }
+  const types = [...coachingTypes].sort((a,b)=>a.localeCompare(b)).map(name=>({name,checked:enabledTypes.has(name)}));
+  const allTypes = types.length>0 && types.length===enabledTypes.size;
+  window.KpiWeeklyView.render({
+    activeRows:metricRows(set), metricLabel:metric?.label || 'Choose a KPI', activeTopic, goal:goal?.goal,
+    unit:metric?.unit, window:weeks, events, types, allTypes,
+    coachingLoaded:!!lastCoachingLoadedKey,
+    typesLabel:!types.length ? 'Coaching Type unavailable' : allTypes ? 'All Coaching Types' : `${enabledTypes.size} of ${types.length} coaching types`,
+    setTypes:setCoachingTypeSelection,
+    toggleType(name,checked){
+      const selection = new Set(coachingTypeSelection || coachingTypes);
+      if(checked) selection.add(name); else selection.delete(name);
+      setCoachingTypeSelection([...selection]);
+    },
+    rowsForTopic(topic){
+      if(topic==='callQuality') return getWeeklyQARows(people);
+      return metricRows(autoSets.find(pair=>metricGoalDefaults(pair)?.key===topic));
+    }
+  });
+}
 function renderAll(){
   setHeaderH();
 
@@ -2749,6 +2837,7 @@ function renderAll(){
   paintHeatmap(heatmapModel);
   paintExecutiveSummary(base, heatmapModel);
   paintRepGrid(rowsSorted, base.rate, visibleNames, maxVal, bottomHalfSet, cardTrendModel);
+  renderWeeklyImpact(set,weeks);
   saveWorkspace();
 }
 

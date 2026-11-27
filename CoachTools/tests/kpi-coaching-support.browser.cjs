@@ -30,17 +30,20 @@ async function fixture(page, base){
     const values = {'Needs Nora':[20,20,20,20,20,20],'Stagnant Sam':[30,30,30,30,30,30],
       'Growing Gia':[20,20,20,30,40,50],'Pending Pat':[20,20,20,25,25,25],
       'On Track Oli':[70,70,70,70,70,70],'No Data Noor':[0,0,0,0,0,0],'Other Topic Otis':[35,35,35,35,35,35]};
-    const aoa = [['Date','Sheet','Name','Consumer Appointments','Consumer Opportunities']];
-    dates.forEach((date,i)=>{for(const name of names)aoa.push([date,'Coach Alpha',name,values[name][i],name==='No Data Noor'?0:100]);aoa.push([date,'Coach Beta','Beta Bea',60,100]);});
+    const aoa = [['Date','Sheet','Name','Consumer Appointments','Consumer Opportunities','Wiper Count','Wiper Jobs']];
+    dates.forEach((date,i)=>{for(const name of names)aoa.push([date,'Coach Alpha',name,values[name][i],name==='No Data Noor'?0:100,name==='No Data Noor'?0:i+4,name==='No Data Noor'?0:20]);aoa.push([date,'Coach Beta','Beta Bea',60,100,5,20]);});
     await CoachToolsData.importDataset('weeklyRetail',{meta:{fileName:'Retail Weekly.csv'},workbook:{sheets:['Weekly'],data:{Weekly:{aoa}}}},
       {originalFileName:'Retail Weekly.csv',scopeSnapshot:{mode:'all'},detectedPeriod:{periodKey:'2026-11-08',sortKey:'2026-11-08'}});
     const coaching = [['Associate Name','Job Coach','Date','Coaching Type Multi','Coaching Type','Description'],
       ['Stagnant Sam','Coach Alpha','10/20/2026','Consumer AR','1:1 Coaching','<img src=x onerror="window.__unsafe=1"> Review close with confidence.'],
-      ['Growing Gia','Coach Alpha','10/20/2026','Consumer AR','1:1 Coaching','Practice a clear next step.'],
+      ['Growing Gia','Coach Alpha','10/20/2026','Consumer AR','1:1 Coaching','Appt Rate: Practice a clear next step.'],
       ['Pending Pat','Coach Alpha','11/10/2026','Consumer AR','1:1 Coaching','Recent support needs a complete follow-up week.'],
       ['Other Topic Otis','Coach Alpha','10/20/2026','Wipers','1:1 Coaching','This coaching is for a different topic.'],
       ['Needs Nora','Coach Alpha','10/20/2026','Consumer AR','Team Meeting','Topic matches but the selected coaching type does not.'],
-      ['Needs Nora','Coach Alpha','11/20/2026','Consumer AR','1:1 Coaching','Future event must not count.']];
+      ['Needs Nora','Coach Alpha','11/20/2026','Consumer AR','1:1 Coaching','Future event must not count.'],
+      ['On Track Oli','Coach Alpha','11/4/2026','Huddle','Team Meeting','Appt Rate huddle.'],
+      ['Needs Nora','Coach Alpha','11/11/2026','Huddle','Team Meeting','Appt Rate: demonstrated two offers.'],
+      ['Growing Gia','Coach Alpha','10/20/2026','Call Quality','1:1 Coaching','Pause to confirm the customer’s request.']];
     await CoachToolsData.importDataset('documentedCoaching',{meta:{fileName:'Documented Coaching.csv'},workbook:{sheets:['Coaching'],data:{Coaching:{aoa:coaching}}}},
       {originalFileName:'Documented Coaching.csv',scopeSnapshot:{mode:'all'}});
     const checklist = [['Coach Assigned','Associate Name','Created On','Date Served','Action Taken','Incident','Corrective','Description'],
@@ -48,6 +51,9 @@ async function fixture(page, base){
       ['Coach Alpha','Needs Nora','11/4/2026','','Open','Attendance','Verbal warning','Open record for a different incident.']];
     await CoachToolsData.importDataset('checklist',{meta:{fileName:'Checklist.csv'},workbook:{sheets:['Checklist'],data:{Checklist:{aoa:checklist}}}},
       {originalFileName:'Checklist.csv',scopeSnapshot:{mode:'all'}});
+    const evaluations = [['Agent Name','Interaction Start Time','Score%'],...dates.map((date,i)=>['Growing Gia',date,i<3?'70%':'90%'])];
+    await CoachToolsData.importDataset('qa',{meta:{fileName:'All Evaluations.csv'},workbook:{sheets:['QA'],data:{QA:{aoa:evaluations}}}},
+      {originalFileName:'All Evaluations.csv',scopeSnapshot:{mode:'all'}});
     CoachToolsStorage.setScope({mode:'all',label:'All people'});
   }, names);
   return open(page,base);
@@ -71,6 +77,29 @@ async function noHorizontalOverflow(frame){return frame.evaluate(() => ({scroll:
     const base='http://127.0.0.1:'+server.address().port;
     let frame=await fixture(page,base);
     await frame.selectOption('#coachSel','Coach Alpha');await frame.selectOption('#timeSel','10');
+    assert.match(await frame.locator('#weeklyDate option').first().innerText(),/Nov 8.*Nov 14.*↑.*1\.7 pp/);
+    assert.match(await frame.locator('#weeklyGoalGap').innerText(),/52 appointments short/);
+    assert.match(await frame.locator('#weeklyPriorGap').innerText(),/10 appointments above/);
+    const weekOptions = await frame.locator('#weeklyDate option').evaluateAll(options=>options.map(option=>option.value));
+    await frame.selectOption('#weeklyDate',weekOptions[1]);
+    assert.match(await frame.locator('#weeklyCompareDate').innerText(),/Oct 25.*Oct 31/);
+    await frame.selectOption('#weeklyDate',weekOptions[0]);
+    await frame.click('#weeklyExpand');
+    assert.match(await frame.locator('#weeklyDashboardBody').innerText(),/Biggest upward drivers[\s\S]*Growing Gia[\s\S]*Overperformed/);
+    await frame.click('#weeklyTabCoaching');
+    assert.match(await frame.locator('#weeklyDashboardBody').innerText(),/\+20\.0 pp/);
+    await frame.locator('.weeklyNoteList summary').first().click();
+    assert.match(await frame.locator('.weeklyNoteList').first().innerText(),/Practice a clear next step/);
+    await frame.click('#weeklyTopic-callQuality');
+    assert.match(await frame.locator('#weeklyDashboardBody').innerText(),/\+20\.0 pp/);
+    await frame.click('#weeklyTopic-wiper');
+    assert.match(await frame.locator('#weeklyDashboardBody').innerText(),/\+17\.5 pp/);
+    await frame.locator('.weeklyTypeChoices summary').click();
+    await frame.click('#weeklyTypesNone');
+    assert.match(await frame.locator('#weeklyDashboardBody').innerText(),/Select a Coaching Type/);
+    await frame.click('#weeklyTypesAll');
+    assert.match(await frame.locator('#weeklyDashboardBody').innerText(),/\+17\.5 pp/);
+    await page.keyboard.press('Escape');
     assert.equal(await frame.locator('#mainTabImpacts').getAttribute('aria-selected'),'true');
     assert.equal(await frame.inputValue('#impactLayout'),'table');
     let sam = frame.locator('#impactTable tbody tr').filter({hasText:'Stagnant Sam'});
