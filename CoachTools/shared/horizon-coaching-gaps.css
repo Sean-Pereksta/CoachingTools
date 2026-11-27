@@ -412,3 +412,93 @@ body {
   #itemModalOverlay.recentTrendDialog { padding: 8px; }
   .recentTrendChart text { font-size: 17px; }
 }
+
+/* Illustrated Coaching Gaps help and coaching search */
+.gapsHelpArt {
+  flex: 0 0 auto;
+  display: inline-block;
+  width: 48px;
+  height: 48px;
+  background: url('../icons/horizon/coaching-gaps-help.png') no-repeat 0 0 / 400% 100%;
+}
+.gapsHelpArt.coach { background-position: calc(100% / 3) 0; }
+.gapsHelpArt.focus { background-position: calc(200% / 3) 0; }
+.gapsHelpArt.calendar { background-position: 100% 0; }
+#topBar #helpBtn { display: inline-flex; gap: 5px; align-items: center; width: auto; min-width: 64px; padding-inline: 7px; font: inherit; font-weight: 750; font-size: 12px; }
+#helpBtn .gapsHelpArt { width: 21px; height: 21px; }
+#helpModalOverlay .modalPanel { width: min(920px, 96vw); max-height: min(92vh, 92dvh); }
+#helpModalOverlay .modalHead { align-items: center; background: #f4f8f4; }
+.gapsHelpHeading { display: flex; align-items: center; gap: 8px; }
+.gapsHelpHeading .gapsHelpArt { width: 34px; height: 34px; }
+.gapsHelpHeading .modalTitle { color: #193f3b; font-size: 20px; }
+.gapsHelpNav { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 13px; border-bottom: 1px solid #e1e9e4; }
+.gapsHelpNav button {
+  padding: 7px 10px;
+  border: 1px solid #d6e1dc;
+  border-radius: 8px;
+  background: #fff;
+  color: #254940;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.gapsHelpNav button[aria-pressed="true"] { background: #e6f1eb; border-color: #8cb3a4; color: #174c42; }
+.gapsHelpNav button:hover { border-color: #398072; }
+.gapsHelpBody { background: #f3f7f5; overscroll-behavior: contain; }
+.gapsHelpPane { display: grid; align-content: start; gap: 11px; }
+.gapsHelpPane[hidden] { display: none; }
+.gapsHelpPane .helpSection { padding: 13px; }
+.gapsHelpPane h3 { margin: 0 0 7px; color: #173b3b; font-size: 16px; }
+.gapsHelpPane h4 { margin: 12px 0 4px; color: #234839; font-size: 13px; }
+.gapsHelpPane p { margin: 4px 0 8px; color: #3d565d; font-size: 13px; line-height: 1.45; }
+.helpStartGrid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.helpStartCard { display: flex; align-items: flex-start; gap: 8px; padding: 8px; border: 1px solid #e2e9e3; border-radius: 9px; background: #f9fbf8; }
+.helpStartCard .gapsHelpArt { width: 36px; height: 36px; }
+.helpStartCard h3 { margin: 0; font-size: 13px; }
+.helpStartCard p { margin: 3px 0 0; font-size: 12px; }
+
+.helpWeekDiagram { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 5px; padding: 0; margin: 8px 0 10px; list-style: none; }
+.helpWeekDiagram li { border: 1px solid #dde6e4; border-radius: 7px; padding: 6px 4px; background: #f5f7f7; text-align: center; line-height: 1.3; overflow-wrap: anywhere; }
+.helpWeekDiagram li strong, .helpWeekDiagram li span { display: block; }
+.helpWeekDiagram li strong { color: #254841; font-size: 12px; }
+.helpWeekDiagram li span { margin-top: 4px; color: #51656d; font-size: 11px; }
+.helpWeekDiagram .qualifies { background: #eaf6ee; border-color: #b5d9c8; }
+.helpWeekDiagram .qualifies span { color: #27664d; font-weight: 750; }
+.helpWeekDiagram .red { background: #fff1ee; border-color: #eac5c1; }
+.helpWeekDiagram .red strong { color: #921f2d; }
+.helpWeekDiagram .red span { color: #634549; }
+.helpIconList { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px 12px; margin: 8px 0 0; padding: 0; list-style: none; }
+.helpIconList li { display: flex; align-items: flex-start; gap: 8px; padding-block: 3px; }
+.helpIconList .weekIcon { width: 22px; height: 22px; }
+.helpIconList strong { display: block; color: #23454c; font-size: 12px; }
+.helpIconList div span { display: block; color: #53696e; font-size: 12px; margin-top: 1px; }
+.helpAlertSample { width: 22px; height: 22px; flex: 0 0 auto; display: grid; place-items: center; background: #fff2d9; color: #814914; border: 1px solid #e1c48c; border-radius: 6px; font-weight: 800; }
+
+.gapsHelpSearchForm { display: grid; grid-template-columns: minmax(120px,2fr) repeat(2,minmax(115px,1fr)) auto; align-items: end; gap: 8px; margin-block: 11px; }
+.gapsHelpSearchForm label { display: grid; gap: 4px; font-size: 12px; color: #254a46; font-weight: 700; }
+.gapsHelpSearchForm input { box-sizing: border-box; min-width: 0; width: 100%; min-height: 34px; border: 1px solid #cbdcd5; border-radius: 7px; padding: 4px 7px; background: #fff; color: #183244; font: inherit; }
+.gapsHelpSearchForm .btn { min-height: 34px; }
+.helpSearchStatus { min-height: 1.4em; }
+.helpCoachingRecord summary { line-height: 1.75; }
+.helpCoachingRecord summary .helpResultBadge { display: inline-block; padding: 0 6px; border-radius: 999px; background: #e6f3ea; color: #22563f; font-size: 11px; }
+.helpCoachingRecord summary .helpResultBadge.filtered { background: #f8eee0; color: #725024; }
+.helpCoachingDetail { margin-top: 7px; }
+.helpCoachingDetail h4, .helpMissingCoaching h4 { margin: 0 0 4px; }
+.helpCoachingDetail ul, .helpMissingCoaching ol { padding-inline-start: 20px; margin-block: 5px 8px; font-size: 13px; color: #344f59; line-height: 1.45; }
+.helpMissingCoaching ol { margin-bottom: 0; }
+.helpCoachingDetail .helpRecordMeta { color: #52676d; font-size: 12px; }
+.helpMissingCoaching { padding: 10px; border: 1px solid #e9ddc9; border-radius: 8px; background: #fffcf6; }
+.helpResultPages { display: flex; gap: 6px; justify-content: flex-end; padding-top: 8px; }
+#helpModalOverlay :is(button,input,summary):focus-visible { outline: 2px solid #257469; outline-offset: 2px; }
+@media (max-width: 700px) {
+  .helpStartGrid { grid-template-columns: 1fr; }
+  .gapsHelpSearchForm { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .gapsHelpSearchForm label:first-child { grid-column: 1/-1; }
+}
+@media (max-width: 440px) {
+  #helpModalOverlay { padding: 6px; }
+  .helpIconList { grid-template-columns: 1fr; }
+  .helpWeekDiagram { gap: 3px; }
+  .helpWeekDiagram li strong, .helpWeekDiagram li span { font-size: 10px; }
+}
