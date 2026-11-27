@@ -487,7 +487,7 @@
     flex:1 1 0;
     min-width:2px;
     display:grid;
-    grid-template-columns:repeat(3, minmax(0, 14px));
+    grid-template-columns:repeat(3, minmax(0, 18px));
     justify-content:center;
     justify-items:center;
     align-content:start;
@@ -496,24 +496,10 @@
     transform:scaleY(-1);
   }
   .weekOrb{
-    width:14px;
-    height:14px;
-    transform:scaleY(-1);
-    border-radius:999px;
-    border:2px solid #fff;
-    box-shadow:0 6px 15px rgba(2,6,23,.24);
     cursor:pointer;
     pointer-events:auto;
-    transition:transform .14s ease, box-shadow .14s ease, filter .14s ease;
+    transform:scaleY(-1);
   }
-  .weekOrb:hover{
-    transform:scale(1.18) scaleY(-1);
-    box-shadow:0 9px 18px rgba(2,6,23,.28);
-    filter:brightness(1.04);
-  }
-  .weekOrb.coaching{ background:#2563eb; }
-  .weekOrb.incident{ background:var(--orb-color, #f59e0b); }
-  .weekOrb.monitor{ background:#111827; }
 
   /* coaching bar */
   .coachbar{
@@ -1331,7 +1317,7 @@
   }
   .summaryMetrics{
     display:grid;
-    grid-template-columns:repeat(4, minmax(150px, 1fr));
+    grid-template-columns:repeat(3, minmax(150px, 1fr));
     gap:10px;
     flex:3;
     min-width:560px;
@@ -1525,11 +1511,6 @@
   .stat{ background:linear-gradient(180deg,#fff,#fafcff); }
   .stat .k{ font-weight:800; }
   .stat .v{ font-size:20px;font-weight:900;letter-spacing:-.02em; }
-  .weekOrb{ width:11px;height:11px;border:2px solid #fff;box-shadow:0 3px 8px rgba(15,23,42,.18); }
-  .weekOrb.coaching{ background:#2563eb;border-radius:999px; }
-  .weekOrb.incident{ background:var(--orb-color,#f59e0b);border-radius:2px;transform:rotate(45deg); }
-  .weekOrb.incident:hover{ transform:rotate(45deg) scale(1.18); }
-  .weekOrb.monitor{ background:#475569;border-radius:2px; }
   .coachbar{ height:8px;background:#eef2f7;border-color:#e2e8f0; }
   .timeline{ height:10px;background:#eef2f7;border-color:#e2e8f0; }
   .cbseg{ border-right-color:rgba(100,116,139,.28);background:#e8edf4; }
@@ -1544,9 +1525,6 @@
   .seg.incident::before,.cbseg.incident::before{ opacity:.25; }
   .timelineLegend{ display:flex;gap:10px;flex-wrap:wrap;align-items:center;color:var(--muted);font-size:10px;font-weight:800; }
   .legendItem{ display:inline-flex;align-items:center;gap:5px; }
-  .legendDot{ width:8px;height:8px;display:inline-block;background:#2563eb;border-radius:999px; }
-  .legendDiamond{ width:8px;height:8px;display:inline-block;background:#f59e0b;border-radius:1px;transform:rotate(45deg); }
-  .legendSquare{ width:8px;height:8px;display:inline-block;background:#475569;border-radius:1px; }
   .coachingVisibilityNote{ margin:0 0 9px;padding:8px 10px;border-radius:10px;background:#f4f7fb;border:1px solid #e2e8f0;color:#4b5f78;font-size:11px;font-weight:750; }
   .coachingVisibilityNote strong{ color:#17243a; }
   @media (max-width:1180px){
@@ -1793,52 +1771,53 @@
   <div class="wrap" style="padding:12px 0 0 0;">
     <div class="card" id="coachReportCard">
       <div class="row" style="gap:12px; align-items:stretch; flex-wrap:wrap">
-        <div class="grade" style="flex:1; min-width:260px">
-          <div class="left">
-            <div class="title">Coach Report Card</div>
-            <div class="score" id="coachScore">—</div>
-            <div class="modalSub" id="coachSub" style="margin-top:2px">—</div>
-          </div>
-          <div class="badge" id="coachGrade">—</div>
-        </div>
+        <button type="button" class="grade reportTile" data-report-detail="grade" aria-haspopup="dialog" style="flex:1; min-width:260px">
+          <span class="left">
+            <span class="title">Coach Report Card</span>
+            <span class="score" id="coachScore">—</span>
+            <span class="modalSub" id="coachSub">Choose a team and date range.</span>
+            <span class="tileAction">View scoring details <span aria-hidden="true">↗</span></span>
+          </span>
+          <span class="badge" id="coachGrade">—</span>
+        </button>
 
         <div class="summaryMetrics">
-          <div class="stat">
-            <div class="k">Checklist items</div>
-            <div class="v" id="statBelowPct">—</div>
-            <div class="s" id="statBelowNote">Selected checklist criteria</div>
-          </div>
-          <div class="stat">
-            <div class="k">Coachings</div>
-            <div class="v" id="statSeg2">—</div>
-            <div class="s" id="statSeg2Note">Documented coaching count</div>
-          </div>
-          <div class="stat">
-            <div class="k">% coached when needed</div>
-            <div class="v" id="statSeg3">—</div>
-            <div class="s" id="statSeg3Note">2+ below-goal streaks</div>
-          </div>
-          <div class="stat">
-            <div class="k">Trend average</div>
-            <div class="v" id="statCoverage">—</div>
-            <div class="s" id="statCoverageNote">Selected data</div>
-          </div>
+          <button type="button" class="stat reportTile" data-report-detail="checklist" aria-haspopup="dialog">
+            <span class="k">Checklist items</span>
+            <span class="v" id="statBelowPct">—</span>
+            <span class="s">Matching checklist filters</span>
+            <span class="tileAction">View items &amp; turnaround <span aria-hidden="true">↗</span></span>
+          </button>
+          <button type="button" class="stat reportTile" data-report-detail="coachings" aria-haspopup="dialog">
+            <span class="k">Coachings</span>
+            <span class="v" id="statSeg2">—</span>
+            <span class="s">Matching coaching filters</span>
+            <span class="tileAction">View coaching records <span aria-hidden="true">↗</span></span>
+          </button>
+          <button type="button" class="stat reportTile" data-report-detail="trend" aria-haspopup="dialog">
+            <span class="k">Trend average</span>
+            <span class="v" id="statCoverage">—</span>
+            <span class="s" id="statCoverageNote">Reps with trend data</span>
+            <span class="tileAction">View trend breakdown <span aria-hidden="true">↗</span></span>
+          </button>
         </div>
       </div>
 
       <details class="metricDetails">
         <summary>Other metrics</summary>
         <div class="topStats">
-            <div class="stat">
-              <div class="k">Weeks below goal</div>
-              <div class="v" id="statReinforce">—</div>
-              <div class="s" id="statReinforceNote">—</div>
-            </div>
-            <div class="stat">
-              <div class="k">Above-goal w/o coaching</div>
-              <div class="v" id="statAutonomy">—</div>
-              <div class="s" id="statAutonomyNote">—</div>
-            </div>
+          <button type="button" class="stat reportTile" data-report-detail="below" aria-haspopup="dialog">
+            <span class="k">Weeks below goal</span>
+            <span class="v" id="statReinforce">—</span>
+            <span class="s" id="statReinforceNote">Selected date range</span>
+            <span class="tileAction">View below-goal weeks <span aria-hidden="true">↗</span></span>
+          </button>
+          <button type="button" class="stat reportTile" data-report-detail="autonomy" aria-haspopup="dialog">
+            <span class="k">Above-goal w/o coaching</span>
+            <span class="v" id="statAutonomy">—</span>
+            <span class="s">Above-goal weeks uncoached</span>
+            <span class="tileAction">View above-goal weeks <span aria-hidden="true">↗</span></span>
+          </button>
         </div>
       </details>
     </div>
@@ -2080,9 +2059,11 @@
       <div>
         <div style="font-weight:900">Representatives</div>
         <div class="timelineLegend" style="margin-top:4px">
-          <span class="legendItem"><i class="legendDot"></i>Documented coaching</span>
-          <span class="legendItem"><i class="legendDiamond"></i>Checklist / corrective</span>
-          <span class="legendItem"><i class="legendSquare"></i>QA event</span>
+          <span class="legendItem"><span class="weekIcon coaching" aria-hidden="true"></span>Coaching</span>
+          <span class="legendItem"><span class="weekIcon checklist" aria-hidden="true"></span>Checklist</span>
+          <span class="legendItem"><span class="weekIcon corrective" aria-hidden="true"></span>Corrective</span>
+          <span class="legendItem"><span class="weekIcon monitorUnread" aria-hidden="true"></span>Unreviewed monitor</span>
+          <span class="legendItem"><span class="weekIcon monitorReviewed" aria-hidden="true"></span>Reviewed monitor</span>
         </div>
       </div>
       <span class="spacer"></span>
@@ -2593,8 +2574,8 @@ function normPct(v){
 function normalizeReadFlag(v){
   const s = String(v ?? '').trim().toLowerCase();
   if(!s) return '';
-  if(['1','y','yes','true','read','done','completed'].includes(s)) return 'yes';
-  if(['0','n','no','false','unread','pending'].includes(s)) return 'no';
+  if(['1','y','yes','true','read','reviewed','done','complete','completed'].includes(s)) return 'yes';
+  if(['0','n','no','false','unread','not read','unreviewed','not reviewed','pending'].includes(s)) return 'no';
   return s;
 }
 
@@ -3120,13 +3101,14 @@ function canonicalizeChecklistRows(dockObj){
       const descRaw= pickFieldFromRow(r, ["description","desc","details","notes","note","summary"]);
       const dateRaw= pickFieldFromRow(r, ["incidentdate","date","dt","day"]);
       const createdRaw = pickFieldFromRow(r, ["createdon","createddate","datecreated","created"]);
-      const servedRaw = pickFieldFromRow(r, ["dateserved","serveddate","servicecompleted","completeddate","resolveddate"]);
+      const servedRaw = pickFieldFromRow(r, ["dateserved","serveddate","servicecompleted","completeddate","datecompleted","completedon","resolveddate"]);
 
       const rep = String(repRaw ?? "").trim();
       const incident = String(incRaw ?? "").trim();
       const d = parseDate(dateRaw);
       const createdOn = parseDate(createdRaw);
       const dateServed = parseDate(servedRaw);
+      const corrective = String(pickFieldFromRow(r, ['corrective']) ?? '').trim();
 
       if(!rep || !incident || !d) continue;
 
@@ -3138,7 +3120,9 @@ function canonicalizeChecklistRows(dockObj){
         incident,
         desc: String(descRaw ?? "").trim(),
         createdOn,
-        dateServed
+        dateServed,
+        corrective,
+        isCorrective: /(?:^|[^a-z0-9])(?:verbal|written|final|vw|ww|fww)(?=$|[^a-z0-9])/i.test(corrective)
       });
     }
   }
@@ -3167,7 +3151,8 @@ function canonicalizeQA(dockObj){
       const dateRaw = pickFieldFromRow(r, ["interactionstarttime","interactionstart","starttime","interactiontime","scoreddate","date"]);
       const evalRaw = pickFieldFromRow(r, ["evaluator","evaluatorname","monitor","reviewer","qaevaluator"]);
       const teamRaw = pickFieldFromRow(r, ["team","sheet","dock","group"]);
-      const readRaw = pickFieldFromRow(r, ["read","readflag","readstatus"]);
+      const agentRead = normalizeReadFlag(pickFieldFromRow(r, ['agenthasread']));
+      const readFlag = agentRead === 'yes' || agentRead === 'no' ? agentRead : normalizeReadFlag(pickFieldFromRow(r, ['read','readflag','readstatus']));
 
       const repDisplay = displayNameFromRaw(repRaw);
       const repKey = personKey(repDisplay || repRaw);
@@ -3184,7 +3169,7 @@ function canonicalizeQA(dockObj){
         wk: isoWeekKey(startDate),
         evaluator: String(evalRaw ?? "").trim(),
         team: String(teamRaw ?? pack.sheetName ?? "").trim(),
-        readFlag: normalizeReadFlag(readRaw)
+        readFlag
       });
     }
   }
@@ -3297,17 +3282,12 @@ const els = {
   coachSub: document.getElementById('coachSub'),
 
   statBelowPct: document.getElementById('statBelowPct'),
-  statBelowNote: document.getElementById('statBelowNote'),
   statSeg2: document.getElementById('statSeg2'),
-  statSeg2Note: document.getElementById('statSeg2Note'),
-  statSeg3: document.getElementById('statSeg3'),
-  statSeg3Note: document.getElementById('statSeg3Note'),
   statCoverage: document.getElementById('statCoverage'),
   statCoverageNote: document.getElementById('statCoverageNote'),
   statReinforce: document.getElementById('statReinforce'),
   statReinforceNote: document.getElementById('statReinforceNote'),
   statAutonomy: document.getElementById('statAutonomy'),
-  statAutonomyNote: document.getElementById('statAutonomyNote'),
 
   repSearch: document.getElementById('repSearch'),
   scopeHint: document.getElementById('scopeHint'),
@@ -4029,14 +4009,16 @@ function weekEventOrbs(repName, weeks){
 
     const incRows = checklistForRepWeek(repName, wk);
     for(const it of incRows){
-      const crit = checklistCriteriaForItem(it)[0];
+      const matches = checklistCriteriaForItem(it);
+      const criterion = matches.find(c => (c.incident && c.incident !== '__ANY__') || c.incidentTerms?.length || c.keywords?.length) || matches[0];
       const arr = out.get(wk) || [];
       arr.push({
         kind:'incident',
-        color: checklistIncidentColor(it) || normalizeColor(crit?.color || '#f59e0b'),
+        color: criterion?.color ? normalizeColor(criterion.color) : '',
+        slaColor: checklistIncidentColor(it),
         date: it.date,
         row: it,
-        criteriaName: crit?.name || ''
+        criteriaName: criterion?.name || ''
       });
       out.set(wk, arr);
     }
@@ -4126,6 +4108,42 @@ function qaInteractionStartLabel(row){
   if(dt && !isNaN(dt)) return `${formatReportDate(dt)} ${dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`;
   return formatReportDate(row?.startDate || raw || pickFieldFromRow(row||{},['scoreddate','date'])) || '—';
 }
+function qaReviewStatus(row){
+  if(row.readFlag === 'yes') return { icon:'monitorReviewed', label:'Reviewed monitor' };
+  if(row.readFlag === 'no') return { icon:'monitorUnread', label:'Unreviewed monitor' };
+  return { icon:'monitorUnknown', label:'Monitor · review status unknown' };
+}
+
+function formatInteractionDuration(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return '—';
+
+  const clockMatch = /^(\d+):(\d{1,2})(?::(\d{1,2})(?:\.\d+)?)?$/.exec(text);
+  if (clockMatch) {
+    const first = Number(clockMatch[1]);
+    const second = Number(clockMatch[2]);
+    const third = clockMatch[3] == null ? null : Number(clockMatch[3]);
+    if ([first, second].every(Number.isFinite) && (third == null || Number.isFinite(third))) {
+      const totalSeconds = third == null
+        ? Math.round((first * 60) + second)
+        : Math.round((first * 3600) + (second * 60) + third);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return `${minutes}:${String(seconds).padStart(2, '0')}`;
+    }
+  }
+
+  const numeric = Number(text);
+  if (Number.isFinite(numeric) && numeric >= 0 && numeric < 1) {
+    const totalSeconds = Math.round(numeric * 86400);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  return text;
+}
+
 function gatherChecklistInWindow(repName, weeks){
   const out=[];
   const seen = new Set();
@@ -5376,52 +5394,61 @@ document.addEventListener('click', (e)=>{
 
 /* =================== Top gaps list =================== */
 function paintGapList(repSummaries){
-  const mode = (els.gapSortSel && els.gapSortSel.value) ? els.gapSortSel.value : 'count';
+  const byRecent = els.gapSortSel?.value === 'recent';
+  const withGaps = repSummaries.filter(rep => rep.missingBelow.length);
+  const rows = byRecent
+    ? withGaps.flatMap(rep => rep.missingBelow.map(miss => ({ rep, miss })))
+      .sort((a,b) => b.miss.i - a.miss.i || a.rep.repName.localeCompare(b.rep.repName)).slice(0,24)
+    : withGaps.sort((a,b) => b.missingBelow.length - a.missingBelow.length || a.repName.localeCompare(b.repName))
+      .slice(0,20).map(rep => ({ rep, miss:rep.missingBelow[rep.missingBelow.length - 1] }));
 
-  const repsWithMiss = repSummaries.filter(r => Array.isArray(r.missingBelow) && r.missingBelow.length);
-
-  if(!repsWithMiss.length){
-    els.gapList.innerHTML = `<div class="gapMuted">No red weeks in this window are missing coaching within ±1 week.</div>`;
+  if(!rows.length){
+    els.gapList.innerHTML = '<div class="gapMuted">No red weeks in this window are missing coaching within ±1 week.</div>';
     return;
   }
 
-  if(mode === 'recent'){
-    const misses = [];
-    for(const r of repsWithMiss){
-      for(const m of r.missingBelow){
-        misses.push({ rep: r.repName, wk: m.wk, v: m.v, idx: m.i });
-      }
-    }
-    misses.sort((a,b)=> (b.idx - a.idx) || a.rep.localeCompare(b.rep));
-
-    const top = misses.slice(0, 24);
-    const items = top.map(m=>{
-      const vStr = Number.isFinite(m.v) ? (m.v*100).toFixed(1)+'%' : '—';
-      return `<li><strong>${escAttr(m.rep)}</strong> — <span class="mono">${escAttr(reportWeekLabel(m.wk))}</span> • <span class="gapBad">${escAttr(vStr)}</span></li>`;
-    }).join('');
-
-    els.gapList.innerHTML = `<ul>${items}</ul>`;
-    return;
-  }
-
-  const sorted = repsWithMiss.slice().sort((a,b)=>{
-    const av = a.missingBelow.length;
-    const bv = b.missingBelow.length;
-    if(bv!==av) return bv-av;
-    return a.repName.localeCompare(b.repName);
-  });
-
-  const top = sorted.slice(0, 20);
-  const items = top.map(r=>{
-    let last = r.missingBelow[0];
-    for(const m of r.missingBelow){
-      if(m.i > last.i) last = m;
-    }
-    const vStr = Number.isFinite(last.v) ? (last.v*100).toFixed(1)+'%' : '—';
-    return `<li><strong>${escAttr(r.repName)}</strong> — <span class="gapBad">${r.missingBelow.length}</span> red week(s) w/o coaching ±1w (most recent: <span class="mono">${escAttr(reportWeekLabel(last.wk))}</span> • <span class="gapBad">${escAttr(vStr)}</span>)</li>`;
+  const rowHtml = rows.map(({ rep, miss })=>{
+    const count = rep.missingBelow.length;
+    const summary = byRecent
+      ? reportWeekRange(miss.wk)
+      : `${count} missed ${count === 1 ? 'week' : 'weeks'} · Latest ${reportWeekLabel(miss.wk)}`;
+    const target = `data-gap-rep="${escAttr(rep.repName)}" data-gap-week="${escAttr(miss.wk)}"`;
+    return `<li class="gapRow">
+      <button type="button" class="gapRowDetail" data-gap-detail="${byRecent ? 'week' : 'rep'}" ${target} aria-haspopup="dialog">
+        <span class="gapRowName">${escAttr(rep.repName)}</span>
+        <span class="gapRowSummary">${escAttr(summary)}</span>
+        <span class="gapBad">${fmtPct1(miss.v)}</span>
+        <span class="gapRowAction">View details <span aria-hidden="true">↗</span></span>
+      </button>
+      <button type="button" class="gapTimelineBtn" data-gap-timeline ${target} aria-label="View timeline for ${escAttr(rep.repName)}">View timeline <span aria-hidden="true">↓</span></button>
+    </li>`;
   }).join('');
 
-  els.gapList.innerHTML = `<ul>${items}</ul>`;
+  els.gapList.innerHTML = `<ul>${rowHtml}</ul>`;
+}
+
+function scrollToGapTimeline(repName, wk){
+  const findRow = () => Array.from(els.repList.children).find(row => row.dataset.timelineRep === repName);
+  let row = findRow();
+  if(!row && els.repSearch.value.trim()){
+    els.repSearch.value = '';
+    render();
+    row = findRow();
+  }
+  if(!row) return;
+
+  const scroller = row.querySelector('.timelineScroller');
+  const week = Array.from(scroller.querySelectorAll('[data-week-label]')).find(cell => cell.dataset.weekLabel === wk);
+  const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth';
+  if(week){
+    const offset = week.getBoundingClientRect().left - scroller.getBoundingClientRect().left;
+    scroller.scrollTo({ left:scroller.scrollLeft + offset - (scroller.clientWidth - week.offsetWidth) / 2, behavior });
+  }
+  const inset = Array.from(document.querySelectorAll('#topBar, #presetStrip'))
+    .filter(header => getComputedStyle(header).position === 'sticky')
+    .reduce((total, header) => total + header.offsetHeight, 0);
+  row.querySelector('.repNameBtn').focus({ preventScroll:true });
+  window.scrollBy({ top:row.getBoundingClientRect().top - inset - 12, behavior });
 }
 
 /* =================== Team Summary =================== */
@@ -6219,7 +6246,7 @@ function paintRepModal(){
 }
 
 /* =================== Timeline item modal + orbs =================== */
-const ITEM_MODAL = { open:false };
+const ITEM_MODAL = { open:false, trigger:null };
 
 function openItemModalFromOrb(btn){
   if(!btn) return;
@@ -6256,16 +6283,21 @@ function openItemModalFromOrb(btn){
   }
 
   if(kind === 'monitor'){
-    const row = it.row || {};
+    const row = it.row;
     const convoId = qaConversationId(row) || '—';
+    const queue = pickFieldFromRow(row, ['queuename','queue','interactionqueue']) || '—';
+    const duration = formatInteractionDuration(pickFieldFromRow(row, ['interactionduration','duration','callduration','conversationduration']));
     els.itemModalTitle.textContent = `Call Quality Monitor • ${rep}`;
     els.itemModalMeta.textContent = `${reportWeekRange(wk)} • ${qaInteractionStartLabel(row)} • Score ${fmtPct1(row.score)}`;
     els.itemModalBody.innerHTML = `
       <div class="mCard">
         <div class="mini">
+          <span class="pill">${escAttr(qaReviewStatus(row).label)}</span>
           <span class="pill">Conversation ID: <strong>${escAttr(convoId)}</strong></span>
           <span class="pill">Interaction Start Time: <strong>${escAttr(qaInteractionStartLabel(row))}</strong></span>
           <span class="pill">Evaluator: <strong>${escAttr(row.evaluator || '—')}</strong></span>
+          <span class="pill">Interaction Duration: <strong>${escAttr(duration)}</strong></span>
+          <span class="pill">Queue Name: <strong>${escAttr(queue)}</strong></span>
         </div>
       </div>
     `;
@@ -6273,11 +6305,10 @@ function openItemModalFromOrb(btn){
   }
 
   const row = it.row || {};
-  const days = checklistTurnaroundDays(row);
   const servedDate = row.dateServed ? mmddyy(row.dateServed) : '—';
   const createdDate = row.createdOn ? mmddyy(row.createdOn) : '—';
-  const agingTxt = days===null ? '—' : `${days} day${days===1?'':'s'}`;
-  els.itemModalTitle.textContent = `Checklist Incident • ${rep}`;
+  const agingTxt = checklistTurnaroundLabel(row);
+  els.itemModalTitle.textContent = `${row.isCorrective ? 'Corrective' : 'Checklist item'} • ${rep}`;
   els.itemModalMeta.textContent = `${reportWeekRange(wk)} • ${mmddyy(row.date)} • ${row.incident || 'Incident'}`;
   els.itemModalBody.innerHTML = `
     <div class="mCard">
@@ -6287,6 +6318,7 @@ function openItemModalFromOrb(btn){
         <span class="pill">Created On: <strong>${escAttr(createdDate)}</strong></span>
         <span class="pill">Date Served: <strong>${escAttr(servedDate)}</strong></span>
         <span class="pill">Turnaround: <strong>${escAttr(agingTxt)}</strong></span>
+        ${row.isCorrective ? `<span class="pill">Corrective: <strong>${escAttr(row.corrective)}</strong></span>` : ''}
       </div>
       <div class="coachItemDesc" style="margin-top:10px">${escAttr(row.desc || '—')}</div>
     </div>
@@ -6297,6 +6329,8 @@ function closeItemModal(){
   els.itemModalOverlay.classList.remove('show');
   els.itemModalOverlay.setAttribute('aria-hidden','true');
   els.itemModalBody.innerHTML = '';
+  ITEM_MODAL.trigger?.focus();
+  ITEM_MODAL.trigger = null;
 }
 els.itemModalClose.addEventListener('click', closeItemModal);
 els.itemModalOverlay.addEventListener('click', (e)=>{ if(e.target===els.itemModalOverlay) closeItemModal(); });
@@ -6309,13 +6343,25 @@ function timelineOrbHtml(repName, weeks){
   const cols = weeks.map(wk=>{
     const items = orbMap.get(wk) || [];
     const inner = items.map((it, idx)=>{
-      const style = it.kind==='incident' ? ` style="--orb-color:${escAttr(it.color || '#f59e0b')}"` : '';
-      const title = it.kind==='coaching'
-        ? `Documented Coaching • ${formatReportDate(it.row?.date)} • ${(it.row?.types||[]).join(", ")} • ${it.row?.desc||it.row?.description||""}`
-        : (it.kind==='monitor'
-          ? `Conversation ID: ${qaConversationId(it.row) || '—'} • Interaction Start Time: ${qaInteractionStartLabel(it.row)} • Evaluator: ${it.row?.evaluator || '—'}`
-          : `Checklist • ${formatReportDate(it.row?.date)} • ${it.row?.incident || ''} • ${it.row?.desc || ''}`);
-      return `<button class="weekOrb ${escAttr(it.kind)}" data-kind="${escAttr(it.kind)}" data-rep="${escAttr(repName)}" data-wk="${escAttr(wk)}" data-idx="${idx}" aria-label="${escAttr(repName+' · '+title)}" title="${escAttr(repName+' · '+title)}"${style}></button>`;
+      const row = it.row;
+      let icon = it.kind;
+      let title;
+      let style = '';
+      if(it.kind === 'coaching'){
+        title = `Documented coaching • ${formatReportDate(row.date)} • ${(row.types || []).join(', ')} • ${row.desc || ''}`;
+      }else if(it.kind === 'monitor'){
+        const review = qaReviewStatus(row);
+        icon = review.icon;
+        title = `${review.label} • ${qaInteractionStartLabel(row)} • Score ${fmtPct1(row.score)} • Evaluator ${row.evaluator || '—'}`;
+      }else{
+        icon = row.isCorrective ? 'corrective' : 'checklist';
+        const kindLabel = row.isCorrective ? `Corrective (${row.corrective})` : 'Checklist item';
+        title = [kindLabel, formatReportDate(row.date), row.incident, it.criteriaName, checklistTurnaroundLabel(row)].filter(Boolean).join(' • ');
+        const colors = [it.color && `--clipboard-color:${it.color}`, it.slaColor && `--sla-color:${it.slaColor}`].filter(Boolean);
+        if(colors.length) style = ` style="${escAttr(colors.join(';'))}"`;
+      }
+      const label = escAttr(`${repName} · ${title}`);
+      return `<button type="button" class="weekOrb ${escAttr(it.kind)}${it.slaColor ? ' hasSla' : ''}" data-kind="${escAttr(it.kind)}" data-rep="${escAttr(repName)}" data-wk="${escAttr(wk)}" data-idx="${idx}" aria-haspopup="dialog" aria-label="${label}" title="${label}"${style}><span class="weekIcon ${escAttr(icon)}" aria-hidden="true"></span></button>`;
     }).join('');
     return `<div class="weekOrbCol">${inner}</div>`;
   }).join('');
@@ -6325,6 +6371,165 @@ function timelineOrbHtml(repName, weeks){
     html:`<div class="weekOrbs">${cols}</div>`
   };
 }
+
+/* =================== Report card and red-week drilldowns =================== */
+let reportDetail = null;
+
+function showReportDetail(trigger, title, meta, body){
+  ITEM_MODAL.open = true;
+  ITEM_MODAL.trigger = trigger;
+  els.itemModalTitle.textContent = title;
+  els.itemModalMeta.textContent = meta;
+  els.itemModalBody.innerHTML = body;
+  els.itemModalBody.scrollTop = 0;
+  els.itemModalOverlay.classList.add('show');
+  els.itemModalOverlay.setAttribute('aria-hidden','false');
+  els.itemModalClose.focus();
+}
+
+function reportDetailNote(text){
+  return `<p class="reportDetailNote">${escAttr(text)}</p>`;
+}
+
+function reportDetailTable(headers, rows, empty){
+  if(!rows.length) return reportDetailNote(empty);
+  return `<div class="tblWrap reportDetailTable" tabindex="0" aria-label="Report details">
+    <table>
+      <thead><tr>${headers.map(label=>`<th scope="col">${escAttr(label)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(row=>`<tr>${row.map(value=>`<td>${escAttr(value)}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>
+  </div>`;
+}
+
+function reportCoachingRecord(repName, row){
+  const details = [...(row.types || []), row.coach ? 'Coach '+row.coach : ''].filter(Boolean).join(' · ');
+  return `<details class="reportRecord">
+    <summary><strong>${escAttr(repName)}</strong><span>${escAttr(mmddyy(row.date))} · ${escAttr(details || 'Documented coaching')}</span></summary>
+    <div class="coachItemDesc">${escAttr(row.desc || 'No description recorded.')}</div>
+  </details>`;
+}
+
+function checklistTurnaroundLabel(row){
+  const days = checklistTurnaroundDays(row);
+  if(row.dateServed) return days === null ? 'Completed · duration unavailable' : days + (days === 1 ? ' day to complete' : ' days to complete');
+  return days === null ? 'Pending' : 'Pending · ' + days + (days === 1 ? ' day open' : ' days open');
+}
+
+function reportChecklistRecord(repName, row){
+  const turnaround = checklistTurnaroundLabel(row);
+  const itemType = row.isCorrective ? 'Corrective · '+row.corrective : 'Checklist item';
+  return `<details class="reportRecord">
+    <summary><strong>${escAttr(repName)}</strong><span>${escAttr(row.incident || 'Checklist item')} · ${escAttr(turnaround)}</span></summary>
+    <div class="mini">
+      <span class="pill">${escAttr(itemType)}</span>
+      <span class="pill">Incident <strong>${escAttr(mmddyy(row.date) || '—')}</strong></span>
+      <span class="pill">Created <strong>${escAttr(mmddyy(row.createdOn) || '—')}</strong></span>
+      <span class="pill">Served <strong>${escAttr(mmddyy(row.dateServed) || '—')}</strong></span>
+    </div>
+    <div class="coachItemDesc">${escAttr(row.desc || 'No description recorded.')}</div>
+  </details>`;
+}
+
+function openReportCardDetail(trigger){
+  const title = trigger.querySelector('.title, .k').textContent;
+  if(!reportDetail){
+    showReportDetail(trigger, title, '', reportDetailNote('Choose a team with weekly stats and a valid date range.'));
+    return;
+  }
+
+  const { team, kpi, coachingFilter, weeks, allSummaries, scopedSummaries, coach, goalFrac, minCovFrac, avgTrend } = reportDetail;
+  const meta = `${team} · ${kpi} · ${reportWeekLabel(weeks[0])} – ${reportWeekLabel(weeks[weeks.length - 1])}`;
+  const kind = trigger.dataset.reportDetail;
+  let body;
+
+  if(kind === 'grade'){
+    const rows = scopedSummaries.flatMap(rep=>rep.runs2plus.map(run=>{
+      const { cells } = rep;
+      const firstMatch = cells.slice(run.start, run.end + 2).find(cell=>cell.coachCount > 0);
+      return [rep.repName, reportWeekLabel(cells[run.start].wk) + ' – ' + reportWeekLabel(cells[run.end].wk),
+        firstMatch ? (firstMatch === cells[run.end + 1] ? 'Following week' : 'During streak') : 'No matching coaching',
+        firstMatch ? reportWeekLabel(firstMatch.wk) : '—'];
+    }));
+    const coached = scopedSummaries.reduce((total, rep)=>total + rep.seg2plusCoached, 0);
+    const result = coach.seg2plus
+      ? `${fmtPct0(coach.coverage)} of ${kpi} streaks received matching coaching during the streak or within one week after it ended (${coached} of ${coach.seg2plus}).`
+      : `No ${kpi} streaks of two or more below-goal weeks qualified for the score.`;
+    body = reportDetailNote(result) +
+      reportDetailNote(`A streak is two or more consecutive weeks below the ${fmtPct1(goalFrac)} goal. The grade uses reps meeting ${fmtPct0(minCovFrac)} minimum KPI coverage and weeks in the selected range. Coaching filter · ${coachingFilter}.`) +
+      reportDetailTable(['Representative','Below-goal streak','Coaching timing','First coaching week'], rows, 'No qualifying streaks.');
+  }else if(kind === 'checklist' || kind === 'coachings'){
+    const isChecklist = kind === 'checklist';
+    const entries = allSummaries.flatMap(rep=>weeks.flatMap(wk=>{
+      const rows = isChecklist ? checklistForRepWeek(rep.repName, wk) : coachingForRepWeek(rep.repName, wk);
+      return rows.map(row=>({ repName:rep.repName, row }));
+    })).sort((a,b)=>b.row.date - a.row.date || a.repName.localeCompare(b.repName));
+    body = reportDetailNote(isChecklist
+      ? 'Open an item to see the recorded dates and description. Turnaround runs from creation to the date served.'
+      : `Open a record to read the coaching notes. Coaching filter · ${coachingFilter}.`);
+    body += entries.length
+      ? `<div class="coachList">${entries.map(({repName,row})=>isChecklist ? reportChecklistRecord(repName,row) : reportCoachingRecord(repName,row)).join('')}</div>`
+      : reportDetailNote(isChecklist ? 'No matching checklist items in this window.' : 'No matching coaching records in this window.');
+  }else if(kind === 'trend'){
+    const rows = allSummaries.filter(rep=>Number.isFinite(rep.trendTotal)).map(rep=>{
+      const values = rep.cells.filter(cell=>cell.hasData);
+      return [rep.repName, values.length, fmtPct1(values[0].v), fmtPct1(values[values.length - 1].v), fmtPp(rep.trendTotal)];
+    });
+    body = reportDetailNote(`Average of the representative trends · ${fmtPp(avgTrend)}. Each trend is the fitted change across the selected weeks, using reps with at least two weeks of KPI data.`) +
+      reportDetailTable(['Representative','Weeks with data','First observed','Last observed','Fitted trend'], rows, 'Two or more KPI weeks are needed to calculate a trend.');
+  }else{
+    const isBelow = kind === 'below';
+    const rows = scopedSummaries.flatMap(rep=>rep.cells
+      .filter(cell=>isBelow ? cell.isBelow : cell.isAbove)
+      .map(cell=>[rep.repName, reportWeekRange(cell.wk), fmtPct1(cell.v), cell.coachCount]));
+    body = reportDetailNote(isBelow
+      ? `${fmtPct0(coach.belowPct)} of eligible rep-weeks with data fell below the ${fmtPct1(goalFrac)} goal.`
+      : `${fmtPct0(coach.autonomy)} of eligible rep-weeks at or above the ${fmtPct1(goalFrac)} goal had zero matching coaching records that week.`) +
+      reportDetailTable(['Representative','Week','KPI','Matching coachings'], rows, 'No weeks meet these conditions.');
+  }
+  showReportDetail(trigger, title, meta, body);
+}
+
+function openGapDetail(trigger){
+  const { gapRep, gapWeek, gapDetail } = trigger.dataset;
+  const rep = reportDetail?.scopedSummaries.find(summary=>summary.repName === gapRep);
+  if(!rep) return;
+  const misses = rep.missingBelow.filter(miss=>gapDetail === 'rep' || miss.wk === gapWeek);
+  if(!misses.length) return;
+
+  const missedWeeks = new Set(misses.map(miss=>miss.wk));
+  const evidence = new Set();
+  for(const miss of misses){
+    const run = rep.runsAll.find(item=>item.start <= miss.i && item.end >= miss.i);
+    const start = (run?.start ?? miss.i) - 1;
+    const end = (run?.end ?? miss.i) + 1;
+    for(let i=Math.max(0,start); i<=Math.min(end,rep.cells.length-1); i++) evidence.add(i);
+  }
+  const rows = Array.from(evidence).sort((a,b)=>a-b).map(i=>{
+    const cell = rep.cells[i];
+    const status = missedWeeks.has(cell.wk) ? 'Missing nearby coaching'
+      : !cell.hasData ? 'No KPI data' : cell.isBelow ? 'Below goal' : cell.isAbove ? 'At or above goal' : '—';
+    return [reportWeekRange(cell.wk), fmtPct1(cell.v), status, cell.coachCount];
+  });
+  const meta = `${reportDetail.kpi} · Goal ${fmtPct1(reportDetail.goalFrac)} · ${gapDetail === 'rep' ? fmtPp(rep.trendTotal) + ' trend' : reportWeekRange(gapWeek)}`;
+  const body = reportDetailNote('A red week is missing coaching when there is no matching coaching in that week or either neighboring week in the selected range. The table shows the below-goal streak and the weeks around it.') +
+    reportDetailNote('Coaching filter · ' + reportDetail.coachingFilter) +
+    reportDetailTable(['Week','KPI','Status','Matching coachings'], rows, 'No weeks available.');
+  showReportDetail(trigger, `Red weeks · ${rep.repName}`, meta, body);
+}
+
+document.getElementById('coachReportCard').addEventListener('click', event=>{
+  const trigger = event.target.closest('[data-report-detail]');
+  if(trigger) openReportCardDetail(trigger);
+});
+els.gapList.addEventListener('click', event=>{
+  const timeline = event.target.closest('[data-gap-timeline]');
+  if(timeline){
+    scrollToGapTimeline(timeline.dataset.gapRep, timeline.dataset.gapWeek);
+    return;
+  }
+  const detail = event.target.closest('[data-gap-detail]');
+  if(detail) openGapDetail(detail);
+});
 
 function setReportView(next){
   reportView = next === 'team' ? 'team' : (next === 'analysis' ? 'analysis' : (next === 'list' ? 'list' : 'individual'));
@@ -8474,6 +8679,14 @@ function render(){
   syncReportViewUI();
   updateMultiViewState();
   updateModernScope();
+  reportDetail = null;
+  if(reportView === 'individual'){
+    els.coachGrade.textContent = '—';
+    els.coachSub.textContent = 'Choose a team with weekly stats and a date range.';
+    for(const el of [els.coachScore, els.statBelowPct, els.statSeg2, els.statCoverage, els.statReinforce, els.statAutonomy]) el.textContent = '—';
+    els.statCoverageNote.textContent = 'Reps with trend data';
+    els.statReinforceNote.textContent = 'Selected date range';
+  }
   if(els.gapList) els.gapList.innerHTML = `<div class="gapMuted">—</div>`;
   if(els.teamSummaryBody) els.teamSummaryBody.innerHTML = `<tr><td colspan="12" class="mono" style="color:var(--muted);font-weight:900">—</td></tr>`;
   if(els.teamSummaryPills) els.teamSummaryPills.innerHTML = '';
@@ -8554,37 +8767,30 @@ function render(){
   const coach = computeCoachCard(summariesMinCov);
   const grade = gradeFromScore(coach.score);
 
-  const allVals = [];
-  for(const r of allSummaries){
-    for(const c of r.cells){
-      if(c.hasData) allVals.push(c.v);
-    }
-  }
-  const teamAvg = mean(allVals);
   const totalCoachings = allSummaries.reduce((s,r)=>s+(r.coachTotal||0),0);
   const totalChecklistItems = allSummaries.reduce((s,r)=>s+(r.correctiveTotal||0),0);
   const trendVals = allSummaries.map(r=>r.trendTotal).filter(Number.isFinite);
   const avgTrend = mean(trendVals);
 
+  const kpi = kpiDef?.label || 'KPI';
+  reportDetail = {
+    team:selectedTeam, kpi, coachingFilter:coachingFilterLabel(), weeks, allSummaries,
+    scopedSummaries:summariesMinCov, coach, goalFrac, minCovFrac, avgTrend
+  };
+
   els.coachGrade.textContent = `Grade ${grade}`;
   els.coachScore.textContent = Number.isFinite(coach.score) ? `${coach.score.toFixed(0)}/100` : '—';
-
-  const covTxt = Number.isFinite(minCovPct) ? ` • Min KPI coverage: ${minCovPct.toFixed(0)}%` : '';
-  els.coachSub.textContent =
-    `${selectedTeam} • ${kpiDef ? kpiDef.label : 'KPI'} • ${mmddyy(sd)} → ${mmddyy(ed)} • ${weeks.length}w${covTxt} • Team Avg ${fmtPct1(teamAvg)} • Total coachings ${totalCoachings.toLocaleString()}`;
+  els.coachSub.textContent = coach.seg2plus
+    ? `${fmtPct0(coach.coverage)} of ${kpi} streaks of 2+ below-goal weeks got matching coaching by the end of the following week.`
+    : `No below-goal ${kpi} streaks of two or more weeks in the selected window.`;
 
   els.statBelowPct.textContent = totalChecklistItems.toLocaleString();
-  els.statBelowNote.textContent = `matching selected checklist`;
   els.statSeg2.textContent = totalCoachings.toLocaleString();
-  els.statSeg2Note.textContent = `matching coaching filters`;
-  els.statSeg3.textContent = fmtPct0(coach.coverage);
-  els.statSeg3Note.textContent = `of 2+ below-goal streaks`;
   els.statCoverage.textContent = Number.isFinite(avgTrend) ? fmtPp(avgTrend) : '—';
   els.statCoverageNote.textContent = `${trendVals.length.toLocaleString()} reps with trend data`;
   els.statReinforce.textContent = fmtPct0(coach.belowPct);
   els.statReinforceNote.textContent = `${weeks.length} week window`;
   els.statAutonomy.textContent = fmtPct0(coach.autonomy);
-  els.statAutonomyNote.textContent = `above-goal weeks uncoached`;
 
   const q = (els.repSearch.value || '').trim().toLowerCase();
   let repSummaries = summariesMinCov;
@@ -8671,7 +8877,7 @@ function render(){
     const trendTxt = fmtPp(s.trendTotal);
 
     return `
-      <div class="repRow">
+      <div class="repRow" data-timeline-rep="${escAttr(s.repName)}">
         <div class="repHead">
           <button class="repNameBtn" data-rep="${escAttr(s.repName)}">${escAttr(s.repName)}</button>
           <div class="mini">
