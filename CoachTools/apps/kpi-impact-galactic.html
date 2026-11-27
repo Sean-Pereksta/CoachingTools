@@ -8,7 +8,7 @@
 <meta name="coachtools-description" content="Measure KPI movement and the coaching associated with performance change." />
 <meta name="coachtools-category" content="Performance" />
 <meta name="coachtools-icon" content="icons/horizon/kpi-impact.png" />
-<meta name="coachtools-data" content="weeklyRetail, weeklyReferral, documentedCoaching, checklist" />
+<meta name="coachtools-data" content="weeklyRetail, weeklyReferral, documentedCoaching, checklist, qa" />
 <meta name="coachtools-version" content="1.3" />
 <title>KPI Impact · Horizon</title>
 <style>
@@ -106,7 +106,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:#10383c}iframe{width:1
       };
 
       function outcomeTiming(rep,points){
-        const cs=(coachingByRepKey.get(personKey(rep))||[]).filter(c=>c?.date instanceof Date&&!isNaN(c.date));
+        const cs=filteredCoachingsForRep(rep).filter(c=>c?.date instanceof Date&&!isNaN(c.date));
         const ordered=(points||[]).filter(p=>Number.isFinite(p.repRate));
         if(!cs.length||!ordered.length) return {one:NaN,two:NaN,n:0};
         const deltas1=[],deltas2=[];

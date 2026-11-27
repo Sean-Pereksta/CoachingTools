@@ -48,7 +48,7 @@ test('keeps Cards/Table choice across renders and reloads, and initialization is
   assert.equal(h.document.getElementById('impactGrid').hidden, true);
   assert.equal(h.document.getElementById('impactTable').hidden, false);
   h.api.render([]);
-  assert.equal(h.document.querySelector('tbody td').colSpan, 6);
+  assert.equal(h.document.querySelector('tbody td').colSpan, 8);
   assert.match(h.document.querySelector('tbody').textContent, /No representatives/);
   h.select.value = 'cards';
   h.select.dispatchEvent(new h.window.Event('change'));
