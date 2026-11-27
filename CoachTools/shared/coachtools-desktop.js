@@ -1691,6 +1691,7 @@
     if (action === 'scan-storage') scanStorage({ manual: true });
     if (action === 'diagnostics') showDiagnostics();
     if (action === 'about') showAbout();
+    if (action === 'upload-help') openDialog(elements.uploadHelpDialog);
     if (action === 'backup') downloadBackup();
     if (action === 'restore') elements.restoreInput.click();
     if (action === 'show-desktop' || action === 'minimize-app') showDesktop();
@@ -1879,6 +1880,7 @@
       diagnosticsDialog: $('diagnosticsDialog'),
       diagnosticsContent: $('diagnosticsContent'),
       aboutDialog: $('aboutDialog'),
+      uploadHelpDialog: $('uploadHelpDialog'),
       aboutSummary: $('aboutSummary'),
       aboutFacts: $('aboutFacts'),
       restoreInput: $('restoreInput'),

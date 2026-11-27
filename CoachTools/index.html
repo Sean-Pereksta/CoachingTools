@@ -67,6 +67,7 @@
       <div class="horizon-data-actions" aria-label="Import and update data">
         <button class="command-button horizon-update" type="button" data-action="update-data" title="Refresh your saved data sources"><img src="icons/horizon/update-data.png" alt="" aria-hidden="true"><strong>Update Data</strong></button>
         <button class="command-button horizon-clean" type="button" data-action="clean-upload-data" title="Start a fresh upload"><img src="icons/horizon/clean-upload.png" alt="" aria-hidden="true"><strong>Clean Upload</strong></button>
+        <button class="command-button horizon-upload-help" type="button" data-action="upload-help" aria-haspopup="dialog" aria-controls="uploadHelpDialog" title="When to use Quick Update or Clean Upload"><img src="icons/horizon/upload-help.png" alt="" aria-hidden="true"><strong>Help</strong></button>
       </div>
     </header>
 
@@ -176,6 +177,29 @@
       <div class="panel-actions"><button id="importReview" class="command-button" type="button" data-action="review-staged-files" hidden>Review in Data Manager</button></div>
     </div>
   </section>
+
+  <dialog id="uploadHelpDialog" class="suite-dialog upload-help-dialog" aria-labelledby="uploadHelpTitle">
+    <form method="dialog"><button class="dialog-close" aria-label="Close upload help" autofocus>×</button></form>
+    <h2 id="uploadHelpTitle">Which upload should I use?</h2>
+    <div class="upload-help-options">
+      <section class="upload-help-card" aria-labelledby="quickUpdateHelpTitle">
+        <img src="graphics/quick-update-help.jpg" alt="" width="740" height="370" loading="lazy" decoding="async">
+        <div class="upload-help-copy">
+          <h3 id="quickUpdateHelpTitle">Quick Update</h3>
+          <p>Use <strong>Update Data</strong> after a successful Clean Upload to pull in newer reports.</p>
+          <p class="upload-help-note">Quick Update can pull in new information only after Sean and his team upload the latest reports.</p>
+        </div>
+      </section>
+      <section class="upload-help-card" aria-labelledby="cleanUploadHelpTitle">
+        <img src="graphics/clean-upload-help.jpg" alt="" width="740" height="370" loading="lazy" decoding="async">
+        <div class="upload-help-copy">
+          <h3 id="cleanUploadHelpTitle">Clean Upload</h3>
+          <p>Use <strong>Clean Upload</strong> when you have no data yet or Quick Update returns an error.</p>
+          <p>Choose your <strong>Storage</strong> folder, then select the report files you want to import.</p>
+        </div>
+      </section>
+    </div>
+  </dialog>
 
   <dialog id="cleanUploadStep" class="suite-dialog" aria-labelledby="cleanUploadStepTitle">
     <p class="eyebrow">Clean Upload</p>
